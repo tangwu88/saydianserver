@@ -32,7 +32,9 @@ jobs:
             "ghcr.io/saydian88-cmyk/saydianapp-server-worker:$version"
             "ghcr.io/saydian88-cmyk/saydianapp-server-admin:$version"
           )
-          docker pull "${images[@]}"
+          for image in "${images[@]}"; do
+            docker pull "$image"
+          done
           mkdir -p export
           archive="export/saydianapp-runtime-images-$version.tar.gz"
           docker save "${images[@]}" | gzip -9 > "$archive"

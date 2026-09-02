@@ -54,6 +54,8 @@
 - 修正后 `bash -n deploy/scripts/preflight.sh`、PyYAML 解析 `compose.production.yaml`、Prettier、`git diff --check` 以及配置范围旧名称回归搜索全部通过。
 - 本机 `gh` OAuth 令牌只有 `gist, read:org, repo`，向 GHCR 请求只读 Registry 令牌返回 401；它既不能拉包，也不应复制到服务器。新增 `Export runtime images` 手工工作流，在 GitHub Actions 内用仓库短期 `GITHUB_TOKEN` 拉取指定不可变版本的 API、Worker、Admin 镜像，合并为带 SHA-256 的 1 天短期制品。服务器通过单制品短期下载地址导入镜像，不保存 GitHub 凭据，也不把私有包改成公开。
 - 新工作流经 PyYAML 解析、Prettier 和 `git diff --check` 验证通过；它只读 Packages，不含生产服务器或云存储凭据。
+- 导出运行 `33634602373` 首次在 `docker pull "${images[@]}"` 失败，Docker CLI 的 `pull` 子命令一次只接受一个镜像参数；登录成功但没有上传制品。修复为逐个镜像拉取循环，服务器仍未接收或运行镜像。
+- 循环修复经 PyYAML、Prettier 与 `git diff --check` 再次验证通过。
 
 ## 当前未执行
 
