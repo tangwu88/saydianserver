@@ -36,10 +36,14 @@
 - 首轮为缩短时间并行执行根级 typecheck/test/build，三个任务都会先生成共享 Contracts，导致 Build 写 `packages/contracts/dist/index.js` 时出现 Windows `EBUSY`；类型检查和 25 项测试本身已通过。停止并发写入后改为单独重跑 Build，不把文件锁误判为源码错误。
 - 修复执行方式后，5 个包类型检查通过；API 18 项、Worker 2 项、Migrator 1 项、Contracts 3 项、Admin 1 项，共 25 项测试通过；全部服务与管理后台构建通过。
 - Git Bash `bash -n` 验证 4 个部署脚本语法通过；Python/PyYAML 验证 Compose 和 3 个 GitHub Actions 工作流通过；Prettier 与 `git diff --check` 通过。
+- 提交 `a0267c5` 的 CI 运行 `33620498282` 全部通过；随后触发不可变镜像版本 `2026.09.02-a0267c5`，运行 `33628980918` 的 API、Worker、Admin 三个镜像均发布成功。
+- 已创建 `saydian-app-prod-1251011541`：北京地域、私有读写、单 AZ、SSE-COS 服务端加密，标签 `application=saydian-app`；未启用版本控制、图片处理或日志存储等额外计费功能。
+- CAM 子用户 `saydian-app-server-cos` 已创建为仅编程访问，但验证码后的腾讯云流程误关联了 10 条预设策略，包含 `AdministratorAccess`、全资源和财务权限。发现后立即停止使用该账号，未把密钥写入服务器；等待明确确认后先解除全部现有策略，再关联仅限指定 COS 桶的自定义策略。
+- 本地生成部署包 `D:\Temp\User\saydianapp-server-deploy-a0267c5.tgz`，SHA-256 为 `DCA75E1D423938D1EE14B1CC7BEA5EF282BA2FCDA7DEA78F06BA5C125AB11EBA`，内容仅含 `deploy/`。Chrome 扩展未开启本地文件 URL 访问，文件选择器未出现；服务器未收到文件，等待开启扩展文件权限后重试。
 
 ## 当前未执行
 
-- 尚未创建 COS 存储桶或最小权限密钥。
-- 尚未上传部署包、拉取生产镜像、修改网关、申请证书或启动 App 服务。
+- COS 存储桶已创建；CAM 子用户尚未完成权限收紧和可用密钥落盘，因此对象存储集成仍视为未配置。
+- 生产镜像已发布；尚未上传部署包、拉取镜像、修改网关、申请证书或启动 App 服务。
 - 尚未部署商城内部适配器，因此商城写操作保持未配置。
 - 尚未迁移旧数据库或开放生产写入。
