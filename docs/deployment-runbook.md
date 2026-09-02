@@ -18,13 +18,25 @@
 - 配置 GHCR 拉取、对象存储、商城内部令牌、加密 Restic 异地仓库和已固定的 SSH known_hosts。
 - GitHub `production` Environment 必须启用人工审批。
 
+### 与现有赛电网关共存
+
+`49.232.231.131` 已由 `saidian-gateway-1` 占用 80/443，并承载商城及运营系统。部署 App 服务时：
+
+- `.env.production` 设置 `USE_SHARED_GATEWAY=true`、`GATEWAY_NETWORK=saydian_default`。
+- API 和后台只通过 Docker 外部网络暴露为 `saydianapp-api`、`saydianapp-admin`，不新增公网端口。
+- `configure-shared-gateway.sh` 会先备份原网关配置，再依次增加 HTTP 证书挑战和 HTTPS 反向代理；每次写入后先执行 `nginx -t`，失败时自动恢复备份。
+- 现有实例为 4 核/4GB/40GB，低于长期生产建议；Compose 已设置逐容器 CPU/内存上限。首次发布可以用于灰度，但健康数据和附件增长前必须扩容磁盘并评估升级到至少 8GB 内存。
+- 对象存储使用独立私有 COS 存储桶和最小权限子用户；不得复用客服素材桶或主账号永久密钥。
+
 ## 镜像和发布
 
 1. `Release images` 工作流构建 API、Worker、Admin 三个不可变标签，同时生成 provenance 与 SBOM。
 2. `Deploy production` 首次必须保持 `dry_run=true`。
-3. dry-run 通过后，以 `open_writes=false` 发布。脚本先备份、迁移数据库，再以只读方式启动和检查 HTTPS。
+3. dry-run 通过后，以 `open_writes=false` 发布。脚本对已有数据库先备份；首次部署没有旧数据库时明确跳过空备份，再迁移并以只读方式启动和检查 HTTPS。
 4. 完成登录、健康历史、关爱、旧订单、附件和后台审计冒烟后，第二次明确选择开放写入。
 5. `database-backup` 每日生成自定义格式备份；PostgreSQL 持续归档 WAL；Restic 加密同步到异地仓库并执行保留策略。
+
+生产环境必须设置 `SEED_PREVIEW_CONTENT=false`。本地示例文章和示例协议不得进入正式数据库；正式协议须由审核后的迁移或后台发布流程写入。
 
 ## 回滚与恢复
 

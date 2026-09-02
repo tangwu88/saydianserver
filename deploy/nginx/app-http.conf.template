@@ -1,0 +1,14 @@
+# BEGIN SAYDIAN APP HTTP __APP_DOMAIN__
+server {
+  listen 80;
+  server_name __APP_DOMAIN__;
+
+  location /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  location / {
+    return 301 https://__APP_DOMAIN__$request_uri;
+  }
+}
+# END SAYDIAN APP HTTP __APP_DOMAIN__

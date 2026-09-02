@@ -3,6 +3,8 @@ name: saydianapp-production
 services:
   postgres:
     image: postgres:16-alpine
+    mem_limit: 512m
+    cpus: 1.0
     env_file: .env.production
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -32,8 +34,15 @@ services:
 
   redis:
     image: redis:7-alpine
+    mem_limit: 128m
+    cpus: 0.5
     env_file: .env.production
-    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass '$$REDIS_PASSWORD'"]
+    command:
+      [
+        "sh",
+        "-c",
+        "exec redis-server --appendonly yes --requirepass '$$REDIS_PASSWORD'",
+      ]
     volumes: ["redis_data:/data"]
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a '$$REDIS_PASSWORD' ping | grep PONG"]
@@ -45,6 +54,8 @@ services:
 
   api:
     image: ghcr.io/saydian88-cmyk/saydianapp-server-api:${IMAGE_TAG}
+    mem_limit: 512m
+    cpus: 1.0
     env_file: .env.production
     environment:
       NODE_ENV: production
@@ -64,10 +75,15 @@ services:
     read_only: true
     tmpfs: ["/tmp"]
     security_opt: ["no-new-privileges:true"]
-    networks: [private]
+    networks:
+      private:
+      gateway:
+        aliases: [saydianapp-api]
 
   worker:
     image: ghcr.io/saydian88-cmyk/saydianapp-server-worker:${IMAGE_TAG}
+    mem_limit: 384m
+    cpus: 0.75
     env_file: .env.production
     environment:
       NODE_ENV: production
@@ -81,16 +97,23 @@ services:
 
   admin:
     image: ghcr.io/saydian88-cmyk/saydianapp-server-admin:${IMAGE_TAG}
+    mem_limit: 96m
+    cpus: 0.25
     depends_on:
       api: { condition: service_healthy }
     restart: unless-stopped
     read_only: true
     tmpfs: ["/tmp", "/var/cache/nginx", "/var/run"]
     security_opt: ["no-new-privileges:true"]
-    networks: [private]
+    networks:
+      private:
+      gateway:
+        aliases: [saydianapp-admin]
 
   caddy:
     image: caddy:2.8-alpine
+    mem_limit: 96m
+    cpus: 0.25
     env_file: .env.production
     ports: ["80:80", "443:443"]
     volumes:
@@ -106,6 +129,8 @@ services:
 
   backup:
     image: restic/restic:0.17.3
+    mem_limit: 128m
+    cpus: 0.5
     profiles: ["backups"]
     env_file: .env.production
     environment:
@@ -130,6 +155,8 @@ services:
 
   database-backup:
     image: postgres:16-alpine
+    mem_limit: 128m
+    cpus: 0.5
     profiles: ["backups"]
     env_file: .env.production
     environment:
@@ -157,6 +184,9 @@ services:
 networks:
   private:
     internal: false
+  gateway:
+    external: true
+    name: ${GATEWAY_NETWORK:-saydian_default}
 
 volumes:
   postgres_data:

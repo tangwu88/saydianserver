@@ -1,6 +1,11 @@
 import "dotenv/config";
 import { AdminRole, IntegrationState, PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
+import {
+  hasConfiguredCommerce,
+  hasConfiguredObjectStorage,
+  shouldSeedPreviewContent,
+} from "./seed-policy";
 
 const prisma = new PrismaClient();
 
@@ -10,7 +15,9 @@ async function main(): Promise<void> {
     process.env.ADMIN_BOOTSTRAP_DISPLAY_NAME?.trim() || "系统管理员";
   const password = process.env.ADMIN_BOOTSTRAP_PASSWORD ?? "";
   if (password.length < 12) {
-    throw new Error("ADMIN_BOOTSTRAP_PASSWORD must contain at least 12 characters");
+    throw new Error(
+      "ADMIN_BOOTSTRAP_PASSWORD must contain at least 12 characters",
+    );
   }
   await prisma.adminUser.upsert({
     where: { username },
@@ -23,74 +30,87 @@ async function main(): Promise<void> {
     update: { displayName, active: true },
   });
 
-  for (const [key, publicConfig] of [
-    ["sms", { provider: null }],
-    ["push", { provider: null }],
-    ["ai", { provider: null }],
-    ["object_storage", { provider: "s3_compatible" }],
-    ["commerce", { mode: "existing_saydian_mall" }],
+  for (const [key, state, publicConfig] of [
+    ["sms", IntegrationState.UNCONFIGURED, { provider: null }],
+    ["push", IntegrationState.UNCONFIGURED, { provider: null }],
+    ["ai", IntegrationState.UNCONFIGURED, { provider: null }],
+    [
+      "object_storage",
+      hasConfiguredObjectStorage()
+        ? IntegrationState.CONFIGURED
+        : IntegrationState.UNCONFIGURED,
+      { provider: "s3_compatible" },
+    ],
+    [
+      "commerce",
+      hasConfiguredCommerce()
+        ? IntegrationState.CONFIGURED
+        : IntegrationState.UNCONFIGURED,
+      { mode: "existing_saydian_mall" },
+    ],
   ] as const) {
     await prisma.integrationConfig.upsert({
       where: { key },
       create: {
         key,
-        state:
-          key === "commerce" || key === "object_storage"
-            ? IntegrationState.CONFIGURED
-            : IntegrationState.UNCONFIGURED,
+        state,
         publicConfig,
       },
-      update: { publicConfig },
+      update: { state, publicConfig },
     });
   }
 
-  const category = await prisma.articleCategory.upsert({
-    where: { legacyId: "3" },
-    create: { legacyId: "3", name: "健康百科", sort: 100 },
-    update: { name: "健康百科", enabled: true },
-  });
-  await prisma.article.upsert({
-    where: { legacyId: "seed-health-guide" },
-    create: {
-      legacyId: "seed-health-guide",
-      categoryId: category.id,
-      title: "正确理解手表健康数据",
-      summary: "健康数据用于日常趋势参考，明显不适请及时就医。",
-      contentHtml:
-        "<p>手表记录适合观察个人趋势，不用于诊断或治疗。测量前请按产品说明佩戴并保持安静；如有明显不适，请及时就医。</p>",
-      status: "PUBLISHED",
-      publishedAt: new Date("2026-09-01T00:00:00.000Z"),
-    },
-    update: { categoryId: category.id },
-  });
-
-  for (const document of [
-    {
-      documentType: "user_agreement",
-      title: "用户协议",
-      contentHtml: "<p>此为本地预发布示例协议，正式发布前须由法务审核并替换。</p>",
-    },
-    {
-      documentType: "privacy_policy",
-      title: "隐私政策",
-      contentHtml: "<p>此为本地预发布示例政策，正式发布前须完成隐私合规审核并替换。</p>",
-    },
-  ]) {
-    await prisma.legalDocument.upsert({
-      where: {
-        documentType_version: {
-          documentType: document.documentType,
-          version: "local-preview-1",
-        },
-      },
+  if (shouldSeedPreviewContent()) {
+    const category = await prisma.articleCategory.upsert({
+      where: { legacyId: "3" },
+      create: { legacyId: "3", name: "健康百科", sort: 100 },
+      update: { name: "健康百科", enabled: true },
+    });
+    await prisma.article.upsert({
+      where: { legacyId: "seed-health-guide" },
       create: {
-        ...document,
-        version: "local-preview-1",
-        active: true,
+        legacyId: "seed-health-guide",
+        categoryId: category.id,
+        title: "正确理解手表健康数据",
+        summary: "健康数据用于日常趋势参考，明显不适请及时就医。",
+        contentHtml:
+          "<p>手表记录适合观察个人趋势，不用于诊断或治疗。测量前请按产品说明佩戴并保持安静；如有明显不适，请及时就医。</p>",
+        status: "PUBLISHED",
         publishedAt: new Date("2026-09-01T00:00:00.000Z"),
       },
-      update: document,
+      update: { categoryId: category.id },
     });
+
+    for (const document of [
+      {
+        documentType: "user_agreement",
+        title: "用户协议",
+        contentHtml:
+          "<p>此为本地预发布示例协议，正式发布前须由法务审核并替换。</p>",
+      },
+      {
+        documentType: "privacy_policy",
+        title: "隐私政策",
+        contentHtml:
+          "<p>此为本地预发布示例政策，正式发布前须完成隐私合规审核并替换。</p>",
+      },
+    ]) {
+      await prisma.legalDocument.upsert({
+        where: {
+          documentType_version: {
+            documentType: document.documentType,
+            version: "local-preview-1",
+          },
+        },
+        create: {
+          ...document,
+          version: "local-preview-1",
+          active: true,
+          publishedAt: new Date("2026-09-01T00:00:00.000Z"),
+        },
+        update: document,
+      });
+    }
   }
 
   await prisma.appSetting.upsert({
@@ -110,6 +130,8 @@ async function main(): Promise<void> {
 void main()
   .finally(() => prisma.$disconnect())
   .catch((error: unknown) => {
-    process.stderr.write(`${error instanceof Error ? error.message : "Seed failed"}\n`);
+    process.stderr.write(
+      `${error instanceof Error ? error.message : "Seed failed"}\n`,
+    );
     process.exitCode = 1;
   });

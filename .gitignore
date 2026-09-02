@@ -3,6 +3,7 @@ dist/
 .env
 .env.*
 !.env.example
+!deploy/.env.production.example
 coverage/
 .turbo/
 .pnpm-store/
