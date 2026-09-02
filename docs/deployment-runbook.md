@@ -15,7 +15,8 @@
 - 防火墙仅开放 22/80/443；数据库、Redis 和管理后台容器不暴露宿主端口。
 - 复制 `deploy/.env.production.example` 为 `/opt/saydianapp-server/deploy/.env.production`，权限 600。
 - 值中若包含 shell 特殊字符，必须按 POSIX shell 规则转义；发布脚本会加载该文件。
-- 配置 GHCR 拉取、对象存储、商城内部令牌、加密 Restic 异地仓库和已固定的 SSH known_hosts。
+- 默认通过 GHCR 只读凭据拉取私有运行镜像。若使用 `Export runtime images` 工作流导出的短期制品离线导入镜像，则设置 `PRIVATE_IMAGES_PRELOADED=true`；预检查和回滚会核对 API、Worker、Admin 三个精确版本都已存在于本机，不再访问私有仓库。
+- 配置对象存储、商城内部令牌、加密 Restic 异地仓库和已固定的 SSH known_hosts。
 - GitHub `production` Environment 必须启用人工审批。
 
 ### 与现有赛电网关共存
@@ -31,10 +32,11 @@
 ## 镜像和发布
 
 1. `Release images` 工作流构建 API、Worker、Admin 三个不可变标签，同时生成 provenance 与 SBOM。
-2. `Deploy production` 首次必须保持 `dry_run=true`。
-3. dry-run 通过后，以 `open_writes=false` 发布。脚本对已有数据库先备份；首次部署没有旧数据库时明确跳过空备份，再迁移并以只读方式启动和检查 HTTPS。
-4. 完成登录、健康历史、关爱、旧订单、附件和后台审计冒烟后，第二次明确选择开放写入。
-5. `database-backup` 每日生成自定义格式备份；PostgreSQL 持续归档 WAL；Restic 加密同步到异地仓库并执行保留策略。
+2. 无法在生产机保存 GHCR 凭据时，运行 `Export runtime images`，在制品 1 天有效期内下载并校验 SHA-256，再执行 `docker load`；仅在三个版本标签均可由 `docker image inspect` 找到后设置 `PRIVATE_IMAGES_PRELOADED=true`。
+3. `Deploy production` 首次必须保持 `dry_run=true`。
+4. dry-run 通过后，以 `open_writes=false` 发布。脚本对已有数据库先备份；首次部署没有旧数据库时明确跳过空备份，再迁移并以只读方式启动和检查 HTTPS。
+5. 完成登录、健康历史、关爱、旧订单、附件和后台审计冒烟后，第二次明确选择开放写入。
+6. `database-backup` 每日生成自定义格式备份；PostgreSQL 持续归档 WAL；Restic 加密同步到异地仓库并执行保留策略。
 
 生产环境必须设置 `SEED_PREVIEW_CONTENT=false`。本地示例文章和示例协议不得进入正式数据库；正式协议须由审核后的迁移或后台发布流程写入。
 

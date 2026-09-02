@@ -30,7 +30,12 @@ sed -i "s/^MAINTENANCE_READ_ONLY=.*/MAINTENANCE_READ_ONLY=true/" "$env_file"
 set -a
 . "$env_file"
 set +a
-compose pull postgres redis api worker admin database-backup backup
+if [ "${PRIVATE_IMAGES_PRELOADED:-false}" = "true" ]; then
+  echo "using preloaded private runtime images for $IMAGE_TAG"
+else
+  compose pull api worker admin
+fi
+compose pull postgres redis database-backup backup
 compose up -d postgres redis
 compose run --rm --no-deps api \
   sh -c './node_modules/.bin/prisma migrate deploy'

@@ -16,7 +16,11 @@ sed -i "s/^MAINTENANCE_READ_ONLY=.*/MAINTENANCE_READ_ONLY=true/" "$env_file"
 set -a
 . "$env_file"
 set +a
-compose pull api worker admin
+if [ "${PRIVATE_IMAGES_PRELOADED:-false}" = "true" ]; then
+  DEPLOY_ROOT="$root_dir" deploy/scripts/check-runtime-images.sh
+else
+  compose pull api worker admin
+fi
 compose up -d --force-recreate api worker admin
 if [ "${USE_SHARED_GATEWAY:-false}" != "true" ]; then
   compose pull caddy

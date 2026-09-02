@@ -56,11 +56,17 @@
 - 新工作流经 PyYAML 解析、Prettier 和 `git diff --check` 验证通过；它只读 Packages，不含生产服务器或云存储凭据。
 - 导出运行 `33634602373` 首次在 `docker pull "${images[@]}"` 失败，Docker CLI 的 `pull` 子命令一次只接受一个镜像参数；登录成功但没有上传制品。修复为逐个镜像拉取循环，服务器仍未接收或运行镜像。
 - 循环修复经 PyYAML、Prettier 与 `git diff --check` 再次验证通过。
+- 修复后的导出运行 `33634744903` 成功生成 1 天有效的私有制品 `runtime-images-2026.09.02-1036afa`。外层 ZIP 为 `299141869` 字节，内层镜像归档为 `299141320` 字节；本地与服务器 SHA-256 均为 `2FDA033A352F7CE278AD9EB5F3C7710D8F35D389DC4430088A3088BBE20B6E09`，服务器 `unzip -t` 与 `gzip -t` 均通过。
+- 服务器单连接下载速度过低；首次 8 分片下载又因 GitHub 连接重置导致部分分片失败。核对每段预期字节范围后改为 24 个可重试分片，逐段尺寸、合并总尺寸、ZIP、Gzip 和 SHA-256 五层校验全部通过，再执行 `docker load`。
+- 排查分片进程时，一条本地 PowerShell 插值命令误把 GitHub 制品的短期签名下载 URL 写入本地执行输出；该 URL 不含 GitHub 账号令牌且已过期。立即停止通过进程命令行检查下载状态，后续只记录分片字节数和文件哈希，不再输出签名 URL。
+- `docker load` 已导入 `2026.09.02-1036afa` 的 API、Worker、Admin 三个镜像。随后用精确标签执行 `docker image inspect` 均返回 `loaded`；`saydianapp-production` 容器数量为 0，说明尚未启动 App 服务，磁盘为已用约 22/40GB、可用 17GB。
+- 导入完成后复核发布脚本，发现 `release.sh` 和 `rollback.sh` 仍会强制 `compose pull api worker admin`；在无 GHCR 凭据的生产机上会重复失败，即使本地已有正确镜像。新增显式 `PRIVATE_IMAGES_PRELOADED` 模式及 `check-runtime-images.sh`：开启时必须精确找到 API、Worker、Admin 三个版本标签，发布与回滚均不再访问私有仓库；关闭时保持原 GHCR 拉取流程。
+- 新脚本及发布、回滚、预检查脚本通过 Git Bash `bash -n`。模拟 Docker 输出验证“三镜像齐全”成功路径和“缺少 Worker 镜像”拒绝路径；文档 Prettier 与 `git diff --check` 通过。首次把无对应解析器的 `.env` 和 Shell 文件交给 Prettier 导致工具报错，改为 Shell 由 `bash -n` 验证、Markdown 由 Prettier 验证，没有修改源码来规避工具限制。
 
 ## 当前未执行
 
 - COS 存储桶与最小权限 CAM 策略已完成；自动创建的旧 SecretKey 不可再次查看，尚未新建并验证替代密钥，因此对象存储和 Restic 仍视为未配置。
-- 部署包与生产配置已安装；私有运行镜像仍需一次只读 GHCR 鉴权后拉取，随后删除服务器上的临时仓库登录信息。
+- 部署包与生产配置已安装，私有运行镜像已通过短期制品校验并离线导入；当前源码中的预载镜像发布脚本修复尚需提交、通过 CI 并同步到服务器。
 - 尚未通过完整预检查、启动 App 服务、修改共享网关或申请 `app.saydian.cn` 证书。
 - 尚未部署商城内部适配器，因此商城写操作保持未配置。
 - 尚未迁移旧数据库或开放生产写入。

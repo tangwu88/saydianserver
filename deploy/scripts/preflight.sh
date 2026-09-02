@@ -35,6 +35,13 @@ fi
 case "${IMAGE_TAG:-}" in
   *[!A-Za-z0-9._-]*|'') echo "invalid IMAGE_TAG" >&2; exit 1 ;;
 esac
+case "${PRIVATE_IMAGES_PRELOADED:-false}" in
+  true|false) ;;
+  *) echo "PRIVATE_IMAGES_PRELOADED must be true or false" >&2; exit 1 ;;
+esac
 
 docker compose --env-file "$env_file" -f "$compose_file" config --quiet
+if [ "${PRIVATE_IMAGES_PRELOADED:-false}" = "true" ]; then
+  DEPLOY_ROOT="$root_dir" deploy/scripts/check-runtime-images.sh
+fi
 echo "preflight ok"
