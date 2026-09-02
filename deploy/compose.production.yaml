@@ -186,7 +186,7 @@ networks:
     internal: false
   gateway:
     external: true
-    name: ${GATEWAY_NETWORK:-saydian_default}
+    name: ${GATEWAY_NETWORK:-saidian_default}
 
 volumes:
   postgres_data:

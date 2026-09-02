@@ -24,7 +24,7 @@ set -a
 set +a
 
 if [ "${USE_SHARED_GATEWAY:-false}" = "true" ]; then
-  gateway_network=${GATEWAY_NETWORK:-saydian_default}
+  gateway_network=${GATEWAY_NETWORK:-saidian_default}
   gateway_container=${GATEWAY_CONTAINER:-saydian-gateway-1}
   gateway_config=${GATEWAY_CONFIG_PATH:-/opt/saydian/config/gateway-nginx.conf}
   docker network inspect "$gateway_network" >/dev/null

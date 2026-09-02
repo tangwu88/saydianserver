@@ -22,7 +22,7 @@
 
 `49.232.231.131` 已由 `saidian-gateway-1` 占用 80/443，并承载商城及运营系统。部署 App 服务时：
 
-- `.env.production` 设置 `USE_SHARED_GATEWAY=true`、`GATEWAY_NETWORK=saydian_default`。
+- `.env.production` 设置 `USE_SHARED_GATEWAY=true`、`GATEWAY_NETWORK=saidian_default`。
 - API 和后台只通过 Docker 外部网络暴露为 `saydianapp-api`、`saydianapp-admin`，不新增公网端口。
 - `configure-shared-gateway.sh` 会先备份原网关配置，再依次增加 HTTP 证书挑战和 HTTPS 反向代理；每次写入后先执行 `nginx -t`，失败时自动恢复备份。
 - 现有实例为 4 核/4GB/40GB，低于长期生产建议；Compose 已设置逐容器 CPU/内存上限。首次发布可以用于灰度，但健康数据和附件增长前必须扩容磁盘并评估升级到至少 8GB 内存。

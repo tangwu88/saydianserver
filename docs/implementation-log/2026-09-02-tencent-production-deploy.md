@@ -16,12 +16,12 @@
 | TCP 22/80/443 与 HTTP(S) 探测                                        | 三端口开放；现有 Nginx 把未知域名导向商城                                                                                          | 禁止新 Compose 直接绑定 80/443                              |
 | 腾讯云实例                                                           | Ubuntu 24.04、4 核、3723MB 内存、40GB 系统盘；已用 19GB、可用约 20GB                                                               | 低于原定 8GB/200GB，必须限制资源并规划扩容                  |
 | Docker                                                               | Docker 29.1.3、Compose 2.40.3、`ubuntu` 可免密 sudo                                                                                | 运行条件具备                                                |
-| 现有业务                                                             | 网关、商城、运营系统、MySQL/PostgreSQL 等容器运行中；网关配置为 `/opt/saydian/config/gateway-nginx.conf`，网络为 `saydian_default` | 使用独立 Compose 并接入共享网络                             |
+| 现有业务                                                             | 网关、商城、运营系统、MySQL/PostgreSQL 等容器运行中；网关配置为 `/opt/saydian/config/gateway-nginx.conf`，网络为 `saidian_default` | 使用独立 Compose 并接入共享网络                             |
 | 现有 COS                                                             | 仅发现客服素材桶 `saydian-kf-media-*`                                                                                              | 健康 App 不混用，需独立私有桶和最小权限凭据                 |
 
 ## 本轮修改
 
-- API/Admin 接入 `saydian_default` 外部网络并使用唯一别名，网关无需新增公网端口。
+- API/Admin 接入 `saidian_default` 外部网络并使用唯一别名，网关无需新增公网端口。
 - 新增共享网关配置脚本和 HTTP/HTTPS 模板：修改前备份、配置测试失败自动恢复、证书使用现有 Webroot 续期体系。
 - 为 PostgreSQL、Redis、API、Worker、Admin、Caddy 和备份容器设置资源上限，降低 4GB 宿主机 OOM 风险。
 - 首次部署没有 App 数据库时不再执行必然失败的预备份；后续发布仍强制先备份。
@@ -49,6 +49,9 @@
 - 服务器内生成 PostgreSQL、Redis、访问令牌、刷新令牌、后台初始密码及 Restic 随机密钥；生产配置与初始后台密码文件均为 `root:root`、权限 `600`，未在日志或聊天中输出具体值。
 - `OBJECT_STORAGE_ACCESS_KEY`、`OBJECT_STORAGE_SECRET_KEY`、`BACKUP_S3_ACCESS_KEY`、`BACKUP_S3_SECRET_KEY` 保持空值；`preflight.sh` 因首个缺项 `OBJECT_STORAGE_ACCESS_KEY` 按预期退出。未误拉取运行镜像、未启动新服务、未改网关。
 - 本轮仅更新部署事实记录；提交前执行 `git diff --check` 并复核仅该日志文件变更，不重复运行已由同一提交 CI 通过的源码测试。
+- 服务器只读复核时，Compose 自身解析成功，但共享网络检查返回 `network saydian_default not found`。进一步读取网关真实网络确认名称为 `saidian_default`；这是部署配置中的拼写错误，服务尚未启动、网关尚未修改，因此没有生产影响。随后同步修正环境示例、Compose 默认值、预检查脚本和部署文档，并以服务器真实网络复测。
+- 定向复测首次直接调用 `bash -n` 时因 PowerShell 的 PATH 中没有 `bash` 失败；改用 `C:\Program Files\Git\bin\bash.exe -n` 后脚本语法通过。首轮旧名称搜索也命中了本日志保留的真实失败文本，随后把回归搜索限定到实际配置与运行手册，不删除故障证据。
+- 修正后 `bash -n deploy/scripts/preflight.sh`、PyYAML 解析 `compose.production.yaml`、Prettier、`git diff --check` 以及配置范围旧名称回归搜索全部通过。
 
 ## 当前未执行
 
