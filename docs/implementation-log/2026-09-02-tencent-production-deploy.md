@@ -62,11 +62,16 @@
 - `docker load` 已导入 `2026.09.02-1036afa` 的 API、Worker、Admin 三个镜像。随后用精确标签执行 `docker image inspect` 均返回 `loaded`；`saydianapp-production` 容器数量为 0，说明尚未启动 App 服务，磁盘为已用约 22/40GB、可用 17GB。
 - 导入完成后复核发布脚本，发现 `release.sh` 和 `rollback.sh` 仍会强制 `compose pull api worker admin`；在无 GHCR 凭据的生产机上会重复失败，即使本地已有正确镜像。新增显式 `PRIVATE_IMAGES_PRELOADED` 模式及 `check-runtime-images.sh`：开启时必须精确找到 API、Worker、Admin 三个版本标签，发布与回滚均不再访问私有仓库；关闭时保持原 GHCR 拉取流程。
 - 新脚本及发布、回滚、预检查脚本通过 Git Bash `bash -n`。模拟 Docker 输出验证“三镜像齐全”成功路径和“缺少 Worker 镜像”拒绝路径；文档 Prettier 与 `git diff --check` 通过。首次把无对应解析器的 `.env` 和 Shell 文件交给 Prettier 导致工具报错，改为 Shell 由 `bash -n` 验证、Markdown 由 Prettier 验证，没有修改源码来规避工具限制。
+- 提交 `745bb2b` 已推送到 `origin/main`；CI 运行 `33638686903` 通过类型检查、25 项测试、构建、数据库迁移和脱敏 Seed、API 冒烟及全部容器构建。
+- 从已提交版本生成仅含 `deploy/` 的 `D:\Temp\User\saydianapp-server-deploy-745bb2b.tgz`，大小 `5523` 字节，SHA-256 为 `0DEAAFDD5AE7E704F540487DE51275AC4FD415E9C4DF5020D95D6E063A3FC4D7`；服务器接收后的大小和哈希完全一致。
+- 覆盖服务器部署脚本前，将原 `deploy/` 保存为 `/opt/saydianapp-server/deploy-backup-before-745bb2b.tar.gz`，归档为 `root:root`、权限 `600`。新脚本已安装并设为可执行，生产配置加入 `PRIVATE_IMAGES_PRELOADED=true`，配置文件仍为 `root:root`、权限 `600`；直接执行镜像检查确认三个版本标签都存在。
+- 安装后的复核命令首次用普通用户读取权限为 `600` 的 `.env.production`，因此在最后一个 `grep` 返回 `Permission denied`；此前的备份、解压、配置写入和镜像检查均已成功。随后只用 `sudo grep` 读取非敏感开关并用 `sudo stat` 复核权限，不输出任何密钥值。
+- 服务器只读预检查当前仅在 `OBJECT_STORAGE_ACCESS_KEY` 缺失处按预期退出，退出码为 1；`saydianapp-production` 容器仍为 0，未启动数据库、Redis、API、Worker、后台、备份任务，也未修改共享网关。
 
 ## 当前未执行
 
 - COS 存储桶与最小权限 CAM 策略已完成；自动创建的旧 SecretKey 不可再次查看，尚未新建并验证替代密钥，因此对象存储和 Restic 仍视为未配置。
-- 部署包与生产配置已安装，私有运行镜像已通过短期制品校验并离线导入；当前源码中的预载镜像发布脚本修复尚需提交、通过 CI 并同步到服务器。
+- 部署包、预载镜像发布脚本和生产配置已安装，私有运行镜像已通过短期制品校验并离线导入；完整预检查当前只剩 COS/Restic 凭据未配置。
 - 尚未通过完整预检查、启动 App 服务、修改共享网关或申请 `app.saydian.cn` 证书。
 - 尚未部署商城内部适配器，因此商城写操作保持未配置。
 - 尚未迁移旧数据库或开放生产写入。
