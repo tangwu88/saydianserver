@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+    "declaration": false,
+    "outDir": "dist",
+    "rootDir": ".",
+    "types": ["node", "express", "multer"]
+  },
+  "include": ["src/**/*.ts", "prisma/**/*.ts"]
+}

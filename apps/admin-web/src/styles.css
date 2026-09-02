@@ -1,0 +1,12 @@
+:root {
+  color: #182230;
+  background: #f5f7fa;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 1120px; }
+.page { padding: 24px; }
+.page-title { margin: 0 0 18px; font-size: 24px; }
+.muted { color: #768396; font-size: 13px; }
+.toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.danger-note { color: #b42318; }

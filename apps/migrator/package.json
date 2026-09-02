@@ -1,0 +1,24 @@
+{
+  "name": "@saydian/app-migrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/main.js",
+  "scripts": {
+    "inspect": "tsx src/main.ts inspect",
+    "migrate": "tsx src/main.ts migrate",
+    "verify": "tsx src/main.ts verify",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.15.0",
+    "dotenv": "^17.2.2",
+    "mysql2": "^3.14.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5",
+    "vitest": "^3.2.4"
+  }
+}

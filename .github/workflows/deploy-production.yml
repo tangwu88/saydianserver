@@ -1,0 +1,64 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Existing immutable GHCR image tag
+        required: true
+        type: string
+      dry_run:
+        description: Run preflight only
+        required: true
+        default: true
+        type: boolean
+      open_writes:
+        description: Open writes after read-only smoke tests
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate inputs and required deployment configuration
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          [[ "${{ inputs.image_tag }}" =~ ^[A-Za-z0-9._-]+$ ]]
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY"
+      - name: Configure SSH
+        shell: bash
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Upload versioned deployment files
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" 'install -d -m 750 /opt/saydianapp-server/releases'
+          tar -czf deploy-bundle.tgz deploy
+          scp deploy-bundle.tgz "$DEPLOY_USER@$DEPLOY_HOST:/opt/saydianapp-server/releases/${{ github.run_id }}.tgz"
+      - name: Preflight or deploy
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "cd /opt/saydianapp-server && tar -xzf releases/${{ github.run_id }}.tgz && chmod +x deploy/scripts/*.sh && IMAGE_TAG='${{ inputs.image_tag }}' DRY_RUN='${{ inputs.dry_run }}' OPEN_WRITES='${{ inputs.open_writes }}' deploy/scripts/release.sh"

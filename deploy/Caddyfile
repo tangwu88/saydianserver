@@ -1,0 +1,22 @@
+{$APP_DOMAIN} {
+  encode zstd gzip
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "no-referrer"
+    -Server
+  }
+
+  handle /admin/* {
+    reverse_proxy admin:8080
+  }
+
+  handle {
+    reverse_proxy api:8080
+  }
+
+  log {
+    output stdout
+    format json
+  }
+}

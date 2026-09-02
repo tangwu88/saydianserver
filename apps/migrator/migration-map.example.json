@@ -1,0 +1,30 @@
+{
+  "sourceLabel": "legacy-saydian-readonly",
+  "member": {
+    "table": "member",
+    "id": "id",
+    "idType": "number",
+    "mobile": "mobile",
+    "unionId": "unionid",
+    "passwordHash": "password_hash",
+    "nickname": "nickname",
+    "avatar": "head_portrait",
+    "gender": "gender",
+    "birthday": "birthday",
+    "height": "height",
+    "weight": "weight",
+    "createdAt": "created_at"
+  },
+  "healthSources": [
+    {
+      "table": "health_daily_example",
+      "id": "id",
+      "idType": "number",
+      "memberId": "member_id",
+      "metric": "metric",
+      "observedAt": "observed_at",
+      "valuesJson": "values_json",
+      "timezoneOffsetMinutes": "timezone_offset_minutes"
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: saydian_app_test
+          POSTGRES_USER: saydian
+          POSTGRES_PASSWORD: local-ci-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U saydian -d saydian_app_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      NODE_ENV: test
+      PORT: 8080
+      DATABASE_URL: postgresql://saydian:local-ci-password@127.0.0.1:5432/saydian_app_test?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+      ACCESS_TOKEN_SECRET: ci-access-secret-with-more-than-32-characters
+      REFRESH_TOKEN_PEPPER: ci-refresh-pepper-with-more-than-32-characters
+      ADMIN_BOOTSTRAP_USERNAME: admin
+      ADMIN_BOOTSTRAP_PASSWORD: local-ci-admin-password
+      ADMIN_BOOTSTRAP_DISPLAY_NAME: CI 管理员
+      ALLOW_TEST_OTP: "true"
+      SMS_PROVIDER: disabled
+      PUSH_PROVIDER: mock
+      AI_PROVIDER: disabled
+      MALL_MOCK_MODE: "true"
+      OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:9000
+      OBJECT_STORAGE_ACCESS_KEY: local-ci
+      OBJECT_STORAGE_SECRET_KEY: local-ci-secret
+      OBJECT_STORAGE_BUCKET: local-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.19.0 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Validate and generate database client
+        run: |
+          pnpm --filter @saydian/app-api exec prisma format
+          git diff --exit-code -- apps/api/prisma/schema.prisma
+          pnpm --filter @saydian/app-api exec prisma validate
+          pnpm db:generate
+      - name: Typecheck, test and build
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm build
+      - name: Apply migration and seed sanitized preview data
+        run: |
+          pnpm db:deploy
+          pnpm db:seed
+      - name: API smoke test
+        run: |
+          node apps/api/dist/main.js > api-smoke.log 2>&1 &
+          echo $! > api-smoke.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/health/ready; then exit 0; fi
+            sleep 1
+          done
+          cat api-smoke.log
+          exit 1
+      - name: Build container images
+        run: |
+          docker build -f docker/api.Dockerfile -t saydianapp-api:ci .
+          docker build -f docker/worker.Dockerfile -t saydianapp-worker:ci .
+          docker build -f docker/admin.Dockerfile -t saydianapp-admin:ci .

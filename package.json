@@ -1,0 +1,31 @@
+{
+  "name": "saydianapp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Saydian App modular backend, worker, admin, compatibility API and migration tools",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "lint": "pnpm -r --if-present lint",
+    "dev:api": "pnpm --filter @saydian/app-api dev",
+    "dev:worker": "pnpm --filter @saydian/app-worker dev",
+    "dev:admin": "pnpm --filter @saydian/app-admin-web dev",
+    "db:generate": "pnpm --filter @saydian/app-api prisma:generate",
+    "db:migrate": "pnpm --filter @saydian/app-api prisma:migrate",
+    "db:deploy": "pnpm --filter @saydian/app-api prisma:deploy",
+    "db:seed": "pnpm --filter @saydian/app-api prisma:seed",
+    "migrate:inventory": "pnpm --filter @saydian/app-migrator inspect",
+    "migrate:import": "pnpm --filter @saydian/app-migrator migrate",
+    "migrate:verify": "pnpm --filter @saydian/app-migrator verify"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2"
+  }
+}

@@ -1,0 +1,166 @@
+name: saydianapp-production
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    env_file: .env.production
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=300s
+      - -c
+      - archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+      - wal_archive:/wal_archive
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [private]
+
+  redis:
+    image: redis:7-alpine
+    env_file: .env.production
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass '$$REDIS_PASSWORD'"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a '$$REDIS_PASSWORD' ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [private]
+
+  api:
+    image: ghcr.io/saydian88-cmyk/saydianapp-server-api:${IMAGE_TAG}
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      PUBLIC_BASE_URL: https://${APP_DOMAIN}
+      MAINTENANCE_READ_ONLY: ${MAINTENANCE_READ_ONLY:-true}
+      ALLOW_TEST_OTP: "false"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [private]
+
+  worker:
+    image: ghcr.io/saydian88-cmyk/saydianapp-server-worker:${IMAGE_TAG}
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [private]
+
+  admin:
+    image: ghcr.io/saydian88-cmyk/saydianapp-server-admin:${IMAGE_TAG}
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp", "/var/cache/nginx", "/var/run"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [private]
+
+  caddy:
+    image: caddy:2.8-alpine
+    env_file: .env.production
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api: { condition: service_healthy }
+      admin: { condition: service_started }
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    networks: [private]
+
+  backup:
+    image: restic/restic:0.17.3
+    profiles: ["backups"]
+    env_file: .env.production
+    environment:
+      AWS_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_KEY}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        restic snapshots >/dev/null 2>&1 || restic init;
+        while true; do
+          restic backup /backups /wal_archive --tag saydian-app &&
+          restic forget --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune;
+          sleep 86400;
+        done
+    volumes:
+      - ./backups:/backups:ro
+      - wal_archive:/wal_archive:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    networks: [private]
+
+  database-backup:
+    image: postgres:16-alpine
+    profiles: ["backups"]
+    env_file: .env.production
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        while true; do
+          stamp=$$(date -u +%Y%m%dT%H%M%SZ);
+          pg_dump -h postgres -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+          --format=custom --no-owner --no-privileges
+          --file="/backups/saydian-app-$${stamp}.dump" &&
+          sha256sum "/backups/saydian-app-$${stamp}.dump"
+          > "/backups/saydian-app-$${stamp}.dump.sha256";
+          find /backups -maxdepth 1 -type f -mtime +30 -name 'saydian-app-*.dump*' -delete;
+          sleep 86400;
+        done
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    networks: [private]
+
+networks:
+  private:
+    internal: false
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+  wal_archive:
