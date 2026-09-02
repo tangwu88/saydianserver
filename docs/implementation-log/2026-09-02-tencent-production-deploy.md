@@ -40,6 +40,8 @@
 - 已创建 `saydian-app-prod-1251011541`：北京地域、私有读写、单 AZ、SSE-COS 服务端加密，标签 `application=saydian-app`；未启用版本控制、图片处理或日志存储等额外计费功能。
 - CAM 子用户 `saydian-app-server-cos` 已创建为仅编程访问，但验证码后的腾讯云流程误关联了 10 条预设策略，包含 `AdministratorAccess`、全资源和财务权限。发现后立即停止使用该账号，未把密钥写入服务器；等待明确确认后先解除全部现有策略，再关联仅限指定 COS 桶的自定义策略。
 - 本地生成部署包 `D:\Temp\User\saydianapp-server-deploy-a0267c5.tgz`，SHA-256 为 `DCA75E1D423938D1EE14B1CC7BEA5EF282BA2FCDA7DEA78F06BA5C125AB11EBA`，内容仅含 `deploy/`。Chrome 扩展未开启本地文件 URL 访问，文件选择器未出现；服务器未收到文件，等待开启扩展文件权限后重试。
+- 用户确认后已解除该 CAM 子用户的全部 10 条宽泛策略，并创建、关联唯一自定义策略 `SaydianAppProdCosBucketAccess`。复核结果为关联策略 1 条，不含管理员、全资源或财务权限；策略资源固定为北京桶 `saydian-app-prod-1251011541/*`，操作只含 API 文件读写/删除与 Restic 列举、地域查询和分片上传所需权限。
+- 开启 Chrome 本地文件 URL 权限并重新连接后，OrcaTerm 远程文件管理器仍未触发文件选择器。为避免继续依赖浏览器本地文件传输，新增私有 `deploy` OCI 镜像，把版本对应的 `deploy/` 作为不可变制品发布；服务器将从已登录的 GHCR 拉取并通过 `docker cp` 安装，源码和密钥均不进入公开下载地址。
 
 ## 当前未执行
 
