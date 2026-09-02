@@ -68,6 +68,8 @@
 - 首次暂存后 `git diff --cached --check` 标记 48 个新文件末尾多余空行；仅机械归一化 EOF 后复查通过，未改业务内容。
 - 新仓库首次 `git commit` 因仓库内尚无作者身份而中止，暂存内容未变化；复用现有赛电 App 仓库作者身份写入本仓库本地 Git 配置后重试，不修改全局配置。
 - 首次远端 CI 在 `actions/setup-node` 的 pnpm 缓存初始化阶段失败：工作流当时尚未执行 `corepack enable`，因而找不到 `pnpm`；改为先使用 `pnpm/action-setup@v4` 安装固定版本，再由 `setup-node` 接管缓存。
+- 第二次远端 CI 在类型检查阶段失败：干净检出没有本地残留的 `packages/contracts/dist`，递归并行任务使 API/Worker 在共享契约包生成前解析依赖。根级 typecheck/test/build 改为先构建 `@saydian/app-contracts`，再执行全仓库任务，并以删除生成目录后的冷启动复验。
+- 首次尝试用 PowerShell 清理生成目录被本机安全策略拒绝，未删除文件；改用 `git clean -ndX -- packages/contracts/dist` 精确 dry-run 确认唯一目标后再清理。冷启动 typecheck、22 项测试和全部构建均通过，契约产物已由构建重新生成。
 
 ## 明确未配置/未执行
 
