@@ -71,6 +71,9 @@
 - 第二次远端 CI 在类型检查阶段失败：干净检出没有本地残留的 `packages/contracts/dist`，递归并行任务使 API/Worker 在共享契约包生成前解析依赖。根级 typecheck/test/build 改为先构建 `@saydian/app-contracts`，再执行全仓库任务，并以删除生成目录后的冷启动复验。
 - 首次尝试用 PowerShell 清理生成目录被本机安全策略拒绝，未删除文件；改用 `git clean -ndX -- packages/contracts/dist` 精确 dry-run 确认唯一目标后再清理。冷启动 typecheck、22 项测试和全部构建均通过，契约产物已由构建重新生成。
 
+- 第三次远端 CI 已通过依赖安装、Prisma、类型检查、测试、构建、数据库迁移和种子数据，但 API 冒烟启动报 `Cannot find module 'express'`。原因是 `main.ts` 直接导入 Express 的 `json/urlencoded`，却只通过 Nest 平台包间接安装；pnpm 干净环境不会把间接依赖暴露给 API 包。将 `express` 声明为 API 的直接运行依赖，确保本地、CI 与生产镜像解析规则一致。
+- 修复后已验证 API 包可直接解析 `express`；全仓库类型检查、22 项测试和全部构建再次通过，等待远端 PostgreSQL/Redis 冒烟与镜像构建复验。
+
 ## 明确未配置/未执行
 
 - 新服务器、DNS、旧库只读账号、对象存储、短信、AI、JPush/APNs、商城内部令牌、支付商户与异地备份凭据均未提供或未验证。
