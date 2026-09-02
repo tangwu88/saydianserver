@@ -52,6 +52,8 @@
 - 服务器只读复核时，Compose 自身解析成功，但共享网络检查返回 `network saydian_default not found`。进一步读取网关真实网络确认名称为 `saidian_default`；这是部署配置中的拼写错误，服务尚未启动、网关尚未修改，因此没有生产影响。随后同步修正环境示例、Compose 默认值、预检查脚本和部署文档，并以服务器真实网络复测。
 - 定向复测首次直接调用 `bash -n` 时因 PowerShell 的 PATH 中没有 `bash` 失败；改用 `C:\Program Files\Git\bin\bash.exe -n` 后脚本语法通过。首轮旧名称搜索也命中了本日志保留的真实失败文本，随后把回归搜索限定到实际配置与运行手册，不删除故障证据。
 - 修正后 `bash -n deploy/scripts/preflight.sh`、PyYAML 解析 `compose.production.yaml`、Prettier、`git diff --check` 以及配置范围旧名称回归搜索全部通过。
+- 本机 `gh` OAuth 令牌只有 `gist, read:org, repo`，向 GHCR 请求只读 Registry 令牌返回 401；它既不能拉包，也不应复制到服务器。新增 `Export runtime images` 手工工作流，在 GitHub Actions 内用仓库短期 `GITHUB_TOKEN` 拉取指定不可变版本的 API、Worker、Admin 镜像，合并为带 SHA-256 的 1 天短期制品。服务器通过单制品短期下载地址导入镜像，不保存 GitHub 凭据，也不把私有包改成公开。
+- 新工作流经 PyYAML 解析、Prettier 和 `git diff --check` 验证通过；它只读 Packages，不含生产服务器或云存储凭据。
 
 ## 当前未执行
 
