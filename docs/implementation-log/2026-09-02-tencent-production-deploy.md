@@ -21,6 +21,8 @@
 
 ## 本轮修改
 
+- 用户决定先把文件保存在服务器并运行服务。采用现有 S3 客户端兼容的内网 MinIO 过渡方案，不重写上传接口：文件桶和 Restic 桶均落到独立持久卷，MinIO 不开放宿主机端口；未来可按对象哈希同步到 COS 后切换 endpoint。
+- 新增显式 `LOCAL_OBJECT_STORAGE_ENABLED` 开关、本地存储配置约束、私有桶初始化和启动顺序；同机 Restic 只作为临时恢复副本，不声明为异地容灾。备份服务在存储尚未就绪时每 10 秒重试初始化，避免服务器重启竞态导致当天备份被跳过。
 - API/Admin 接入 `saidian_default` 外部网络并使用唯一别名，网关无需新增公网端口。
 - 新增共享网关配置脚本和 HTTP/HTTPS 模板：修改前备份、配置测试失败自动恢复、证书使用现有 Webroot 续期体系。
 - 为 PostgreSQL、Redis、API、Worker、Admin、Caddy 和备份容器设置资源上限，降低 4GB 宿主机 OOM 风险。

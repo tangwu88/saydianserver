@@ -39,6 +39,29 @@ case "${PRIVATE_IMAGES_PRELOADED:-false}" in
   true|false) ;;
   *) echo "PRIVATE_IMAGES_PRELOADED must be true or false" >&2; exit 1 ;;
 esac
+case "${LOCAL_OBJECT_STORAGE_ENABLED:-false}" in
+  true|false) ;;
+  *) echo "LOCAL_OBJECT_STORAGE_ENABLED must be true or false" >&2; exit 1 ;;
+esac
+
+if [ "${LOCAL_OBJECT_STORAGE_ENABLED:-false}" = "true" ]; then
+  test "${OBJECT_STORAGE_ENDPOINT:-}" = "http://minio:9000" || {
+    echo "local object storage requires OBJECT_STORAGE_ENDPOINT=http://minio:9000" >&2
+    exit 1
+  }
+  test "${OBJECT_STORAGE_FORCE_PATH_STYLE:-false}" = "true" || {
+    echo "local object storage requires OBJECT_STORAGE_FORCE_PATH_STYLE=true" >&2
+    exit 1
+  }
+  case "${RESTIC_REPOSITORY:-}" in
+    s3:http://minio:9000/*) ;;
+    *) echo "local object storage requires a MinIO RESTIC_REPOSITORY" >&2; exit 1 ;;
+  esac
+  test -n "${LOCAL_BACKUP_BUCKET:-}" || {
+    echo "missing required production setting: LOCAL_BACKUP_BUCKET" >&2
+    exit 1
+  }
+fi
 
 docker compose --env-file "$env_file" -f "$compose_file" config --quiet
 if [ "${PRIVATE_IMAGES_PRELOADED:-false}" = "true" ]; then

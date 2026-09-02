@@ -29,6 +29,12 @@
 - 现有实例为 4 核/4GB/40GB，低于长期生产建议；Compose 已设置逐容器 CPU/内存上限。首次发布可以用于灰度，但健康数据和附件增长前必须扩容磁盘并评估升级到至少 8GB 内存。
 - 对象存储使用独立私有 COS 存储桶和最小权限子用户；不得复用客服素材桶或主账号永久密钥。
 
+### 服务器本地文件过渡模式
+
+新 COS 凭据尚未就绪时，可设置 `LOCAL_OBJECT_STORAGE_ENABLED=true`，并将 `OBJECT_STORAGE_ENDPOINT` 指向 `http://minio:9000`、`OBJECT_STORAGE_FORCE_PATH_STYLE` 设为 `true`。发布脚本会启动仅接入 Compose 内网、没有宿主机端口的 MinIO，创建私有文件桶与 Restic 桶，并把数据保存在 `minio_data` 持久卷中。
+
+该模式只用于过渡：文件和加密备份仍在同一台服务器，不能抵御整机或磁盘故障。必须监控 40GB 系统盘空间；COS 可用后用 S3 兼容工具校验并同步对象，再切换 endpoint。切换前不得删除本地卷。
+
 ## 镜像和发布
 
 1. `Release images` 工作流构建 API、Worker、Admin 三个不可变标签，同时生成 provenance 与 SBOM。

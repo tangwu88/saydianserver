@@ -56,6 +56,13 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Validate production Compose configuration
+        run: |
+          cp deploy/.env.production.example deploy/.env.production
+          trap 'rm -f deploy/.env.production' EXIT
+          docker compose --env-file deploy/.env.production \
+            -f deploy/compose.production.yaml \
+            --profile local-storage --profile backups config --quiet
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Validate and generate database client

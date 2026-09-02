@@ -36,6 +36,11 @@ else
   compose pull api worker admin
 fi
 compose pull postgres redis database-backup backup
+if [ "${LOCAL_OBJECT_STORAGE_ENABLED:-false}" = "true" ]; then
+  compose --profile local-storage pull minio minio-init
+  compose --profile local-storage up -d --wait minio
+  compose --profile local-storage run --rm --no-deps minio-init
+fi
 compose up -d postgres redis
 compose run --rm --no-deps api \
   sh -c './node_modules/.bin/prisma migrate deploy'
