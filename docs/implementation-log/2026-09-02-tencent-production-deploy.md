@@ -42,10 +42,18 @@
 - 本地生成部署包 `D:\Temp\User\saydianapp-server-deploy-a0267c5.tgz`，SHA-256 为 `DCA75E1D423938D1EE14B1CC7BEA5EF282BA2FCDA7DEA78F06BA5C125AB11EBA`，内容仅含 `deploy/`。Chrome 扩展未开启本地文件 URL 访问，文件选择器未出现；服务器未收到文件，等待开启扩展文件权限后重试。
 - 用户确认后已解除该 CAM 子用户的全部 10 条宽泛策略，并创建、关联唯一自定义策略 `SaydianAppProdCosBucketAccess`。复核结果为关联策略 1 条，不含管理员、全资源或财务权限；策略资源固定为北京桶 `saydian-app-prod-1251011541/*`，操作只含 API 文件读写/删除与 Restic 列举、地域查询和分片上传所需权限。
 - 开启 Chrome 本地文件 URL 权限并重新连接后，OrcaTerm 远程文件管理器仍未触发文件选择器。为避免继续依赖浏览器本地文件传输，新增私有 `deploy` OCI 镜像，把版本对应的 `deploy/` 作为不可变制品发布；服务器将从已登录的 GHCR 拉取并通过 `docker cp` 安装，源码和密钥均不进入公开下载地址。
+- 提交 `597d54a` 的 CI 运行 `33631809295` 通过：类型检查、25 项测试、构建、数据库迁移与脱敏种子、API 冒烟及容器构建全部成功。发布运行 `33632283887` 随后成功发布版本 `2026.09.02-597d54a` 的 API、Worker、Admin 和 Deploy 四个不可变镜像。
+- 服务器执行 `docker pull ghcr.io/saydian88-cmyk/saydianapp-server-deploy:2026.09.02-597d54a` 返回 `denied`。原因是私有 GHCR 尚无只读登录凭据；未改成公开包，也未把现有高权限 GitHub 登录令牌写入服务器。
+- Chrome 文件管理器在扩展权限开启后仍不能把文件选择框交给自动化接口。改用浏览器终端把只含 `deploy/` 的 5,080 字节归档分块编码传入 `/tmp`；本地与服务器 SHA-256 均为 `1A426F1CA4A7387918CC0BBCC4B233756A957E581F4A46CE64FB59EB19A181CE`。
+- 写入前确认 `/opt/saydianapp-server` 不存在；随后将归档解压到该独立目录并把 5 个部署脚本设为可执行。现有 `/opt/saydian` 商城目录、容器和共享网关未修改。
+- 服务器内生成 PostgreSQL、Redis、访问令牌、刷新令牌、后台初始密码及 Restic 随机密钥；生产配置与初始后台密码文件均为 `root:root`、权限 `600`，未在日志或聊天中输出具体值。
+- `OBJECT_STORAGE_ACCESS_KEY`、`OBJECT_STORAGE_SECRET_KEY`、`BACKUP_S3_ACCESS_KEY`、`BACKUP_S3_SECRET_KEY` 保持空值；`preflight.sh` 因首个缺项 `OBJECT_STORAGE_ACCESS_KEY` 按预期退出。未误拉取运行镜像、未启动新服务、未改网关。
+- 本轮仅更新部署事实记录；提交前执行 `git diff --check` 并复核仅该日志文件变更，不重复运行已由同一提交 CI 通过的源码测试。
 
 ## 当前未执行
 
-- COS 存储桶已创建；CAM 子用户尚未完成权限收紧和可用密钥落盘，因此对象存储集成仍视为未配置。
-- 生产镜像已发布；尚未上传部署包、拉取镜像、修改网关、申请证书或启动 App 服务。
+- COS 存储桶与最小权限 CAM 策略已完成；自动创建的旧 SecretKey 不可再次查看，尚未新建并验证替代密钥，因此对象存储和 Restic 仍视为未配置。
+- 部署包与生产配置已安装；私有运行镜像仍需一次只读 GHCR 鉴权后拉取，随后删除服务器上的临时仓库登录信息。
+- 尚未通过完整预检查、启动 App 服务、修改共享网关或申请 `app.saydian.cn` 证书。
 - 尚未部署商城内部适配器，因此商城写操作保持未配置。
 - 尚未迁移旧数据库或开放生产写入。
