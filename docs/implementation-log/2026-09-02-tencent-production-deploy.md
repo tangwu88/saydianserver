@@ -112,6 +112,7 @@
 - `pnpm typecheck` 通过全部 5 个工作包。
 - `pnpm test` 通过 13 个测试文件、27 项测试，其中新增维护模式回归测试 2 项。
 - `pnpm build` 通过 API、Worker、Migrator、Contracts 和管理后台构建；管理后台仍有既存的单包体积大于 500KiB 警告，不影响本次构建和部署。
+- 修复提交 `535b45a` 已推送到 `origin/main`；CI 运行 `33705502647` 在 3 分 41 秒内通过生产 Compose 校验、类型检查、27 项测试、构建、数据库迁移与脱敏 Seed、API 冒烟和全部容器镜像构建。GitHub Actions 仅提示其官方 actions 仍声明 Node.js 20、由运行器强制改用 Node.js 24，不影响本次结果。
 
 ## 当前未执行
 
