@@ -5,12 +5,17 @@ import type { RequestWithContext } from "./request-context";
 
 @Injectable()
 export class MaintenanceMiddleware implements NestMiddleware {
-  use(request: RequestWithContext, response: Response, next: NextFunction): void {
+  use(
+    request: RequestWithContext,
+    response: Response,
+    next: NextFunction,
+  ): void {
     const writeMethod = !["GET", "HEAD", "OPTIONS"].includes(request.method);
+    const requestPath = request.originalUrl || request.url || request.path;
     const exempt =
-      request.path.includes("/admin/v1/auth/login") ||
-      request.path.endsWith("/health/live") ||
-      request.path.endsWith("/health/ready");
+      requestPath.includes("/admin/v1/auth/login") ||
+      requestPath.endsWith("/health/live") ||
+      requestPath.endsWith("/health/ready");
     if (writeMethod && !exempt && envBoolean("MAINTENANCE_READ_ONLY")) {
       response.status(HttpStatus.SERVICE_UNAVAILABLE).json({
         code: HttpStatus.SERVICE_UNAVAILABLE,

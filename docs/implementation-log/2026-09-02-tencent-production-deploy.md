@@ -74,11 +74,50 @@
 - Chrome 扩展、浏览器和本地通信组件诊断均通过，但原已登录 `用户1` 会话不再响应标签页请求；按诊断流程新开 Chrome 配置后，OrcaTerm 显示登录二维码。当前阻塞是用户完成该终端登录，不是服务器代码、CI 或权限配置失败。
 - 为寻找不依赖浏览器的安全连接方式，只读检查旧服务端信息文件。脱敏正则未覆盖“字段和值之间无冒号”的格式，导致其中已标注为旧服务器的历史凭据出现在本地命令输出；未尝试这些凭据，也未把它们写入代码、Git、新服务器或第三方。应在旧服务器仍可访问时轮换或停用，后续不再读取具体值。
 
+## 2026-09-03 正式启动与故障收口
+
+### 修改前更新与部署包
+
+- 本轮源码修改前执行 `git status --short --branch`、`git fetch origin`、本地与远端 HEAD 对比；工作区干净，`75f039e` 与 `origin/main` 一致。
+- 用户恢复 OrcaTerm 登录后重新传输 `D:\Temp\User\saydianapp-server-deploy-d925973.tgz`；服务器文件为 6,110 字节，SHA-256 与本地 `2E49C7FD5280584BA04D1D3655E63DC14FC52A2729307EDE96AAFE62554D9C4A` 一致。
+- 覆盖前把服务器部署目录保存为 `/opt/saydianapp-server/deploy-backup-before-d925973.tar.gz`，权限 `600`；生产环境文件另存为 `.env.production.before-local-storage`，原文件及备份均保持 `root:root`、权限 `600`。
+- 在服务器内部生成 MinIO 随机凭据并静默写入生产配置；开启 `LOCAL_OBJECT_STORAGE_ENABLED=true`、`PRIVATE_IMAGES_PRELOADED=true`、`MAINTENANCE_READ_ONLY=true`，文件桶和备份桶分别为 `saydian-app-private`、`saydian-app-backups`。未在终端、聊天或 Git 输出任何密钥。
+- 安装后的 `DRY_RUN=true` 发布预检通过，确认三个私有运行镜像均已本地加载，且没有启动或修改服务。
+
+### 首次发布发现的问题与修复
+
+- 第一次正式发布已创建 MinIO 私有卷、两个私有桶、PostgreSQL/Redis 数据卷，但 Prisma 迁移返回 `P1000`。配置文件、容器环境和 URL 解码后的数据库用户、库名、密码逐项一致；容器内使用相同密码连接本机 PostgreSQL 返回 `SELECT 1`。
+- 进一步从 API 容器查询 DNS，`postgres` 被解析为共享网络旧业务 PostgreSQL `172.18.0.5`，而本 App PostgreSQL 地址为 `172.20.0.3`。根因是 API 同时加入 App 私网和 `saidian_default`，通用服务名发生跨网络冲突，而不是数据库密码错误。
+- 为 PostgreSQL、Redis 增加 `saydianapp-postgres`、`saydianapp-redis` 独立别名；生产 URL 改用独立别名，预检脚本拒绝通用主机名。修复后 Prisma 明确连接 `saydianapp-postgres:5432`，初始迁移成功；再次运行显示无待执行迁移。
+- 网络隔离修复包 `D:\Temp\User\saydianapp-server-deploy-network-fix.tgz` 为 6,105 字节，SHA-256 为 `193726AA3CFAEE2A71EBDC65AE9E702DA2A8D9A4C00726EC10DA15667FFD120F`；服务器端大小和哈希一致。覆盖前保存 `/opt/saydianapp-server/deploy-backup-before-network-fix.tar.gz` 并设为权限 `600`。
+- PostgreSQL 日志同时发现 WAL 归档卷权限不足。发布脚本现在先用一次性 root 容器把精确卷目录设为 `postgres:postgres`、权限 `700`，再以 `docker compose up -d --wait postgres redis` 等待健康后迁移。修复后 10 分钟日志中无 `Permission denied` 或归档失败。
+- API 进程和 `/health/ready` 已正常返回，但 Docker 探针长期处于 `starting`；探针使用 `localhost` 时连接被拒绝，容器内访问 `127.0.0.1` 返回 `{"status":"ready","database":"ok"}`。生产探针改为 `127.0.0.1` 后 API、Worker、Admin 均变为 healthy。
+- API 镜像原 CMD 调用 `prisma db seed`，项目未配置 Prisma 默认 seed 入口，命令成功但管理员数量为 0。服务器明确执行 `tsx prisma/seed.ts` 后得到 1 个启用管理员和 5 条集成状态；Dockerfile CMD 同步改为明确脚本，避免新环境静默跳过初始化。
+- 只读模式真实登录测试最初返回 503。全局通配路由挂载后 `request.path` 被裁剪，例外规则无法识别后台登录；中间件改为优先使用 `request.originalUrl`，并新增“后台登录放行、普通写操作继续阻断”两项回归测试。
+- 为在正式 CI 镜像发布前完成验收，服务器基于已校验 API 镜像构建了只包含上述中间件和 CMD 调整的本地热修复层，并重建 API/Worker/Admin。构建成功，但旧式 Docker Builder 把 `/tmp` 作为上下文发送了 1.258GB；数据只进入同机 Docker daemon，后续热修复必须使用空目录上下文，避免重复传输。
+
+### 线上验收
+
+- 完整发布脚本最终输出 `release 2026.09.02-1036afa deployed`。PostgreSQL、Redis、MinIO、API、Worker、Admin、数据库备份和 Restic 备份 8 个容器均运行；带健康探针的容器全部 healthy，服务器无 unhealthy 容器。
+- `https://app.saydian.cn/health/live` 返回 `{"status":"ok","service":"saydianapp-server"}`，`/health/ready` 返回 `{"status":"ready","database":"ok"}`；管理后台 `/admin/` 返回 HTTP 200，HTTP 自动 301 跳转 HTTPS。
+- Let's Encrypt 证书签发成功，主体为 `app.saydian.cn`，有效期从 2026-09-03 至 2026-12-02；共享 Nginx 配置测试通过并重载，原 `saidian-gateway-1` 继续运行。
+- 浏览器实际打开线上后台，显示“Saydian赛电 / App 管理后台”的账号、密码和登录按钮。服务器内使用根目录保护的初始密码执行真实登录返回 201、Token 已生成，带 Token 请求仪表盘返回 200；整个过程未输出密码或 Token。
+- 普通 App 登录写请求在维护模式返回 503，文案为“系统维护中，请稍后再试”；说明后台登录例外已恢复，同时生产写入仍未开放。
+- MinIO 没有宿主机端口，两个私有桶均可通过内部凭据读取元数据；Restic 已创建仓库并完成首个约 64MiB 快照，策略为 14 个日备份、8 个周备份和 12 个月备份。数据库备份容器已生成迁移后的约 90KiB 自定义格式备份。
+- 系统盘 40GB、已用约 23GB、可用约 16GB；内存 3.6GiB、可用约 2.0GiB。当前满足受限资源配置，但仍低于原规划容量。
+
+### 源码验证
+
+- `bash -n deploy/scripts/release.sh deploy/scripts/preflight.sh` 通过；PyYAML 解析生产 Compose 通过；Prettier 和 `git diff --check` 通过。
+- `pnpm typecheck` 通过全部 5 个工作包。
+- `pnpm test` 通过 13 个测试文件、27 项测试，其中新增维护模式回归测试 2 项。
+- `pnpm build` 通过 API、Worker、Migrator、Contracts 和管理后台构建；管理后台仍有既存的单包体积大于 500KiB 警告，不影响本次构建和部署。
+
 ## 当前未执行
 
-- COS 存储桶与最小权限 CAM 策略已完成；自动创建的旧 SecretKey 不可再次查看，尚未新建并验证替代密钥，因此对象存储和 Restic 仍视为未配置。
-- 服务器本地 MinIO 过渡模式已完成源码、CI 和部署包校验，但部署包尚未在服务器完成校验与安装；需先恢复 OrcaTerm 登录。
-- 既有部署包、预载镜像发布脚本和生产配置已安装，私有运行镜像已通过短期制品校验并离线导入；本地 MinIO 部署包安装后将以服务器内生成的凭据替代当前缺失的 COS/Restic 凭据。
-- 尚未通过完整预检查、启动 App 服务、修改共享网关或申请 `app.saydian.cn` 证书。
-- 尚未部署商城内部适配器，因此商城写操作保持未配置。
-- 尚未迁移旧数据库或开放生产写入。
+- 生产服务当前保持 `MAINTENANCE_READ_ONLY=true`。旧数据库全量/增量迁移、数量与哈希报告、维护窗口和回滚点尚未验收，因此不得开放普通写入。
+- 当前服务器 API 使用基于 `2026.09.02-1036afa` 的本地最小热修复层；源码和回归测试已补齐，仍需在本次 Git 提交 CI 通过后发布新的不可变 API 镜像，并在后续正常发布时替换本地层。
+- MinIO 与 Restic 均落在同一台服务器，只是当前可运行的过渡存储，不是异地容灾。已创建的腾讯云 COS 私有桶尚缺新的可用 SecretKey；迁移到 COS 前不得删除 `saydianapp-production_minio_data` 卷。
+- 尚未迁移旧账号、健康、关爱、通知、附件及旧订单投影；旧服务写入未暂停，域名切换也未进入最终迁移阶段。
+- 商城内部令牌、短信、AI、极光/APNs 等外部集成仍保持未配置；不得伪造联调完成。
+- 服务器 `/tmp` 仍可能保留运行镜像和部署分片等临时文件。本轮未做生产清理；删除前须另行列出精确路径、大小和保留项并确认范围。

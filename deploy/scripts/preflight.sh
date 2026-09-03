@@ -43,6 +43,14 @@ case "${LOCAL_OBJECT_STORAGE_ENABLED:-false}" in
   true|false) ;;
   *) echo "LOCAL_OBJECT_STORAGE_ENABLED must be true or false" >&2; exit 1 ;;
 esac
+case "${DATABASE_URL:-}" in
+  postgresql://*@saydianapp-postgres:5432/*) ;;
+  *) echo "DATABASE_URL must use the isolated host saydianapp-postgres" >&2; exit 1 ;;
+esac
+case "${REDIS_URL:-}" in
+  redis://*@saydianapp-redis:6379*) ;;
+  *) echo "REDIS_URL must use the isolated host saydianapp-redis" >&2; exit 1 ;;
+esac
 
 if [ "${LOCAL_OBJECT_STORAGE_ENABLED:-false}" = "true" ]; then
   test "${OBJECT_STORAGE_ENDPOINT:-}" = "http://minio:9000" || {

@@ -21,4 +21,4 @@ COPY --from=build --chown=node:node /workspace/package.json /workspace/pnpm-lock
 USER node
 WORKDIR /workspace/apps/api
 EXPOSE 8080
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/prisma db seed && node dist/main.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/tsx prisma/seed.ts && node dist/main.js"]
