@@ -18,3 +18,6 @@ apps/admin-web/dist/
 apps/api/prisma/dev.db*
 test-results/
 *.log
+deploy-bundle.tgz
+deploy/.deployed-revision
+deploy/.ci-release.lock

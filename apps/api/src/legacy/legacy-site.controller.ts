@@ -5,7 +5,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
-import { AnyFilesInterceptor } from "@nestjs/platform-express";
+import { NoFilesInterceptor } from "@nestjs/platform-express";
 import { AuthService } from "../auth/auth.service";
 import { safeObject } from "../common/crypto";
 import { RawResponse } from "../common/raw-response.decorator";
@@ -16,7 +16,7 @@ import { LegacyService } from "./legacy.service";
 
 @Controller("api/v1/site")
 @RawResponse()
-@UseInterceptors(AnyFilesInterceptor())
+@UseInterceptors(NoFilesInterceptor({ limits: { fields: 30, fieldSize: 2 * 1024 * 1024 } }))
 export class LegacySiteController {
   constructor(
     private readonly auth: AuthService,

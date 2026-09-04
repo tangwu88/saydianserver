@@ -1,37 +1,73 @@
-# App—旧接口—V2—数据来源覆盖表
+# 原后台功能对接与缺陷清单
 
-判定顺序：当前 Flutter App 合约第一，原小程序/旧接口第二，V2 为新能力入口。`已实现`表示本地代码和静态测试可验证；外部供应商或真实数据仍按配置状态单独验收。
+核对日期：2026-09-04。依据：当前 Flutter `api_client.dart`、原小程序源码、本仓库控制器/服务及现有商城适配代码。未获得旧库只读盘点结果，不能将源码对照称为原后台全量迁移验收。
 
-| App/业务能力 | V1 兼容路由 | V2 路由 | 新模块/数据表 | 状态 |
-|---|---|---|---|---|
-| 登录/注册 | `/api/v1/site/login|register` | `/auth/login|register` | `auth`, `User`, `UserSession` | 已实现 |
-| 短信/重置密码 | `/api/v1/site/sms-code|up-pwd` | `/auth/sms-code|reset-password` | `SmsCode`, 短信适配器 | 已实现；供应商未配置 |
-| Token 刷新/退出 | `/api/v1/site/refresh|logout` | `/auth/refresh|logout` | 原子刷新轮换、会话 JTI 校验 | 已实现 |
-| 注销 | `/api/v1/member/account/delete` | `/auth/delete-account` | `AccountDeletionRequest`, Worker | 已实现 |
-| 资料/头像 | `/api/v1/member/member/*`, `/api/v1/file/images` | `/members/me`, `/files` | `User`, 私有对象存储 | 已实现 |
-| 目标 | `/api/v1/member/member-mubiao*` | `/members/me/goals` | `ActivityGoal` | 已实现 |
-| 健康批量同步 | `/api/v1/member/health-records/batch` 及旧日表路由 | `/health/records/batch` | `HealthRecord`, `IdempotencyRecord` | 已实现，最多 200 条/部分成功 |
-| 健康历史 | 旧各指标 `preview` | `/health/records` | `HealthRecord` | 已实现 |
-| ECG 大文件 | 旧 `/e-c-g` 自动压缩 | `/files/ecg` + 批量索引 | `FileObject`, `EcgArtifact` | 已实现 |
-| 健康阈值/预警 | 旧健康记录兼容 | `/health/warning-rules`, `/health/warnings` | `HealthWarningRule/Event`, Outbox | 已实现，不作诊断 |
-| 设备 | 无可靠旧服务路由 | `/devices` | `DeviceBinding` | 已实现服务端快照；BLE 留在手机 |
-| 远程关爱 | `/api/v1/member/care*`, `care-setting*` | `/care/*` | `CareRelationship/Permission/Audit` | 已实现 |
-| 消息/未读/已读 | `/api/v1/member/notify*` | `/notifications*` | `Notification` | 已实现 |
-| 推送安装实例 | `/api/v1/member/push-devices*` | `/notifications/push-installations` | `PushInstallation`, Outbox Worker | 已实现；生产 Push 未配置 |
-| 百科/协议 | `/api/rf-article/*` | `/content/*` | `ArticleCategory`, `Article`, `LegalDocument` | 已实现 |
-| AI 会话 | `/api/rf-article/chat/*` | `/ai/messages` | `AiConversation/Message` | 已实现；AI 未配置不伪答 |
-| 反馈/客服/更新 | 无或旧占位 | `/support/feedback|config|app-update` | `Feedback`, `AppSetting` | 已实现 |
-| 商城首页/商品 | `/api/v1/pages`, `/api/inv-shop/v1/product/*` | `/commerce/home|products` | 现有商城公开接口 + 数字 ID 兼容表 | 已实现 |
-| 购物车 | 旧 App 本地购物车 | `/commerce/cart*` | 现有商城 | 服务端已实现；当前 App 保持本地兼容 |
-| 地址 | `/api/v1/member/address*` | `/commerce/addresses*` | 现有商城 `Address` | 已实现，保留行政区代码 |
-| 下单/订单 | `/api/inv-shop/v1/order/*` | `/commerce/orders*` | 现有商城 + `LegacyOrderProjection` | 已实现；旧订单只读 |
-| 支付 | `/api/v1/pay` | `/commerce/payments` | 现有商城支付 | APP 参数适配已实现；商户配置未验证 |
-| 物流/售后 | 旧订单物流/退款路由 | `/commerce/orders/:id/logistics|after-sales` | 现有商城 | 已实现；ERP 写权限需单独验收 |
-| 管理后台 | 不适用 | `/api/saydian-app/admin/v1` | `AdminUser/Session/AuditLog` | 已实现 |
+## 状态定义
 
-## 旧字段边界
+- **已修复并单测**：对应回归测试通过；不等于手机、供应商或迁移数据验收。
+- **有实现，待联调**：存在真实存储/适配逻辑，仍需真实环境验证。
+- **未接通**：需要凭据、数据迁移或业务配置；不能给用户伪成功。
+- 生产服务当前维持维护只读。本轮自动发布不得打开写入，不改旧 `app.saidian.cc`。
 
-- `heartReat`、`pulseReat`、`hourse` 等历史拼写只在 `legacy-health-mapper.ts` 出现。
-- 商城 CUID 只在 V2 和内部服务间传递；V1 通过 `CompatibilityId` 返回稳定整数。
-- V1 仍以 HTTP 200 包装旧业务码；V2 使用真实 400/401/403/404/409/422/429/500。
-- 生产 Swagger 默认关闭；开启时不得放入 Token、手机号、IP、健康值或内部字段示例。
+## 模块覆盖
+
+V2 以下省略 `/api/saydian-app/v2`；完整方法、参数、鉴权和响应见 [调用指南](api-guide.md) 与 [156 条路由目录](api-reference.md)。
+
+| 业务 / App 对应入口 | V1 兼容入口 | V2 / 数据来源 | 本轮结果与剩余边界 |
+|---|---|---|---|
+| 登录、注册、退出、刷新 | `/api/v1/site/*` | `/auth/*`、User/UserSession | multipart 解析修复；真实短信和旧会话兑换未接通；注册手机号验证见 P0 |
+| 资料、头像、目标、注销 | `/api/v1/member/member/*`、`member-mubiao*`、`account/delete` | `/members/me*`、`/auth/delete-account` | 有存储与注销任务；旧会员迁移和完整注销演练未验收 |
+| 健康同步、详情、历史 | `jrjk`、`daily-date`、各指标 `preview`、`health-records/batch` | `/health/records*`、HealthRecord | 修复零值污染、北京时间、旧历史截断、旧上传重复、缺失详情路由；多样本和 V2 游标仍有缺陷 |
+| ECG | `/api/v1/member/e-c-g*` | `/files/ecg`、FileObject/EcgArtifact | 上传与索引存在；私有波形授权下载闭环缺失 |
+| 健康预警 | V1 健康上传接入阈值处理 | `/health/warning-rules`、`/health/warnings` | 阈值、Outbox 有实现；关爱通知转发与真机推送未闭环，不输出诊断 |
+| 设备信息 | 以 V2 为准 | `/devices*`、DeviceBinding | 绑定、能力快照、游标有实现；手机硬件指令不在服务端执行 |
+| 远程关爱、共享授权 | `care*`、`care-setting*` | `/care/*`、Relationship/Permission/Audit | 修复旧字段映射、重复邀请、撤销后的旧授权；到期与并发完整验收待补 |
+| 消息及未读 | `notify*`、新增 `notify/statistics` | `/notifications*`、Notification | 补统计、详情已读、旧数字 ID 查询保护；推送供应商未接通 |
+| 推送设备 | `push-devices*` | `/notifications/push-installations` | 有安装实例/Worker；极光、APNs、杀进程投递未验收 |
+| 百科、分类、协议 | `/api/rf-article/*` | `/content/*`、Article/LegalDocument | 旧数字 ID 查询修复；新内容旧整数 ID、单页协议映射仍有缺口 |
+| AI | `/api/rf-article/chat/*` | `/ai/messages`、Conversation/Message | 表单请求解析修复；供应商未接通，会话上下文需要完善 |
+| 反馈、客服、更新 | 以 V2 为准 | `/support/*`、Feedback/AppSetting | 有保存与配置接口；附件阅读、客服回复闭环不足 |
+| 商城首页、商品 | `/api/v1/pages`、`/api/inv-shop/v1/product/*` | `/commerce/*` → 现有商城 | 公开商品与旧 ID 适配有实现；不能用商品读取成功证明下单可用 |
+| 购物车、地址、订单、物流、售后 | `address*`、`/api/inv-shop/v1/order/*` | 现有商城 + LegacyOrderProjection | 依赖内部身份/令牌；禁止双订单/库存；旧订单投影未迁移，错误降级见 P1 |
+| 支付 | `/api/v1/pay` | `/commerce/payments` → 商城 | 修复旧 1/2、100/101 支付编号与旧订单支付拦截；商户、沙箱与 ERP 未验收 |
+| 管理后台 | 不复用旧后台登录 | `/api/saydian-app/admin/v1/*` | 角色、资源、审计有实现；仍为基础运营后台，见下方操作缺口 |
+
+## 本轮已修复的兼容问题
+
+1. 原 App/小程序 multipart 表单不能稳定进入 DTO：登录、会员、内容及商城路由使用受限的无文件表单解析器，文件走专用上传接口。
+2. 旧健康记录的空串/null 变 0、无时区时间漂移、同小时记录相互覆盖：保留未知值，按真实时间/内容生成记录标识。
+3. 旧历史沿用 V2 的 200 条上限：专用历史读取、日期范围及分页；超出安全上限明确失败，不静默截断。
+4. 旧上传请求重试缺乏稳定去重、旧客户端不能理解部分失败：兼容层单独计算指纹、按 200 条分批，并明确拒绝失败批次。
+5. 关爱授权旧指标拼写无法往返：集中映射；重复 pending 邀请保持原 ID；active 邀请不重建；撤销删除授权。
+6. 缺失旧消息分类统计/详情已读、旧数字标识错误参与 UUID 查询：修复并增加归属测试。
+7. 支付编号不匹配现有商城、旧订单误入新支付：规范化支付方式，在商城调用前阻断已识别的旧订单投影写入。
+8. 补齐旧日表、身体成分、血液成分历史/详情路由，避免静态 preview 被动态 ID 路由抢占。
+
+## P0：开放真实用户写入前必须解决
+
+| 缺陷 | 影响 | 验收要求 |
+|---|---|---|
+| 注册尚未强制验证手机号，商城身份映射依赖手机号 | 不能证明账号拥有该手机号，可能错误匹配商城身份 | 完成短信验证/验证状态持久化，未验证账号禁止映射商城身份；双账号攻击用例通过 |
+| 旧数据、密码兼容和旧会话兑换未完成真实盘点/迁移 | 旧用户、历史与登录无法平滑延续 | 只读盘点、迁移报告、数量/金额/附件 SHA 校验、灰度联调 |
+| 短信、AI、极光/APNs、商城内部调用与支付尚未完整配置 | 有路由不代表业务可用 | 分项配置、真实回执/沙箱证据；未配置保持真实错误 |
+| 当前维护只读 | 普通用户登录写入、资料、健康同步等会被维护中间件阻止 | 前述验收通过后单独决定开放时间，不由代码发布顺便开启 |
+
+## P1：已确认的功能缺口
+
+- **健康分页/重试**：V2 仅使用时间游标，同时间多条记录可能跨页遗漏；同 clientRecordId 不同内容的重复冲突与 storage_failed 的幂等重试策略需完善。
+- **旧多样本**：旧日表 pulse/oxygen/HRV 数组当前取首项，尚不是无损多样本导入；无时间且无幂等键的旧上传无法可靠辨别重试与新测量。
+- **私有文件**：ECG 波形和反馈附件缺少完整授权读取入口；仅检查上传 MIME 不等于校验真实文件签名。
+- **关爱/预警**：shareWithCare 保存不等于已经转发给关爱人；到期失效、并发邀请、撤销竞态和推送需双账号完整测试。
+- **内容**：新建文章/分类的 UUID 与旧 App 整数 ID 契约未完全统一；旧单页协议入口未完整映射 LegalDocument。
+- **AI**：会话标识和供应商上下文仍需对齐，不能将当前单次请求当成完整多轮对话验收。
+- **商城**：上游不可用时订单列表可能降级为空，容易误导；旧订单商品级售后等写入口还需全覆盖只读校验；真实身份、支付、物流、售后联调未完成。
+- **后台操作**：资源页仍偏通用 JSON 表单，缺少完整分页、富文本/分类选择、客服回复流程；按钮未按角色过滤（服务端有权限校验）；无完整自助改密/最后一位超级管理员保护；集成状态不是供应商实时连通性证明。
+- **管理与 App 实测**：尚未用迁移后的双账号、安卓及 iPhone 完成全业务测试。单元测试、CI 或健康探针均不能替代该验收。
+
+## 运维与迁移待验收
+
+- 本机无 Docker；真实数据库、HTTP 契约与镜像检查由 CI 提供证据。
+- 当前主机为 4 核 / 4GB / 40GB，和其他应用共用；发布备份和镜像增长需监控。
+- 附件与备份暂在本机磁盘/私有 MinIO；不属于异地容灾。自动备份脚本存在不等于恢复演练通过。
+- 自动发布配置与首次线上结果以 [持续部署说明](continuous-deployment.md) 和逐轮实施日志为准，不能只依据 workflow 文件判断已启用。
+- 本轮不重写健康算法、不改商城库存/支付协议、不搬移旧库、不切换旧域名。

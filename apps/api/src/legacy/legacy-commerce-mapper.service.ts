@@ -338,9 +338,15 @@ export class LegacyCommerceMapper {
     const orderInput = body.orderId ?? body.order_id ?? data.order_id;
     if (!orderInput) throw new BadRequestException("订单编号不正确");
     const orderId = await this.orderExternalId(orderInput);
+    const provider = text(body.channel ?? body.provider ?? body.pay_type).toLowerCase();
+    const channel = ["1", "100", "wechat", "wechat_app"].includes(provider)
+      ? "wechat_app" : ["2", "101", "alipay", "alipay_app"].includes(provider)
+        ? "alipay_app" : null;
+    if (!channel) throw new BadRequestException("请选择支持的支付方式");
     return {
       ...body,
       orderId,
+      channel,
       data: JSON.stringify({ ...data, order_id: orderId }),
     };
   }

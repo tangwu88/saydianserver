@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../common/prisma.service";
 import { env, envBoolean, env as requiredEnv } from "../common/environment";
-import { safeObject } from "../common/crypto";
+import { isUuid, safeObject } from "../common/crypto";
 
 @Injectable()
 export class ContentService {
@@ -51,7 +51,7 @@ export class ContentService {
   async article(id: string) {
     const article = await this.prisma.article.findFirst({
       where: {
-        OR: [{ id }, { legacyId: id }],
+        OR: [...(isUuid(id) ? [{ id }] : []), { legacyId: id }],
         status: "PUBLISHED",
         publishedAt: { lte: new Date() },
       },

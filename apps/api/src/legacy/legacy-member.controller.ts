@@ -1,8 +1,11 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Delete,
   Get,
+  Headers,
+  ForbiddenException,
   Param,
   Post,
   Query,
@@ -10,7 +13,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
-import { AnyFilesInterceptor } from "@nestjs/platform-express";
+import { NoFilesInterceptor } from "@nestjs/platform-express";
 import type { HealthMetric } from "@saydian/app-contracts";
 import { randomUUID } from "node:crypto";
 import { AuthService } from "../auth/auth.service";
@@ -30,13 +33,16 @@ import { SupportService } from "../support/support.service";
 import {
   canonicalToLegacyDaily,
   legacyDailyToCanonical,
+  parseLegacyDate,
 } from "./legacy-health-mapper";
 import { legacySuccess } from "./legacy-response";
 import { LegacyService } from "./legacy.service";
+import { legacyCareMetrics, legacyCareNames } from "./legacy-care-mapper";
 
 const legacyDailyMetric: Record<string, HealthMetric> = {
   pulsereat: "heart_rate",
   heartrate: "heart_rate",
+  heartreat: "heart_rate",
   bloodpressure: "blood_pressure",
   bloodglucose: "blood_glucose",
   bloodoxygen: "blood_oxygen",
@@ -58,6 +64,7 @@ const allDailyMetrics: HealthMetric[] = [
 @Controller("api/v1/member")
 @UseGuards(UserAuthGuard)
 @RawResponse()
+@UseInterceptors(NoFilesInterceptor({ limits: { fields: 40, fieldSize: 2 * 1024 * 1024 } }))
 export class LegacyMemberController {
   constructor(
     private readonly auth: AuthService,
@@ -75,7 +82,6 @@ export class LegacyMemberController {
   }
 
   @Post("member/save")
-  @UseInterceptors(AnyFilesInterceptor())
   async saveMember(
     @CurrentUser() user: AuthenticatedUser,
     @Body() input: unknown,
@@ -98,7 +104,6 @@ export class LegacyMemberController {
   }
 
   @Post("member-mubiao")
-  @UseInterceptors(AnyFilesInterceptor())
   async saveGoals(
     @CurrentUser() user: AuthenticatedUser,
     @Body() input: unknown,
@@ -134,9 +139,10 @@ export class LegacyMemberController {
       activityRecord("distance", body.juli_num, "meter"),
     ].filter((record) => record !== null);
     if (records.length === 0) return legacySuccess({ accepted: 0 });
-    const result = await this.health.ingestBatch(user.id, digestKey(input), {
+    const result = await this.health.ingestBatch(user.id, digestKey({ route: "jrjk", day: new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10), input }), {
       records,
-    });
+    }, { scope: "legacy_jrjk", fingerprint: input });
+    if (result.rejected.length) throw new BadRequestException("活动记录未保存，请重试");
     return legacySuccess(result);
   }
 
@@ -147,11 +153,23 @@ export class LegacyMemberController {
   ) {
     const body = safeObject(input);
     const rows = Array.isArray(body.dailyDate) ? body.dailyDate : [];
-    const records = legacyDailyToCanonical(rows, `legacy-${randomUUID()}`);
-    const result = await this.health.ingestBatch(user.id, digestKey(input), {
-      records,
-    });
-    return legacySuccess(result);
+    if (!rows.length || rows.length > 2000) throw new BadRequestException("每次请同步1至2000条日记录");
+    if (rows.some((row) => !parseLegacyDate(safeObject(row).date))) throw new BadRequestException("健康记录时间不正确");
+    const records = legacyDailyToCanonical(rows, "legacy-daily");
+    if (!records.length) throw new BadRequestException("没有可保存的健康记录");
+    const acceptedIds: string[] = [];
+    const rejected: Array<{ id: string; code: string; message: string }> = [];
+    let nextCursor: string | null = null;
+    for (let offset = 0; offset < records.length; offset += 200) {
+      const chunk = records.slice(offset, offset + 200);
+      const result = await this.health.ingestBatch(user.id, digestKey({ route: "daily-date", records: chunk }), { records: chunk });
+      acceptedIds.push(...result.acceptedIds);
+      rejected.push(...result.rejected);
+      nextCursor = result.nextCursor ?? nextCursor;
+    }
+    // Old clients treat business code 200 as complete success and cannot retry a partial response.
+    if (rejected.length) throw new BadRequestException("部分健康记录未保存，请检查记录后重试");
+    return legacySuccess({ acceptedIds, rejected, nextCursor });
   }
 
   @Get("daily-date/preview")
@@ -166,16 +184,31 @@ export class LegacyMemberController {
           (metric): metric is HealthMetric => Boolean(metric),
         )
       : allDailyMetrics;
+    if (!metrics.length) throw new BadRequestException("健康指标不正确");
     const records = await this.healthRows(user.id, query, metrics, request.requestId);
     return legacySuccess(canonicalToLegacyDaily(records));
+  }
+
+  @Get("daily-date")
+  async dailyHistory(@CurrentUser() user: AuthenticatedUser, @Query() query: Record<string, string | undefined>, @Req() request: RequestWithContext) {
+    const requested = String(query.type ?? "").toLowerCase();
+    const metrics = requested ? [legacyDailyMetric[requested]].filter((metric): metric is HealthMetric => Boolean(metric)) : allDailyMetrics;
+    if (!metrics.length) throw new BadRequestException("健康指标不正确");
+    return legacySuccess(canonicalToLegacyDaily(await this.healthRows(user.id, query, metrics, request.requestId, true)));
+  }
+
+  @Get("bloodcomposition")
+  async bloodHistory(@CurrentUser() user: AuthenticatedUser, @Query() query: Record<string, string | undefined>, @Req() request: RequestWithContext) {
+    return this.previewSpecialMetric(user.id, "blood_composition", query, request.requestId, true);
   }
 
   @Post("bodycomposition")
   saveBodyComposition(
     @CurrentUser() user: AuthenticatedUser,
     @Body() input: unknown,
+    @Headers("idempotency-key") idempotencyKey?: string,
   ) {
-    return this.saveSpecialMetric(user.id, "body_composition", input);
+    return this.saveSpecialMetric(user.id, "body_composition", input, idempotencyKey);
   }
 
   @Get("bodycomposition/preview")
@@ -196,8 +229,9 @@ export class LegacyMemberController {
   saveBloodComposition(
     @CurrentUser() user: AuthenticatedUser,
     @Body() input: unknown,
+    @Headers("idempotency-key") idempotencyKey?: string,
   ) {
-    return this.saveSpecialMetric(user.id, "blood_composition", input);
+    return this.saveSpecialMetric(user.id, "blood_composition", input, idempotencyKey);
   }
 
   @Get("bloodcomposition/preview")
@@ -225,12 +259,12 @@ export class LegacyMemberController {
       user.id,
       body.totalArray,
     );
-    const observedAt = validDate(data.date) ?? new Date();
+    const observedAt = parseLegacyDate(data.date) ?? new Date();
     const record = {
       id: `legacy-ecg-${randomUUID()}`,
       metric: "ecg" as const,
       observedAt: observedAt.toISOString(),
-      timezoneOffsetMinutes: -observedAt.getTimezoneOffset(),
+      timezoneOffsetMinutes: 480,
       values: scalarValues(data, ["date"]),
       quality: "unknown" as const,
       source: { platform: "mini_program" as const },
@@ -241,9 +275,10 @@ export class LegacyMemberController {
         uploadObjectKey: artifact.uploadObjectKey,
       },
     };
-    const result = await this.health.ingestBatch(user.id, digestKey(input), {
+    const result = await this.health.ingestBatch(user.id, digestKey({ route: "ecg", input }), {
       records: [record],
-    });
+    }, { scope: "legacy_ecg", fingerprint: input });
+    if (result.rejected.length) throw new BadRequestException("心电记录未保存，请重试");
     return legacySuccess(result);
   }
 
@@ -254,6 +289,11 @@ export class LegacyMemberController {
     @Req() request: RequestWithContext,
   ) {
     return this.previewSpecialMetric(user.id, "ecg", query, request.requestId);
+  }
+
+  @Get("bodycomposition/:id")
+  async bodyDetail(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return legacySuccess(await this.health.legacyDetail(user.id, "body_composition", id));
   }
 
   @Get("care")
@@ -299,7 +339,7 @@ export class LegacyMemberController {
     const metrics = relationship.permissions
       .filter((permission) => permission.enabled)
       .map((permission) => permission.metric.toLowerCase());
-    return legacySuccess({ setting: JSON.stringify(metrics) });
+    return legacySuccess({ setting: JSON.stringify(legacyCareNames(metrics)) });
   }
 
   @Post("care-setting")
@@ -313,7 +353,7 @@ export class LegacyMemberController {
       body.to_member_id,
     );
     const updated = await this.care.savePermissions(user.id, relationship.id, {
-      metrics: Array.isArray(body.setting) ? body.setting : [],
+      metrics: legacyCareMetrics(body.setting),
     });
     return legacySuccess(updated, "共享设置已保存");
   }
@@ -358,11 +398,18 @@ export class LegacyMemberController {
     return legacySuccess({ unread_count: result.count });
   }
 
+  @Get("notify/statistics")
+  async notificationStatistics(@CurrentUser() user: AuthenticatedUser) {
+    return legacySuccess(await this.legacy.notificationStatistics(user.id));
+  }
+
   @Get("notify/:id")
   async notification(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
   ) {
+    const notificationId = await this.legacy.notificationId(user.id, id);
+    await this.notifications.markRead(user.id, notificationId);
     return legacySuccess(await this.legacy.notification(user.id, id));
   }
 
@@ -405,23 +452,30 @@ export class LegacyMemberController {
     userId: string,
     metric: "body_composition" | "blood_composition",
     input: unknown,
+    idempotencyKey?: string,
   ) {
     const body = safeObject(input);
     const data = safeObject(body.data);
-    const observedAt = validDate(data.date) ?? new Date();
-    const result = await this.health.ingestBatch(userId, digestKey(input), {
+    const parsedDate = parseLegacyDate(data.date);
+    if (data.date && !parsedDate) throw new BadRequestException("健康记录时间不正确");
+    const observedAt = parsedDate ?? new Date();
+    // Old composition uploads omit a measurement time and ID. Without an explicit
+    // key those cannot safely be deduplicated against a later equal measurement.
+    const key = idempotencyKey?.trim() || (parsedDate ? digestKey({ metric, input }) : randomUUID());
+    const result = await this.health.ingestBatch(userId, key, {
       records: [
         {
-          id: `legacy-${metric}-${randomUUID()}`,
+          id: `legacy-${metric}-${sha256(key).slice(0, 32)}`,
           metric,
           observedAt: observedAt.toISOString(),
-          timezoneOffsetMinutes: -observedAt.getTimezoneOffset(),
+          timezoneOffsetMinutes: 480,
           values: scalarValues(data, ["date"]),
           quality: "unknown",
           source: { platform: "mini_program" },
         },
       ],
-    });
+    }, { scope: `legacy_${metric}`, fingerprint: input });
+    if (result.rejected.length) throw new BadRequestException("健康记录未保存，请重试");
     return legacySuccess(result);
   }
 
@@ -430,8 +484,9 @@ export class LegacyMemberController {
     metric: HealthMetric,
     query: Record<string, string | undefined>,
     requestId: string,
+    paginated = false,
   ) {
-    const records = await this.healthRows(userId, query, [metric], requestId);
+    const records = await this.healthRows(userId, query, [metric], requestId, paginated);
     return legacySuccess(
       records.map((record) => ({
         id: record.id,
@@ -447,11 +502,13 @@ export class LegacyMemberController {
     query: Record<string, string | undefined>,
     metrics: HealthMetric[],
     requestId: string,
+    paginated = false,
   ): Promise<Array<Record<string, any>>> {
-    const bounds = dateBounds(query.date ?? query.day);
-    const selectMember = query.selectmember?.trim();
+    const bounds = paginated && !query.date && !query.day ? undefined : dateBounds(query.date ?? query.day);
+    const page = paginated ? Math.max(1, Math.floor(Number(query.page) || 1)) : undefined;
+    const selectMember = (query.selectmember ?? query.selectMemberId)?.trim();
     const result: Array<Record<string, any>> = [];
-    if (selectMember) {
+    if (selectMember && selectMember !== "0") {
       const { relationship } = await this.legacy.viewerRelationship(
         userId,
         selectMember,
@@ -462,27 +519,21 @@ export class LegacyMemberController {
             userId,
             relationship.id,
             metric,
-            bounds.from.toISOString(),
-            bounds.to.toISOString(),
+            bounds?.from.toISOString(),
+            bounds?.to.toISOString(),
             requestId,
+            page,
           );
           result.push(...records);
         } catch (error) {
-          if (metrics.length === 1) throw error;
+          if (!(error instanceof ForbiddenException) || metrics.length === 1) throw error;
         }
       }
       return result.sort((a, b) =>
         String(b.observedAt).localeCompare(String(a.observedAt)),
       );
     }
-    for (const metric of metrics) {
-      const page = await this.health.list(userId, metric, 200, bounds.to.toISOString());
-      result.push(
-        ...page.items.filter(
-          (record) => new Date(record.observedAt) >= bounds.from,
-        ),
-      );
-    }
+    result.push(...await this.health.legacyRecords(userId, metrics, bounds?.from, bounds?.to, page));
     return result.sort((a, b) =>
       String(b.observedAt).localeCompare(String(a.observedAt)),
     );
@@ -494,6 +545,7 @@ function digestKey(input: unknown): string {
 }
 
 function activityRecord(metric: HealthMetric, raw: unknown, unit: string) {
+  if (raw === null || raw === undefined || typeof raw === "boolean" || String(raw).trim() === "") return null;
   const value = Number(raw);
   if (!Number.isFinite(value)) return null;
   const observedAt = new Date();
@@ -501,7 +553,7 @@ function activityRecord(metric: HealthMetric, raw: unknown, unit: string) {
     id: `legacy-${metric}-${randomUUID()}`,
     metric,
     observedAt: observedAt.toISOString(),
-    timezoneOffsetMinutes: -observedAt.getTimezoneOffset(),
+    timezoneOffsetMinutes: 480,
     values: { value },
     unit,
     quality: "unknown" as const,
@@ -523,12 +575,6 @@ function scalarValues(
     if (typeof item === "number" && Number.isFinite(item)) result[key] = item;
   }
   return result;
-}
-
-function validDate(value: unknown): Date | null {
-  if (!value) return null;
-  const date = new Date(String(value));
-  return Number.isNaN(date.valueOf()) ? null : date;
 }
 
 function finiteInteger(value: unknown, min: number, max: number): number | null {

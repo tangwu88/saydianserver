@@ -73,6 +73,8 @@ jobs:
           pnpm db:generate
       - name: Typecheck, test and build
         run: |
+          pnpm api:docs:check
+          pnpm tools:test
           pnpm typecheck
           pnpm test
           pnpm build
@@ -90,8 +92,22 @@ jobs:
           done
           cat api-smoke.log
           exit 1
-      - name: Build container images
+      - name: HTTP compatibility and authorization smoke tests
+        run: |
+          ALLOW_HTTP_FIXTURES=true pnpm test:http
+      - name: Build verified container images
         run: |
           docker build -f docker/api.Dockerfile -t saydianapp-api:ci .
           docker build -f docker/worker.Dockerfile -t saydianapp-worker:ci .
           docker build -f docker/admin.Dockerfile -t saydianapp-admin:ci .
+  auto-deploy:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AUTO_DEPLOY_ENABLED == 'true'
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      revision: ${{ github.sha }}
+    secrets: inherit
+    permissions:
+      contents: read
+      actions: read
+      packages: write

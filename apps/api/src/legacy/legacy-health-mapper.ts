@@ -1,18 +1,18 @@
 import type { HealthRecordInputContract } from "@saydian/app-contracts";
-import { safeObject } from "../common/crypto";
+import { safeObject, sha256 } from "../common/crypto";
 
 export function legacyDailyToCanonical(
   rows: unknown[],
   sourceId: string,
 ): HealthRecordInputContract[] {
   const records: HealthRecordInputContract[] = [];
-  rows.forEach((value, index) => {
+  rows.forEach((value) => {
     const row = safeObject(value);
-    const date = new Date(String(row.date ?? ""));
-    if (Number.isNaN(date.valueOf())) return;
+    const date = parseLegacyDate(row.date);
+    if (!date) return;
     const base = {
       observedAt: date.toISOString(),
-      timezoneOffsetMinutes: -date.getTimezoneOffset(),
+      timezoneOffsetMinutes: 480,
       source: { platform: "mini_program" as const },
     };
     const add = (
@@ -20,9 +20,14 @@ export function legacyDailyToCanonical(
       values: HealthRecordInputContract["values"],
       unit?: string,
     ) => {
-      if (Object.values(values).every((item) => item === null || item === undefined)) return;
+      if (
+        Object.values(values).every(
+          (item) => item === null || item === undefined,
+        )
+      )
+        return;
       records.push({
-        id: `${sourceId}-${index}-${metric}`,
+        id: `${sourceId}-${sha256(JSON.stringify([base.observedAt, metric, values])).slice(0, 40)}`,
         metric,
         ...base,
         values,
@@ -30,7 +35,11 @@ export function legacyDailyToCanonical(
         quality: "unknown",
       });
     };
-    if (row.heartReat != null) add("heart_rate", { value: Number(row.heartReat) }, "bpm");
+    const pulse = Array.isArray(row.pulseReat)
+      ? row.pulseReat[0]
+      : row.pulseReat;
+    const heartRate = numericOrNull(row.heartReat ?? pulse);
+    if (heartRate != null) add("heart_rate", { value: heartRate }, "bpm");
     const pressure = safeObject(row.bloodPressure);
     if (Object.keys(pressure).length) {
       add(
@@ -48,60 +57,96 @@ export function legacyDailyToCanonical(
       add("blood_oxygen", { value: numericOrNull(oxygenValues[0]) }, "%");
     }
     if (row.bloodGlucose != null) {
-      add("blood_glucose", { value: numericOrNull(row.bloodGlucose) }, "mmol/L");
+      add(
+        "blood_glucose",
+        { value: numericOrNull(row.bloodGlucose) },
+        "mmol/L",
+      );
     }
     const temperature = safeObject(row.bodyTemperature);
     if (temperature.bodyTemperature != null) {
-      add("temperature", { value: numericOrNull(temperature.bodyTemperature) }, "°C");
+      add(
+        "temperature",
+        { value: numericOrNull(temperature.bodyTemperature) },
+        "°C",
+      );
     }
     const hrv = Array.isArray(row.HRVData) ? row.HRVData : [];
     if (hrv[0] != null) add("hrv", { value: numericOrNull(hrv[0]) }, "ms");
     const sleep = safeObject(row.sleepData);
     if (Object.keys(sleep).length) {
-      add("sleep", {
-        value: numericOrNull(sleep.allSleepTime),
-        deepMinutes: numericOrNull(sleep.deepSleepTime),
-        lightMinutes: numericOrNull(sleep.lowSleepTime),
-        wakeCount: numericOrNull(sleep.wakeCount),
-      }, "minute");
+      add(
+        "sleep",
+        {
+          value: numericOrNull(sleep.allSleepTime),
+          deepMinutes: numericOrNull(sleep.deepSleepTime),
+          lightMinutes: numericOrNull(sleep.lowSleepTime),
+          wakeCount: numericOrNull(sleep.wakeCount),
+        },
+        "minute",
+      );
     }
   });
   return records;
 }
 
 export function canonicalToLegacyDaily(rows: Array<Record<string, unknown>>) {
-  const grouped = new Map<string, Record<string, unknown>>();
+  const grouped = new Map<
+    string,
+    Array<{ row: Record<string, unknown>; metrics: Set<string> }>
+  >();
   for (const record of rows) {
     const observedAt = new Date(String(record.observedAt ?? ""));
     if (Number.isNaN(observedAt.valueOf())) continue;
-    const key = observedAt.toISOString().slice(0, 13);
-    const row = grouped.get(key) ?? {
-      date: `${observedAt.toISOString().slice(0, 10)} ${String(observedAt.getUTCHours()).padStart(2, "0")}:00:00`,
-      h: String(observedAt.getUTCHours()).padStart(2, "0"),
-      isHourse: 1,
-      hourse: `${String(observedAt.getUTCHours()).padStart(2, "0")}:00`,
-      step: 0,
-      sleepData: null,
-      heartReat: null,
-      bloodPressure: null,
-      bloodGlucose: null,
-      bloodOxygen: null,
-      bodyTemperature: null,
-      pulseReat: null,
-      HRVData: null,
-    };
+    const offset =
+      typeof record.timezoneOffsetMinutes === "number"
+        ? record.timezoneOffsetMinutes
+        : 480;
+    const local = new Date(
+      observedAt.valueOf() + offset * 60_000,
+    ).toISOString();
+    const key = observedAt.toISOString();
     const metric = String(record.metric ?? "");
+    const group = grouped.get(key) ?? [];
+    let entry = group.find((candidate) => !candidate.metrics.has(metric));
+    if (!entry) {
+      entry = {
+        metrics: new Set(),
+        row: {
+          id: record.id,
+          date: local.replace("T", " ").replace(/(?:\.000)?Z$/, ""),
+          h: local.slice(11, 13),
+          isHourse: local.slice(14, 19) === "00:00" ? 1 : 0,
+          hourse: local.slice(11, 16),
+          step: null,
+          sleepData: null,
+          heartReat: null,
+          bloodPressure: null,
+          bloodGlucose: null,
+          bloodOxygen: null,
+          bodyTemperature: null,
+          pulseReat: null,
+          HRVData: null,
+        },
+      };
+      group.push(entry);
+    }
+    const row = entry.row;
+    entry.metrics.add(metric);
     const values = safeObject(record.values);
     if (metric === "heart_rate") {
-      row.heartReat = values.value;
-      row.pulseReat = [values.value];
+      const value = values.value ?? values.bpm ?? values.heartRate ?? null;
+      row.heartReat = value;
+      row.pulseReat = value == null ? null : [value];
     } else if (metric === "blood_pressure") {
       row.bloodPressure = {
         bloodPressureHigh: values.systolic,
         bloodPressureLow: values.diastolic,
       };
     } else if (metric === "blood_oxygen") {
-      row.bloodOxygen = { oxygens: [values.value, 0, 0] };
+      row.bloodOxygen = {
+        oxygens: [values.value ?? values.percent ?? values.spo2 ?? null],
+      };
     } else if (metric === "blood_glucose") {
       row.bloodGlucose = values.value;
     } else if (metric === "temperature") {
@@ -115,13 +160,42 @@ export function canonicalToLegacyDaily(rows: Array<Record<string, unknown>>) {
         lowSleepTime: values.lightMinutes,
         wakeCount: values.wakeCount,
       };
+    } else if (metric === "steps") {
+      row.step = values.value ?? values.steps ?? null;
     }
-    grouped.set(key, row);
+    grouped.set(key, group);
   }
-  return [...grouped.values()].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  return [...grouped.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .flatMap(([, entries]) => entries.map((entry) => entry.row));
 }
 
-function numericOrNull(value: unknown): number | null {
+export function numericOrNull(value: unknown): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === "boolean" ||
+    String(value).trim() === ""
+  )
+    return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+// The original Chinese mini-program sends local timestamps without an offset.
+// Interpret those as Asia/Shanghai independently of the server's TZ.
+export function parseLegacyDate(value: unknown): Date | null {
+  if (value == null || String(value).trim() === "") return null;
+  const text = String(value).trim();
+  if (/^\d{10,13}$/.test(text)) {
+    const epoch = Number(text);
+    const date = new Date(epoch * (text.length <= 10 ? 1000 : 1));
+    return Number.isNaN(date.valueOf()) ? null : date;
+  }
+  let normalized = text.replace(" ", "T");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) normalized += "T00:00:00";
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(normalized))
+    normalized += "+08:00";
+  const date = new Date(normalized);
+  return Number.isNaN(date.valueOf()) ? null : date;
 }

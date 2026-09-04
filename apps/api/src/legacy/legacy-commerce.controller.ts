@@ -11,7 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
-import { AnyFilesInterceptor } from "@nestjs/platform-express";
+import { NoFilesInterceptor } from "@nestjs/platform-express";
 import { CommerceService } from "../commerce/commerce.service";
 import { safeObject, sha256 } from "../common/crypto";
 import { RawResponse } from "../common/raw-response.decorator";
@@ -68,6 +68,7 @@ export class LegacyProductController {
 @Controller("api/inv-shop/v1")
 @RawResponse()
 @UseGuards(UserAuthGuard)
+@UseInterceptors(NoFilesInterceptor({ limits: { fields: 40, fieldSize: 2 * 1024 * 1024 } }))
 export class LegacyOrderController {
   constructor(
     private readonly commerce: CommerceService,
@@ -136,7 +137,6 @@ export class LegacyOrderController {
   }
 
   @Post("member/order/take-delivery")
-  @UseInterceptors(AnyFilesInterceptor())
   async receipt(
     @CurrentUser() user: AuthenticatedUser,
     @Body() input: unknown,
@@ -151,7 +151,6 @@ export class LegacyOrderController {
   }
 
   @Post("member/order-product/refund-apply")
-  @UseInterceptors(AnyFilesInterceptor())
   async refund(
     @CurrentUser() user: AuthenticatedUser,
     @Body() input: unknown,
@@ -187,6 +186,7 @@ export class LegacyOrderController {
 @Controller("api/v1/member/address")
 @RawResponse()
 @UseGuards(UserAuthGuard)
+@UseInterceptors(NoFilesInterceptor({ limits: { fields: 40, fieldSize: 2 * 1024 * 1024 } }))
 export class LegacyAddressController {
   constructor(
     private readonly commerce: CommerceService,
@@ -267,6 +267,7 @@ export class LegacyAddressController {
 @Controller("api/v1/pay")
 @RawResponse()
 @UseGuards(UserAuthGuard)
+@UseInterceptors(NoFilesInterceptor({ limits: { fields: 30, fieldSize: 2 * 1024 * 1024 } }))
 export class LegacyPaymentController {
   constructor(
     private readonly commerce: CommerceService,

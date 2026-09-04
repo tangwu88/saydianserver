@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -48,6 +49,13 @@ export class CareService {
     const invitationId = `care_${randomUUID()}`;
     const eventId = `care-invitation-${invitationId}`;
     const relationship = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.careRelationship.findUnique({
+        where: { inviterId_recipientId: { inviterId, recipientId: recipient.id } },
+      });
+      if (existing?.status === CareStatus.ACTIVE) {
+        throw new ConflictException("已建立关爱关系，无需重复邀请");
+      }
+      if (existing?.status === CareStatus.PENDING) return existing;
       const relation = await tx.careRelationship.upsert({
         where: { inviterId_recipientId: { inviterId, recipientId: recipient.id } },
         create: {
@@ -64,6 +72,7 @@ export class CareService {
           expiresAt: null,
         },
       });
+      await tx.carePermission.deleteMany({ where: { relationshipId: relation.id } });
       const notification = await tx.notification.upsert({
         where: { userId_eventId: { userId: recipient.id, eventId } },
         create: {
@@ -199,9 +208,12 @@ export class CareService {
     ) {
       throw new NotFoundException("未找到关爱关系");
     }
-    const updated = await this.prisma.careRelationship.update({
-      where: { id },
-      data: { status: CareStatus.REVOKED, revokedAt: new Date() },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.carePermission.deleteMany({ where: { relationshipId: id } });
+      return tx.careRelationship.update({
+        where: { id },
+        data: { status: CareStatus.REVOKED, revokedAt: new Date() },
+      });
     });
     return this.contract(updated, []);
   }
@@ -213,6 +225,7 @@ export class CareService {
     fromInput?: string,
     toInput?: string,
     requestId = "unknown",
+    page?: number,
   ) {
     const metric = metricMap[metricInput as HealthMetric];
     if (!metric) throw new BadRequestException("健康指标不正确");
@@ -247,7 +260,7 @@ export class CareService {
     if (!allowed || !relationship) {
       throw new ForbiddenException("对方尚未授权查看这项健康数据");
     }
-    const from = fromInput ? new Date(fromInput) : new Date(Date.now() - 7 * 86400_000);
+    const from = fromInput ? new Date(fromInput) : page ? new Date(0) : new Date(Date.now() - 7 * 86400_000);
     const to = toInput ? new Date(toInput) : now;
     if (Number.isNaN(from.valueOf()) || Number.isNaN(to.valueOf()) || from >= to) {
       throw new BadRequestException("查询时间范围不正确");
@@ -256,15 +269,18 @@ export class CareService {
       where: {
         userId: relationship.recipientId,
         metric,
-        observedAt: { gte: from, lte: to },
+        observedAt: { gte: from, lt: to },
       },
-      orderBy: { observedAt: "desc" },
-      take: 500,
+      orderBy: [{ observedAt: "desc" }, { id: "desc" }],
+      skip: page ? (page - 1) * 30 : 0,
+      take: page ? 30 : 20_001,
     });
+    if (records.length > 20_000) throw new BadRequestException("记录较多，请缩小查询时间范围");
     return records.map((record) => ({
       id: record.clientRecordId,
       metric: metricReverse[record.metric],
       observedAt: record.observedAt.toISOString(),
+      timezoneOffsetMinutes: record.timezoneOffsetMinutes,
       values: record.values,
       unit: record.unit,
       quality: record.quality.toLowerCase(),

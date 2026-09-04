@@ -9,14 +9,14 @@ export class StatusController {
 
   @Get("live")
   live() {
-    return { status: "ok", service: "saydianapp-server" };
+    return { status: "ok", service: "saydianapp-server", revision: process.env.APP_REVISION || "unversioned" };
   }
 
   @Get("ready")
   async ready() {
     try {
       await this.prisma.$queryRaw`SELECT 1`;
-      return { status: "ready", database: "ok" };
+      return { status: "ready", database: "ok", revision: process.env.APP_REVISION || "unversioned" };
     } catch {
       throw new ServiceUnavailableException("服务尚未准备完成");
     }

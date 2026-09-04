@@ -49,7 +49,7 @@ export class SafeHttpExceptionFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
     const details = errorMessage(exception);
-    const legacy = isLegacyPath(request.path);
+    const legacy = isLegacyPath(request.originalUrl || request.url || request.path);
     response.status(legacy ? HttpStatus.OK : status).json({
       code: status,
       message: details.message,

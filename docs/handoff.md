@@ -3,9 +3,7 @@
 ## 接手第一步
 
 ```powershell
-git status --short --branch
-git fetch origin --prune
-git merge --ff-only origin/main
+pwsh -NoProfile -File tools/Start-Change.ps1
 pnpm.cmd install --frozen-lockfile
 pnpm.cmd db:generate
 pnpm.cmd typecheck
@@ -26,8 +24,9 @@ pnpm.cmd build
 
 ## 当前优先级
 
-1. 在有 Docker 的机器或 CI 完成 PostgreSQL/Redis/MinIO/API/Worker/Admin 冒烟。
-2. 获取旧库只读账号后完成真实结构盘点，补齐关爱、消息、内容、AI、地址、旧订单和附件映射。
-3. 为 Flutter App 增加 V2 健康批量、反馈、预警和商城错误契约的灰度/回退联调。
-4. 配置测试环境商城内部令牌，验证多商品单订单、APP 支付沙箱、物流和售后。
-5. 新服务器和各供应商资料到位后，先 dry-run，再只读发布，最后独立审批开放写入。
+1. 阅读 [旧功能缺陷清单](api-coverage.md)，优先处理手机号注册验证、真实迁移和生产写入验收；不能把后台可打开当成全部功能已对接。
+2. 新服务为 `https://app.saydian.cn`，旧 `app.saidian.cc` 未切换；当前保持维护只读，附件暂存服务器。每次接手重新核对线上状态。
+3. 获取旧库只读账号后完成真实盘点，补齐会员、关爱、消息、内容、AI、地址、旧订单、附件及旧会话映射。
+4. 按 [调用指南](api-guide.md)、[接口目录](api-reference.md) 为 Flutter 和原小程序联调；供应商缺凭据的项目不能标记通过。
+5. 本机无 Docker；使用 CI 验证数据库/HTTP 契约和镜像，手机与供应商业务仍需单独验收。
+6. 按 [持续部署说明](continuous-deployment.md) 更新、显式提交和核对线上 SHA；实际配置/测试/发布结果见本轮实施日志。自动发布不得打开维护状态或修改旧库。

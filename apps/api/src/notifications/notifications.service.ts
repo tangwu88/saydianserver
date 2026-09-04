@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
-import { safeObject } from "../common/crypto";
+import { isUuid, safeObject } from "../common/crypto";
 
 @Injectable()
 export class NotificationsService {
@@ -97,7 +97,7 @@ export class NotificationsService {
     const result = await this.prisma.notification.updateMany({
       where: {
         userId,
-        OR: [{ id: identifier }, { eventId: identifier }],
+        OR: [...(isUuid(identifier) ? [{ id: identifier }] : []), { eventId: identifier }],
       },
       data: { readAt: new Date() },
     });

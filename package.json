@@ -8,6 +8,10 @@
     "node": ">=22.0.0"
   },
   "scripts": {
+    "api:docs": "node tools/generate-api-reference.mjs",
+    "api:docs:check": "node tools/generate-api-reference.mjs --check",
+    "tools:test": "node --test tools/tooling.test.mjs",
+    "test:http": "node tools/http-contract-smoke.mjs",
     "build": "pnpm --filter @saydian/app-contracts build && pnpm -r --if-present build",
     "typecheck": "pnpm --filter @saydian/app-contracts build && pnpm -r --if-present typecheck",
     "test": "pnpm --filter @saydian/app-contracts build && pnpm -r --if-present test",

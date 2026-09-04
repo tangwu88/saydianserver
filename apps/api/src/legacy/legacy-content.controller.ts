@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards, UseInterceptors } from "@nestjs/common";
+import { NoFilesInterceptor } from "@nestjs/platform-express";
 import { ContentService } from "../content/content.service";
 import { safeObject } from "../common/crypto";
 import { RawResponse } from "../common/raw-response.decorator";
@@ -9,6 +10,7 @@ import { LegacyService } from "./legacy.service";
 
 @Controller("api/rf-article")
 @RawResponse()
+@UseInterceptors(NoFilesInterceptor({ limits: { fields: 20, fieldSize: 2 * 1024 * 1024 } }))
 export class LegacyContentController {
   constructor(
     private readonly content: ContentService,

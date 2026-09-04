@@ -11,7 +11,7 @@ import {
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
 import { env, envBoolean } from "../common/environment";
-import { safeObject } from "../common/crypto";
+import { isUuid, safeObject } from "../common/crypto";
 
 @Injectable()
 export class CommerceService {
@@ -33,6 +33,17 @@ export class CommerceService {
     body?: unknown,
     idempotencyKey?: string,
   ) {
+    // Migrated orders are historical evidence, never new mall mutations.
+    const orderPath = /^\/orders\/([^/?]+)(?:\/|$)/.exec(path);
+    const orderId = orderPath?.[1] ? decodeURIComponent(orderPath[1])
+      : path === "/payments" ? String(safeObject(body).orderId ?? "") : "";
+    if (method !== "GET" && orderId) {
+      const legacy = await this.prisma.legacyOrderProjection.findFirst({
+        where: { userId, OR: [...(isUuid(orderId) ? [{ id: orderId }] : []), { legacyOrderId: orderId }] },
+        select: { id: true },
+      });
+      if (legacy) throw new ConflictException("历史订单仅供查看，不能重复操作");
+    }
     const mallUserId = await this.ensureMallIdentity(userId);
     return this.request(method, `/internal/app-users/${mallUserId}${path}`, body, {
       ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
@@ -81,7 +92,7 @@ export class CommerceService {
 
   async orderDetail(userId: string, id: string) {
     const legacy = await this.prisma.legacyOrderProjection.findFirst({
-      where: { userId, OR: [{ id }, { legacyOrderId: id }] },
+      where: { userId, OR: [...(isUuid(id) ? [{ id }] : []), { legacyOrderId: id }] },
     });
     if (legacy) {
       return {

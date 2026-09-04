@@ -111,6 +111,7 @@ services:
       PORT: 8080
       PUBLIC_BASE_URL: https://${APP_DOMAIN}
       MAINTENANCE_READ_ONLY: ${MAINTENANCE_READ_ONLY:-true}
+      APP_REVISION: ${APP_REVISION:-unversioned}
       ALLOW_TEST_OTP: "false"
     depends_on:
       postgres: { condition: service_healthy }

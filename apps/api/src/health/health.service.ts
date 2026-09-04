@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from "@nestjs/common";
 import {
   DataQuality,
@@ -15,7 +16,7 @@ import type {
   HealthRecordInputContract,
 } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
-import { safeObject, sha256 } from "../common/crypto";
+import { isUuid, safeObject, sha256 } from "../common/crypto";
 import { validateHealthRecord } from "./health-validation";
 
 const metricMap: Record<HealthMetric, PrismaHealthMetric> = {
@@ -53,6 +54,7 @@ export class HealthService {
     userId: string,
     idempotencyKey: string,
     input: unknown,
+    legacyRequest?: { scope: string; fingerprint: unknown },
   ): Promise<HealthBatchResultContract> {
     if (idempotencyKey.length < 8 || idempotencyKey.length > 160) {
       throw new BadRequestException("Idempotency-Key 不正确");
@@ -65,12 +67,13 @@ export class HealthService {
     if (rawRecords.length > 200) {
       throw new BadRequestException("每次最多同步200条健康记录");
     }
-    const requestHash = sha256(JSON.stringify(body));
+    const scope = legacyRequest?.scope ?? "health_batch_v2";
+    const requestHash = sha256(JSON.stringify(legacyRequest ? legacyRequest.fingerprint : body));
     const existing = await this.prisma.idempotencyRecord.findUnique({
       where: {
         userId_scope_key: {
           userId,
-          scope: "health_batch_v2",
+          scope,
           key: idempotencyKey,
         },
       },
@@ -122,7 +125,7 @@ export class HealthService {
       await this.prisma.idempotencyRecord.create({
         data: {
           userId,
-          scope: "health_batch_v2",
+          scope,
           key: idempotencyKey,
           requestHash,
           responseCode: 200,
@@ -235,6 +238,39 @@ export class HealthService {
       });
     }
     return this.prisma.healthWarningRule.findMany({ where: { userId } });
+  }
+
+  async legacyRecords(userId: string, metrics: HealthMetric[], from?: Date, to?: Date, page?: number) {
+    const records = await this.prisma.healthRecord.findMany({
+      where: { userId, metric: { in: metrics.map((metric) => metricMap[metric]) },
+        ...((from || to) ? { observedAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } } : {}),
+      },
+      orderBy: [{ observedAt: "desc" }, { id: "desc" }],
+      skip: page ? (page - 1) * 30 : 0,
+      take: page ? 30 : 20_001,
+      include: { ecgArtifact: true },
+    });
+    if (records.length > 20_000) throw new BadRequestException("记录较多，请缩小查询时间范围");
+    return records.map((record) => ({
+      id: record.clientRecordId,
+      metric: metricReverse[record.metric],
+      observedAt: record.observedAt.toISOString(),
+      timezoneOffsetMinutes: record.timezoneOffsetMinutes,
+      values: record.values, unit: record.unit, quality: record.quality.toLowerCase(),
+      ecgArtifact: record.ecgArtifact ? {
+        sampleRateHz: record.ecgArtifact.sampleRateHz,
+        sampleCount: record.ecgArtifact.sampleCount,
+        sha256: record.ecgArtifact.sha256,
+      } : null,
+    }));
+  }
+
+  async legacyDetail(userId: string, metric: HealthMetric, identifier: string) {
+    const record = await this.prisma.healthRecord.findFirst({
+      where: { userId, metric: metricMap[metric], OR: [...(isUuid(identifier) ? [{ id: identifier }] : []), { clientRecordId: identifier }] },
+    });
+    if (!record) throw new NotFoundException("健康记录不存在");
+    return { id: record.clientRecordId, date: record.observedAt.toISOString(), ...safeObject(record.values) };
   }
 
   async warningRules(userId: string) {
@@ -417,7 +453,9 @@ export function healthWarningValue(
     calories: ["value", "kcal"],
   };
   for (const key of candidates[metric] ?? []) {
-    const value = Number(values[key]);
+    const raw = values[key];
+    if (raw == null || typeof raw === "boolean" || String(raw).trim() === "") continue;
+    const value = Number(raw);
     if (Number.isFinite(value)) return value;
   }
   return null;

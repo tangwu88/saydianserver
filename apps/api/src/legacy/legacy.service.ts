@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { CareStatus, HealthMetric, Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
+import { legacyCareNames } from "./legacy-care-mapper";
+import { isUuid } from "../common/crypto";
 
 const legacyStatus: Record<CareStatus, number> = {
   PENDING: 0,
@@ -61,9 +63,9 @@ export class LegacyService {
       ),
       inviter: this.memberContract(relationship.inviter),
       to_member: this.memberContract(relationship.recipient),
-      setting: relationship.permissions
+      setting: legacyCareNames(relationship.permissions
         .filter((permission) => permission.enabled)
-        .map((permission) => legacyMetricName[permission.metric]),
+        .map((permission) => legacyMetricName[permission.metric])),
     }));
   }
 
@@ -133,7 +135,7 @@ export class LegacyService {
       where: {
         userId,
         OR: [
-          { id: identifier },
+          ...(isUuid(identifier) ? [{ id: identifier }] : []),
           { eventId: identifier },
           ...(Number.isInteger(numeric) && numeric > 0
             ? [{ compatibilityId: numeric }]
@@ -167,6 +169,14 @@ export class LegacyService {
     }));
   }
 
+  async notificationStatistics(userId: string) {
+    const [announcements, reminders] = await this.prisma.$transaction([
+      this.prisma.notification.count({ where: { userId, readAt: null, type: "SYSTEM" } }),
+      this.prisma.notification.count({ where: { userId, readAt: null, type: { not: "SYSTEM" } } }),
+    ]);
+    return { announce_count: announcements, remind_count: reminders, unread_count: announcements + reminders };
+  }
+
   async notification(userId: string, identifier: string) {
     const id = await this.notificationId(userId, identifier);
     const item = await this.prisma.notification.findUniqueOrThrow({ where: { id } });
@@ -187,7 +197,7 @@ export class LegacyService {
   async articleCategoryId(legacyOrId?: string): Promise<string | undefined> {
     if (!legacyOrId) return undefined;
     const category = await this.prisma.articleCategory.findFirst({
-      where: { OR: [{ id: legacyOrId }, { legacyId: legacyOrId }] },
+      where: { OR: [...(isUuid(legacyOrId) ? [{ id: legacyOrId }] : []), { legacyId: legacyOrId }] },
       select: { id: true },
     });
     return category?.id;
