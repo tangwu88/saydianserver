@@ -11,11 +11,10 @@ export class MaintenanceMiddleware implements NestMiddleware {
     next: NextFunction,
   ): void {
     const writeMethod = !["GET", "HEAD", "OPTIONS"].includes(request.method);
-    const requestPath = request.originalUrl || request.url || request.path;
-    const exempt =
-      requestPath.includes("/admin/v1/auth/login") ||
-      requestPath.endsWith("/health/live") ||
-      requestPath.endsWith("/health/ready");
+    const requestPath = (request.originalUrl || request.url || request.path)
+      .split("?")[0]?.replace(/\/+$/, "");
+    // Query strings and nested paths must not grant a write exemption.
+    const exempt = requestPath === "/api/saydian-app/admin/v1/auth/login";
     if (writeMethod && !exempt && envBoolean("MAINTENANCE_READ_ONLY")) {
       response.status(HttpStatus.SERVICE_UNAVAILABLE).json({
         code: HttpStatus.SERVICE_UNAVAILABLE,

@@ -54,4 +54,29 @@ describe("MaintenanceMiddleware", () => {
     );
     expect(next).not.toHaveBeenCalled();
   });
+
+  it.each([
+    "/api/saydian-app/v2/auth/register?next=/admin/v1/auth/login",
+    "/api/v1/member/member/save?next=/health/ready",
+    "/unrelated/api/saydian-app/admin/v1/auth/login",
+  ])("does not bypass maintenance through %s", (originalUrl) => {
+    process.env.MAINTENANCE_READ_ONLY = "true";
+    const json = vi.fn();
+    const status = vi.fn(() => ({ json }));
+    const next = vi.fn() as NextFunction;
+    new MaintenanceMiddleware().use(request("/", originalUrl), { status } as unknown as Response, next);
+    expect(status).toHaveBeenCalledWith(503);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("allows the exact admin login with a trailing slash and query", () => {
+    process.env.MAINTENANCE_READ_ONLY = "true";
+    const next = vi.fn() as NextFunction;
+    new MaintenanceMiddleware().use(
+      request("/", "/api/saydian-app/admin/v1/auth/login/?source=admin"),
+      {} as Response,
+      next,
+    );
+    expect(next).toHaveBeenCalledOnce();
+  });
 });
