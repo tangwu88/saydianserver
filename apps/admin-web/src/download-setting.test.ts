@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   downloadEditorToManifest,
+  downloadManifestFromPublicData,
   downloadManifestToEditor,
   type DownloadManifestEditor,
 } from "./download-setting";
@@ -48,6 +49,12 @@ const manifest = {
 };
 
 describe("download setting editor", () => {
+  it("reads a fallback manifest from the public setting wrapper", () => {
+    expect(
+      downloadManifestFromPublicData({ value: manifest, public: true }).releases,
+    ).toHaveLength(3);
+  });
+
   it("maps the published manifest into named platform fields", () => {
     const editor = downloadManifestToEditor(manifest);
     expect(editor.releases.android.versionName).toBe("0.1.19");

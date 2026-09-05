@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { api, readableError, responseData } from "../api";
 import {
   downloadEditorToManifest,
+  downloadManifestFromPublicData,
   downloadManifestToEditor,
   type DownloadManifestEditor,
 } from "../download-setting";
@@ -81,10 +82,34 @@ async function load(): Promise<void> {
       params: searchable.value && search.value ? { search: search.value } : {},
     });
     const data = responseData<unknown>(response);
-    rows.value = Array.isArray(data) ? data as Row[] : ((data as { items?: Row[] })?.items ?? []);
+    const loadedRows = Array.isArray(data) ? data as Row[] : ((data as { items?: Row[] })?.items ?? []);
+    rows.value = resource.value === "settings"
+      ? await withDownloadSetting(loadedRows)
+      : loadedRows;
   } catch (error) {
     ElMessage.error(readableError(error));
   } finally { loading.value = false; }
+}
+
+async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
+  if (loadedRows.some((row) => row.key === "app_update")) return loadedRows;
+  try {
+    const response = await fetch("/api/saydian-app/v2/support/app-update", {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) return loadedRows;
+    const envelope = await response.json() as { data?: unknown };
+    const manifest = downloadManifestFromPublicData(envelope.data);
+    return [{
+      key: "app_update",
+      value: manifest,
+      public: true,
+      updatedAt: manifest.publishedAt,
+    }, ...loadedRows];
+  } catch {
+    return loadedRows;
+  }
 }
 
 function render(value: unknown): string {

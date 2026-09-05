@@ -24,6 +24,13 @@ export interface DownloadManifestEditor {
   releases: Record<DownloadPlatform, DownloadReleaseEditor>;
 }
 
+export function downloadManifestFromPublicData(
+  input: unknown,
+): DownloadManifestContract {
+  const candidate = isRecord(input) && "value" in input ? input.value : input;
+  return parseDownloadManifest(candidate);
+}
+
 export function downloadManifestToEditor(
   input: unknown,
 ): DownloadManifestEditor {
@@ -87,4 +94,8 @@ export function downloadEditorToManifest(
     publishedAt: editor.publishedAt,
     releases,
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
