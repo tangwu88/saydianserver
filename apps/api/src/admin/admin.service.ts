@@ -17,6 +17,7 @@ import {
   ReportStatus,
 } from "@prisma/client";
 import { hash } from "bcryptjs";
+import { parseDownloadManifest } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
 import { maskMobile, safeObject } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
@@ -541,9 +542,16 @@ export class AdminService {
       throw new NotFoundException("设置项不存在");
     }
     const body = safeObject(input);
-    const value = safeObject(body.value);
+    let value = safeObject(body.value);
     if (!Object.keys(value).length) {
       throw new BadRequestException("设置内容不能为空");
+    }
+    if (key === "app_update") {
+      try {
+        value = parseDownloadManifest(value) as unknown as Record<string, unknown>;
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : "App 下载配置无效");
+      }
     }
     return this.prisma.appSetting.upsert({
       where: { key },

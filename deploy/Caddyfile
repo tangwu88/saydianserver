@@ -11,6 +11,14 @@
     reverse_proxy admin:8080
   }
 
+  handle /down {
+    reverse_proxy admin:8080
+  }
+
+  handle /down/* {
+    reverse_proxy admin:8080
+  }
+
   handle /saidian-mall/* {
     reverse_proxy admin:8080
   }

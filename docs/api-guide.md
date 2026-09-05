@@ -155,7 +155,9 @@ PushInstallation 必填 installationId、registrationId、platform(android/ios)�
 
 反馈：content 5–2000 字符，contact 最多 100，attachments 最多 6 个本人已上传文件 ID。当前私有反馈附件缺少后台授权下载入口；不是上传失败。
 
-`settings/support` 与 `settings/app_update` 接受 `{value:{...},public:true}` 并原样提供 JSON；目前没有强 DTO 或统一 App 消费协议，不要随意添加字段后就宣称生效。
+`settings/support` 接受 `{value:{...},public:true}` 并原样提供 JSON。`settings/app_update` 改为强校验的 `DownloadManifest v1`：必须同时包含 Android、iPhone 和 HarmonyOS 各一项，并标记 `audience=internal_test`。
+
+Android/HarmonyOS 直接下载只允许同源 `/down/files/`，并必须提供与不可变文件一致的文件名、字节数和 SHA-256。iPhone 只允许真实 `testflight.apple.com` 或 `apps.apple.com` HTTPS 地址，不允许网页直装 IPA。完整当前配置见 `deploy/app-update.internal-test.json`。
 
 “集成中心”只显示公开配置和 `hasSecret`，敏感字段通过 `secrets` 写入后由 `INTEGRATION_MASTER_KEY` 以 AES-256-GCM 加密；列表、详情、日志和接口响应均不回显明文。选择“启用”只允许服务尝试调用，界面仍显示“尚未通过真实调用”；只有短信、AI、支付、企业微信、推送、聚水潭或文件服务获得真实成功响应后才记录检测时间。修改公开配置或密钥会清除原检测状态。轮换主密钥前必须先设计解密/重加密迁移，不能直接替换。
 

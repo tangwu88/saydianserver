@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { IntegrationState, Prisma } from "@prisma/client";
+import { parseDownloadManifest } from "@saydian/app-contracts";
 import { randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { PrismaService } from "../common/prisma.service";
@@ -66,7 +67,11 @@ export class SupportService {
   async appUpdateConfig() {
     const setting = await this.prisma.appSetting.findUnique({ where: { key: "app_update" } });
     if (!setting?.public) throw new NotFoundException("暂未发布更新信息");
-    return setting.value;
+    try {
+      return parseDownloadManifest(setting.value);
+    } catch {
+      throw new ServiceUnavailableException("下载信息暂时不可用");
+    }
   }
 
   async uploadImage(userId: string, file: Express.Multer.File, purposeInput: string) {

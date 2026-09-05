@@ -36,6 +36,22 @@ test("automatic release preserves maintenance and rejects schema changes", () =>
   assert.match(workflow, /AUTO_DEPLOY_ENABLED == 'true'/);
 });
 
+test("download page stays public, immutable and outside Git artifacts", () => {
+  const adminNginx = fs.readFileSync(path.join(root, "docker/admin-nginx.conf"), "utf8");
+  const gateway = fs.readFileSync(path.join(root, "deploy/nginx/app-https.conf.template"), "utf8");
+  const caddy = fs.readFileSync(path.join(root, "deploy/Caddyfile"), "utf8");
+  const compose = fs.readFileSync(path.join(root, "deploy/compose.production.yaml"), "utf8");
+  const configure = fs.readFileSync(path.join(root, "deploy/scripts/configure-shared-gateway.sh"), "utf8");
+  assert.match(adminNginx, /location = \/down/);
+  assert.match(adminNginx, /location \/down\/files\//);
+  assert.match(adminNginx, /max-age=31536000, immutable/);
+  assert.match(gateway, /location = \/down/);
+  assert.match(caddy, /handle \/down/);
+  assert.match(compose, /\.\/downloads:\/usr\/share\/nginx\/html\/down\/files:ro/);
+  assert.match(configure, /awk/);
+  assert.doesNotMatch(configure, /grep -Fq "\$marker"/);
+});
+
 test("safe Git workflow: fast-forward, dirty resume and remote divergence", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "saydian-git-test-"));
   function git(args, cwd) {

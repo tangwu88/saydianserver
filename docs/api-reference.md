@@ -172,7 +172,7 @@
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
 | `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?}；正文 1–4000 字符 | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503 |
 | `GET /api/saydian-app/v2/support/config` | 客服配置 | public | 无请求体 | 客服配置或未配置状态 | 核心服务 |
-| `GET /api/saydian-app/v2/support/app-update` | App 更新配置 | public | 无请求体 | 更新清单或未配置状态 | 核心服务 |
+| `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | 无请求体 | DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址 | 核心服务 |
 | `POST /api/saydian-app/v2/support/feedback` | 提交反馈 | member | {content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项} | {id,status} | 核心服务 |
 | `POST /api/saydian-app/v2/files` | 上传图片 | member | file:file，query:purpose?；multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP | {id,url,...} | 私有对象存储 |
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
@@ -254,7 +254,7 @@
 | `PATCH /api/saydian-app/admin/v1/admin-users/:id` | 编辑后台账号 | admin: SUPER_ADMIN | path:id；{displayName?,role?,active?}；当前不支持修改密码 | 无密码账号信息 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/account-deletions` | 注销任务列表 | admin: SUPER_ADMIN, CUSTOMER_SERVICE | 无请求体 | 注销任务及遮蔽会员资料；非手动执行删除接口 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/settings` | 客服与更新设置 | admin | 无请求体 | key=support/app_update 的设置数组 | 核心服务 |
-| `PATCH /api/saydian-app/admin/v1/settings/:key` | 保存客服或更新设置 | admin: SUPER_ADMIN, APP_OPERATIONS | path:key；key=support/app_update；{value:非空JSON对象,public?:boolean} | 设置对象；结构约定见调用手册 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/settings/:key` | 保存客服或更新设置 | admin: SUPER_ADMIN, APP_OPERATIONS | path:key；key=support/app_update；{value:非空JSON对象,public?:boolean}；app_update 必须通过 DownloadManifest v1 校验 | 设置对象；结构约定见调用手册 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/commerce-products` | 总后台商品列表 | admin | query:search?，query:page?；search可查商品名或ERP编号；page默认1 | 主库商品、SKU及ERP库存快照；不直接改权威库存 | 主库商城/聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products` | 拒绝手工新增ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 请先通过聚水潭商品同步建立商品和SKU | HTTP 400；不会创建第二套库存 | 聚水潭 |
 | `PATCH /api/saydian-app/admin/v1/commerce-products/:id` | 编辑商品展示资料 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?} | 展示资料；ERP编号、内部名称、SKU和库存不会被覆盖 | 主库商城/聚水潭 |

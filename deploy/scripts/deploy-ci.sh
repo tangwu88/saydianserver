@@ -39,6 +39,18 @@ reload_gateway() {
     docker exec "$gateway" nginx -s reload
   fi
 }
+configure_gateway() {
+  local domain gateway gateway_config
+  if ! grep -qx 'USE_SHARED_GATEWAY=true' "$env_file"; then return; fi
+  domain=$(sed -n 's/^APP_DOMAIN=//p' "$env_file" | tail -n 1)
+  gateway=$(sed -n 's/^GATEWAY_CONTAINER=//p' "$env_file" | tail -n 1)
+  gateway_config=$(sed -n 's/^GATEWAY_CONFIG_PATH=//p' "$env_file" | tail -n 1)
+  [[ -n "$gateway" ]] || gateway=saidian-gateway-1
+  [[ -n "$gateway_config" ]] || gateway_config=/opt/saydian/config/gateway-nginx.conf
+  APP_DOMAIN="$domain" GATEWAY_CONTAINER="$gateway" GATEWAY_CONFIG_PATH="$gateway_config" \
+    DEPLOY_ROOT="$root_dir" DEPLOY_SOURCE_DIR="$source_dir/deploy" \
+    bash "$source_dir/deploy/scripts/configure-shared-gateway.sh"
+}
 rollback() {
   local status=${1:-1}
   trap - ERR INT TERM
@@ -64,6 +76,7 @@ compose exec -T postgres sh -c 'exec pg_dump --format=custom --no-owner --no-pri
 test -s "$root_dir/deploy/backups/saydian-ci-$stamp.dump"
 sha256sum "$root_dir/deploy/backups/saydian-ci-$stamp.dump" > "$root_dir/deploy/backups/saydian-ci-$stamp.dump.sha256"
 changed=true
+install -d -m 755 "$root_dir/deploy/downloads"
 cp "$source_dir/deploy/compose.production.yaml" "$compose_file"
 sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=sha-$revision/" "$env_file"
 if grep -q '^APP_REVISION=' "$env_file"; then
@@ -78,7 +91,7 @@ compose run --rm --no-deps api ./node_modules/.bin/prisma migrate status
 containers_changed=true
 compose up -d --no-deps api worker admin
 compose up -d --no-deps --wait --wait-timeout 150 api
-reload_gateway
+configure_gateway
 domain=$(sed -n 's/^APP_DOMAIN=//p' "$env_file" | tail -n 1)
 [[ "$domain" == app.saydian.cn ]] || { echo 'Unexpected domain' >&2; false; }
 ready=false

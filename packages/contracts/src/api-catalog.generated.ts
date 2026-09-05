@@ -950,9 +950,9 @@ export const apiCatalog = {
       "parameters": [],
       "envelope": "v2",
       "source": "apps/api/src/support/support.controller.ts",
-      "summary": "App 更新配置",
+      "summary": "App 下载与更新配置",
       "request": "无请求体",
-      "response": "更新清单或未配置状态",
+      "response": "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址",
       "dependency": "核心服务"
     },
     {
@@ -2230,7 +2230,7 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "保存客服或更新设置",
-      "request": "key=support/app_update；{value:非空JSON对象,public?:boolean}",
+      "request": "key=support/app_update；{value:非空JSON对象,public?:boolean}；app_update 必须通过 DownloadManifest v1 校验",
       "response": "设置对象；结构约定见调用手册",
       "dependency": "核心服务"
     },

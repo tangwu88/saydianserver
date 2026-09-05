@@ -173,6 +173,8 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:3301:8080"
+    volumes:
+      - ./deploy/downloads:/usr/share/nginx/html/down/files:ro
     restart: unless-stopped
 
 volumes:
