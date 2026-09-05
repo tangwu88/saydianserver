@@ -3,6 +3,11 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, readableError, responseData } from "../api";
+import {
+  downloadEditorToManifest,
+  downloadManifestToEditor,
+  type DownloadManifestEditor,
+} from "../download-setting";
 
 type Row = Record<string, any>;
 const route = useRoute();
@@ -15,6 +20,11 @@ const dialogTitle = ref("");
 const dialogMode = ref<"edit" | "health">("edit");
 const form = ref<Row>({});
 const detailRows = ref<Row[]>([]);
+const downloadPlatformOptions = [
+  { key: "android", label: "Android", packageLabel: "APK" },
+  { key: "ios", label: "iPhone", packageLabel: "TestFlight / App Store" },
+  { key: "harmonyos", label: "HarmonyOS", packageLabel: "HAP" },
+] as const;
 const titles: Record<string, string> = {
   members: "会员", care: "远程关爱", warnings: "健康预警", notifications: "通知",
   devices: "设备", articles: "内容", "legal-documents": "协议", feedback: "反馈",
@@ -103,7 +113,7 @@ function openCreate(): void {
 function openEdit(row: Row): void {
   dialogMode.value = "edit";
   dialogTitle.value = `编辑${title.value}`;
-  form.value = {
+  const nextForm: Row = {
     ...row,
     publicConfigText: row.publicConfig ? JSON.stringify(row.publicConfig, null, 2) : "{}",
     secretsText: "",
@@ -115,6 +125,15 @@ function openEdit(row: Row): void {
     audienceAllActive: row.audience?.allActive === true,
     audienceUserIds: Array.isArray(row.audience?.userIds) ? row.audience.userIds.join("\n") : "",
   };
+  if (row.key === "app_update") {
+    try {
+      nextForm.downloadEditor = downloadManifestToEditor(row.value);
+    } catch (error) {
+      ElMessage.error(error instanceof Error ? error.message : "App 下载配置无法读取");
+      return;
+    }
+  }
+  form.value = nextForm;
   dialogVisible.value = true;
 }
 
@@ -133,8 +152,11 @@ async function save(): Promise<void> {
       };
       await api.patch(`/integrations/${encodeURIComponent(String(form.value.key))}`, payload);
     } else if (resource.value === "settings") {
+      const settingValue = form.value.key === "app_update"
+        ? downloadEditorToManifest(form.value.downloadEditor as DownloadManifestEditor)
+        : JSON.parse(String(form.value.valueText || "{}"));
       payload = {
-        value: JSON.parse(String(form.value.valueText || "{}")),
+        value: settingValue,
         public: form.value.public !== false,
       };
       await api.patch(`/settings/${encodeURIComponent(String(form.value.key))}`, payload);
@@ -154,8 +176,21 @@ async function save(): Promise<void> {
     dialogVisible.value = false;
     await load();
   } catch (error) {
-    ElMessage.error(readableError(error));
+    const message = readableError(error);
+    ElMessage.error(message === "请求失败，请稍后重试" && error instanceof Error ? error.message : message);
   } finally { saving.value = false; }
+}
+
+function setDownloadPublishedNow(): void {
+  const editor = form.value.downloadEditor as DownloadManifestEditor | undefined;
+  if (editor) editor.publishedAt = new Date().toISOString();
+}
+
+function fillDownloadUrl(platform: "android" | "ios" | "harmonyos"): void {
+  if (platform === "ios") return;
+  const editor = form.value.downloadEditor as DownloadManifestEditor | undefined;
+  const release = editor?.releases[platform];
+  if (release?.fileName) release.url = `/down/files/${release.fileName.trim()}`;
 }
 
 function payloadForResource(current: string, source: Row): Row {
@@ -270,7 +305,7 @@ onMounted(load);
 <template>
   <section class="page">
     <h1 class="page-title">{{ title }}</h1>
-    <template>
+    <div class="resource-content">
       <div class="toolbar">
         <el-input v-if="searchable" v-model="search" :placeholder="resource === 'members' ? '昵称、旧会员编号或手机号' : '商品名或ERP编号'" clearable style="width: 300px" @keyup.enter="load" />
         <el-button type="primary" @click="load">刷新</el-button>
@@ -307,9 +342,9 @@ onMounted(load);
           </template>
         </el-table-column>
       </el-table>
-    </template>
+    </div>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="720px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="resource === 'settings' && form.key === 'app_update' ? '980px' : '720px'" destroy-on-close>
       <el-table v-if="dialogMode === 'health'" :data="detailRows" border max-height="520" empty-text="暂无记录">
         <el-table-column v-for="column in Object.keys(detailRows[0] || {}).slice(0, 9)" :key="column" :label="fieldLabels[column] || column" min-width="145">
           <template #default="scope">{{ render(scope.row[column]) }}</template>
@@ -438,7 +473,65 @@ onMounted(load);
         <template v-else-if="resource === 'settings'">
           <el-form-item label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
           <el-form-item label="公开"><el-switch v-model="form.public" /></el-form-item>
-          <el-form-item label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="12" /></el-form-item>
+          <template v-if="form.key === 'app_update' && form.downloadEditor">
+            <el-alert title="保存后下载页会读取新配置。此处不上传安装包；Android/HarmonyOS 文件需先放入服务器 /down/files/ 目录。" type="warning" :closable="false" show-icon />
+            <el-form-item label="发布时间" class="download-published-at">
+              <el-input v-model="form.downloadEditor.publishedAt" placeholder="ISO 8601，如 2026-09-06T00:00:00+08:00">
+                <template #append><el-button @click="setDownloadPublishedNow">设为现在</el-button></template>
+              </el-input>
+            </el-form-item>
+            <div class="download-setting-grid">
+              <section v-for="platform in downloadPlatformOptions" :key="platform.key" class="download-platform-card">
+                <header>
+                  <strong>{{ platform.label }}</strong>
+                  <el-tag size="small" :type="form.downloadEditor.releases[platform.key].status === 'available' ? 'success' : 'info'">
+                    {{ form.downloadEditor.releases[platform.key].status === 'available' ? '可下载' : '待开放' }}
+                  </el-tag>
+                </header>
+                <el-form-item label="版本号">
+                  <el-input v-model="form.downloadEditor.releases[platform.key].versionName" placeholder="如 0.1.19" />
+                </el-form-item>
+                <el-form-item label="构建号">
+                  <el-input-number v-model="form.downloadEditor.releases[platform.key].buildNumber" :min="1" :step="1" />
+                </el-form-item>
+                <el-form-item label="发布状态">
+                  <el-select v-model="form.downloadEditor.releases[platform.key].status">
+                    <el-option label="可下载" value="available" />
+                    <el-option label="待开放" value="coming_soon" />
+                  </el-select>
+                </el-form-item>
+                <template v-if="form.downloadEditor.releases[platform.key].status === 'available' && platform.key === 'ios'">
+                  <el-form-item label="链接类型">
+                    <el-select v-model="form.downloadEditor.releases.ios.destinationKind">
+                      <el-option label="TestFlight" value="testflight" />
+                      <el-option label="App Store" value="app_store" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="官方链接">
+                    <el-input v-model="form.downloadEditor.releases.ios.url" placeholder="https://testflight.apple.com/..." />
+                  </el-form-item>
+                </template>
+                <template v-else-if="form.downloadEditor.releases[platform.key].status === 'available'">
+                  <el-form-item label="文件名">
+                    <el-input v-model="form.downloadEditor.releases[platform.key].fileName" :placeholder="platform.packageLabel + ' 版本化文件名'" />
+                  </el-form-item>
+                  <el-form-item label="下载链接">
+                    <el-input v-model="form.downloadEditor.releases[platform.key].url" placeholder="/down/files/文件名" />
+                  </el-form-item>
+                  <el-button class="download-url-button" plain @click="fillDownloadUrl(platform.key)">按文件名生成链接</el-button>
+                  <el-form-item label="字节数">
+                    <el-input-number v-model="form.downloadEditor.releases[platform.key].sizeBytes" :min="1" :step="1" controls-position="right" />
+                  </el-form-item>
+                  <el-form-item label="SHA-256">
+                    <el-input v-model="form.downloadEditor.releases[platform.key].sha256" type="textarea" :rows="3" maxlength="64" show-word-limit />
+                  </el-form-item>
+                </template>
+                <p v-else class="download-coming-note">待开放状态不会保存下载链接，前台按钮自动禁用。</p>
+              </section>
+            </div>
+            <el-alert title="Android/HarmonyOS 只允许 /down/files/ 同源地址；iPhone 只允许官方 TestFlight 或 App Store HTTPS 链接。" type="info" :closable="false" />
+          </template>
+          <el-form-item v-else label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="12" /></el-form-item>
         </template>
         <template v-else-if="resource === 'admin-users'">
           <el-form-item label="账号"><el-input v-model="form.username" :disabled="Boolean(form.id)" /></el-form-item>

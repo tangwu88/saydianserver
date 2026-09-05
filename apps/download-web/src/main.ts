@@ -111,10 +111,10 @@ function renderRelease(release: DownloadReleaseContract): void {
 function highlightVisitorPlatform(): void {
   const notice = requiredElement<HTMLElement>("#device-notice");
   if (visitorPlatform === "desktop") {
-    notice.textContent = "已识别为电脑，可使用手机扫码后选择对应版本。";
+    notice.textContent = "电脑访问：请使用手机扫码。";
     return;
   }
-  notice.textContent = `已为您识别 ${labels[visitorPlatform]} 设备，对应版本已标记。`;
+  notice.textContent = `已识别 ${labels[visitorPlatform]} 设备`;
   requiredElement<HTMLElement>(
     `[data-platform="${visitorPlatform}"]`,
   ).classList.add("is-recommended");

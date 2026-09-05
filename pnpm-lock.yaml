@@ -20,6 +20,9 @@ importers:
 
   apps/admin-web:
     dependencies:
+      '@saydian/app-contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       axios:
         specifier: ^1.11.0
         version: 1.20.0(debug@4.4.3(supports-color@5.5.0))(supports-color@5.5.0)

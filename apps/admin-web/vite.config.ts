@@ -10,5 +10,11 @@ export default defineConfig({
       "/api": "http://localhost:8080",
     },
   },
-  build: { outDir: "dist", sourcemap: false },
+  build: {
+    outDir: "dist",
+    sourcemap: false,
+    commonjsOptions: {
+      include: [/node_modules/, /packages\/contracts/],
+    },
+  },
 });

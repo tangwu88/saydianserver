@@ -26,25 +26,20 @@
             height="284"
           />
           <div class="eyebrow"><span></span>内部测试下载</div>
-          <h1 id="page-title">
-            选择适合您设备的<br /><strong>Saydian赛电 App</strong>
-          </h1>
-          <p class="hero__lead">
-            连接智能穿戴设备，查看健康数据。页面只会推荐当前系统，不会自动下载或安装。
-          </p>
+          <h1 id="page-title">下载 <strong>Saydian赛电 App</strong></h1>
+          <p class="hero__lead">选择您的设备版本，手动确认下载。</p>
           <div
             id="device-notice"
             class="device-notice"
             role="status"
             aria-live="polite"
           >
-            正在识别您的设备…
+            正在识别设备…
           </div>
         </div>
         <aside class="qr-panel" aria-label="手机扫码打开本页">
           <canvas id="page-qr" width="184" height="184"></canvas>
-          <strong>手机扫码下载</strong>
-          <span>app.saydian.cn/down</span>
+          <strong>手机扫码</strong>
         </aside>
       </section>
 
@@ -52,7 +47,7 @@
         <div class="section-heading">
           <div>
             <span class="section-kicker">当前版本</span>
-            <h2 id="release-title">三端安装入口</h2>
+            <h2 id="release-title">选择版本</h2>
           </div>
           <p id="manifest-status" role="status" aria-live="polite">
             正在读取已发布版本…
@@ -96,10 +91,9 @@
               <button type="button" data-field="copy-hash">复制</button>
             </div>
             <details>
-              <summary>查看 Android 安装指引</summary>
+              <summary>安装说明</summary>
               <ol>
-                <li>点击下载，等待 APK 文件完整下载。</li>
-                <li>按系统提示为当前浏览器允许安装未知应用。</li>
+                <li>下载 APK 后，按系统提示安装。</li>
                 <li>
                   若提示“签名不一致”，请停止安装并联系测试人员，不要直接卸载旧版。
                 </li>
@@ -134,18 +128,7 @@
               aria-disabled="true"
               >TestFlight 待开放</a
             >
-            <p class="card-note">
-              iPhone 版不提供网页直装 IPA，待正式 TestFlight
-              链接通过验证后开放。
-            </p>
-            <details>
-              <summary>查看 iPhone 安装指引</summary>
-              <ol>
-                <li>入口开放后，先从 App Store 安装 TestFlight。</li>
-                <li>通过本页打开官方 TestFlight 测试链接。</li>
-                <li>在 TestFlight 中确认安装并按提示更新。</li>
-              </ol>
-            </details>
+            <p class="card-note">取得官方 TestFlight 链接后开放。</p>
           </article>
 
           <article class="release-card" data-platform="harmonyos">
@@ -184,13 +167,10 @@
               <button type="button" data-field="copy-hash">复制</button>
             </div>
             <details>
-              <summary>查看 HarmonyOS 安装指引</summary>
+              <summary>安装说明</summary>
               <ol>
-                <li>点击下载，等待 HAP 文件完整下载。</li>
-                <li>在文件管理中打开安装包，按系统安全提示操作。</li>
-                <li>
-                  若系统拒绝安装，请停止并联系测试人员，不要关闭系统安全保护。
-                </li>
+                <li>下载 HAP 后，在文件管理中打开安装。</li>
+                <li>若系统拒绝安装，请停止并联系测试人员。</li>
               </ol>
             </details>
           </article>
@@ -198,15 +178,13 @@
       </section>
 
       <section class="safety-note" aria-label="测试版说明">
-        <strong>请在测试人员指导下安装</strong>
-        <p>
-          当前 Android 与 HarmonyOS 安装包用于内部测试，不代表应用商店正式发布。
-        </p>
-        <p>健康数据仅供健康管理参考，不用于诊断或治疗。</p>
+        <strong>内部测试版</strong>
+        <p>请在测试人员指导下安装。</p>
+        <p>健康数据仅供参考，不用于诊断或治疗。</p>
       </section>
     </main>
     <footer>
-      <span>© 2026 Saydian赛电</span><span>安全下载 · 手动确认安装</span>
+      <span>© 2026 Saydian赛电</span>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

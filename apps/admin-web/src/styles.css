@@ -10,3 +10,12 @@ body { margin: 0; min-width: 1120px; }
 .muted { color: #768396; font-size: 13px; }
 .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
 .danger-note { color: #b42318; }
+.download-published-at { margin-top: 20px; }
+.download-setting-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+.download-platform-card { min-width: 0; padding: 18px 16px; border: 1px solid #dfe4ec; border-radius: 14px; background: #f8fafc; }
+.download-platform-card header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; color: #182230; font-size: 17px; }
+.download-platform-card .el-form-item { display: block; margin-bottom: 14px; }
+.download-platform-card .el-form-item__label { display: block; height: auto; margin-bottom: 5px; line-height: 1.4; text-align: left; }
+.download-platform-card .el-input-number, .download-platform-card .el-select { width: 100%; }
+.download-url-button { width: 100%; margin: -5px 0 14px; }
+.download-coming-note { min-height: 80px; margin: 10px 0 0; padding: 14px; border-radius: 10px; color: #667085; background: #eef1f5; font-size: 13px; line-height: 1.7; }

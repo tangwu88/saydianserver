@@ -40,8 +40,8 @@ main {
   grid-template-columns: minmax(0, 1fr) 250px;
   gap: 48px;
   align-items: center;
-  min-height: 390px;
-  padding: 44px 54px;
+  min-height: 320px;
+  padding: 38px 50px;
   overflow: hidden;
   position: relative;
   border: 1px solid rgba(23, 25, 31, 0.08);
@@ -148,7 +148,7 @@ h1 strong {
 }
 
 .release-section {
-  padding: 66px 4px 34px;
+  padding: 48px 4px 28px;
 }
 .section-heading {
   display: flex;
@@ -179,7 +179,7 @@ h1 strong {
 .release-card {
   display: flex;
   flex-direction: column;
-  min-height: 448px;
+  min-height: 390px;
   padding: 26px;
   border: 1px solid rgba(24, 27, 34, 0.09);
   border-radius: 25px;
@@ -365,7 +365,7 @@ details li + li {
 
 .safety-note {
   display: grid;
-  grid-template-columns: 220px 1fr 1fr;
+  grid-template-columns: 150px 1fr 1fr;
   gap: 24px;
   align-items: start;
   margin: 16px 4px 0;
