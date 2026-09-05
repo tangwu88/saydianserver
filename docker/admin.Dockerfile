@@ -3,11 +3,14 @@ WORKDIR /workspace
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/admin-web/package.json apps/admin-web/package.json
-RUN pnpm install --frozen-lockfile --filter @saydian/app-admin-web
+COPY apps/shop/package.json apps/shop/package.json
+RUN pnpm install --frozen-lockfile --filter @saydian/app-admin-web --filter @saydian/app-shop
 COPY apps/admin-web apps/admin-web
-RUN pnpm --filter @saydian/app-admin-web build
+COPY apps/shop apps/shop
+RUN pnpm --filter @saydian/app-admin-web build && pnpm --filter @saydian/app-shop build:h5
 
 FROM nginxinc/nginx-unprivileged:1.27.3-alpine
 COPY docker/admin-nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /workspace/apps/admin-web/dist /usr/share/nginx/html
+COPY --from=build /workspace/apps/admin-web/dist /usr/share/nginx/html/admin
+COPY --from=build /workspace/apps/shop/dist/build/h5 /usr/share/nginx/html/saidian-mall
 EXPOSE 8080

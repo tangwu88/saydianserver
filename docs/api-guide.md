@@ -1,6 +1,6 @@
 # 接口调用手册
 
-逐条方法、完整路径、参数位置、鉴权、返回及依赖请看 [156 路由目录](api-reference.md)。机器可读目录：[api-catalog.json](api-catalog.json)。缺陷与待联调项：[api-coverage.md](api-coverage.md)。
+逐条方法、完整路径、参数位置、鉴权、返回及依赖请看 [269 路由目录](api-reference.md)。机器可读目录：[api-catalog.json](api-catalog.json)。缺陷与待联调项：[api-coverage.md](api-coverage.md)。
 
 ## 1. 环境与请求约定
 
@@ -11,13 +11,13 @@
 | 原后端 | `https://app.saidian.cc` | 已发布 App 的原服务；此轮未改域名、未迁移数据 |
 | 管理后台 | `https://app.saydian.cn/admin/` | 独立管理员会话 |
 
-- V2 前缀 `/api/saydian-app/v2`，管理前缀 `/api/saydian-app/admin/v1`。V1 完整路径保留原样。
-- `public` 不需登录；`member` 传 `Authorization: Bearer <accessToken>`；`admin` 传独立的后台 Token。同一新后端签发的会员 Token 可调用 V1/V2。原服务器 Token **不能直接用于新后端**，会话兑换桥尚未完成。
+- V2 前缀 `/api/saydian-app/v2`，商城兼容前缀 `/api/saidian-mall/v1`，管理前缀 `/api/saydian-app/admin/v1`。V1 完整路径保留原样。
+- `public` 不需登录；`member` 传 `Authorization: Bearer <accessToken>`；`employee` 传企业微信登录签发的独立员工 Token；`admin` 传独立后台 Token。三种会话不可互换。同一新后端签发的会员 Token 可调用 V1/V2/商城会员接口。原服务器 Token **不能直接用于新后端**，会话兑换桥尚未完成。
 - 推荐全部客户端统一 Bearer。旧 `token` 头目前仅兼容 `/api/v1/*`；不可假定其他旧前缀也支持。不要在 URL 放 Token。
 - V2 默认 JSON。旧登录/资料/目标/关爱/地址/订单/支付/AI 支持表单；日健康、身体成分、血液成分和 ECG 的嵌套对象请用 JSON。上传文件使用 multipart，字段名 `file`。
 - multipart 的 boundary 由 HTTP 库自动生成，不要手写 Content-Type。非文件接口拒绝附带文件。
 - 可传 `X-Request-Id` 便于定位（服务端会校验/生成）。时间戳为秒，测量时间采用 ISO8601，明确时区。
-- 当前 `/health/ready` 只检测数据库。它不证明短信、商城、推送、AI、对象存储和数据迁移已验收。
+- 当前 `/health/ready` 只检测数据库。它不证明短信、支付、企业微信、聚水潭、推送、AI、对象存储和数据迁移已验收。
 
 ## 2. 响应与错误
 
@@ -115,21 +115,33 @@ V1 消息详情 GET 为兼容原客户端会标记已读；不要预取或缓存
 
 PushInstallation 必填 installationId、registrationId、platform(android/ios)；provider=jpush/apns/disabled；appVersion/buildNumber/locale 可选。兼容 installation_id、registration_id、app_version、build_number/build。换账号须撤销旧安装再登记。登记接口成功不证明供应商投递成功，真实后台/杀进程推送尚待联调。
 
-## 6. 商城、支付与售后
+## 6. 健康档案、详细报告与权益
 
-商品、库存、购物车、新订单、支付、物流、售后复用商城。服务端通过 `MALL_SERVICE_TOKEN` 对应商城 `MALL_INTERNAL_SERVICE_TOKEN`，客户端不得持有该内部令牌。
+- `GET /health/profile` 聚合最近 30 天有效健康记录、设备、预警数和 AI 分析同意状态，不复制原始测量。未知、`INVALID`、明显占位值不会变成 `0` 或进入报告证据。
+- `GET /health/reports/eligibility` 先检查至少 3 个不同自然日的有效记录。数据不足只说明缺少内容，不创建报告或支付单。
+- AI 分析须先调用 `POST /health/profile/analysis-consent`，提交 `{granted:true,version:"<当前同意版本>"}`；撤回提交 `{granted:false}`。报告生成只接收去标识化汇总和证据索引。
+- `POST /health/reports` 创建预览。已有权益时扣 1 次并进入串行队列；没有权益时返回 `needsPayment=true`，再从 `/billing/offers` 选择服务端有效方案创建支付单。
+- 单次报告 1 次权益；健康会员默认规则为 30 天 4 次，实际价格、次数、期限、平台和 StoreKit 商品 ID 均来自后台版本化方案。未用次数到期不结转；生成失败会返还本次权益。
+- `GET /health/reports/:id` 读取免费概览和状态；只有本人且已解锁可读 `/:id/full` 与 `/:id/export`。PDF 内存生成后直接下载，不长期保存第二份文件。
+- 报告是“AI 生成的健康管理参考”，包含数据区间、证据、局限和版本，不是诊断、处方或治疗建议；健康异常提醒始终免费。
 
-- V1 商品、SKU、地址、订单 ID 来自兼容映射；不要在旧 App 中直接放现商城字符串 ID。V2 使用现商城 ID。
-- 创建订单一次提交完整 items 数组，生成一个真实商城订单。每一次新的用户购买都用新的幂等 key，同一次网络重试才复用。旧接口缺 key 使用请求摘要，相同再次购买会有复用风险，见缺陷清单。
-- 旧支付 POST multipart：pay_type=1 微信/2 支付宝（也接受100/101），trade_type=app，order_group=order，data 为字符串 `{"order_id":数字ID,"money":"金额"}`。适配器归一化为 wechat_app/alipay_app；实际金额由订单确定。
-- 返回支付唤起参数不是已支付。支付回调/查询以商城为准；调试只用沙箱，不执行真实扣款。
-- 地址兼容 realname/name、address_details/detail、is_default/isDefault；请同时提供省市区名称与可用地区码，勿只填无法解析的字符串地区。
-- 旧订单 `source=legacy,readOnly=true`，仅展示。支付、确认收货、修改售后不重放至商城/ERP。历史物流等尚未全面投影，不把空数组当“已无物流”。
-- 原小程序 `/api/v1/mini-program/preview` 的 code/openid 交换尚未接入；不能使用 App 支付接口代替微信小程序登录与支付。
+## 7. 商城、支付与售后
 
-## 7. 后台角色、内容、反馈与设置
+商品、购物车、地址、新订单、物流、售后、评价、优惠券和员工推广已进入主系统。聚水潭继续作为 SKU、库存和履约权威来源；总后台只能修改展示与营销字段，不能直接覆盖权威库存。
 
-角色：SUPER_ADMIN、APP_OPERATIONS、CONTENT_EDITOR、CUSTOMER_SERVICE、HEALTH_AUDITOR、READ_ONLY。目录内没有列限制角色的后台接口，当前仅要求有效后台会话；详见缺陷清单的最小权限待补项。
+- App V1、原 H5/小程序 `/api/saidian-mall/v1/*` 和 V2 商城入口都落到同一主库会员、商品和订单，不再通过第二套商城服务创建订单。旧数字 ID 由兼容映射处理，新接口使用 UUID。
+- 创建订单一次提交完整 `items` 数组，只生成一个主库订单。每次新购买使用新幂等键，同一次网络重试才复用；服务端重新计算 SKU 价格、优惠、运费和应付金额。
+- `PaymentIntent` 同时支持 `commerce_order`、`health_report`、`health_membership`。客户端只提交业务 ID、方案、渠道、平台和幂等键，不能提交可信金额。
+- 返回微信/支付宝/StoreKit 唤起参数只代表支付单已创建。只有经过签名校验、金额/商品/账号匹配和事件去重的供应商回调才发货或发放权益；客户端“支付成功”页面不是到账证据。
+- Android/H5 数字报告可用已配置的微信/支付宝；iOS 数字报告必须使用 StoreKit。iOS 实体商城订单仍可使用微信/支付宝。
+- 退款先生成退款单，供应商成功回调后才更新订单/售后；健康报告退款撤销对应报告，会员退款撤销剩余次数和由该会员次数生成的报告。重复回调不重复扣款、发货或发权益。
+- 地址兼容 `realname/name`、`address_details/detail`、`is_default/isDefault`；请同时提供省市区名称与可用地区码。
+- 旧订单 `source=legacy,readOnly=true`，仅展示。支付、确认收货、修改售后不重放至支付、库存或 ERP。历史物流未完整迁移时不能把空数组解释为“没有物流”。
+- 企业微信员工入口只接受允许域名上的 HTTPS 回调，签发独立员工会话；推广链接、业绩、奖金和赠券可用，历史提现仅只读，不恢复充值/提现交易功能。赠券原始令牌只在创建时返回一次，数据库只保存哈希。
+
+## 8. 后台角色、内容、反馈、接口与集成
+
+角色：SUPER_ADMIN、APP_OPERATIONS、COMMERCE_OPERATIONS、FINANCE、CONTENT_EDITOR、CUSTOMER_SERVICE、HEALTH_AUDITOR、INTEGRATION_ADMIN、API_DOC_EDITOR、READ_ONLY。高风险写接口同时由服务端角色守卫限制，前端隐藏按钮不能代替服务端鉴权。
 
 原始健康数据仅 SUPER_ADMIN/HEALTH_AUDITOR 可看并记录审计。后台不把敏感健康值混入普通会员列表。编辑资料和发布内容均通过独立后台 Token。
 
@@ -137,9 +149,13 @@ PushInstallation 必填 installationId、registrationId、platform(android/ios)�
 
 反馈：content 5–2000 字符，contact 最多 100，attachments 最多 6 个本人已上传文件 ID。当前私有反馈附件缺少后台授权下载入口；不是上传失败。
 
-`settings/support` 与 `settings/app_update` 接受 `{value:{...},public:true}` 并原样提供 JSON；目前没有强 DTO 或统一 App 消费协议，不要随意添加字段后就宣称生效。集成登记里的 CONFIGURED 只代表人工登记，不会自动把密钥配置进运行环境。
+`settings/support` 与 `settings/app_update` 接受 `{value:{...},public:true}` 并原样提供 JSON；目前没有强 DTO 或统一 App 消费协议，不要随意添加字段后就宣称生效。
 
-## 8. 可复制调用示例
+“集成中心”只显示公开配置和 `hasSecret`，敏感字段通过 `secrets` 写入后由 `INTEGRATION_MASTER_KEY` 以 AES-256-GCM 加密；列表、详情、日志和接口响应均不回显明文。选择“启用”只允许服务尝试调用，界面仍显示“尚未通过真实调用”；只有短信、AI、支付、企业微信、推送、聚水潭或文件服务获得真实成功响应后才记录检测时间。修改公开配置或密钥会清除原检测状态。轮换主密钥前必须先设计解密/重加密迁移，不能直接替换。
+
+“接口中心”的方法、路径、鉴权和签名由代码目录生成，后台只能编辑中文说明、示例、错误处理、标签及弃用信息。流程为草稿 → 提交审核 → 超级管理员发布；可回滚到与当前路由签名一致的历史版本。代码改变路由后旧说明会标记过期，`pnpm api:docs:check` 会阻止缺少说明的提交。
+
+## 9. 可复制调用示例
 
 以下 curl 示例只指向本地；替换占位符即可，不把真实凭据写进 Git。Windows 使用 `curl.exe`。
 
@@ -169,12 +185,19 @@ curl -sS http://127.0.0.1:8080/api/saydian-app/v2/care/relationships/<关系UUID
   -H 'Authorization: Bearer <被关爱人Token>' -H 'Content-Type: application/json' \
   --data '{"metrics":["heart_rate"]}'
 
+# 先检查是否具备生成详细报告的数据，不会在此步骤收费
+curl -sS http://127.0.0.1:8080/api/saydian-app/v2/health/reports/eligibility \
+  -H 'Authorization: Bearer <会员Token>'
+
+# 商城 H5 读取主系统商品
+curl -sS 'http://127.0.0.1:8080/api/saidian-mall/v1/storefront/products?page=1&pageSize=20'
+
 # 后台会员分页，不能使用会员 Token
 curl -sS 'http://127.0.0.1:8080/api/saydian-app/admin/v1/members?page=1&pageSize=30' \
   -H 'Authorization: Bearer <后台Token>'
 ```
 
-## 9. 文档维护与验收层级
+## 10. 文档维护与验收层级
 
 更新控制器后修改 `tools/api-notes.mjs` 并运行 `pnpm api:docs`；CI 执行 `pnpm api:docs:check`，缺说明/多余说明/文档未生成都会失败。该目录不是伪装成完整 DTO 的 OpenAPI；参数边界以调用手册、校验器和可重复测试共同确认。
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ContentService } from "../content/content.service";
+import type { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { CommerceService } from "../commerce/commerce.service";
 import { CareService } from "../care/care.service";
 import { LegacyService } from "./legacy.service";
@@ -9,7 +10,10 @@ import type { PrismaService } from "../common/prisma.service";
 describe("legacy identifiers and payment boundaries", () => {
   it("does not send numeric legacy article IDs to a UUID column", async () => {
     const findFirst = vi.fn().mockResolvedValue({ id: "article", legacyId: "17" });
-    const content = new ContentService({ article: { findFirst } } as unknown as PrismaService);
+    const content = new ContentService(
+      { article: { findFirst } } as unknown as PrismaService,
+      {} as IntegrationSecretsService,
+    );
     await content.article("17");
     expect(findFirst.mock.calls[0]?.[0].where.OR).toEqual([{ legacyId: "17" }]);
   });
@@ -33,11 +37,16 @@ describe("legacy identifiers and payment boundaries", () => {
 
   it("blocks historical-order payment before touching the mall", async () => {
     const findFirst = vi.fn().mockResolvedValue({ id: "projection" });
-    const findUnique = vi.fn();
-    const commerce = new CommerceService({ legacyOrderProjection: { findFirst }, commerceIdentityMap: { findUnique } } as unknown as PrismaService);
+    const store = { listOrders: vi.fn() };
+    const billing = { createPayment: vi.fn() };
+    const commerce = new CommerceService(
+      { legacyOrderProjection: { findFirst } } as unknown as PrismaService,
+      store as never,
+      billing as never,
+    );
     await expect(commerce.forUser("owner", "POST", "/payments", { orderId: "9527" })).rejects.toThrow("历史订单仅供查看");
     expect(findFirst.mock.calls[0]?.[0].where).toEqual({ userId: "owner", OR: [{ legacyOrderId: "9527" }] });
-    expect(findUnique).not.toHaveBeenCalled();
+    expect(billing.createPayment).not.toHaveBeenCalled();
   });
 });
 

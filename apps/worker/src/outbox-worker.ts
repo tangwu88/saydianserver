@@ -7,6 +7,15 @@ import { buildSafePushPayload } from "@saydian/app-contracts";
 import Redis from "ioredis";
 import type { AccountDeletionWorker } from "./account-deletion-worker";
 import type { PushProvider } from "./push-provider";
+import {
+  HealthReportWorker,
+  PermanentTaskError,
+} from "./health-report-worker";
+import {
+  NotificationCampaignWorker,
+  PermanentCampaignError,
+} from "./notification-campaign-worker";
+import type { CommerceJobWorker } from "./commerce-job-worker";
 
 export class OutboxWorker {
   private stopping = false;
@@ -16,6 +25,9 @@ export class OutboxWorker {
     private readonly redis: Redis,
     private readonly push: PushProvider,
     private readonly accountDeletions?: AccountDeletionWorker,
+    private readonly healthReports?: HealthReportWorker,
+    private readonly notificationCampaigns?: NotificationCampaignWorker,
+    private readonly commerceJobs?: CommerceJobWorker,
   ) {}
 
   stop(): void {
@@ -32,6 +44,7 @@ export class OutboxWorker {
 
   async runOnce(): Promise<boolean> {
     const deletionProcessed = await this.accountDeletions?.runOnce();
+    const commerceProcessed = await this.commerceJobs?.runOnce();
     const candidates = await this.prisma.outboxEvent.findMany({
       where: {
         status: OutboxStatus.PENDING,
@@ -40,7 +53,9 @@ export class OutboxWorker {
       orderBy: { createdAt: "asc" },
       take: 20,
     });
-    if (candidates.length === 0) return deletionProcessed ?? false;
+    if (candidates.length === 0) {
+      return Boolean(deletionProcessed || commerceProcessed);
+    }
     for (const event of candidates) await this.claimAndProcess(event);
     return true;
   }
@@ -73,7 +88,19 @@ export class OutboxWorker {
       });
     } catch (error) {
       const attempts = candidate.attempts + 1;
-      const deadLetter = attempts >= 10;
+      const deadLetter =
+        attempts >= 10 ||
+        error instanceof PermanentTaskError ||
+        error instanceof PermanentCampaignError;
+      if (deadLetter && candidate.eventType === "health_report_generate") {
+        await this.healthReports?.failPermanently(candidate.aggregateId, error);
+      }
+      if (deadLetter && candidate.eventType === "notification_campaign_dispatch") {
+        await this.notificationCampaigns?.failPermanently(
+          candidate.aggregateId,
+          error,
+        );
+      }
       await this.prisma.outboxEvent.update({
         where: { id: candidate.id },
         data: {
@@ -92,6 +119,18 @@ export class OutboxWorker {
   }
 
   private async deliver(event: OutboxEvent): Promise<void> {
+    if (event.eventType === "health_report_generate") {
+      if (!this.healthReports) throw new Error("Health report worker is unavailable");
+      await this.healthReports.generate(event.aggregateId);
+      return;
+    }
+    if (event.eventType === "notification_campaign_dispatch") {
+      if (!this.notificationCampaigns) {
+        throw new Error("Notification campaign worker is unavailable");
+      }
+      await this.notificationCampaigns.dispatch(event.aggregateId);
+      return;
+    }
     const payload = asObject(event.payload);
     const userId = String(payload.userId ?? "");
     if (!userId) throw new Error("Outbox event has no target user");

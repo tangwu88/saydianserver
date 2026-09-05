@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { UserStatus } from "@prisma/client";
+import { IntegrationState, Prisma, UserStatus } from "@prisma/client";
 import { compare, hash } from "bcryptjs";
 import { randomUUID } from "node:crypto";
 import { sign } from "jsonwebtoken";
@@ -23,6 +23,8 @@ import {
   sha256,
 } from "../common/crypto";
 import { SmsAdapterService } from "./sms-adapter.service";
+import { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { markIntegrationVerified } from "../common/integration-health";
 
 const accessLifetimeSeconds = 15 * 60;
 const refreshLifetimeMs = 30 * 24 * 60 * 60 * 1000;
@@ -40,6 +42,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sms: SmsAdapterService,
+    private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
 
   async register(input: RegisterInput): Promise<SessionContract> {
@@ -155,6 +158,11 @@ export class AuthService {
     );
   }
 
+  async refreshForMall(refreshToken: string) {
+    const session = await this.refresh(refreshToken);
+    return this.mallSession(session, session.member.mobileMasked ?? null);
+  }
+
   async logout(sessionId: string): Promise<void> {
     await this.prisma.userSession.updateMany({
       where: { id: sessionId, revokedAt: null },
@@ -169,7 +177,7 @@ export class AuthService {
     const mobile = normalizedMobile(mobileInput);
     const usage = usageInput.trim() || "register";
     if (!mobile) throw new BadRequestException("手机号格式不正确");
-    if (!["register", "reset_password"].includes(usage)) {
+    if (!["register", "reset_password", "login"].includes(usage)) {
       throw new BadRequestException("验证码用途不正确");
     }
     const recent = await this.prisma.smsCode.count({
@@ -177,9 +185,6 @@ export class AuthService {
     });
     if (recent > 0) throw new BadRequestException("请稍后再获取验证码");
     const testMode = envBoolean("ALLOW_TEST_OTP");
-    if (!testMode && env("SMS_PROVIDER", "disabled") === "disabled") {
-      throw new ServiceUnavailableException("短信服务暂时无法使用，请稍后再试");
-    }
     const code = testMode
       ? "123456"
       : String(Math.floor(100000 + Math.random() * 900000));
@@ -207,6 +212,156 @@ export class AuthService {
   ): Promise<SessionContract> {
     await this.consumeSms(input.mobile, input.code, "register");
     return this.register(input);
+  }
+
+  async loginWithSms(input: {
+    mobile: string;
+    code: string;
+    consentVersion: string;
+    consentSource: string;
+    referralCode?: string;
+  }) {
+    const mobile = normalizedMobile(input.mobile);
+    if (!mobile) throw new BadRequestException("手机号格式不正确");
+    this.assertConsentVersion(input.consentVersion);
+    await this.consumeSms(mobile, input.code, "login");
+    const employee = input.referralCode
+      ? await this.prisma.commerceEmployee.findFirst({
+          where: { referralCode: input.referralCode, active: true },
+        })
+      : null;
+    const user = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.user.findUnique({ where: { mobile } });
+      if (existing?.status === UserStatus.DELETION_PENDING) {
+        throw new ConflictException("账号正在注销，如需恢复请联系客服");
+      }
+      const saved = existing
+        ? await tx.user.update({
+            where: { id: existing.id },
+            data: {
+              status: UserStatus.ACTIVE,
+              ...(existing.referralEmployeeId || !employee
+                ? {}
+                : { referralEmployeeId: employee.id }),
+            },
+          })
+        : await tx.user.create({
+            data: {
+              mobile,
+              nickname: `用户${mobile.slice(-4)}`,
+              ...(employee ? { referralEmployeeId: employee.id } : {}),
+            },
+          });
+      await this.recordLegalConsent(
+        tx,
+        saved.id,
+        input.consentVersion,
+        input.consentSource,
+      );
+      return saved;
+    });
+    return this.mallSession(await this.issueSession(user.id), mobile);
+  }
+
+  async loginWechatMini(input: {
+    code: string;
+    consentVersion: string;
+    consentSource: string;
+    referralCode?: string;
+  }) {
+    const code = input.code.trim();
+    if (!code) throw new BadRequestException("微信登录凭证缺失");
+    this.assertConsentVersion(input.consentVersion);
+    const integration = await this.prisma.integrationConfig.findUnique({
+      where: { key: "wechat_pay" },
+    });
+    if (!integration || integration.state !== IntegrationState.CONFIGURED) {
+      throw new ServiceUnavailableException("微信登录暂时无法使用，请稍后再试");
+    }
+    const publicConfig = safeJsonObject(integration.publicConfig);
+    const secrets = await this.integrationSecrets.resolve("wechat_pay", {
+      appIdMini: "WECHAT_PAY_APP_ID_MINI",
+      appSecretMini: "WECHAT_MINI_APP_SECRET",
+    });
+    const appId = secrets.appIdMini ?? String(publicConfig.appIdMini ?? "");
+    const appSecret = secrets.appSecretMini ?? "";
+    if (!appId || !appSecret) {
+      throw new ServiceUnavailableException("微信登录暂时无法使用，请稍后再试");
+    }
+    const response = await fetch(
+      `https://api.weixin.qq.com/sns/jscode2session?appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(appSecret)}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`,
+      { signal: AbortSignal.timeout(15_000) },
+    );
+    const result = safeJsonObject(await response.json().catch(() => ({})));
+    const openId = String(result.openid ?? "").trim();
+    const unionId = String(result.unionid ?? "").trim() || null;
+    if (!response.ok || !openId) {
+      throw new UnauthorizedException("微信登录失败，请稍后重试");
+    }
+    await markIntegrationVerified(this.prisma, "wechat_pay");
+    const employee = input.referralCode
+      ? await this.prisma.commerceEmployee.findFirst({
+          where: { referralCode: input.referralCode, active: true },
+        })
+      : null;
+    const user = await this.prisma.$transaction(async (tx) => {
+      const [byOpenId, byUnionId] = await Promise.all([
+        tx.user.findUnique({ where: { wechatOpenId: openId } }),
+        unionId ? tx.user.findUnique({ where: { wechatUnionId: unionId } }) : null,
+      ]);
+      if (byOpenId && byUnionId && byOpenId.id !== byUnionId.id) {
+        throw new ConflictException("微信账号关联存在冲突，请联系客服处理");
+      }
+      const existing = byUnionId ?? byOpenId;
+      if (existing?.status === UserStatus.DELETION_PENDING) {
+        throw new ConflictException("账号正在注销，如需恢复请联系客服");
+      }
+      const saved = existing
+        ? await tx.user.update({
+            where: { id: existing.id },
+            data: {
+              status: UserStatus.ACTIVE,
+              wechatOpenId: openId,
+              ...(unionId ? { wechatUnionId: unionId } : {}),
+              ...(existing.referralEmployeeId || !employee
+                ? {}
+                : { referralEmployeeId: employee.id }),
+            },
+          })
+        : await tx.user.create({
+            data: {
+              wechatOpenId: openId,
+              ...(unionId ? { wechatUnionId: unionId } : {}),
+              nickname: "微信用户",
+              ...(employee ? { referralEmployeeId: employee.id } : {}),
+            },
+          });
+      await this.recordLegalConsent(
+        tx,
+        saved.id,
+        input.consentVersion,
+        input.consentSource,
+      );
+      return saved;
+    });
+    return this.mallSession(await this.issueSession(user.id), user.mobile);
+  }
+
+  async bindReferral(userId: string, referralCodeInput: string) {
+    const referralCode = referralCodeInput.trim();
+    if (!referralCode) return { bound: false };
+    const employee = await this.prisma.commerceEmployee.findFirst({
+      where: { referralCode, active: true },
+    });
+    if (!employee) return { bound: false };
+    const changed = await this.prisma.user.updateMany({
+      where: { id: userId, referralEmployeeId: null },
+      data: { referralEmployeeId: employee.id },
+    });
+    return {
+      bound: changed.count === 1,
+      ...(changed.count ? { employeeName: employee.name } : {}),
+    };
   }
 
   async resetPassword(
@@ -346,6 +501,43 @@ export class AuthService {
     }
   }
 
+  private assertConsentVersion(version: string): void {
+    if (!version.trim() || version.length > 80) {
+      throw new BadRequestException("请先阅读并同意用户协议与隐私政策");
+    }
+  }
+
+  private async recordLegalConsent(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    version: string,
+    source: string,
+  ) {
+    for (const documentType of ["user_agreement", "privacy_policy"]) {
+      await tx.consentRecord.upsert({
+        where: {
+          userId_documentType_version: { userId, documentType, version },
+        },
+        create: { userId, documentType, version, source },
+        update: { withdrawnAt: null, source },
+      });
+    }
+  }
+
+  private mallSession(session: SessionContract, mobile: string | null) {
+    return {
+      token: session.accessToken,
+      refreshToken: session.refreshToken,
+      expiresAt: session.expiresAt,
+      user: {
+        id: session.member.id,
+        nickname: session.member.nickname,
+        mobile,
+        avatarUrl: session.member.avatarUrl ?? null,
+      },
+    };
+  }
+
   private async consumeSms(
     mobileInput: string,
     code: string,
@@ -383,4 +575,10 @@ export class AuthService {
       throw new BadRequestException("验证码不正确或已过期");
     }
   }
+}
+
+function safeJsonObject(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }

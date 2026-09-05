@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **156 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **269 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -61,25 +61,70 @@
 | `GET /api/rf-article/article-single/view` | 旧版单页文章/协议 | public | query:id；id=原单页文章 ID；当前查询 Article，尚未映射 LegalDocument | LegacyArticle；协议映射缺口见缺陷清单 | 核心服务 |
 | `GET /api/rf-article/chat/index` | 旧版 AI 历史 | member | query:session_id?；session_id 可选 | [{id,session_id,role,message,content,created_at}] | 核心服务 |
 | `POST /api/rf-article/chat/create` | 旧版 AI 提问 | member | JSON/表单 message、session_id? | {id,session_id,role,message,content,created_at} | AI 供应商 |
-| `GET /api/v1/pages` | 旧版商城首页结构 | public | query:code?；code 可选 | {code,items}；swiper/tabs 商品结构 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/inv-shop/v1/product/product/view` | 旧版商品详情 | public | query:id；id=首页返回的数字商品 ID | LegacyProduct（数字 SKU、价格元、库存） | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/inv-shop/v1/member/order/index` | 旧版订单列表 | member | query:synthesize_status?；synthesize_status=0待付/1待发/2待收/3完成/4取消/-1售后/-3退款，可选 | LegacyOrder[]；read_only 标明历史订单 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/inv-shop/v1/member/order/view` | 旧版订单详情 | member | query:id；id=数字订单 ID | LegacyOrder | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/inv-shop/v1/order/order/preview` | 旧版下单预览 | member | query:*；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key；GET 查询参数 | {address,products,...金额} | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/inv-shop/v1/order/order/create` | 旧版创建订单 | member | header:idempotency-key?；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | LegacyOrder；响应不是支付成功 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/inv-shop/v1/order/order/create-batch` | 旧版多商品单订单 | member | header:idempotency-key?；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | 单个 LegacyOrder，非逐商品拆单 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/inv-shop/v1/member/order/take-delivery` | 旧版确认收货 | member | 表单 id=数字订单 ID | 确认结果；历史订单拒绝 409 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/inv-shop/v1/member/order-product/refund-apply` | 旧版申请售后 | member | 表单 id=数字订单项ID，type、reason 等按商城约定 | 售后结果 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/inv-shop/v1/member/order-product-express/details` | 旧版物流详情 | member | query:order_id；order_id=数字订单ID | {data:物流轨迹数组} | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/v1/member/address` | 旧版地址列表 | member | 无请求体 | LegacyAddress[] | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/v1/member/address/:id` | 旧版地址详情 | member | path:id；id=数字地址 ID | LegacyAddress | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/v1/member/address` | 旧版新增地址 | member | Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | LegacyAddress | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `PUT /api/v1/member/address/:id` | 旧版更新地址 | member | path:id；Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | LegacyAddress | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `DELETE /api/v1/member/address/:id` | 旧版删除地址 | member | path:id；id=数字地址 ID | 删除结果 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/v1/pay` | 旧版生成支付参数 | member | multipart pay_type=1微信/2支付宝（兼容100/101）、trade_type=app、order_group=order、data=JSON字符串含order_id；不相信客户端金额 | {payment_no,channel,config}；订单状态以服务端回查为准 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
+| `GET /api/v1/pages` | 旧版商城首页结构 | public | query:code?；code 可选 | {code,items}；swiper/tabs 商品结构 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/inv-shop/v1/product/product/view` | 旧版商品详情 | public | query:id；id=首页返回的数字商品 ID | LegacyProduct（数字 SKU、价格元、库存） | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/inv-shop/v1/member/order/index` | 旧版订单列表 | member | query:synthesize_status?；synthesize_status=0待付/1待发/2待收/3完成/4取消/-1售后/-3退款，可选 | LegacyOrder[]；read_only 标明历史订单 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/inv-shop/v1/member/order/view` | 旧版订单详情 | member | query:id；id=数字订单 ID | LegacyOrder | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/inv-shop/v1/order/order/preview` | 旧版下单预览 | member | query:*；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key；GET 查询参数 | {address,products,...金额} | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/inv-shop/v1/order/order/create` | 旧版创建订单 | member | header:idempotency-key?；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | LegacyOrder；响应不是支付成功 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/inv-shop/v1/order/order/create-batch` | 旧版多商品单订单 | member | header:idempotency-key?；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | 单个 LegacyOrder，非逐商品拆单 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/inv-shop/v1/member/order/take-delivery` | 旧版确认收货 | member | 表单 id=数字订单 ID | 确认结果；历史订单拒绝 409 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/inv-shop/v1/member/order-product/refund-apply` | 旧版申请售后 | member | 表单 id=数字订单项ID，type、reason 等按商城约定 | 售后结果 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/inv-shop/v1/member/order-product-express/details` | 旧版物流详情 | member | query:order_id；order_id=数字订单ID | {data:物流轨迹数组} | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/v1/member/address` | 旧版地址列表 | member | 无请求体 | LegacyAddress[] | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/v1/member/address/:id` | 旧版地址详情 | member | path:id；id=数字地址 ID | LegacyAddress | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/v1/member/address` | 旧版新增地址 | member | Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | LegacyAddress | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `PUT /api/v1/member/address/:id` | 旧版更新地址 | member | path:id；Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | LegacyAddress | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `DELETE /api/v1/member/address/:id` | 旧版删除地址 | member | path:id；id=数字地址 ID | 删除结果 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/v1/pay` | 旧版生成支付参数 | member | multipart pay_type=1微信/2支付宝（兼容100/101）、trade_type=app、order_group=order、data=JSON字符串含order_id；不相信客户端金额 | {payment_no,channel,config}；订单状态以服务端回查为准 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `POST /api/v1/file/images` | 旧版上传头像 | member | file:file；multipart file，JPEG/PNG/WebP，最大 10 MiB | {id,url,path,...}；path 与 url 相同 | 对象存储 |
 
-## V2 App 接口（63）
+## 商城 H5/小程序兼容接口（40）
+
+| 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
+| --- | --- | --- | --- | --- | --- |
+| `POST /api/saidian-mall/v1/auth/sms/request` | 商城短信登录验证码 | public | {mobile} | 发送状态；不返回验证码 | 短信供应商 |
+| `POST /api/saidian-mall/v1/auth/sms/login` | 商城短信登录 | public | {mobile,code,consentVersion,referralCode?} | 商城兼容会话；会员身份与主系统统一 | 短信供应商 |
+| `POST /api/saidian-mall/v1/auth/wechat/mini` | 商城小程序微信登录 | public | {code,consentVersion,referralCode?} | 商城兼容会话；未验证配置时返回暂不可用 | 微信小程序 |
+| `POST /api/saidian-mall/v1/auth/refresh` | 轮换商城刷新令牌 | public | {refreshToken} | 新商城兼容会话 | 核心服务 |
+| `POST /api/saidian-mall/v1/auth/referral` | 锁定商城推荐关系 | member | {referralCode} | 推荐关系；已有关系不覆盖 | 核心服务 |
+| `GET /api/saidian-mall/v1/storefront/bootstrap` | 商城首页初始化 | public | query:ref?；ref=员工推荐号，可选 | 轮播、分类、精选商品与客服配置 | 主库商城 |
+| `GET /api/saidian-mall/v1/storefront/products` | 商城商品列表 | public | query:*；page、pageSize、keyword、categoryId | 可售商品分页 | 主库商城 |
+| `GET /api/saidian-mall/v1/storefront/products/:id` | 商城商品详情 | public | path:id；id=商品UUID | 商品、SKU和展示资料 | 主库商城/聚水潭库存快照 |
+| `GET /api/saidian-mall/v1/storefront/cart` | 商城购物车 | member | 无请求体 | 本人购物车 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/cart/items` | 更新商城购物车 | member | {skuId,quantity,selected?} | 本人购物车 | 核心服务 |
+| `DELETE /api/saidian-mall/v1/storefront/cart/items/:id` | 删除购物车项 | member | path:id；id=购物车项UUID | 空响应 | 核心服务 |
+| `GET /api/saidian-mall/v1/storefront/addresses` | 商城收货地址 | member | 无请求体 | 本人地址列表 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/addresses` | 新增或兼容更新地址 | member | Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | 收货地址 | 核心服务 |
+| `PATCH /api/saidian-mall/v1/storefront/addresses/:id` | 更新收货地址 | member | path:id；id=地址UUID；Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | 收货地址 | 核心服务 |
+| `DELETE /api/saidian-mall/v1/storefront/addresses/:id` | 删除收货地址 | member | path:id；id=地址UUID | 空响应 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/orders/preview` | 商城订单预览 | member | Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | 服务端核价结果；不创建订单 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/orders` | 商城创建订单 | member | header:idempotency-key；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | 单个真实主库订单；Idempotency-Key 防重复 | 核心服务 |
+| `GET /api/saidian-mall/v1/storefront/orders` | 商城订单列表 | member | query:status?；status可选 | 当前订单与旧订单只读投影 | 核心服务 |
+| `GET /api/saidian-mall/v1/storefront/orders/:id` | 商城订单详情 | member | path:id；id=订单UUID或旧订单映射 | 订单详情；旧投影只读 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/orders/:id/cancel` | 取消待付款订单 | member | path:id；id=订单UUID | {ok:true} | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/orders/:id/receipt` | 确认收货 | member | path:id；id=订单UUID | {ok:true} | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/orders/:id/after-sales` | 提交商城售后 | member | path:id；id=订单UUID；{type,reason,requestedCents?,description?,evidenceImages?} | 售后记录；退款由审核和支付回调完成 | 核心服务 |
+| `GET /api/saidian-mall/v1/storefront/orders/:id/logistics` | 商城订单物流 | member | path:id；id=订单UUID | 物流公司、单号和轨迹 | 核心服务 |
+| `GET /api/saidian-mall/v1/storefront/favorites` | 商城收藏列表 | member | 无请求体 | 本人收藏商品 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/favorites/:productId` | 收藏或取消商品 | member | path:productId；productId=商品UUID；{enabled:boolean} | 保存结果 | 核心服务 |
+| `GET /api/saidian-mall/v1/storefront/coupons` | 商城优惠券 | member | 无请求体 | 本人可用及历史券 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/coupons/:id/claim` | 领取优惠券 | member | path:id；id=优惠券UUID | 领取记录；重复领取幂等 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/reviews` | 商城商品评价 | member | {orderItemId,rating,content,images?} | 评价记录 | 核心服务 |
+| `POST /api/saidian-mall/v1/payments/create` | 商城创建统一支付单 | member | {orderId,channel,idempotencyKey?} | 支付单及渠道调用参数；不等于支付成功 | 微信支付/支付宝；未配置返回503 |
+| `POST /api/saidian-mall/v1/payments/wechat/notify` | 兼容微信支付回调 | public | header:*；微信支付签名头和密文通知 | 微信约定确认响应 | 微信支付 |
+| `POST /api/saidian-mall/v1/payments/wechat/refund-notify` | 兼容微信退款回调 | public | header:*；微信支付签名头和密文通知 | 微信约定确认响应 | 微信支付 |
+| `POST /api/saidian-mall/v1/payments/alipay/notify` | 兼容支付宝回调 | public | 支付宝表单参数 | success/failure文本 | 支付宝 |
+| `GET /api/saidian-mall/v1/wecom/authorize-url` | 生成企业微信员工登录地址 | public | query:redirectUri；redirectUri必须是后台允许的HTTPS域名 | 企业微信OAuth地址；不代表已登录 | 企业微信；未配置返回503 |
+| `POST /api/saidian-mall/v1/wecom/oauth` | 企业微信员工登录 | public | {code}；仅接受企业微信返回的一次性登录码 | 独立员工会话和脱敏员工摘要 | 企业微信；未配置返回503 |
+| `GET /api/saidian-mall/v1/wecom/me/dashboard` | 员工推广业绩 | employee | query:from?，query:to?；from/to可选ISO8601日期 | 本人推广订单、退款、奖金和只读历史提现；不能新建提现 | 主库商城 |
+| `GET /api/saidian-mall/v1/wecom/me/promotion` | 生成员工推广素材 | employee | query:productId?；productId可选商品UUID | 推荐链接、二维码和海报 | 企业微信商城地址配置 |
+| `GET /api/saidian-mall/v1/wecom/me/coupons` | 员工可分发优惠券 | employee | 无请求体 | 可领取额度、赠券码和状态；历史链接不回显 | 主库商城 |
+| `POST /api/saidian-mall/v1/wecom/me/coupons/:id/claim` | 领取员工赠券码 | employee | path:id；id=优惠券UUID；{quantity?}受批次和员工限额约束 | 一次性返回赠券链接与二维码；原始令牌不落库 | 主库商城 |
+| `GET /api/saidian-mall/v1/storefront/coupon-gifts/:token` | 查看员工赠送的优惠券 | public | path:token；token=高熵一次性赠券令牌 | 优惠券、员工摘要和领取状态；不返回会员信息 | 主库商城 |
+| `POST /api/saidian-mall/v1/storefront/coupon-gifts/:token/claim` | 会员领取员工赠券 | member | path:token；token=赠券令牌；需会员登录 | 本人优惠券领取记录；并发领取只成功一次 | 主库商城 |
+
+## V2 App 接口（90）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -112,6 +157,8 @@
 | `GET /api/saydian-app/v2/care/relationships/:id/health` | 按授权查看健康数据 | member | path:id，query:metric，query:from，query:to；id=关系 UUID；metric 必填；from/to=ISO8601；缺省近 7 天；左闭右开 | HealthRecord[]；逐指标授权并记录审计，拒绝 403 | 核心服务 |
 | `GET /api/saydian-app/v2/notifications` | 消息列表 | member | query:page?，query:pageSize?；page 默认 1；pageSize 默认 30 | 分页消息 | 核心服务 |
 | `GET /api/saydian-app/v2/notifications/unread-count` | 未读数 | member | 无请求体 | {count} | 核心服务 |
+| `GET /api/saydian-app/v2/notifications/preferences` | 读取通知偏好 | member | 无请求体 | {transactionalEnabled,marketingEnabled,updatedAt}；营销通知默认关闭 | 核心服务 |
+| `PATCH /api/saydian-app/v2/notifications/preferences` | 修改通知偏好 | member | {transactionalEnabled?,marketingEnabled?}；至少提交一项 | 保存后的通知偏好；业务必要通知与营销通知分开 | 核心服务 |
 | `GET /api/saydian-app/v2/notifications/:id` | 消息详情 | member | path:id；id=消息 UUID | Notification；V2 GET 不标记已读 | 核心服务 |
 | `POST /api/saydian-app/v2/notifications/:id/read` | 标记消息已读 | member | path:id；id=消息 UUID/eventId | {read:true}；仅本人消息 | 核心服务 |
 | `POST /api/saydian-app/v2/notifications/push-installations` | 登记推送安装 | member | PushInstallation：installationId、platform、registrationId、appVersion、buildNumber；字段别名见调用手册 | 安装记录；登记不等于推送成功 | 推送供应商（登记可独立使用） |
@@ -128,26 +175,51 @@
 | `POST /api/saydian-app/v2/files` | 上传图片 | member | file:file，query:purpose?；multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP | {id,url,...} | 私有对象存储 |
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
-| `GET /api/saydian-app/v2/commerce/home` | 商城首页 | public | 无请求体 | 现商城 bootstrap | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/saydian-app/v2/commerce/products` | 商城商品列表 | public | query:*；page、pageSize、keyword 等查询参数透传商城 | 现商城商品分页 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/saydian-app/v2/commerce/products/:id` | 商城商品详情 | public | path:id；id=现商城商品 ID | 现商城商品及 SKU | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/saydian-app/v2/commerce/cart` | 购物车 | member | 无请求体 | 现商城购物车 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/saydian-app/v2/commerce/cart/items` | 更新购物车项 | member | {skuId,quantity,selected?} | 现商城购物车 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `DELETE /api/saydian-app/v2/commerce/cart/items/:id` | 删除购物车项 | member | path:id；id=购物车项 ID | 商城删除结果 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/saydian-app/v2/commerce/addresses` | 地址列表 | member | 无请求体 | Address[] | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/saydian-app/v2/commerce/addresses/:id` | 地址详情 | member | path:id；id=商城地址 ID | Address | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/saydian-app/v2/commerce/addresses` | 新增地址 | member | Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | Address | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `PATCH /api/saydian-app/v2/commerce/addresses/:id` | 更新地址 | member | path:id；Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | Address | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `DELETE /api/saydian-app/v2/commerce/addresses/:id` | 删除地址 | member | path:id；id=商城地址 ID | {deleted:true} | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/saydian-app/v2/commerce/orders` | 当前订单与历史投影 | member | query:status?；status=商城订单枚举，可选 | Order[]；source=mall/legacy，readOnly=true 的订单只读；商城故障时降级限制见缺陷清单 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/saydian-app/v2/commerce/orders/:id` | 订单详情 | member | path:id；id=现商城 ID 或旧投影/旧订单 ID | Order | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/saydian-app/v2/commerce/orders` | 多商品创建单个商城订单 | member | header:idempotency-key；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | Order；不重放旧订单 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/saydian-app/v2/commerce/orders/:id/receipt` | 确认收货 | member | path:id；id=现商城订单 ID | {received:true}；旧订单拒绝 409 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/saydian-app/v2/commerce/orders/:id/after-sales` | 申请售后 | member | path:id；id=现商城订单 ID；{type,reason,...} 按商城售后契约 | 现商城售后结果；旧订单拒绝 409 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `GET /api/saydian-app/v2/commerce/orders/:id/logistics` | 订单物流 | member | path:id；id=现商城订单 ID | 物流轨迹数组 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
-| `POST /api/saydian-app/v2/commerce/payments` | 生成 App 支付参数 | member | header:idempotency-key；{orderId,channel:wechat_app/alipay_app}；金额以商城订单为准；幂等头透传 | {paymentNo,channel,invoke}；不等于付款成功 | 商城服务及内部身份凭据；支付还依赖支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/home` | 商城首页 | public | 无请求体 | 主库商城首页数据 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/products` | 商城商品列表 | public | query:*；page、pageSize、keyword、categoryId、sort | 主库商品分页 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/products/:id` | 商城商品详情 | public | path:id；id=商品UUID | 主库商品及SKU | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/cart` | 购物车 | member | 无请求体 | 本人主库购物车 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/cart/items` | 更新购物车项 | member | {skuId,quantity,selected?} | 本人主库购物车 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `DELETE /api/saydian-app/v2/commerce/cart/items/:id` | 删除购物车项 | member | path:id；id=购物车项UUID | 删除结果 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/addresses` | 地址列表 | member | 无请求体 | Address[] | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/addresses/:id` | 地址详情 | member | path:id；id=商城地址 ID | Address | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/addresses` | 新增地址 | member | Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | Address | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `PATCH /api/saydian-app/v2/commerce/addresses/:id` | 更新地址 | member | path:id；Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | Address | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `DELETE /api/saydian-app/v2/commerce/addresses/:id` | 删除地址 | member | path:id；id=商城地址 ID | {deleted:true} | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/orders` | 当前订单与历史投影 | member | query:status?；status=商城订单枚举，可选 | Order[]；主库订单可操作，readOnly=true 的迁移历史只读 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/orders/preview` | 预览商城订单 | member | Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | 收货地址、商品和服务端金额；不创建订单 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/orders/:id` | 订单详情 | member | path:id；id=主库订单UUID或旧投影ID | Order | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/orders` | 多商品创建单个商城订单 | member | header:idempotency-key；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | Order；不重放旧订单 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/orders/:id/receipt` | 确认收货 | member | path:id；id=主库订单UUID | {received:true}；旧订单拒绝409 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/orders/:id/cancel` | 取消待付款订单 | member | path:id；id=商城订单UUID | 取消结果并恢复本地库存占用；旧订单拒绝409 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/orders/:id/after-sales` | 申请售后 | member | path:id；id=主库订单UUID；{type,reason,requestedCents?,description?,evidenceImages?} | 主库售后记录；旧订单拒绝409 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/orders/:id/logistics` | 订单物流 | member | path:id；id=主库订单UUID | 物流轨迹数组 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/payments` | 生成 App 支付参数 | member | header:idempotency-key；{orderId,channel:wechat_app/alipay_app}；金额以商城订单为准；幂等头透传 | {paymentNo,channel,invoke}；不等于付款成功 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/favorites` | 收藏商品列表 | member | 无请求体 | 当前可售商品卡片数组 | 主库商城 |
+| `PUT /api/saydian-app/v2/commerce/products/:id/favorite` | 收藏或取消收藏 | member | path:id；id=商品UUID；{enabled:boolean} | 保存结果 | 主库商城 |
+| `GET /api/saydian-app/v2/commerce/coupons` | 本人优惠券 | member | 无请求体 | 优惠券领取与使用状态 | 主库商城 |
+| `POST /api/saydian-app/v2/commerce/coupons/:id/claim` | 领取优惠券 | member | path:id；id=优惠券UUID | 领取记录；重复领取幂等 | 主库商城 |
+| `POST /api/saydian-app/v2/commerce/reviews` | 评价已收货商品 | member | {orderItemId,rating,content,images?} | 评价记录 | 主库商城 |
+| `GET /api/saydian-app/v2/health/profile` | 会员健康档案 | member | 无请求体；默认汇总近30天有效记录 | 健康数据完整度、指标摘要、设备、预警数和分析同意状态 | 核心服务 |
+| `POST /api/saydian-app/v2/health/profile/analysis-consent` | 设置健康AI分析单独同意 | member | {granted:boolean,version:string}；撤回时granted=false | 同意或撤回状态；撤回后不能新生成AI报告 | 核心服务 |
+| `GET /api/saydian-app/v2/health/reports/eligibility` | 检查详细报告生成条件 | member | 无请求体；默认近30天 | 至少3个自然日的有效记录、缺失说明、可用次数和同意要求 | 核心服务 |
+| `GET /api/saydian-app/v2/health/reports` | 健康报告历史 | member | 无请求体 | 本人最多100份报告；已生成报告可重复查看 | 核心服务 |
+| `POST /api/saydian-app/v2/health/reports` | 创建健康报告请求 | member | 无请求体；数据不足时不创建支付单 | 报告预览及needsPayment；有次数时进入队列 | 核心服务 |
+| `GET /api/saydian-app/v2/health/reports/:id` | 健康报告状态与免费概览 | member | path:id；id=报告UUID | 报告状态、数据区间和免费概览；不含付费正文 | 核心服务 |
+| `GET /api/saydian-app/v2/health/reports/:id/full` | 查看已解锁详细健康报告 | member | path:id；id=报告UUID | AI标识、证据索引、局限及详细内容；非诊断 | 核心服务 |
+| `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
+| `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID | 重新排队后的报告；生成失败时次数已返还 | AI供应商 |
+| `GET /api/saydian-app/v2/billing/offers` | 健康报告购买方案 | public | query:platform?；platform=android/ios/h5/mini_program/web，可选 | 后台启用且当前有效的版本化价格方案 | 核心服务 |
+| `POST /api/saydian-app/v2/billing/payments/wechat/refund-notify` | 微信退款结果回调 | public | header:*；微信支付API v3加密通知；必须校验平台签名并解密 | SUCCESS确认；处理中、关闭或异常不伪报退款成功 | 微信支付 |
+| `GET /api/saydian-app/v2/billing/entitlements` | 健康报告权益 | member | 无请求体 | 可用次数及30天会员到期时间 | 核心服务 |
+| `POST /api/saydian-app/v2/billing/payments` | 创建统一支付单 | member | {businessType,businessId,offerId?,channel,platform,idempotencyKey}；金额和权益由服务端确定 | PaymentIntent及渠道调用参数；不等于付款成功 | 微信支付/支付宝/StoreKit；未配置返回503 |
+| `GET /api/saydian-app/v2/billing/payments/:id` | 查询支付结果 | member | path:id；id=PaymentIntent UUID | 本人支付状态；客户端应以服务端状态为准 | 核心服务 |
+| `POST /api/saydian-app/v2/billing/apple/transactions/verify` | 验证StoreKit交易 | member | {paymentIntentId,signedTransactionInfo} | 验证成功后的支付与权益 | Apple App Store Server；未配置返回503 |
+| `POST /api/saydian-app/v2/billing/apple/notifications` | 接收App Store Server Notifications V2 | public | {signedPayload}；外层和内层JWS均须通过Apple证书链验证 | {received:true}；退款或撤销会收回对应报告权益 | Apple App Store Server |
+| `POST /api/saydian-app/v2/billing/payments/wechat/notify` | 微信支付验签通知 | public | header:*；微信支付V3原始JSON及Wechatpay签名头 | 微信要求的SUCCESS响应；事件幂等 | 微信支付V3 |
+| `POST /api/saydian-app/v2/billing/payments/alipay/notify` | 支付宝验签通知 | public | 支付宝form通知字段 | 支付宝要求的success文本；事件幂等 | 支付宝开放平台 |
 
-## 管理后台接口（30）
+## 管理后台接口（76）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -156,7 +228,7 @@
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members` | 会员查询 | admin | query:search?，query:page?，query:pageSize?；search 查昵称/手机号/旧会员ID；page 默认1；pageSize 默认30 最大100 | {items,total,page,pageSize}；手机号遮蔽 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-summary` | 会员健康数量摘要 | admin | path:id；id=会员 UUID | 按指标数量与首末采集时间 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?；id=会员 UUID；limit 默认100 最大500 | HealthRecord[]；留下专门读取审计 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/care` | 后台关爱关系 | admin | 无请求体 | 最多500条，双方昵称和指标权限；尚无分页 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/devices` | 后台设备快照 | admin | 无请求体 | 最多500条；尚无分页 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/feedback` | 反馈工单 | admin | query:status?；status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选 | 最多500条 | 核心服务 |
@@ -167,8 +239,8 @@
 | `PATCH /api/saydian-app/admin/v1/article-categories/:id` | 编辑分类 | admin: SUPER_ADMIN, CONTENT_EDITOR | path:id；{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID | 分类记录；当前为完整字段保存 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/articles` | 新增文章 | admin: SUPER_ADMIN, CONTENT_EDITOR | {title,contentHtml,summary?,coverUrl?,categoryId?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID | Article | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/articles/:id` | 编辑文章 | admin: SUPER_ADMIN, CONTENT_EDITOR | path:id；{title,contentHtml,summary?,coverUrl?,categoryId?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID | Article；当前为完整字段保存 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/integrations` | 集成登记状态 | admin | 无请求体 | 公开配置、登记状态和检查时间；不等同实时连通结果 | 核心服务 |
-| `PATCH /api/saydian-app/admin/v1/integrations/:key` | 维护集成登记 | admin: SUPER_ADMIN | path:key；{state:UNCONFIGURED/CONFIGURED/DISABLED/ERROR,publicConfig?,secretRef?}；不得填密钥，配置不直接注入进程环境 | 公开集成登记 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/integrations` | 集成登记状态 | admin | 无请求体 | 公开配置、是否已安全保存密钥、登记状态和检查时间；密钥永不回显，登记不等同实时连通 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/integrations/:key` | 维护集成登记和密钥 | admin: SUPER_ADMIN, INTEGRATION_ADMIN | path:key；{state:UNCONFIGURED/CONFIGURED/DISABLED/ERROR,publicConfig?,secrets?:对象,clearSecrets?:boolean}；secrets使用主机外置主密钥加密且只写不回显 | 公开配置和hasSecret；不返回密钥内容 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/audit-logs` | 审计记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR, READ_ONLY | query:page?；page 默认1，每页100 | AuditLog[] | 核心服务 |
 | `GET /api/saydian-app/admin/v1/warnings` | 后台预警摘要 | admin | query:page?；page 默认1，每页100 | 摘要数组，不含健康值 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/notifications` | 后台通知 | admin | query:page?；page 默认1，每页100 | 通知列表；非主动群发接口 | 核心服务 |
@@ -181,3 +253,49 @@
 | `GET /api/saydian-app/admin/v1/account-deletions` | 注销任务列表 | admin: SUPER_ADMIN, CUSTOMER_SERVICE | 无请求体 | 注销任务及遮蔽会员资料；非手动执行删除接口 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/settings` | 客服与更新设置 | admin | 无请求体 | key=support/app_update 的设置数组 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/settings/:key` | 保存客服或更新设置 | admin: SUPER_ADMIN, APP_OPERATIONS | path:key；key=support/app_update；{value:非空JSON对象,public?:boolean} | 设置对象；结构约定见调用手册 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-products` | 总后台商品列表 | admin | query:search?，query:page?；search可查商品名或ERP编号；page默认1 | 主库商品、SKU及ERP库存快照；不直接改权威库存 | 主库商城/聚水潭 |
+| `POST /api/saydian-app/admin/v1/commerce-products` | 拒绝手工新增ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 请先通过聚水潭商品同步建立商品和SKU | HTTP 400；不会创建第二套库存 | 聚水潭 |
+| `PATCH /api/saydian-app/admin/v1/commerce-products/:id` | 编辑商品展示资料 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?} | 展示资料；ERP编号、内部名称、SKU和库存不会被覆盖 | 主库商城/聚水潭 |
+| `GET /api/saydian-app/admin/v1/commerce-categories` | 商城分类 | admin | 无请求体 | 分类树平铺数据 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/commerce-categories` | 新增商城分类 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {name,parentId?,iconUrl?,sort?,enabled?} | 分类 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/commerce-categories/:id` | 编辑商城分类 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=分类UUID；字段同新增 | 分类 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-banners` | 商城首页轮播 | admin | 无请求体 | 按排序返回的轮播图 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/commerce-banners` | 新增商城轮播 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {title,imageUrl,targetUrl?,sort?,enabled?} | 轮播图 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/commerce-banners/:id` | 编辑商城轮播 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=轮播UUID；字段同新增 | 轮播图 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-business-configs` | 商城业务设置 | admin | 无请求体 | 运费、客服等非密钥商城配置 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/commerce-business-configs/:key` | 保存商城业务设置 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:key；key=配置键；{label?,value?,enabled?} | 商城配置；支付、ERP等密钥仍由集成中心管理 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-reviews` | 商城评价管理 | admin | 无请求体 | 真实订单评价、脱敏会员和商品摘要 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/commerce-reviews/:id` | 设置评价展示状态 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, CUSTOMER_SERVICE | path:id；id=评价UUID；{published:boolean} | 评价；不能改写评分或正文 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-orders` | 总后台订单 | admin | query:status?，query:page?；status可选；page默认1 | 会员已脱敏的订单、明细、支付、物流和售后 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/commerce-orders/:id` | 维护订单备注 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=订单UUID；{adminRemark?}；订单状态不能手工改写 | 订单 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-after-sales` | 总后台售后 | admin | query:status?；status可选 | 售后、退款及订单摘要 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/commerce-after-sales/:id` | 审核售后 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, CUSTOMER_SERVICE | path:id；id=售后UUID；{status,returnLogisticsCompany?,returnTrackingNo?} | 售后；退款成功状态只能由真实回调完成 | 支付/聚水潭 |
+| `GET /api/saydian-app/admin/v1/commerce-coupons` | 优惠券 | admin | 无请求体 | 优惠券及领取数量 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/commerce-coupons` | 新增优惠券 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {name,value,minimumSpendCents,totalQuantity?,validFrom,validUntil,status?,employeeDistributable?,perEmployeeLimit?} | 优惠券；金额单位分 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/commerce-coupons/:id` | 编辑优惠券 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=优惠券UUID；字段同新增 | 优惠券 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-employees` | 员工推广 | admin | 无请求体 | 推广员工和钱包摘要；手机号遮蔽 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-commissions` | 奖金明细 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, READ_ONLY | 无请求体 | 奖金规则、计提和历史只读流水 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-jobs` | 商城集成任务 | admin | query:status?；status可选 | 聚水潭等任务状态；未配置不伪报成功 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/commerce-jobs/:id/retry` | 重试商城集成任务 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, INTEGRATION_ADMIN | path:id；id=失败或死信任务UUID | 重新排队任务 | 聚水潭 |
+| `POST /api/saydian-app/admin/v1/commerce-jobs/product-sync` | 安排聚水潭商品同步 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, INTEGRATION_ADMIN | {modifiedBegin?,modifiedEnd?}；缺省最近24小时，最长31天 | 幂等同步任务；任务成功才更新ERP商品与库存快照 | 聚水潭 |
+| `POST /api/saydian-app/admin/v1/commerce-jobs/fulfillment-sync` | 安排聚水潭物流同步 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, INTEGRATION_ADMIN | 无请求体；同一小时幂等 | 物流同步任务；任务成功才更新发货状态 | 聚水潭 |
+| `GET /api/saydian-app/admin/v1/payments` | 统一支付流水 | admin: SUPER_ADMIN, FINANCE, COMMERCE_OPERATIONS, READ_ONLY | query:status?，query:page?；status可选；page默认1 | 商城订单、健康报告和健康会员支付单 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/health-reports` | 健康报告任务 | admin: SUPER_ADMIN, HEALTH_AUDITOR, CUSTOMER_SERVICE, READ_ONLY | query:status?；status可选 | 报告任务、数据范围、生成版本和失败原因；不直接返回敏感原始数据 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/health-reports/:id/retry` | 重试失败健康报告 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id；id=失败报告UUID | 重新排队且不重复扣次数 | AI供应商 |
+| `GET /api/saydian-app/admin/v1/health-report-offers` | 健康报告价格方案 | admin | 无请求体 | 全部历史版本及启用状态 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/health-report-offers` | 新增健康报告价格版本 | admin: SUPER_ADMIN, FINANCE | {offerKey,title,description,entitlement,priceCents,creditCount,durationDays?,platforms,appleProductId?,active?,effectiveFrom?,effectiveUntil?} | 不可变的新价格版本；金额单位分 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/health-report-offers/:id` | 发布价格方案新版本 | admin: SUPER_ADMIN, FINANCE | path:id；id=旧版本UUID；字段同新增 | 停用旧版本并创建新版本，不原地改写历史价格 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/notification-campaigns` | 营销通知任务 | admin | 无请求体 | 草稿、计划、发送结果和失败数 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/notification-campaigns` | 创建营销通知草稿 | admin: SUPER_ADMIN, APP_OPERATIONS | {name,type,title,body,deepLink?,audience:{allActive:true\|userIds:[]},scheduledAt?} | 营销通知草稿；不会发送给未同意营销通知的会员 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/notification-campaigns/:id` | 编辑营销通知草稿 | admin: SUPER_ADMIN, APP_OPERATIONS | path:id；id=草稿UUID；字段同新增 | 营销通知草稿 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/notification-campaigns/:id/schedule` | 安排营销通知 | admin: SUPER_ADMIN, APP_OPERATIONS | path:id；id=草稿UUID | 计划任务；实际发送由Worker完成并逐用户记录 | 推送供应商 |
+| `POST /api/saydian-app/admin/v1/commerce-after-sales/:id/refund` | 按已审核售后发起退款 | admin: SUPER_ADMIN, FINANCE | path:id；id=售后UUID；{reason?}；退款金额由售后单确定 | 退款记录；渠道受理不等于成功，最终以验签回调或已验签同步结果为准 | 微信支付/支付宝 |
+| `POST /api/saydian-app/admin/v1/payments/:id/refunds` | 财务发起指定支付退款 | admin: SUPER_ADMIN, FINANCE | path:id；id=支付UUID；{amountCents,reason,afterSaleId?,idempotencyKey}；金额单位分 | 幂等退款记录；Apple购买退款需由App Store处理 | 微信支付/支付宝 |
+| `GET /api/saydian-app/admin/v1/api-docs` | 接口中心路由与说明 | admin | 无请求体 | 代码生成的方法/路径/鉴权/参数与可编辑业务说明；标记过期项 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/api-docs/:routeKey` | 编辑接口业务说明 | admin: SUPER_ADMIN, API_DOC_EDITOR | path:routeKey；routeKey=控制器方法键；{title,summary,businessExample?,errorGuidance?,tags?,deprecated?,deprecationNote?}；不能修改方法和路径 | 接口说明草稿 | 代码生成路由目录 |
+| `GET /api/saydian-app/admin/v1/api-docs/releases/list` | 接口文档版本 | admin | 无请求体 | 最近100个草稿、审核、已发布和归档版本 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/api-docs/releases` | 创建接口文档发布草稿 | admin: SUPER_ADMIN, API_DOC_EDITOR | {changeNote}；存在过期说明时拒绝 | 冻结的脱敏文档快照 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/api-docs/releases/:id/submit` | 提交接口文档审核 | admin: SUPER_ADMIN, API_DOC_EDITOR | path:id；id=文档版本UUID | IN_REVIEW版本 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/api-docs/releases/:id/publish` | 发布接口文档 | admin: SUPER_ADMIN | path:id；id=审核中文档版本UUID | PUBLISHED版本；仅超级管理员 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/api-docs/releases/:id/rollback` | 恢复历史接口文档 | admin: SUPER_ADMIN | path:id；id=历史版本UUID；{changeNote?} | 新的已发布版本；路由签名不同时拒绝 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/api-docs/export/file` | 导出脱敏接口文档 | admin | query:format?；format=markdown/openapi | Markdown文本或OpenAPI 3.1对象；Token、手机号和IP示例脱敏 | 核心服务 |

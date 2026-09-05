@@ -4,6 +4,7 @@ import AppShell from "./views/AppShell.vue";
 import DashboardView from "./views/DashboardView.vue";
 import LoginView from "./views/LoginView.vue";
 import ResourceView from "./views/ResourceView.vue";
+import ApiDocsView from "./views/ApiDocsView.vue";
 
 const routes = [
   { path: "/login", component: LoginView },
@@ -12,6 +13,7 @@ const routes = [
     component: AppShell,
     children: [
       { path: "", component: DashboardView },
+      { path: "api-docs", component: ApiDocsView },
       { path: ":resource", component: ResourceView },
     ],
   },

@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "types": ["@dcloudio/types", "vite/client"], "jsx": "preserve", "module": "ESNext", "moduleResolution": "bundler", "allowJs": true },
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "vite.config.ts"]
+}

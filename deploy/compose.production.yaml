@@ -116,6 +116,8 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    volumes:
+      - ./secrets/apple:/run/secrets/apple:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health/ready"]
       interval: 15s
@@ -137,6 +139,7 @@ services:
     env_file: .env.production
     environment:
       NODE_ENV: production
+      REPORT_WORKER_CONCURRENCY: "1"
     depends_on:
       api: { condition: service_healthy }
     restart: unless-stopped

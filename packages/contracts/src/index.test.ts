@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildSafePushPayload, isAdminRole, isHealthMetric } from "./index";
+import {
+  buildSafePushPayload,
+  isAdminRole,
+  isBusinessType,
+  isHealthMetric,
+  isPaymentChannel,
+} from "./index";
 
 describe("public contracts", () => {
   it("accepts only canonical health metrics", () => {
@@ -9,7 +15,15 @@ describe("public contracts", () => {
 
   it("keeps admin roles explicit", () => {
     expect(isAdminRole("HEALTH_AUDITOR")).toBe(true);
+    expect(isAdminRole("COMMERCE_OPERATIONS")).toBe(true);
     expect(isAdminRole("ADMIN")).toBe(false);
+  });
+
+  it("keeps billing values explicit", () => {
+    expect(isBusinessType("health_report")).toBe(true);
+    expect(isBusinessType("report")).toBe(false);
+    expect(isPaymentChannel("apple_iap")).toBe(true);
+    expect(isPaymentChannel("cash")).toBe(false);
   });
 
   it("keeps push payload free of health values and phone numbers", () => {

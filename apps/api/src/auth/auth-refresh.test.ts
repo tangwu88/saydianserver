@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AuthService } from "./auth.service";
 import type { PrismaService } from "../common/prisma.service";
 import type { SmsAdapterService } from "./sms-adapter.service";
+import type { IntegrationSecretsService } from "../common/integration-secrets.service";
 
 describe("refresh token rotation", () => {
   beforeEach(() => {
@@ -39,7 +40,8 @@ describe("refresh token rotation", () => {
     } as unknown as PrismaService;
     const service = new AuthService(
       prisma,
-      { send: async () => undefined } as SmsAdapterService,
+      { send: async () => undefined } as unknown as SmsAdapterService,
+      {} as IntegrationSecretsService,
     );
     const results = await Promise.allSettled([
       service.refresh("same-refresh-token"),

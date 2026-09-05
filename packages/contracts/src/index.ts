@@ -29,13 +29,63 @@ export type CareStatus = (typeof careStatuses)[number];
 export const adminRoles = [
   "SUPER_ADMIN",
   "APP_OPERATIONS",
+  "COMMERCE_OPERATIONS",
+  "FINANCE",
   "CONTENT_EDITOR",
   "CUSTOMER_SERVICE",
   "HEALTH_AUDITOR",
+  "INTEGRATION_ADMIN",
+  "API_DOC_EDITOR",
   "READ_ONLY",
 ] as const;
 
 export type AdminRole = (typeof adminRoles)[number];
+
+export const businessTypes = [
+  "commerce_order",
+  "health_report",
+  "health_membership",
+] as const;
+
+export type BusinessType = (typeof businessTypes)[number];
+
+export const paymentChannels = [
+  "wechat_mini",
+  "wechat_jsapi",
+  "wechat_h5",
+  "wechat_native",
+  "wechat_app",
+  "alipay_wap",
+  "alipay_page",
+  "alipay_app",
+  "apple_iap",
+] as const;
+
+export type PaymentChannel = (typeof paymentChannels)[number];
+
+export const paymentStatuses = [
+  "created",
+  "pending",
+  "succeeded",
+  "failed",
+  "closed",
+  "refunding",
+  "partial_refunded",
+  "refunded",
+] as const;
+
+export type PaymentStatus = (typeof paymentStatuses)[number];
+
+export const reportStatuses = [
+  "awaiting_payment",
+  "queued",
+  "generating",
+  "ready",
+  "failed",
+  "revoked",
+] as const;
+
+export type ReportStatus = (typeof reportStatuses)[number];
 
 export interface ApiEnvelope<T> {
   code: number;
@@ -107,6 +157,98 @@ export interface HealthBatchResultContract {
   acceptedIds: string[];
   rejected: HealthRecordRejectionContract[];
   nextCursor: string | null;
+}
+
+export interface HealthProfileContract {
+  memberId: string;
+  period: { from: string; to: string };
+  dataCompleteness: {
+    validRecordCount: number;
+    distinctDays: number;
+    metricCount: number;
+  };
+  metrics: Array<{
+    metric: HealthMetric;
+    recordCount: number;
+    latestObservedAt: string;
+    latestValue: number | null;
+  }>;
+  devices: Array<{
+    id: string;
+    model: string;
+    displayName: string;
+    firmware?: string;
+    lastSeenAt?: string;
+  }>;
+  activeWarningCount: number;
+  analysisConsent: {
+    granted: boolean;
+    version: string | null;
+    grantedAt: string | null;
+    withdrawnAt: string | null;
+  };
+}
+
+export interface HealthReportEligibilityContract {
+  eligible: boolean;
+  period: { from: string; to: string };
+  validRecordCount: number;
+  distinctDays: number;
+  minimumDistinctDays: number;
+  missing: string[];
+  consentRequired: boolean;
+  availableCredits: number;
+}
+
+export interface HealthReportContract {
+  id: string;
+  status: ReportStatus;
+  period: { from: string; to: string };
+  dataCompleteness: {
+    validRecordCount: number;
+    distinctDays: number;
+  };
+  freePreview: Record<string, unknown>;
+  aiGenerated: boolean;
+  aiLabel: string;
+  generatedAt: string | null;
+  createdAt: string;
+}
+
+export interface BillingOfferContract {
+  id: string;
+  code: string;
+  title: string;
+  description: string;
+  entitlement: "single_report" | "membership";
+  priceCents: number;
+  currency: string;
+  creditCount: number;
+  durationDays: number | null;
+  appleProductId: string | null;
+  version: number;
+}
+
+export interface BillingEntitlementContract {
+  availableReportCredits: number;
+  activeMembership: {
+    id: string;
+    expiresAt: string;
+    remainingCredits: number;
+  } | null;
+}
+
+export interface PaymentIntentContract {
+  id: string;
+  paymentNo: string;
+  businessType: BusinessType;
+  businessId: string;
+  channel: PaymentChannel;
+  status: PaymentStatus;
+  amountCents: number;
+  currency: string;
+  invoke: Record<string, unknown> | null;
+  createdAt: string;
 }
 
 export interface CareRelationshipContract {
@@ -189,3 +331,13 @@ export function isHealthMetric(value: string): value is HealthMetric {
 export function isAdminRole(value: string): value is AdminRole {
   return (adminRoles as readonly string[]).includes(value);
 }
+
+export function isPaymentChannel(value: string): value is PaymentChannel {
+  return (paymentChannels as readonly string[]).includes(value);
+}
+
+export function isBusinessType(value: string): value is BusinessType {
+  return (businessTypes as readonly string[]).includes(value);
+}
+
+export { apiCatalog } from "./api-catalog.generated";

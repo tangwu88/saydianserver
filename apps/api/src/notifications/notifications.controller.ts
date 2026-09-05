@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -31,6 +32,19 @@ export class NotificationsController {
   @Get("unread-count")
   unread(@CurrentUser() user: AuthenticatedUser) {
     return this.notifications.unreadCount(user.id);
+  }
+
+  @Get("preferences")
+  preferences(@CurrentUser() user: AuthenticatedUser) {
+    return this.notifications.preferences(user.id);
+  }
+
+  @Patch("preferences")
+  updatePreferences(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: unknown,
+  ) {
+    return this.notifications.updatePreferences(user.id, input);
   }
 
   @Get(":id")

@@ -4,13 +4,19 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { IntegrationState } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
-import { env, envBoolean, env as requiredEnv } from "../common/environment";
+import { env } from "../common/environment";
 import { isUuid, safeObject } from "../common/crypto";
+import { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { markIntegrationVerified } from "../common/integration-health";
 
 @Injectable()
 export class ContentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly integrationSecrets: IntegrationSecretsService,
+  ) {}
 
   async categories(parentId?: string) {
     return this.prisma.articleCategory.findMany({
@@ -87,9 +93,7 @@ export class ContentService {
     const body = safeObject(input);
     const content = String(body.content ?? body.message ?? "").trim();
     if (!content || content.length > 4000) throw new BadRequestException("请输入健康问题");
-    if (env("AI_PROVIDER", "disabled") === "disabled") {
-      throw new ServiceUnavailableException("AI健康管家暂时无法使用，请稍后再试");
-    }
+    const aiSettings = await this.aiSettings();
     const clientSessionId = String(body.sessionId ?? body.session_id ?? "").trim();
     const conversation = clientSessionId
       ? await this.prisma.aiConversation.findFirst({
@@ -108,13 +112,14 @@ export class ContentService {
     await this.prisma.aiMessage.create({
       data: { conversationId: active.id, role: "user", content },
     });
-    const reply = await this.callAiProvider(content);
+    const reply = await this.callAiProvider(content, aiSettings);
+    await markIntegrationVerified(this.prisma, "ai");
     const saved = await this.prisma.aiMessage.create({
       data: {
         conversationId: active.id,
         role: "assistant",
         content: reply,
-        provider: env("AI_PROVIDER"),
+        provider: aiSettings.provider,
       },
     });
     return {
@@ -126,17 +131,18 @@ export class ContentService {
     };
   }
 
-  private async callAiProvider(content: string): Promise<string> {
-    const baseUrl = requiredEnv("AI_BASE_URL").replace(/\/$/, "");
-    const apiKey = requiredEnv("AI_API_KEY");
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+  private async callAiProvider(
+    content: string,
+    settings: { provider: string; baseUrl: string; apiKey: string; model: string },
+  ): Promise<string> {
+    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${apiKey}`,
+        authorization: `Bearer ${settings.apiKey}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: env("AI_MODEL", "configured-model"),
+        model: settings.model,
         messages: [
           {
             role: "system",
@@ -158,5 +164,30 @@ export class ContentService {
     const reply = String(message.content ?? "").trim();
     if (!reply) throw new ServiceUnavailableException("AI健康管家暂时无法使用，请稍后再试");
     return reply;
+  }
+
+  private async aiSettings() {
+    const integration = await this.prisma.integrationConfig.findUnique({
+      where: { key: "ai" },
+    });
+    const publicConfig = safeObject(integration?.publicConfig);
+    const provider = String(
+      publicConfig.provider ?? env("AI_PROVIDER", "disabled"),
+    ).trim();
+    if (integration?.state !== IntegrationState.CONFIGURED || provider === "disabled") {
+      throw new ServiceUnavailableException("AI健康管家暂时无法使用，请稍后再试");
+    }
+    const secrets = await this.integrationSecrets.resolve("ai", {
+      apiKey: "AI_API_KEY",
+      baseUrl: "AI_BASE_URL",
+      model: "AI_MODEL",
+    });
+    const baseUrl = String(publicConfig.baseUrl ?? secrets.baseUrl ?? "").replace(/\/$/, "");
+    const apiKey = secrets.apiKey ?? "";
+    const model = String(publicConfig.model ?? secrets.model ?? "configured-model");
+    if (!baseUrl || !apiKey) {
+      throw new ServiceUnavailableException("AI健康管家暂时无法使用，请稍后再试");
+    }
+    return { provider, baseUrl, apiKey, model };
   }
 }

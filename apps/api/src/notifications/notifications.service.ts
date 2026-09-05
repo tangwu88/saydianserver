@@ -7,6 +7,60 @@ import { isUuid, safeObject } from "../common/crypto";
 export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async preferences(userId: string) {
+    const preference = await this.prisma.userNotificationPreference.findUnique({
+      where: { userId },
+    });
+    return {
+      transactionalEnabled: preference?.transactionalEnabled ?? true,
+      marketingEnabled: preference?.marketingEnabled ?? false,
+      updatedAt: preference?.updatedAt.toISOString() ?? null,
+    };
+  }
+
+  async updatePreferences(userId: string, input: unknown) {
+    const body = safeObject(input);
+    if (
+      body.transactionalEnabled !== undefined &&
+      typeof body.transactionalEnabled !== "boolean"
+    ) {
+      throw new BadRequestException("事务通知设置不正确");
+    }
+    if (
+      body.marketingEnabled !== undefined &&
+      typeof body.marketingEnabled !== "boolean"
+    ) {
+      throw new BadRequestException("营销通知设置不正确");
+    }
+    if (
+      body.transactionalEnabled === undefined &&
+      body.marketingEnabled === undefined
+    ) {
+      throw new BadRequestException("请至少选择一项通知设置");
+    }
+    const preference = await this.prisma.userNotificationPreference.upsert({
+      where: { userId },
+      create: {
+        userId,
+        transactionalEnabled: body.transactionalEnabled !== false,
+        marketingEnabled: body.marketingEnabled === true,
+      },
+      update: {
+        ...(body.transactionalEnabled !== undefined
+          ? { transactionalEnabled: body.transactionalEnabled }
+          : {}),
+        ...(body.marketingEnabled !== undefined
+          ? { marketingEnabled: body.marketingEnabled }
+          : {}),
+      },
+    });
+    return {
+      transactionalEnabled: preference.transactionalEnabled,
+      marketingEnabled: preference.marketingEnabled,
+      updatedAt: preference.updatedAt.toISOString(),
+    };
+  }
+
   async registerInstallation(userId: string, input: unknown) {
     const body = safeObject(input);
     const installationId = String(body.installationId ?? body.installation_id ?? "").trim();

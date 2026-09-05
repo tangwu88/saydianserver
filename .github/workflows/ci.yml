@@ -42,7 +42,8 @@ jobs:
       SMS_PROVIDER: disabled
       PUSH_PROVIDER: mock
       AI_PROVIDER: disabled
-      MALL_MOCK_MODE: "true"
+      COMMERCE_MODE: integrated
+      ENABLE_HEALTH_REPORT_SALES: "false"
       OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:9000
       OBJECT_STORAGE_ACCESS_KEY: local-ci
       OBJECT_STORAGE_SECRET_KEY: local-ci-secret

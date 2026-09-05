@@ -5,7 +5,7 @@
 1. 从 `.env.example` 复制 `.env` 并只填本地测试值。
 2. 执行 `pnpm.cmd install --frozen-lockfile`、`pnpm.cmd db:generate`、`pnpm.cmd typecheck`、`pnpm.cmd test`、`pnpm.cmd build`。
 3. 有 Docker 的机器执行 `docker compose up -d --build`。
-4. 验证 `/health/live`、`/health/ready`、管理后台 `/admin/` 和 V1 登录/内容快照。
+4. 验证 `/health/live`、`/health/ready`、管理后台 `/admin/`、商城 H5 `/saidian-mall/` 和 V1/商城兼容只读快照。
 
 当前开发机未安装 Docker CLI，因此容器运行时冒烟必须由 GitHub Actions 或装有 Docker 的验收机执行；不能用 TypeScript 构建结果替代容器验收。
 
@@ -16,7 +16,7 @@
 - 复制 `deploy/.env.production.example` 为 `/opt/saydianapp-server/deploy/.env.production`，权限 600。
 - 值中若包含 shell 特殊字符，必须按 POSIX shell 规则转义；发布脚本会加载该文件。
 - 默认通过 GHCR 只读凭据拉取私有运行镜像。若使用 `Export runtime images` 工作流导出的短期制品离线导入镜像，则设置 `PRIVATE_IMAGES_PRELOADED=true`；预检查和回滚会核对 API、Worker、Admin 三个精确版本都已存在于本机，不再访问私有仓库。
-- 配置对象存储、商城内部令牌、加密 Restic 异地仓库和已固定的 SSH known_hosts。
+- 配置主机外置 `INTEGRATION_MASTER_KEY`、对象存储、所需第三方集成、加密 Restic 异地仓库和已固定的 SSH known_hosts。集成密钥通过总后台写入后不得回显。
 - GitHub `production` Environment 必须启用人工审批。
 
 ### 与现有赛电网关共存
@@ -43,7 +43,7 @@
 2. 只有仓库变量 `AUTO_DEPLOY_ENABLED=true` 时，成功 CI 才调用 `Deploy production`；发布固定使用本次完整 Git SHA，不接受分支名或浮动 latest 标签。
 3. 工作流构建并推送 API、Worker、Admin 三个 `sha-<40位提交号>` 私有 GHCR 镜像，再经专用 SSH forced-command receiver 传入短期 GITHUB_TOKEN 和经校验的 deploy 目录。
 4. 服务器先备份 PostgreSQL、环境/Compose 和实际运行镜像 ID；发现待执行或失败的 Prisma migration 会停止，**不会自动变更数据库结构**。
-5. 仅更新 API/Worker/Admin，保留发布前 `MAINTENANCE_READ_ONLY`；不重启商城、旧服务或共享基础设施。共享 Nginx 只执行配置检查和 reload。
+5. 仅更新 API/Worker/Admin（Admin 镜像同时包含商城 H5），保留发布前 `MAINTENANCE_READ_ONLY`；不重启原商城、旧服务或共享基础设施。共享 Nginx 只执行配置检查和 reload。
 6. 外网 `/health/ready` 的 `revision`、管理页面、三容器和维护值全部匹配才完成；失败时尝试恢复前一配置和镜像。
 7. 首次接入、Secrets、主机指纹、停用和故障步骤见 [持续部署说明](continuous-deployment.md)。当前工作流不再使用旧文档中的 `dry_run/open_writes` 输入。
 

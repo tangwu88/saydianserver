@@ -1,0 +1,32 @@
+{
+  "pages": [
+    { "path": "pages/home/index", "style": { "navigationBarTitleText": "赛电商城" } },
+    { "path": "pages/category/index", "style": { "navigationBarTitleText": "商品分类" } },
+    { "path": "pages/search/index", "style": { "navigationBarTitleText": "搜索" } },
+    { "path": "pages/product/index", "style": { "navigationBarTitleText": "商品详情" } },
+    { "path": "pages/cart/index", "style": { "navigationBarTitleText": "购物车" } },
+    { "path": "pages/checkout/index", "style": { "navigationBarTitleText": "确认订单" } },
+    { "path": "pages/orders/index", "style": { "navigationBarTitleText": "我的订单" } },
+    { "path": "pages/order-detail/index", "style": { "navigationBarTitleText": "订单详情" } },
+    { "path": "pages/after-sale/index", "style": { "navigationBarTitleText": "申请售后" } },
+    { "path": "pages/profile/index", "style": { "navigationBarTitleText": "个人中心" } },
+    { "path": "pages/login/index", "style": { "navigationBarTitleText": "登录" } },
+    { "path": "pages/addresses/index", "style": { "navigationBarTitleText": "收货地址" } },
+    { "path": "pages/address-edit/index", "style": { "navigationBarTitleText": "编辑地址" } },
+    { "path": "pages/favorites/index", "style": { "navigationBarTitleText": "我的收藏" } },
+    { "path": "pages/coupons/index", "style": { "navigationBarTitleText": "优惠券" } },
+    { "path": "pages/coupon-gift/index", "style": { "navigationBarTitleText": "领取优惠券" } },
+    { "path": "pages/help/index", "style": { "navigationBarTitleText": "帮助与服务" } },
+    { "path": "pages/employee/index", "style": { "navigationBarTitleText": "推广中心" } }
+  ],
+  "tabBar": {
+    "color": "#75837f", "selectedColor": "#176b5b", "backgroundColor": "#ffffff", "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/home/index", "text": "首页" },
+      { "pagePath": "pages/category/index", "text": "分类" },
+      { "pagePath": "pages/cart/index", "text": "购物车" },
+      { "pagePath": "pages/profile/index", "text": "我的" }
+    ]
+  },
+  "globalStyle": { "navigationBarTextStyle": "black", "navigationBarTitleText": "赛电商城", "navigationBarBackgroundColor": "#ffffff", "backgroundColor": "#f5f7f8" }
+}

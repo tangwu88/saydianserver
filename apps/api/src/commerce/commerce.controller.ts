@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -107,6 +108,15 @@ export class CommerceController {
     return this.commerce.orders(user.id, status);
   }
 
+  @Post("orders/preview")
+  @UseGuards(UserAuthGuard)
+  previewOrder(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+  ) {
+    return this.commerce.forUser(user.id, "POST", "/orders/preview", body);
+  }
+
   @Get("orders/:id")
   @UseGuards(UserAuthGuard)
   order(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
@@ -133,6 +143,16 @@ export class CommerceController {
   @UseGuards(UserAuthGuard)
   receipt(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
     return this.commerce.forUser(user.id, "POST", `/orders/${encodeURIComponent(id)}/receipt`);
+  }
+
+  @Post("orders/:id/cancel")
+  @UseGuards(UserAuthGuard)
+  cancel(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.commerce.forUser(
+      user.id,
+      "POST",
+      `/orders/${encodeURIComponent(id)}/cancel`,
+    );
   }
 
   @Post("orders/:id/after-sales")
@@ -174,5 +194,42 @@ export class CommerceController {
       body,
       idempotencyKey,
     );
+  }
+
+  @Get("favorites")
+  @UseGuards(UserAuthGuard)
+  favorites(@CurrentUser() user: AuthenticatedUser) {
+    return this.commerce.favorites(user.id);
+  }
+
+  @Put("products/:id/favorite")
+  @UseGuards(UserAuthGuard)
+  favorite(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() body: { enabled?: boolean },
+  ) {
+    return this.commerce.setFavorite(user.id, id, body.enabled !== false);
+  }
+
+  @Get("coupons")
+  @UseGuards(UserAuthGuard)
+  coupons(@CurrentUser() user: AuthenticatedUser) {
+    return this.commerce.coupons(user.id);
+  }
+
+  @Post("coupons/:id/claim")
+  @UseGuards(UserAuthGuard)
+  claimCoupon(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
+    return this.commerce.claimCoupon(user.id, id);
+  }
+
+  @Post("reviews")
+  @UseGuards(UserAuthGuard)
+  review(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.commerce.createReview(user.id, body);
   }
 }

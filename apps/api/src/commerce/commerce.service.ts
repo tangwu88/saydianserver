@@ -1,77 +1,168 @@
 import {
-  BadGatewayException,
   BadRequestException,
   ConflictException,
-  HttpException,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
-  UnprocessableEntityException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-import { PrismaService } from "../common/prisma.service";
-import { env, envBoolean } from "../common/environment";
+import { BillingService } from "../billing/billing.service";
 import { isUuid, safeObject } from "../common/crypto";
+import { PrismaService } from "../common/prisma.service";
+import { CommerceStoreService } from "./commerce-store.service";
 
 @Injectable()
 export class CommerceService {
-  private readonly baseUrl = env(
-    "MALL_BASE_URL",
-    "https://stest.saydian.cn/api/saidian-mall/v1",
-  ).replace(/\/$/, "");
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly store: CommerceStoreService,
+    private readonly billing: BillingService,
+  ) {}
 
-  constructor(private readonly prisma: PrismaService) {}
-
-  publicGet(path: string) {
-    return this.request("GET", path);
+  async publicGet(path: string) {
+    const url = parsePath(path);
+    if (url.pathname === "/storefront/bootstrap") {
+      return this.store.bootstrap(url.searchParams.get("referralCode") ?? undefined);
+    }
+    if (url.pathname === "/storefront/products") {
+      return this.store.listProducts({
+        ...(url.searchParams.get("keyword")
+          ? { keyword: url.searchParams.get("keyword")! }
+          : {}),
+        ...(url.searchParams.get("categoryId")
+          ? { categoryId: url.searchParams.get("categoryId")! }
+          : {}),
+        page: Number(url.searchParams.get("page") ?? 1),
+        pageSize: Number(url.searchParams.get("pageSize") ?? 20),
+        ...(url.searchParams.get("sort")
+          ? { sort: url.searchParams.get("sort")! }
+          : {}),
+      });
+    }
+    const product = /^\/storefront\/products\/([^/]+)$/.exec(url.pathname);
+    if (product?.[1]) return this.store.product(decodeURIComponent(product[1]));
+    throw new NotFoundException("商城内容不存在或已下架");
   }
 
   async forUser(
     userId: string,
     method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
-    body?: unknown,
+    input?: unknown,
     idempotencyKey?: string,
   ) {
-    // Migrated orders are historical evidence, never new mall mutations.
-    const orderPath = /^\/orders\/([^/?]+)(?:\/|$)/.exec(path);
-    const orderId = orderPath?.[1] ? decodeURIComponent(orderPath[1])
-      : path === "/payments" ? String(safeObject(body).orderId ?? "") : "";
+    const body = safeObject(input);
+    const url = parsePath(path);
+    const pathname = url.pathname;
+    const orderPath = /^\/orders\/([^/?]+)(?:\/|$)/.exec(pathname);
+    const orderId = orderPath?.[1]
+      ? decodeURIComponent(orderPath[1])
+      : pathname === "/payments"
+        ? String(body.orderId ?? body.order_id ?? "")
+        : "";
     if (method !== "GET" && orderId) {
       const legacy = await this.prisma.legacyOrderProjection.findFirst({
-        where: { userId, OR: [...(isUuid(orderId) ? [{ id: orderId }] : []), { legacyOrderId: orderId }] },
+        where: {
+          userId,
+          OR: [...(isUuid(orderId) ? [{ id: orderId }] : []), { legacyOrderId: orderId }],
+        },
         select: { id: true },
       });
       if (legacy) throw new ConflictException("历史订单仅供查看，不能重复操作");
     }
-    const mallUserId = await this.ensureMallIdentity(userId);
-    return this.request(method, `/internal/app-users/${mallUserId}${path}`, body, {
-      ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
-    });
+    if (pathname === "/cart" && method === "GET") return this.store.cart(userId);
+    if (pathname === "/cart/items" && method === "POST") {
+      return this.store.putCartItem(
+        userId,
+        String(body.skuId ?? body.sku_id ?? ""),
+        Number(body.quantity ?? body.num ?? 1),
+        body.selected !== false,
+      );
+    }
+    const cartItem = /^\/cart\/items\/([^/]+)$/.exec(pathname);
+    if (cartItem?.[1] && method === "DELETE") {
+      return this.store.deleteCartItem(userId, decodeURIComponent(cartItem[1]));
+    }
+    if (pathname === "/addresses") {
+      if (method === "GET") return this.store.listAddresses(userId);
+      if (method === "POST") return this.store.saveAddress(userId, body);
+    }
+    const address = /^\/addresses\/([^/]+)$/.exec(pathname);
+    if (address?.[1]) {
+      const id = decodeURIComponent(address[1]);
+      if (method === "GET") return this.store.address(userId, id);
+      if (method === "PATCH") return this.store.saveAddress(userId, body, id);
+      if (method === "DELETE") return this.store.deleteAddress(userId, id);
+    }
+    if (pathname === "/orders/preview" && method === "POST") {
+      return this.store.previewOrder(userId, normalizeOrderInput(body, "preview"));
+    }
+    if (pathname === "/orders" && method === "GET") {
+      return this.store.listOrders(userId, url.searchParams.get("status") ?? undefined);
+    }
+    if (pathname === "/orders" && method === "POST") {
+      return this.store.createOrder(userId, {
+        ...normalizeOrderInput(body, "create"),
+        idempotencyKey:
+          idempotencyKey?.trim() || String(body.idempotencyKey ?? "").trim(),
+      });
+    }
+    const order = /^\/orders\/([^/]+)$/.exec(pathname);
+    if (order?.[1] && method === "GET") {
+      return this.orderDetail(userId, decodeURIComponent(order[1]));
+    }
+    const receipt = /^\/orders\/([^/]+)\/receipt$/.exec(pathname);
+    if (receipt?.[1] && method === "POST") {
+      return this.store.confirmReceipt(userId, decodeURIComponent(receipt[1]));
+    }
+    const cancel = /^\/orders\/([^/]+)\/cancel$/.exec(pathname);
+    if (cancel?.[1] && method === "POST") {
+      return this.store.cancelOrder(userId, decodeURIComponent(cancel[1]));
+    }
+    const afterSale = /^\/orders\/([^/]+)\/after-sales$/.exec(pathname);
+    if (afterSale?.[1] && method === "POST") {
+      return this.store.createAfterSale(userId, decodeURIComponent(afterSale[1]), body);
+    }
+    const itemAfterSale = /^\/order-items\/([^/]+)\/after-sales$/.exec(pathname);
+    if (itemAfterSale?.[1] && method === "POST") {
+      return this.store.createAfterSaleFromOrderItem(
+        userId,
+        decodeURIComponent(itemAfterSale[1]),
+        body,
+      );
+    }
+    const logistics = /^\/orders\/([^/]+)\/logistics$/.exec(pathname);
+    if (logistics?.[1] && method === "GET") {
+      return this.store.logistics(userId, decodeURIComponent(logistics[1]));
+    }
+    if (pathname === "/payments" && method === "POST") {
+      const orderId = String(body.orderId ?? body.order_id ?? "").trim();
+      const channel = String(body.channel ?? "").trim();
+      return this.billing.createPayment(
+        userId,
+        {
+          businessType: "commerce_order",
+          businessId: orderId,
+          channel,
+          platform: body.platform ?? platformFromPaymentChannel(channel),
+          idempotencyKey:
+            idempotencyKey?.trim() ||
+            String(body.idempotencyKey ?? `commerce-payment:${orderId}:${channel}`).trim(),
+        },
+        {},
+      );
+    }
+    throw new NotFoundException("商城功能不存在或已调整");
   }
 
   async orders(userId: string, status?: string) {
     const [current, legacy] = await Promise.all([
-      this.forUser(
-        userId,
-        "GET",
-        `/orders${status ? `?status=${encodeURIComponent(status)}` : ""}`,
-      ).catch((error: unknown) => {
-        if (error instanceof ServiceUnavailableException) return [];
-        throw error;
-      }),
+      this.store.listOrders(userId, status),
       this.prisma.legacyOrderProjection.findMany({
         where: { userId, ...(status ? { status } : {}) },
         orderBy: { legacyCreatedAt: "desc" },
       }),
     ]);
-    const currentItems = Array.isArray(current)
-      ? current
-      : Array.isArray(safeObject(current).items)
-        ? (safeObject(current).items as unknown[])
-        : [];
-    const combined: Array<Record<string, unknown>> = [
-      ...currentItems.map((item) => ({ ...safeObject(item), readOnly: false, source: "mall" })),
+    return [
+      ...current.map((item) => ({ ...item, readOnly: false, source: "commerce" })),
       ...legacy.map((item) => ({
         id: item.id,
         legacyOrderId: item.legacyOrderId,
@@ -84,15 +175,17 @@ export class CommerceService {
         readOnly: true,
         source: "legacy",
       })),
-    ];
-    return combined.sort((a, b) =>
-      String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")),
+    ].sort((left, right) =>
+      String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")),
     );
   }
 
   async orderDetail(userId: string, id: string) {
     const legacy = await this.prisma.legacyOrderProjection.findFirst({
-      where: { userId, OR: [...(isUuid(id) ? [{ id }] : []), { legacyOrderId: id }] },
+      where: {
+        userId,
+        OR: [...(isUuid(id) ? [{ id }] : []), { legacyOrderId: id }],
+      },
     });
     if (legacy) {
       return {
@@ -102,93 +195,72 @@ export class CommerceService {
         orderNo: legacy.orderNo,
         status: legacy.status,
         payableCents: legacy.payableCents,
+        currency: legacy.currency,
         createdAt: legacy.legacyCreatedAt.toISOString(),
         readOnly: true,
         source: "legacy",
       };
     }
-    return this.forUser(userId, "GET", `/orders/${encodeURIComponent(id)}`);
+    return {
+      ...(await this.store.order(userId, id)),
+      readOnly: false,
+      source: "commerce",
+    };
   }
 
-  private async ensureMallIdentity(userId: string): Promise<string> {
-    const existing = await this.prisma.commerceIdentityMap.findUnique({
-      where: { userId },
-    });
-    if (existing) return existing.mallUserId;
-    const token = env("MALL_SERVICE_TOKEN", "");
-    if (!token) {
-      throw new ServiceUnavailableException("商城账号服务暂时无法使用，请稍后再试");
-    }
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    const result = safeObject(
-      await this.request("POST", "/internal/app-users", {
-        externalUserId: user.id,
-        mobile: user.mobile,
-        nickname: user.nickname,
-        avatarUrl: user.avatarUrl,
-      }),
-    );
-    const mallUserId = String(result.id ?? result.userId ?? "");
-    if (!mallUserId) throw new BadGatewayException("商城账号关联失败");
-    const mapping = await this.prisma.commerceIdentityMap.upsert({
-      where: { userId },
-      create: { userId, mallUserId, linkedBy: "service_api" },
-      update: { mallUserId, linkedBy: "service_api", linkedAt: new Date() },
-    });
-    return mapping.mallUserId;
+  setFavorite(userId: string, productId: string, enabled: boolean) {
+    return this.store.favorite(userId, productId, enabled);
   }
 
-  private async request(
-    method: string,
-    path: string,
-    body?: unknown,
-    extraHeaders: Record<string, string> = {},
-  ): Promise<unknown> {
-    if (envBoolean("MALL_MOCK_MODE")) {
-      return { configured: true, mock: true, method, path, body: body ?? null };
-    }
-    const internal = path.startsWith("/internal/");
-    const serviceToken = env("MALL_SERVICE_TOKEN", "");
-    if (internal && !serviceToken) {
-      throw new ServiceUnavailableException("商城服务暂时无法使用，请稍后再试");
-    }
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: {
-        accept: "application/json",
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-        ...(internal ? { "x-saydian-service-token": serviceToken } : {}),
-        ...extraHeaders,
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(20_000),
-    }).catch(() => {
-      throw new ServiceUnavailableException("商城服务暂时无法使用，请稍后再试");
-    });
-    const text = await response.text();
-    let payload: unknown = null;
-    try {
-      payload = text ? JSON.parse(text) : null;
-    } catch {
-      payload = null;
-    }
-    if (!response.ok) {
-      if (response.status === 400)
-        throw new BadRequestException("商城请求未完成，请检查后重试");
-      if (response.status === 404)
-        throw new NotFoundException("商城内容不存在或已下架");
-      if (response.status === 409)
-        throw new ConflictException("商城状态已更新，请刷新后重试");
-      if (response.status === 422)
-        throw new UnprocessableEntityException("商城信息不完整，请检查后重试");
-      if (response.status === 429)
-        throw new HttpException("操作过于频繁，请稍后再试", 429);
-      if (response.status === 401 || response.status === 403)
-        throw new ServiceUnavailableException("商城服务暂时无法使用，请稍后再试");
-      if (response.status >= 400 && response.status < 500)
-        throw new BadRequestException("商城请求未完成，请检查后重试");
-      throw new BadGatewayException("商城服务暂时无法使用，请稍后再试");
-    }
-    return payload;
+  favorites(userId: string) {
+    return this.store.favorites(userId);
   }
+
+  coupons(userId: string) {
+    return this.store.coupons(userId);
+  }
+
+  claimCoupon(userId: string, couponId: string) {
+    return this.store.claimCoupon(userId, couponId);
+  }
+
+  createReview(userId: string, input: unknown) {
+    return this.store.createReview(userId, input);
+  }
+}
+
+function parsePath(path: string): URL {
+  return new URL(path, "https://commerce.internal");
+}
+
+function normalizeOrderInput(body: Record<string, unknown>, mode: "preview" | "create") {
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+  const items = rawItems.map((item) => {
+    const row = safeObject(item);
+    return {
+      skuId: String(row.skuId ?? row.sku_id ?? ""),
+      quantity: Number(row.quantity ?? row.num ?? 1),
+    };
+  });
+  const addressId = String(body.addressId ?? body.address_id ?? "").trim();
+  if (!addressId && mode === "create") throw new BadRequestException("请选择收货地址");
+  return {
+    addressId,
+    items,
+    ...(body.couponClaimId
+      ? { couponClaimId: String(body.couponClaimId) }
+      : {}),
+    ...(body.buyerRemark || body.buyer_message
+      ? { buyerRemark: String(body.buyerRemark ?? body.buyer_message) }
+      : {}),
+    ...(Object.keys(safeObject(body.invoice)).length
+      ? { invoice: safeObject(body.invoice) }
+      : {}),
+  };
+}
+
+function platformFromPaymentChannel(channel: string) {
+  if (channel.endsWith("_app")) return "android";
+  if (channel === "wechat_mini") return "mini_program";
+  return "h5";
 }

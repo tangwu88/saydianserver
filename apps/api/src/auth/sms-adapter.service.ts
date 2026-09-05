@@ -1,10 +1,26 @@
 import { Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { IntegrationState } from "@prisma/client";
 import { env } from "../common/environment";
+import { PrismaService } from "../common/prisma.service";
+import { safeObject } from "../common/crypto";
+import { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { markIntegrationVerified } from "../common/integration-health";
 
 @Injectable()
 export class SmsAdapterService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly integrationSecrets: IntegrationSecretsService,
+  ) {}
+
   async send(mobile: string, code: string, usage: string): Promise<void> {
-    const provider = env("SMS_PROVIDER", "disabled").toLowerCase();
+    const integration = await this.prisma.integrationConfig.findUnique({
+      where: { key: "sms" },
+    });
+    const publicConfig = safeObject(integration?.publicConfig);
+    const provider = String(
+      publicConfig.provider ?? env("SMS_PROVIDER", "disabled"),
+    ).toLowerCase();
     if (provider === "mock" && env("NODE_ENV", "development") !== "production") {
       process.stdout.write(
         `${JSON.stringify({
@@ -16,11 +32,15 @@ export class SmsAdapterService {
       );
       return;
     }
-    if (provider !== "webhook") {
+    if (integration?.state !== IntegrationState.CONFIGURED || provider !== "webhook") {
       throw new ServiceUnavailableException("短信服务暂时无法使用，请稍后再试");
     }
-    const url = env("SMS_WEBHOOK_URL", "");
-    const token = env("SMS_WEBHOOK_TOKEN", "");
+    const secrets = await this.integrationSecrets.resolve("sms", {
+      webhookUrl: "SMS_WEBHOOK_URL",
+      webhookToken: "SMS_WEBHOOK_TOKEN",
+    });
+    const url = String(publicConfig.webhookUrl ?? secrets.webhookUrl ?? "");
+    const token = secrets.webhookToken ?? "";
     if (!url || !token) {
       throw new ServiceUnavailableException("短信服务暂时无法使用，请稍后再试");
     }
@@ -36,5 +56,6 @@ export class SmsAdapterService {
     if (!response?.ok) {
       throw new ServiceUnavailableException("短信服务暂时无法使用，请稍后再试");
     }
+    await markIntegrationVerified(this.prisma, "sms");
   }
 }

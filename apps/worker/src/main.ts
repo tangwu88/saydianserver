@@ -3,7 +3,10 @@ import { PrismaClient } from "@prisma/client";
 import Redis from "ioredis";
 import { AccountDeletionWorker } from "./account-deletion-worker";
 import { OutboxWorker } from "./outbox-worker";
-import { pushProviderFromEnvironment } from "./push-provider";
+import { pushProviderFromConfiguration } from "./push-provider";
+import { HealthReportWorker } from "./health-report-worker";
+import { NotificationCampaignWorker } from "./notification-campaign-worker";
+import { CommerceJobWorker } from "./commerce-job-worker";
 
 async function main(): Promise<void> {
   const redisUrl = process.env.REDIS_URL?.trim();
@@ -13,11 +16,15 @@ async function main(): Promise<void> {
     maxRetriesPerRequest: 3,
     enableReadyCheck: true,
   });
+  const pushProvider = await pushProviderFromConfiguration(prisma);
   const worker = new OutboxWorker(
     prisma,
     redis,
-    pushProviderFromEnvironment(),
+    pushProvider,
     new AccountDeletionWorker(prisma),
+    new HealthReportWorker(prisma),
+    new NotificationCampaignWorker(prisma, pushProvider),
+    new CommerceJobWorker(prisma),
   );
   const shutdown = () => worker.stop();
   process.once("SIGINT", shutdown);

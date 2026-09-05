@@ -11,6 +11,10 @@
     reverse_proxy admin:8080
   }
 
+  handle /saidian-mall/* {
+    reverse_proxy admin:8080
+  }
+
   handle {
     reverse_proxy api:8080
   }

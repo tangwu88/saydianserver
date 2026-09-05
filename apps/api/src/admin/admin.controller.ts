@@ -79,8 +79,15 @@ export class AdminController {
     @Param("id") id: string,
     @Req() request: RequestWithContext,
     @Query("limit") limit?: string,
+    @Query("reason") reason?: string,
   ) {
-    return this.admin.rawHealth(current.id, id, request.requestId, Number(limit ?? 100));
+    return this.admin.rawHealth(
+      current.id,
+      id,
+      request.requestId,
+      String(reason ?? ""),
+      Number(limit ?? 100),
+    );
   }
 
   @Get("care")
@@ -148,7 +155,7 @@ export class AdminController {
   }
 
   @Patch("integrations/:key")
-  @AdminRoles(AdminRole.SUPER_ADMIN)
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.INTEGRATION_ADMIN)
   updateIntegration(@Param("key") key: string, @Body() input: unknown) {
     return this.admin.updateIntegration(key, input);
   }
@@ -219,5 +226,257 @@ export class AdminController {
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
   updateSetting(@Param("key") key: string, @Body() input: unknown) {
     return this.admin.updateSetting(key, input);
+  }
+
+  @Get("commerce-products")
+  commerceProducts(
+    @Query("search") search?: string,
+    @Query("page") page?: string,
+  ) {
+    return this.admin.commerceProducts(search, Number(page ?? 1));
+  }
+
+  @Post("commerce-products")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  createCommerceProduct(@Body() input: unknown) {
+    return this.admin.saveCommerceProduct(undefined, input);
+  }
+
+  @Patch("commerce-products/:id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  updateCommerceProduct(@Param("id") id: string, @Body() input: unknown) {
+    return this.admin.saveCommerceProduct(id, input);
+  }
+
+  @Get("commerce-categories")
+  commerceCategories() {
+    return this.admin.commerceCategories();
+  }
+
+  @Post("commerce-categories")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  createCommerceCategory(@Body() input: unknown) {
+    return this.admin.saveCommerceCategory(undefined, input);
+  }
+
+  @Patch("commerce-categories/:id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  updateCommerceCategory(@Param("id") id: string, @Body() input: unknown) {
+    return this.admin.saveCommerceCategory(id, input);
+  }
+
+  @Get("commerce-banners")
+  commerceBanners() {
+    return this.admin.commerceBanners();
+  }
+
+  @Post("commerce-banners")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  createCommerceBanner(@Body() input: unknown) {
+    return this.admin.saveCommerceBanner(undefined, input);
+  }
+
+  @Patch("commerce-banners/:id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  updateCommerceBanner(@Param("id") id: string, @Body() input: unknown) {
+    return this.admin.saveCommerceBanner(id, input);
+  }
+
+  @Get("commerce-business-configs")
+  commerceBusinessConfigs() {
+    return this.admin.commerceBusinessConfigs();
+  }
+
+  @Patch("commerce-business-configs/:key")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  updateCommerceBusinessConfig(@Param("key") key: string, @Body() input: unknown) {
+    return this.admin.updateCommerceBusinessConfig(key, input);
+  }
+
+  @Get("commerce-reviews")
+  commerceReviews() {
+    return this.admin.commerceReviews();
+  }
+
+  @Patch("commerce-reviews/:id")
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.CUSTOMER_SERVICE,
+  )
+  updateCommerceReview(@Param("id") id: string, @Body() input: unknown) {
+    return this.admin.updateCommerceReview(id, input);
+  }
+
+  @Get("commerce-orders")
+  commerceOrders(
+    @Query("status") status?: string,
+    @Query("page") page?: string,
+  ) {
+    return this.admin.commerceOrders(status, Number(page ?? 1));
+  }
+
+  @Patch("commerce-orders/:id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  updateCommerceOrder(@Param("id") id: string, @Body() input: unknown) {
+    return this.admin.updateCommerceOrder(id, input);
+  }
+
+  @Get("commerce-after-sales")
+  commerceAfterSales(@Query("status") status?: string) {
+    return this.admin.commerceAfterSales(status);
+  }
+
+  @Patch("commerce-after-sales/:id")
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.CUSTOMER_SERVICE,
+  )
+  updateCommerceAfterSale(@Param("id") id: string, @Body() input: unknown) {
+    return this.admin.updateCommerceAfterSale(id, input);
+  }
+
+  @Get("commerce-coupons")
+  commerceCoupons() {
+    return this.admin.commerceCoupons();
+  }
+
+  @Post("commerce-coupons")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  createCommerceCoupon(@Body() input: unknown) {
+    return this.admin.saveCommerceCoupon(undefined, input);
+  }
+
+  @Patch("commerce-coupons/:id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  updateCommerceCoupon(@Param("id") id: string, @Body() input: unknown) {
+    return this.admin.saveCommerceCoupon(id, input);
+  }
+
+  @Get("commerce-employees")
+  commerceEmployees() {
+    return this.admin.commerceEmployees();
+  }
+
+  @Get("commerce-commissions")
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.FINANCE,
+    AdminRole.READ_ONLY,
+  )
+  commerceCommissions() {
+    return this.admin.commerceCommissions();
+  }
+
+  @Get("commerce-jobs")
+  commerceJobs(@Query("status") status?: string) {
+    return this.admin.commerceJobs(status);
+  }
+
+  @Post("commerce-jobs/:id/retry")
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.INTEGRATION_ADMIN,
+  )
+  retryCommerceJob(@Param("id") id: string) {
+    return this.admin.retryCommerceJob(id);
+  }
+
+  @Post("commerce-jobs/product-sync")
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.INTEGRATION_ADMIN,
+  )
+  queueProductSync(@Body() input: unknown) {
+    return this.admin.queueCommerceProductSync(input);
+  }
+
+  @Post("commerce-jobs/fulfillment-sync")
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.INTEGRATION_ADMIN,
+  )
+  queueFulfillmentSync() {
+    return this.admin.queueCommerceFulfillmentSync();
+  }
+
+  @Get("payments")
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.FINANCE,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.READ_ONLY,
+  )
+  payments(@Query("status") status?: string, @Query("page") page?: string) {
+    return this.admin.payments(status, Number(page ?? 1));
+  }
+
+  @Get("health-reports")
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.HEALTH_AUDITOR,
+    AdminRole.CUSTOMER_SERVICE,
+    AdminRole.READ_ONLY,
+  )
+  healthReports(@Query("status") status?: string) {
+    return this.admin.healthReports(status);
+  }
+
+  @Post("health-reports/:id/retry")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.HEALTH_AUDITOR)
+  retryHealthReport(@Param("id") id: string) {
+    return this.admin.retryHealthReport(id);
+  }
+
+  @Get("health-report-offers")
+  healthReportOffers() {
+    return this.admin.healthReportOffers();
+  }
+
+  @Post("health-report-offers")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+  createHealthReportOffer(@Body() input: unknown) {
+    return this.admin.saveHealthReportOffer(undefined, input);
+  }
+
+  @Patch("health-report-offers/:id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+  updateHealthReportOffer(@Param("id") id: string, @Body() input: unknown) {
+    return this.admin.saveHealthReportOffer(id, input);
+  }
+
+  @Get("notification-campaigns")
+  notificationCampaigns() {
+    return this.admin.notificationCampaigns();
+  }
+
+  @Post("notification-campaigns")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  createNotificationCampaign(
+    @CurrentAdmin() current: { id: string },
+    @Body() input: unknown,
+  ) {
+    return this.admin.saveNotificationCampaign(current.id, undefined, input);
+  }
+
+  @Patch("notification-campaigns/:id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  updateNotificationCampaign(
+    @CurrentAdmin() current: { id: string },
+    @Param("id") id: string,
+    @Body() input: unknown,
+  ) {
+    return this.admin.saveNotificationCampaign(current.id, id, input);
+  }
+
+  @Post("notification-campaigns/:id/schedule")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  scheduleNotificationCampaign(@Param("id") id: string) {
+    return this.admin.scheduleNotificationCampaign(id);
   }
 }

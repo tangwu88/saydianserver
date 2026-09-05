@@ -14,6 +14,7 @@ RUN pnpm --filter @saydian/app-contracts build \
 FROM node:24.8.0-alpine AS runtime
 WORKDIR /workspace
 ENV NODE_ENV=production
+RUN apk add --no-cache font-noto-cjk
 COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
 COPY --from=build --chown=node:node /workspace/packages/contracts ./packages/contracts
 COPY --from=build --chown=node:node /workspace/apps/api ./apps/api

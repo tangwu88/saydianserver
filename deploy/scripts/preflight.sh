@@ -10,7 +10,19 @@ test -f "$compose_file"
 command -v docker >/dev/null 2>&1
 docker compose version >/dev/null
 
-required="IMAGE_TAG APP_DOMAIN POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DATABASE_URL REDIS_PASSWORD REDIS_URL ACCESS_TOKEN_SECRET REFRESH_TOKEN_PEPPER ADMIN_BOOTSTRAP_PASSWORD OBJECT_STORAGE_ENDPOINT OBJECT_STORAGE_BUCKET OBJECT_STORAGE_ACCESS_KEY OBJECT_STORAGE_SECRET_KEY RESTIC_REPOSITORY RESTIC_PASSWORD BACKUP_S3_ACCESS_KEY BACKUP_S3_SECRET_KEY"
+disk_used_percent=$(df -Pk "$root_dir" | awk 'NR==2 {gsub(/%/, "", $5); print $5}')
+case "$disk_used_percent" in
+  ''|*[!0-9]*) echo "unable to determine deployment disk usage" >&2; exit 1 ;;
+esac
+if [ "$disk_used_percent" -ge 85 ]; then
+  echo "deployment disk usage is ${disk_used_percent}% (hard limit 85%)" >&2
+  exit 1
+fi
+if [ "$disk_used_percent" -ge 70 ]; then
+  echo "warning: deployment disk usage is ${disk_used_percent}% (warning 70%)" >&2
+fi
+
+required="IMAGE_TAG APP_DOMAIN POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DATABASE_URL REDIS_PASSWORD REDIS_URL ACCESS_TOKEN_SECRET EMPLOYEE_TOKEN_SECRET REFRESH_TOKEN_PEPPER INTEGRATION_MASTER_KEY ADMIN_BOOTSTRAP_PASSWORD OBJECT_STORAGE_ENDPOINT OBJECT_STORAGE_BUCKET OBJECT_STORAGE_ACCESS_KEY OBJECT_STORAGE_SECRET_KEY RESTIC_REPOSITORY RESTIC_PASSWORD BACKUP_S3_ACCESS_KEY BACKUP_S3_SECRET_KEY"
 for key in $required; do
   value=$(sed -n "s/^${key}=//p" "$env_file" | tail -n 1)
   if [ -z "$value" ]; then
@@ -22,6 +34,16 @@ done
 set -a
 . "$env_file"
 set +a
+
+if printf '%s' "$INTEGRATION_MASTER_KEY" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
+  :
+else
+  decoded_key_bytes=$(printf '%s' "$INTEGRATION_MASTER_KEY" | base64 -d 2>/dev/null | wc -c | tr -d ' ')
+  if [ "$decoded_key_bytes" != "32" ]; then
+    echo "INTEGRATION_MASTER_KEY must be 32 bytes encoded as base64 or 64 hex characters" >&2
+    exit 1
+  fi
+fi
 
 if [ "${USE_SHARED_GATEWAY:-false}" = "true" ]; then
   gateway_network=${GATEWAY_NETWORK:-saidian_default}
@@ -43,6 +65,24 @@ case "${LOCAL_OBJECT_STORAGE_ENABLED:-false}" in
   true|false) ;;
   *) echo "LOCAL_OBJECT_STORAGE_ENABLED must be true or false" >&2; exit 1 ;;
 esac
+case "${COMMERCE_MODE:-integrated}" in
+  integrated) ;;
+  *) echo "COMMERCE_MODE must remain integrated after the single-system cutover" >&2; exit 1 ;;
+esac
+case "${ENABLE_HEALTH_REPORT_SALES:-false}" in
+  true|false) ;;
+  *) echo "ENABLE_HEALTH_REPORT_SALES must be true or false" >&2; exit 1 ;;
+esac
+if [ "${ENABLE_HEALTH_REPORT_SALES:-false}" = "true" ]; then
+  test -n "${HEALTH_REPORT_SINGLE_PRICE_CENTS:-}" || {
+    echo "health report sales require HEALTH_REPORT_SINGLE_PRICE_CENTS" >&2
+    exit 1
+  }
+  test -n "${HEALTH_MEMBERSHIP_30D_PRICE_CENTS:-}" || {
+    echo "health report sales require HEALTH_MEMBERSHIP_30D_PRICE_CENTS" >&2
+    exit 1
+  }
+fi
 case "${DATABASE_URL:-}" in
   postgresql://*@saydianapp-postgres:5432/*) ;;
   *) echo "DATABASE_URL must use the isolated host saydianapp-postgres" >&2; exit 1 ;;

@@ -1,5 +1,9 @@
-import type { PushInstallation } from "@prisma/client";
+import { IntegrationState, type PrismaClient, type PushInstallation } from "@prisma/client";
 import type { SafePushPayloadContract } from "@saydian/app-contracts";
+import {
+  markWorkerIntegrationVerified,
+  resolveWorkerSecrets,
+} from "./integration-secrets";
 
 export interface PushProvider {
   deliver(
@@ -29,6 +33,7 @@ export class JPushProvider implements PushProvider {
   constructor(
     private readonly appKey: string,
     private readonly masterSecret: string,
+    private readonly prisma?: PrismaClient,
   ) {}
 
   async deliver(
@@ -67,19 +72,49 @@ export class JPushProvider implements PushProvider {
     if (!response.ok) {
       throw new Error(`JPush delivery failed with HTTP ${response.status}`);
     }
+    if (this.prisma) await markWorkerIntegrationVerified(this.prisma, "push");
   }
 }
 
-export function pushProviderFromEnvironment(): PushProvider {
-  const provider = process.env.PUSH_PROVIDER?.trim().toLowerCase() || "disabled";
+export class DisabledPushProvider implements PushProvider {
+  async deliver(): Promise<void> {
+    throw new Error("Push provider is unconfigured");
+  }
+}
+
+export async function pushProviderFromConfiguration(
+  prisma: PrismaClient,
+): Promise<PushProvider> {
+  const integration = await prisma.integrationConfig.findUnique({
+    where: { key: "push" },
+  });
+  const publicConfig = asObject(integration?.publicConfig);
+  const provider = String(
+    publicConfig.provider ?? process.env.PUSH_PROVIDER ?? "disabled",
+  )
+    .trim()
+    .toLowerCase();
   if (provider === "mock") return new MockPushProvider();
+  if (integration?.state !== IntegrationState.CONFIGURED) {
+    return new DisabledPushProvider();
+  }
   if (provider === "jpush") {
-    const appKey = process.env.JPUSH_APP_KEY?.trim() ?? "";
-    const masterSecret = process.env.JPUSH_MASTER_SECRET?.trim() ?? "";
+    const secrets = await resolveWorkerSecrets(prisma, "push", {
+      appKey: "JPUSH_APP_KEY",
+      masterSecret: "JPUSH_MASTER_SECRET",
+    });
+    const appKey = secrets.appKey ?? "";
+    const masterSecret = secrets.masterSecret ?? "";
     if (!appKey || !masterSecret) {
       throw new Error("JPush selected but credentials are unconfigured");
     }
-    return new JPushProvider(appKey, masterSecret);
+    return new JPushProvider(appKey, masterSecret, prisma);
   }
-  throw new Error("Push provider is unconfigured");
+  return new DisabledPushProvider();
+}
+
+function asObject(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }

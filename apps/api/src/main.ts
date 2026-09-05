@@ -19,7 +19,14 @@ async function bootstrap(): Promise<void> {
     bodyParser: false,
     bufferLogs: true,
   });
-  app.use(json({ limit: "30mb" }));
+  app.use(
+    json({
+      limit: "30mb",
+      verify: (request, _response, buffer) => {
+        (request as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true, limit: "2mb" }));
   app.use((_request: Request, response: Response, next: NextFunction) => {
     response.setHeader("x-content-type-options", "nosniff");

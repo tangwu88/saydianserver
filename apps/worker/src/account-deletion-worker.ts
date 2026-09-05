@@ -1,4 +1,4 @@
-import { AccountDeletionStatus, PrismaClient, UserStatus } from "@prisma/client";
+import { AccountDeletionStatus, Prisma, PrismaClient, UserStatus } from "@prisma/client";
 import { createHash } from "node:crypto";
 
 export class AccountDeletionWorker {
@@ -28,13 +28,41 @@ export class AccountDeletionWorker {
           where: { OR: [{ inviterId: userId }, { recipientId: userId }] },
         });
         await tx.notification.deleteMany({ where: { userId } });
+        await tx.notificationCampaignDelivery.deleteMany({ where: { userId } });
+        await tx.userNotificationPreference.deleteMany({ where: { userId } });
         await tx.pushInstallation.deleteMany({ where: { userId } });
         await tx.userSession.deleteMany({ where: { userId } });
         await tx.consentRecord.deleteMany({ where: { userId } });
         await tx.activityGoal.deleteMany({ where: { userId } });
         await tx.deviceBinding.deleteMany({ where: { userId } });
         await tx.aiConversation.deleteMany({ where: { userId } });
-        await tx.legacyOrderProjection.deleteMany({ where: { userId } });
+        await tx.reportCreditLedger.deleteMany({ where: { userId } });
+        await tx.healthReport.deleteMany({ where: { userId } });
+        await tx.healthMembership.deleteMany({ where: { userId } });
+        await tx.healthProfile.deleteMany({ where: { userId } });
+        await tx.commerceCart.deleteMany({ where: { userId } });
+        await tx.commerceAddress.deleteMany({ where: { userId } });
+        await tx.commerceFavorite.deleteMany({ where: { userId } });
+        await tx.commerceReview.updateMany({
+          where: { userId },
+          data: { content: "用户已注销", images: [] },
+        });
+        await tx.commerceOrder.updateMany({
+          where: { userId },
+          data: anonymizedOrderData(),
+        });
+        await tx.legacyOrderProjection.updateMany({
+          where: { userId },
+          data: { snapshot: { redacted: true, reason: "account_deleted" } },
+        });
+        await tx.legacyMemberFinanceProjection.updateMany({
+          where: { userId },
+          data: { snapshot: { redacted: true, reason: "account_deleted" } },
+        });
+        await tx.legacyCommerceFinanceProjection.updateMany({
+          where: { userId },
+          data: { snapshot: { redacted: true, reason: "account_deleted" } },
+        });
         await tx.commerceIdentityMap.deleteMany({ where: { userId } });
         await tx.idempotencyRecord.deleteMany({ where: { userId } });
         await tx.feedback.updateMany({
@@ -76,6 +104,7 @@ export function anonymizedUserData(userId: string) {
   return {
     mobile: null,
     wechatUnionId: null,
+    wechatOpenId: null,
     passwordHash: null,
     status: UserStatus.DELETED,
     nickname: `已注销用户-${suffix}`,
@@ -84,6 +113,20 @@ export function anonymizedUserData(userId: string) {
     birthday: null,
     heightCm: null,
     weightKg: null,
+    referralEmployeeId: null,
+  };
+}
+
+export function anonymizedOrderData() {
+  return {
+    recipientName: "已注销用户",
+    recipientMobile: "",
+    province: "",
+    city: "",
+    district: "",
+    addressDetail: "",
+    buyerRemark: null,
+    invoiceJson: Prisma.DbNull,
   };
 }
 

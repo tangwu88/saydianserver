@@ -12,5 +12,6 @@ import { AdminService } from "./admin.service";
     AdminAuditInterceptor,
     AdminService,
   ],
+  exports: [AdminAuthGuard, AdminAuditInterceptor],
 })
 export class AdminModule {}

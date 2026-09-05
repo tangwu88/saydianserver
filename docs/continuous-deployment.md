@@ -23,14 +23,14 @@ pwsh -NoProfile -File tools/Start-Change.ps1
 
 ## 发布链路
 
-`main push → CI verify → SHA 镜像 → 受限 SSH 接收器 → 备份/检查 → 更新 API、Worker、Admin → 外网版本验收`
+`main push → CI verify → SHA 镜像 → 受限 SSH 接收器 → 备份/检查 → 更新 API、Worker、Admin+商城 H5 → 外网版本验收`
 
 - 仅 `AUTO_DEPLOY_ENABLED=true` 时自动发布；默认关闭，先完成下方一次性接入。
 - CI 包含真实 PostgreSQL/Redis、HTTP 兼容/权限测试、生产 Compose 校验和三镜像构建。本机无 Docker 不影响前置检查，但不能宣称本地容器已通过。
 - 固定使用通过 CI 且仍是 main 最新提交的完整 SHA；旧的排队版本不会主动覆盖新 main。
 - GitHub `production` 环境如设有审核规则，仍会等待审核；本流程不移除审批规则。
 - 镜像私有保存于 GHCR。接收器用本次 Actions 的短期 GITHUB_TOKEN 拉取；不在服务器永久保存个人 Token。
-- 服务器保存当前环境、Compose、运行中镜像 ID 和数据库备份后更新三项应用。不启动或重建商城、旧库或其他应用。
+- 服务器保存当前环境、Compose、运行中镜像 ID 和数据库备份后更新三项应用；商城 H5 已打入 Admin 镜像并发布到 `/saidian-mall/`。不启动或重建原商城、旧库或其他应用。
 - 保持原有 MAINTENANCE_READ_ONLY；出现待执行/失败的数据库迁移时停止，不自动变更结构。
 - API/公开 readiness 版本不符、启动或页面检查失败时尝试恢复上一版镜像与配置；日志会明确报告回退失败，不假报成功。不会自动覆盖数据库。
 - 首次部署后 `/health/live`、`/health/ready` 的 `revision` 应等于 GitHub 提交号；仅显示 200 不足以证明新版已运行。

@@ -2,8 +2,11 @@ import "dotenv/config";
 import { AdminRole, IntegrationState, PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
 import {
+  hasConfiguredAlipay,
   hasConfiguredCommerce,
   hasConfiguredObjectStorage,
+  hasConfiguredWechatPay,
+  hasConfiguredWeCom,
   shouldSeedPreviewContent,
 } from "./seed-policy";
 
@@ -35,6 +38,38 @@ async function main(): Promise<void> {
     ["push", IntegrationState.UNCONFIGURED, { provider: null }],
     ["ai", IntegrationState.UNCONFIGURED, { provider: null }],
     [
+      "wechat_pay",
+      hasConfiguredWechatPay()
+        ? IntegrationState.CONFIGURED
+        : IntegrationState.UNCONFIGURED,
+      { provider: "wechat_pay_v3" },
+    ],
+    [
+      "alipay",
+      hasConfiguredAlipay()
+        ? IntegrationState.CONFIGURED
+        : IntegrationState.UNCONFIGURED,
+      { provider: "alipay_open_platform" },
+    ],
+    ["apple_iap", IntegrationState.UNCONFIGURED, { provider: "storekit_2" }],
+    [
+      "wecom",
+      hasConfiguredWeCom()
+        ? IntegrationState.CONFIGURED
+        : IntegrationState.UNCONFIGURED,
+      {
+        provider: "enterprise_wechat",
+        storefrontUrl: process.env.COMMERCE_STOREFRONT_URL?.trim() || null,
+        corpId: process.env.WECOM_CORP_ID?.trim() || null,
+        agentId: process.env.WECOM_AGENT_ID?.trim() || null,
+        allowedRedirectHosts: (process.env.WECOM_ALLOWED_REDIRECT_HOSTS ?? "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
+      },
+    ],
+    ["jushuitan", IntegrationState.UNCONFIGURED, { authority: "sku_inventory_fulfillment" }],
+    [
       "object_storage",
       hasConfiguredObjectStorage()
         ? IntegrationState.CONFIGURED
@@ -46,7 +81,7 @@ async function main(): Promise<void> {
       hasConfiguredCommerce()
         ? IntegrationState.CONFIGURED
         : IntegrationState.UNCONFIGURED,
-      { mode: "existing_saydian_mall" },
+      { mode: "integrated", sourceCommit: "09963c49f255c146ffab2bfd17b8d0961c655ebd" },
     ],
   ] as const) {
     await prisma.integrationConfig.upsert({
@@ -56,7 +91,10 @@ async function main(): Promise<void> {
         state,
         publicConfig,
       },
-      update: { state, publicConfig },
+      // Deployment restarts must not overwrite values entered in the
+      // write-only integration center. Environment-derived defaults only
+      // initialize a new database.
+      update: {},
     });
   }
 
@@ -125,6 +163,60 @@ async function main(): Promise<void> {
     },
     update: {},
   });
+
+  const salesEnabled = ["1", "true", "yes"].includes(
+    (process.env.ENABLE_HEALTH_REPORT_SALES ?? "").trim().toLowerCase(),
+  );
+  const singlePrice = positiveInteger(process.env.HEALTH_REPORT_SINGLE_PRICE_CENTS);
+  const membershipPrice = positiveInteger(
+    process.env.HEALTH_MEMBERSHIP_PRICE_CENTS,
+  );
+  await prisma.healthReportOffer.upsert({
+    where: { code: "single-report-v1" },
+    create: {
+      code: "single-report-v1",
+      offerKey: "single-report",
+      title: "单次详细健康报告",
+      description: "购买后生成1份近30天AI健康管理参考报告",
+      entitlement: "SINGLE_REPORT",
+      priceCents: singlePrice,
+      creditCount: 1,
+      platforms: ["android", "ios", "h5", "mini_program", "web"],
+      appleProductId: process.env.APPLE_IAP_SINGLE_REPORT_PRODUCT_ID?.trim() || null,
+      active: salesEnabled && singlePrice > 0,
+    },
+    update: {
+      priceCents: singlePrice,
+      appleProductId: process.env.APPLE_IAP_SINGLE_REPORT_PRODUCT_ID?.trim() || null,
+      active: salesEnabled && singlePrice > 0,
+    },
+  });
+  await prisma.healthReportOffer.upsert({
+    where: { code: "health-membership-30d-v1" },
+    create: {
+      code: "health-membership-30d-v1",
+      offerKey: "health-membership-30d",
+      title: "30天健康会员",
+      description: "有效期30天，含4份详细健康管理参考报告，不自动续费",
+      entitlement: "MEMBERSHIP",
+      priceCents: membershipPrice,
+      creditCount: 4,
+      durationDays: 30,
+      platforms: ["android", "ios", "h5", "mini_program", "web"],
+      appleProductId: process.env.APPLE_IAP_MEMBERSHIP_PRODUCT_ID?.trim() || null,
+      active: salesEnabled && membershipPrice > 0,
+    },
+    update: {
+      priceCents: membershipPrice,
+      appleProductId: process.env.APPLE_IAP_MEMBERSHIP_PRODUCT_ID?.trim() || null,
+      active: salesEnabled && membershipPrice > 0,
+    },
+  });
+}
+
+function positiveInteger(value: string | undefined): number {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : 0;
 }
 
 void main()

@@ -25,7 +25,10 @@
     "db:seed": "pnpm --filter @saydian/app-api prisma:seed",
     "migrate:inventory": "pnpm --filter @saydian/app-migrator inspect",
     "migrate:import": "pnpm --filter @saydian/app-migrator migrate",
-    "migrate:verify": "pnpm --filter @saydian/app-migrator verify"
+    "migrate:verify": "pnpm --filter @saydian/app-migrator verify",
+    "migrate:mall:inventory": "pnpm --filter @saydian/app-migrator mall:inspect",
+    "migrate:mall:import": "pnpm --filter @saydian/app-migrator mall:migrate",
+    "migrate:mall:verify": "pnpm --filter @saydian/app-migrator mall:verify"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

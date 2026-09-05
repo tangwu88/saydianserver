@@ -1,0 +1,118 @@
+<template>
+  <DesktopHeader /><view class="page"
+    ><view class="container help-layout"
+      ><view class="card nav"
+        ><view
+          v-for="item in sections"
+          :key="item.key"
+          :class="active === item.key && 'active'"
+          @click="active = item.key"
+          >{{ item.label }}</view
+        ></view
+      ><view class="card content"
+        ><template v-if="active === 'service'"
+          ><h2>客服与服务</h2>
+          <p>
+            {{
+              service.phone ? "客服电话：" + service.phone : "客服电话未配置"
+            }}
+          </p>
+          <p>
+            {{ service.wecomUrl ? "企业客服入口已配置" : "企业客服入口未配置" }}
+          </p></template
+        ><template v-else-if="active === 'afterSale'"
+          ><h2>售后政策</h2>
+          <rich-text v-if="policies.afterSale" :nodes="policies.afterSale" />
+          <p v-else>售后政策尚未在商城后台配置。</p></template
+        ><template v-else-if="active === 'privacy'"
+          ><h2>隐私政策</h2>
+          <rich-text v-if="policies.privacy" :nodes="policies.privacy" />
+          <p v-else>隐私政策尚未在商城后台配置。</p></template
+        ><template v-else-if="active === 'agreement'"
+          ><h2>用户协议</h2>
+          <rich-text v-if="policies.service" :nodes="policies.service" />
+          <p v-else>用户协议尚未在商城后台配置。</p></template
+        ><template v-else
+          ><h2>发票信息</h2>
+          <p>
+            结算时可填写发票抬头。发票规则与开具方式由商城后台政策为准。
+          </p></template
+        ></view
+      ></view
+    ></view
+  >
+</template>
+<script setup lang="ts">
+import { onLoad } from "@dcloudio/uni-app";
+import { reactive, ref } from "vue";
+import DesktopHeader from "../../components/DesktopHeader.vue";
+import { api, toast } from "../../api";
+const active = ref("service"),
+  service = reactive<any>({}),
+  policies = reactive<any>({});
+const sections = [
+  { key: "service", label: "联系客服" },
+  { key: "afterSale", label: "售后政策" },
+  { key: "invoice", label: "发票信息" },
+  { key: "privacy", label: "隐私政策" },
+  { key: "agreement", label: "用户协议" },
+];
+onLoad(async (o) => {
+  active.value = o?.section || "service";
+  try {
+    const r: any = await api("/storefront/bootstrap");
+    Object.assign(service, r.configs?.["customer.service"]?.value || {});
+    Object.assign(policies, r.configs?.policies?.value || {});
+  } catch (e) {
+    toast(e);
+  }
+});
+</script>
+<style scoped lang="scss">
+.help-layout {
+  display: grid;
+  gap: 20rpx;
+}
+.nav {
+  display: flex;
+  overflow: auto;
+  padding: 10rpx;
+}
+.nav view {
+  flex: none;
+  padding: 22rpx 28rpx;
+  color: var(--muted);
+}
+.nav .active {
+  color: var(--green);
+  font-weight: 850;
+  background: var(--mint);
+  border-radius: 12rpx;
+}
+.content h2 {
+  font-size: 36rpx;
+  margin: 0 0 30rpx;
+}
+.content p {
+  color: #53615e;
+  line-height: 1.9;
+}
+.content {
+  min-height: 460rpx;
+}
+@media (min-width: 900px) {
+  .help-layout {
+    grid-template-columns: 220px 1fr;
+  }
+  .nav {
+    display: block;
+    padding: 12px;
+  }
+  .nav view {
+    padding: 16px 18px;
+  }
+  .content {
+    min-height: 600px;
+  }
+}
+</style>

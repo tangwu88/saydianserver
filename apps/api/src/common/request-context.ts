@@ -6,9 +6,14 @@ export interface AuthenticatedUser {
   sessionId: string;
 }
 
+export interface AuthenticatedEmployee {
+  id: string;
+}
+
 export interface RequestWithContext extends Request {
   requestId: string;
   authUser?: AuthenticatedUser;
+  authEmployee?: AuthenticatedEmployee;
   authAdmin?: {
     id: string;
     role: string;
@@ -32,5 +37,13 @@ export const CurrentAdmin = createParamDecorator(
     const request = context.switchToHttp().getRequest<RequestWithContext>();
     if (!request.authAdmin) throw new Error("Authenticated admin is missing");
     return request.authAdmin;
+  },
+);
+
+export const CurrentEmployee = createParamDecorator(
+  (_data: unknown, context: ExecutionContext): AuthenticatedEmployee => {
+    const request = context.switchToHttp().getRequest<RequestWithContext>();
+    if (!request.authEmployee) throw new Error("Authenticated employee is missing");
+    return request.authEmployee;
   },
 );
