@@ -34,7 +34,7 @@ export function downloadManifestFromPublicData(
 export function downloadManifestToEditor(
   input: unknown,
 ): DownloadManifestEditor {
-  const manifest = parseDownloadManifest(input);
+  const manifest = downloadManifestFromPublicData(input);
   const releases = Object.fromEntries(
     manifest.releases.map((release) => [
       release.platform,

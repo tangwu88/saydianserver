@@ -53,6 +53,10 @@ describe("download setting editor", () => {
     expect(
       downloadManifestFromPublicData({ value: manifest, public: true }).releases,
     ).toHaveLength(3);
+    expect(
+      downloadManifestToEditor({ value: manifest, public: true }).releases.android
+        .versionName,
+    ).toBe("0.1.19");
   });
 
   it("maps the published manifest into named platform fields", () => {
