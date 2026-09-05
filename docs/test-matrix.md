@@ -2,13 +2,14 @@
 
 | 层级 | 自动化内容 | 当前本地结果 | 生产/外部验收 |
 |---|---|---|---|
-| 类型与构建 | API、Worker、Migrator、Contracts、Vue | 执行中随实施日志更新 | CI 必须重复通过 |
-| API 单元 | 健康校验、旧字段、商城 ID、预警、刷新并发、推送隐私 | 已覆盖 | 增补数据库集成 |
+| 类型与构建 | API、Worker、Migrator、Contracts、Vue | 2026-09-04 通过 | CI 33842948061 已通过 |
+| API 单元 | 健康校验、旧字段、商城 ID、预警、刷新并发、推送隐私 | 全仓库 52 项通过（API 45 项） | 继续补真实供应商/迁移用例 |
 | Worker | Push Mock、注销匿名化 | 已覆盖 | JPush/APNs 实投 |
 | 迁移器 | SQL 标识符、幂等/冲突逻辑 | 基础覆盖 | 真实只读库演练 |
 | 管理后台 | Envelope、TypeScript/Vue build | 已覆盖 | RBAC 六账号实测 |
-| 数据库 | Prisma validate/migrate/seed | 本机无 PostgreSQL | CI PostgreSQL 16 |
-| 容器 | API/Worker/Admin 镜像 | 本机无 Docker | CI Docker build + API smoke |
+| 数据库 | Prisma validate/migrate/seed | 本机无 PostgreSQL | CI PostgreSQL 16 已通过；不是旧库迁移证据 |
+| HTTP 合约 | V1 multipart、健康幂等、关爱授权、消息归属、旧内容 ID、后台鉴权 | 本机无隔离数据库 | CI 33 项断言通过，仅使用虚构 fixture |
+| 容器 | API/Worker/Admin 镜像 | 本机无 Docker | CI 三镜像 build + API smoke 已通过；尚未部署新镜像 |
 | Flutter | 现有静态检查和全部测试 | App 改动后执行 | Android/iOS 真实网络 |
 | 商城 | 内部身份/地址/订单/APP 支付适配 | 单元与类型检查 | 支付沙箱、物流、售后、ERP |
 

@@ -37,12 +37,23 @@
 
 ## 镜像和发布
 
-1. `Release images` 工作流构建 API、Worker、Admin 三个不可变标签，同时生成 provenance 与 SBOM。
-2. 无法在生产机保存 GHCR 凭据时，运行 `Export runtime images`，在制品 1 天有效期内下载并校验 SHA-256，再执行 `docker load`；仅在三个版本标签均可由 `docker image inspect` 找到后设置 `PRIVATE_IMAGES_PRELOADED=true`。
-3. `Deploy production` 首次必须保持 `dry_run=true`。
-4. dry-run 通过后，以 `open_writes=false` 发布。脚本对已有数据库先备份；首次部署没有旧数据库时明确跳过空备份，再迁移并以只读方式启动和检查 HTTPS。
-5. 完成登录、健康历史、关爱、旧订单、附件和后台审计冒烟后，第二次明确选择开放写入。
-6. `database-backup` 每日生成自定义格式备份；PostgreSQL 持续归档 WAL；Restic 加密同步到异地仓库并执行保留策略。
+### 当前自动路径
+
+1. 每次 main 源码 push 先运行 `CI`，完成真实 PostgreSQL/Redis、HTTP 契约、Compose 和三镜像构建验证。
+2. 只有仓库变量 `AUTO_DEPLOY_ENABLED=true` 时，成功 CI 才调用 `Deploy production`；发布固定使用本次完整 Git SHA，不接受分支名或浮动 latest 标签。
+3. 工作流构建并推送 API、Worker、Admin 三个 `sha-<40位提交号>` 私有 GHCR 镜像，再经专用 SSH forced-command receiver 传入短期 GITHUB_TOKEN 和经校验的 deploy 目录。
+4. 服务器先备份 PostgreSQL、环境/Compose 和实际运行镜像 ID；发现待执行或失败的 Prisma migration 会停止，**不会自动变更数据库结构**。
+5. 仅更新 API/Worker/Admin，保留发布前 `MAINTENANCE_READ_ONLY`；不重启商城、旧服务或共享基础设施。共享 Nginx 只执行配置检查和 reload。
+6. 外网 `/health/ready` 的 `revision`、管理页面、三容器和维护值全部匹配才完成；失败时尝试恢复前一配置和镜像。
+7. 首次接入、Secrets、主机指纹、停用和故障步骤见 [持续部署说明](continuous-deployment.md)。当前工作流不再使用旧文档中的 `dry_run/open_writes` 输入。
+
+### 手工/离线回退路径
+
+- `Release images` 与 `Export runtime images` 保留为受控手工/离线方案，不是当前 main 自动发布的正常路径。
+- 无法使用 GHCR 临时身份时，可下载 1 天有效的导出制品，校验 SHA-256 并 `docker load`；只有三个精确版本均可 inspect 时才设置 `PRIVATE_IMAGES_PRELOADED=true`。
+- 旧的 `preflight.sh`、`release.sh`、`rollback.sh` 属于人工维护工具。执行前必须对照当前 Compose、备份、目标 SHA 和维护状态；不得用它们绕开 CI、schema gate 或发布权限审批。
+- 开放写入不是发布参数。登录、健康、关爱、旧订单、附件、双端 App 和外部集成全部验收后，另行审批修改维护状态。
+- `database-backup` 可在本机生成自定义格式备份；只有 Restic 指向真实异地仓库并完成恢复演练后，才能称为异地容灾。
 
 生产环境必须设置 `SEED_PREVIEW_CONTENT=false`。本地示例文章和示例协议不得进入正式数据库；正式协议须由审核后的迁移或后台发布流程写入。
 
