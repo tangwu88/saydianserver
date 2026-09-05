@@ -120,7 +120,7 @@
 
 ## 明确未完成 / 未验收
 
-- 本轮尚未提交时，CI PostgreSQL 迁移/种子、HTTP 合约和镜像构建没有本轮 run 证据；提交后必须记录 run URL 与提交 SHA。
+- 整合源码已提交并推送为 `59aeffba06d8d5b230b3a63265232411a6a94936`。本轮 [CI 33955725515](https://github.com/saydian88-cmyk/saydianapp-server/actions/runs/33955725515) 在 Runner 启动前失败，步骤列表为空；GitHub Check 注释明确为账户 Actions 账单失败或额度不足。因此本轮仍没有 PostgreSQL 迁移/种子、HTTP 合约和镜像构建的 CI 证据，恢复账户额度后必须对该 SHA 重跑。
 - 旧 App/商城真实会员、商品、SKU、订单、支付、退款、附件、奖金和健康数据尚未迁移或逐表对账。
 - 微信、支付宝、StoreKit、企业微信、聚水潭、AI、极光/APNs、短信和异地备份没有本轮真实凭据或供应商回执，保持“未配置/未验收”。
 - Flutter 尚未接入健康档案、报告预览、付费解锁、会员权益、购买恢复和报告历史，也未做 Android/iOS 真实购买测试。
@@ -145,3 +145,13 @@
 - 2026-09-05T08:35:55.2860995Z：pnpm.cmd test，退出码 0。
 
 - 2026-09-05T08:36:16.1849138Z：pnpm.cmd build，退出码 0。
+
+- 2026-09-05T08:38:03.2954861Z：pnpm.cmd api:docs:check，退出码 0。
+
+- 2026-09-05T08:38:13.8774395Z：pnpm.cmd tools:test，退出码 0。
+
+- 2026-09-05T08:38:26.9832763Z：pnpm.cmd typecheck，退出码 0。
+
+- 2026-09-05T08:38:36.1040515Z：pnpm.cmd test，退出码 0。
+
+- 2026-09-05T08:38:57.0748861Z：pnpm.cmd build，退出码 0。
