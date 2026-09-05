@@ -261,6 +261,7 @@ model User {
   mobile                 String?                           @unique
   wechatUnionId          String?                           @unique
   wechatOpenId           String?                           @unique
+  wechatAppOpenId        String?                           @unique
   passwordHash           String?
   status                 UserStatus                        @default(ACTIVE)
   nickname               String

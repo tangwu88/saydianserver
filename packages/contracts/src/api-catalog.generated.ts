@@ -73,6 +73,27 @@ export const apiCatalog = {
       "dependency": "核心服务"
     },
     {
+      "key": "AuthController.wechatLogin",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/auth/wechat-login",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/auth/auth.controller.ts",
+      "summary": "原生微信授权登录",
+      "request": "{code,state,platform:android/ios/harmony,consentAccepted:true,consentVersion}；只提交一次性 code，密钥仅在服务端",
+      "response": "Session；手机号仍未验证时不得映射商城身份",
+      "dependency": "微信开放平台移动应用"
+    },
+    {
       "key": "AuthController.requestSms",
       "method": "POST",
       "path": "/api/saydian-app/v2/auth/sms-code",
@@ -4527,6 +4548,27 @@ export const apiCatalog = {
       "request": "表单 username/mobile、password",
       "response": "LegacySession",
       "dependency": "核心服务"
+    },
+    {
+      "key": "LegacySiteController.wechatLogin",
+      "method": "POST",
+      "path": "/api/v1/site/wechat-login",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/legacy/legacy-site.controller.ts",
+      "summary": "旧版 App 原生微信授权登录",
+      "request": "表单 code、state、platform=android/ios/harmony、group=app、consent_accepted=1、consent_version；不接收 AppSecret",
+      "response": "LegacySession",
+      "dependency": "微信开放平台移动应用"
     },
     {
       "key": "LegacySiteController.register",

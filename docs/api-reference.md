@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **269 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **271 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -13,11 +13,12 @@
 | `GET /health/live` | 进程存活 | public | 无请求体 | {status,service,revision} | 核心服务 |
 | `GET /health/ready` | 数据库就绪 | public | 无请求体 | {status,database,revision}；失败 HTTP 503；不证明供应商可用 | 核心服务 |
 
-## V1 兼容接口（61）
+## V1 兼容接口（62）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
 | `POST /api/v1/site/login` | 旧版密码登录 | public | 表单 username/mobile、password | LegacySession | 核心服务 |
+| `POST /api/v1/site/wechat-login` | 旧版 App 原生微信授权登录 | public | 表单 code、state、platform=android/ios/harmony、group=app、consent_accepted=1、consent_version；不接收 AppSecret | LegacySession | 微信开放平台移动应用 |
 | `POST /api/v1/site/register` | 旧版注册 | public | 表单 mobile/username、password、nickname?、consent_version?、code?；无 code 路径的上线限制见缺陷清单 | LegacySession | 核心服务 |
 | `POST /api/v1/site/sms-code` | 旧版短信验证码 | public | 表单 mobile、usage=register/reset/forgot/up-pwd/reset_password | 发送状态 | 短信供应商 |
 | `POST /api/v1/site/up-pwd` | 旧版重置密码 | public | 表单 mobile、code、password | LegacySession | 短信供应商 |
@@ -124,12 +125,13 @@
 | `GET /api/saidian-mall/v1/storefront/coupon-gifts/:token` | 查看员工赠送的优惠券 | public | path:token；token=高熵一次性赠券令牌 | 优惠券、员工摘要和领取状态；不返回会员信息 | 主库商城 |
 | `POST /api/saidian-mall/v1/storefront/coupon-gifts/:token/claim` | 会员领取员工赠券 | member | path:token；token=赠券令牌；需会员登录 | 本人优惠券领取记录；并发领取只成功一次 | 主库商城 |
 
-## V2 App 接口（90）
+## V2 App 接口（91）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
 | `POST /api/saydian-app/v2/auth/register` | 兼容无短信注册 | public | {mobile,password,nickname?,consentVersion}；上线前必须解决手机号所有权验证，见缺陷清单 | Session | 核心服务 |
 | `POST /api/saydian-app/v2/auth/login` | 密码登录 | public | {mobile/username,password} | Session | 核心服务 |
+| `POST /api/saydian-app/v2/auth/wechat-login` | 原生微信授权登录 | public | {code,state,platform:android/ios/harmony,consentAccepted:true,consentVersion}；只提交一次性 code，密钥仅在服务端 | Session；手机号仍未验证时不得映射商城身份 | 微信开放平台移动应用 |
 | `POST /api/saydian-app/v2/auth/sms-code` | 发送验证码 | public | {mobile,usage:register/reset_password} | 发送状态；不返回验证码 | 短信供应商 |
 | `POST /api/saydian-app/v2/auth/register-with-sms` | 短信注册 | public | {mobile,code,password,nickname?,consentVersion} | Session | 短信供应商 |
 | `POST /api/saydian-app/v2/auth/reset-password` | 短信重置密码 | public | {mobile,code,password/newPassword} | Session；旧会话失效 | 短信供应商 |

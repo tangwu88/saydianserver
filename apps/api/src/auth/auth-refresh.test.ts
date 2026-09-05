@@ -3,6 +3,7 @@ import { AuthService } from "./auth.service";
 import type { PrismaService } from "../common/prisma.service";
 import type { SmsAdapterService } from "./sms-adapter.service";
 import type { IntegrationSecretsService } from "../common/integration-secrets.service";
+import type { WechatAppAuthService } from "./wechat-app-auth.service";
 
 describe("refresh token rotation", () => {
   beforeEach(() => {
@@ -42,6 +43,7 @@ describe("refresh token rotation", () => {
       prisma,
       { send: async () => undefined } as unknown as SmsAdapterService,
       {} as IntegrationSecretsService,
+      {} as WechatAppAuthService,
     );
     const results = await Promise.allSettled([
       service.refresh("same-refresh-token"),

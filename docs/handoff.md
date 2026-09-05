@@ -7,9 +7,9 @@
 - 已建立统一 NestJS API、Worker、总管理后台、商城 H5、PostgreSQL/Redis、私有 MinIO 过渡存储、V1/V2/商城兼容接口、旧 App/商城迁移器及部署模板。
 - 当前 Flutter App 契约是第一标准；原商城 H5/小程序基线 `09963c4` 已迁入 `apps/shop`，旧 Apifox/旧服务行为只作迁移参考。
 - 商品、订单、售后、评价、优惠券、员工推广、支付、通知、健康档案、付费报告、接口文档和集成配置已进入一个主系统；聚水潭仍是 SKU/库存/履约权威来源。
-- 接口目录共 269 条，详见 [接口调用指南](api-guide.md)、[路由目录](api-reference.md) 和机器可读 [接口目录 JSON](api-catalog.json)。
+- 接口目录共 271 条，详见 [接口调用指南](api-guide.md)、[路由目录](api-reference.md) 和机器可读 [接口目录 JSON](api-catalog.json)。
 - 最新交接前 Git HEAD 必须以 `git rev-parse HEAD origin/main` 为准；不要复制本文件中的旧提交号代替现场核对。
-- 整合提交 `59aeffba06d8d5b230b3a63265232411a6a94936` 已推送到 `origin/main`；本地已通过类型检查、77 项单元测试（API 62、Worker 9、Contracts 4、Migrator 1、Admin 1）、269 路由目录、全部应用构建及微信小程序构建。
+- 原生微信 App 登录已补入 V1/V2 路由、服务端 code 兑换、独立 App OpenID、UnionID 合并防冲突及明确协议同意；本地已通过类型检查、87 项单元测试（API 72、Worker 9、Contracts 4、Migrator 1、Admin 1）、271 路由目录和全部应用构建。本轮实际提交以现场 `git rev-parse HEAD origin/main` 为准。
 - 本轮 [CI 33955725515](https://github.com/saydian88-cmyk/saydianapp-server/actions/runs/33955725515) 未启动任何步骤：GitHub 注释为账户 Actions 账单失败或额度不足。它不是代码测试失败，也没有提供 PostgreSQL、HTTP 或镜像证据；恢复账户额度后必须对 `59aeffb` 重跑。
 - 最近一次已完成的基线 [CI 33943303305](https://github.com/saydian88-cmyk/saydianapp-server/actions/runs/33943303305) 对应 `a484adf`；它不包含本轮商城/报告数据库迁移。
 - 生产站 `https://app.saydian.cn` 的 live/ready 当前正常，但返回结果没有 `revision`，服务器仍运行旧 `IMAGE_TAG=2026.09.02-1036afa`。新提交 **尚未部署**。
@@ -105,7 +105,7 @@ git rev-list --left-right --count HEAD...origin/main
 
 1. 强制手机号验证并保存验证状态；未验证账号禁止映射商城身份，完成双账号攻击用例。
 2. 用新的旧库最小权限只读账号完成真实字段/数量盘点、迁移 dry-run、冲突复核、金额/附件 SHA 报告和旧会话兼容。旧 root 密码不可使用。
-3. 分别配置并真实验收短信、AI、极光/APNs、微信/支付宝/Apple、企业微信和聚水潭；未配置时保持真实不可用。
+3. 分别配置并真实验收短信、AI、极光/APNs、微信/支付宝/Apple、企业微信和聚水潭；原生微信登录还需开放平台 HarmonyOS 审核通过、新服务端部署并在 `wechat_login` 集成中安全写入配置；未配置时保持真实不可用。
 4. 完成双账号关爱授权/撤销、历史健康、旧订单、附件及 Android/iPhone 真实网络联调后，再独立决定是否关闭维护只读。
 5. 在生产备份副本演练本轮两项新增迁移，核对锁表时间、磁盘、枚举变更、回滚点和 4GB 主机峰值；未经批准不部署 schema。
 
@@ -125,7 +125,7 @@ git rev-list --left-right --count HEAD...origin/main
 ## 8. 验收清单
 
 - [ ] `git status --short --branch` 干净，HEAD 与 `origin/main` 一致。
-- [ ] 接口目录 269 条校验、工具测试、类型、77 项单元测试和全部应用构建通过。
+- [ ] 接口目录 271 条校验、工具测试、类型、87 项单元测试和全部应用构建通过。
 - [ ] CI PostgreSQL 新库迁移/种子、HTTP 断言及 API/Worker/Admin+商城三镜像成功；记录 run URL 和提交 SHA。
 - [ ] 线上 `/health/ready` 的 `revision` 等于目标 SHA，API/Worker/Admin 容器均为该镜像。
 - [ ] 发布前后 `MAINTENANCE_READ_ONLY` 不变；没有重启商城、旧库或其他系统。

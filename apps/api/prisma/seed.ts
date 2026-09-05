@@ -6,6 +6,7 @@ import {
   hasConfiguredCommerce,
   hasConfiguredObjectStorage,
   hasConfiguredWechatPay,
+  hasConfiguredWechatLogin,
   hasConfiguredWeCom,
   shouldSeedPreviewContent,
 } from "./seed-policy";
@@ -37,6 +38,16 @@ async function main(): Promise<void> {
     ["sms", IntegrationState.UNCONFIGURED, { provider: null }],
     ["push", IntegrationState.UNCONFIGURED, { provider: null }],
     ["ai", IntegrationState.UNCONFIGURED, { provider: null }],
+    [
+      "wechat_login",
+      hasConfiguredWechatLogin()
+        ? IntegrationState.CONFIGURED
+        : IntegrationState.UNCONFIGURED,
+      {
+        provider: "wechat_open_platform",
+        appId: process.env.WECHAT_LOGIN_APP_ID?.trim() || null,
+      },
+    ],
     [
       "wechat_pay",
       hasConfiguredWechatPay()

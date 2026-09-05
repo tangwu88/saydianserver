@@ -30,6 +30,13 @@ try {
   const form = new FormData(); form.set("username", "19900000001"); form.set("password", password);
   const login = await request("/api/v1/site/login", { method: "POST", body: form });
   check(login.json.code, 200); check(typeof login.json.data.member.id, "number");
+  const wechatLogin = new FormData();
+  wechatLogin.set("code", "synthetic-one-time-code");
+  wechatLogin.set("state", `sd_${Date.now()}_01234567-89ab-cdef-0123456789ab`);
+  wechatLogin.set("group", "app"); wechatLogin.set("platform", "harmony");
+  wechatLogin.set("consent_version", "http-fixture-legal-v1");
+  wechatLogin.set("consent_accepted", "1");
+  check((await request("/api/v1/site/wechat-login", { method: "POST", body: wechatLogin })).json.code, 503);
   const badPay = new FormData(); badPay.set("pay_type", "unsupported"); badPay.set("data", '{"order_id":42}');
   check((await request("/api/v1/pay", { method: "POST", token: tokenA, body: badPay })).json.message, "请选择支持的支付方式");
   const observed = new Date(Date.now() - 60_000).toISOString();

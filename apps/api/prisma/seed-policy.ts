@@ -43,6 +43,14 @@ export function hasConfiguredWechatPay(
   ].every((key) => Boolean(environment[key]?.trim()));
 }
 
+export function hasConfiguredWechatLogin(
+  environment: SeedEnvironment = process.env,
+): boolean {
+  return ["WECHAT_LOGIN_APP_ID", "WECHAT_LOGIN_APP_SECRET"].every((key) =>
+    Boolean(environment[key]?.trim()),
+  );
+}
+
 export function hasConfiguredAlipay(
   environment: SeedEnvironment = process.env,
 ): boolean {

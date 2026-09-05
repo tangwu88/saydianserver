@@ -14,8 +14,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed" }
     return ($result -join "`n").Trim()
   }
-  $gitRoot = Git-Value @('rev-parse', '--show-toplevel')
-  if ([IO.Path]::GetFullPath($gitRoot) -ne [IO.Path]::GetFullPath($taskRoot)) { throw 'Use the repository root.' }
+  # Git resolves symlinked parent directories (for example macOS /var -> /private/var)
+  # differently from PowerShell. An empty repository prefix is the portable proof
+  # that RepositoryPath is the checkout root.
+  $gitPrefix = Git-Value @('rev-parse', '--show-prefix')
+  if ($gitPrefix) { throw 'Use the repository root.' }
   if ((Git-Value @('branch', '--show-current')) -ne 'main') { throw 'Expected main; no branch was changed.' }
   if ((Git-Value @('remote', 'get-url', 'origin')) -ne $ExpectedRemote) { throw 'Remote mismatch; nothing changed.' }
   & git status --short --branch

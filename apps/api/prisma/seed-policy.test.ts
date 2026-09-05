@@ -4,6 +4,7 @@ import {
   hasConfiguredCommerce,
   hasConfiguredObjectStorage,
   hasConfiguredWechatPay,
+  hasConfiguredWechatLogin,
   hasConfiguredWeCom,
   shouldSeedPreviewContent,
 } from "./seed-policy";
@@ -60,6 +61,18 @@ describe("production seed policy", () => {
         ALIPAY_APP_ID: "app",
         ALIPAY_PRIVATE_KEY_PEM: "private",
         ALIPAY_PUBLIC_KEY_PEM: "public",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps native WeChat login disabled until both server credentials exist", () => {
+    expect(hasConfiguredWechatLogin({ WECHAT_LOGIN_APP_ID: "wx-client" })).toBe(
+      false,
+    );
+    expect(
+      hasConfiguredWechatLogin({
+        WECHAT_LOGIN_APP_ID: "wx-client",
+        WECHAT_LOGIN_APP_SECRET: "server-only-secret",
       }),
     ).toBe(true);
   });

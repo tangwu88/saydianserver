@@ -25,6 +25,10 @@ import {
 import { SmsAdapterService } from "./sms-adapter.service";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
+import {
+  WechatAppAuthService,
+  type WechatAppIdentity,
+} from "./wechat-app-auth.service";
 
 const accessLifetimeSeconds = 15 * 60;
 const refreshLifetimeMs = 30 * 24 * 60 * 60 * 1000;
@@ -43,6 +47,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly sms: SmsAdapterService,
     private readonly integrationSecrets: IntegrationSecretsService,
+    private readonly wechatApp: WechatAppAuthService,
   ) {}
 
   async register(input: RegisterInput): Promise<SessionContract> {
@@ -347,6 +352,63 @@ export class AuthService {
     return this.mallSession(await this.issueSession(user.id), user.mobile);
   }
 
+  async loginWechatApp(input: {
+    code: string;
+    state: string;
+    platform: string;
+    consentAccepted: boolean;
+    consentVersion: string;
+    consentSource: string;
+  }): Promise<SessionContract> {
+    if (!input.consentAccepted) {
+      throw new BadRequestException("请先阅读并同意用户协议与隐私政策");
+    }
+    this.assertConsentVersion(input.consentVersion);
+    const identity = await this.wechatApp.exchange(input);
+    const user = await this.prisma.$transaction(async (tx) => {
+      const [byOpenId, byUnionId] = await Promise.all([
+        tx.user.findUnique({ where: { wechatAppOpenId: identity.openId } }),
+        identity.unionId
+          ? tx.user.findUnique({ where: { wechatUnionId: identity.unionId } })
+          : null,
+      ]);
+      if (byOpenId && byUnionId && byOpenId.id !== byUnionId.id) {
+        throw new ConflictException("微信账号关联存在冲突，请联系客服处理");
+      }
+      const existing = byUnionId ?? byOpenId;
+      if (existing?.status === UserStatus.DELETION_PENDING) {
+        throw new ConflictException("账号正在注销，如需恢复请联系客服");
+      }
+      const saved = existing
+        ? await tx.user.update({
+            where: { id: existing.id },
+            data: {
+              status: UserStatus.ACTIVE,
+              wechatAppOpenId: identity.openId,
+              ...(identity.unionId ? { wechatUnionId: identity.unionId } : {}),
+              ...wechatProfileBackfill(existing, identity),
+            },
+          })
+        : await tx.user.create({
+            data: {
+              wechatAppOpenId: identity.openId,
+              ...(identity.unionId ? { wechatUnionId: identity.unionId } : {}),
+              nickname: identity.nickname,
+              ...(identity.avatarUrl ? { avatarUrl: identity.avatarUrl } : {}),
+              gender: identity.gender,
+            },
+          });
+      await this.recordLegalConsent(
+        tx,
+        saved.id,
+        input.consentVersion,
+        input.consentSource,
+      );
+      return saved;
+    });
+    return this.issueSession(user.id);
+  }
+
   async bindReferral(userId: string, referralCodeInput: string) {
     const referralCode = referralCodeInput.trim();
     if (!referralCode) return { bound: false };
@@ -581,4 +643,25 @@ function safeJsonObject(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function wechatProfileBackfill(
+  existing: {
+    nickname: string;
+    avatarUrl: string | null;
+    gender: string;
+  },
+  identity: WechatAppIdentity,
+): Prisma.UserUpdateInput {
+  return {
+    ...(!existing.avatarUrl && identity.avatarUrl
+      ? { avatarUrl: identity.avatarUrl }
+      : {}),
+    ...(existing.nickname === "微信用户" && identity.nickname !== "微信用户"
+      ? { nickname: identity.nickname }
+      : {}),
+    ...(existing.gender === "UNSPECIFIED" && identity.gender !== "UNSPECIFIED"
+      ? { gender: identity.gender }
+      : {}),
+  };
 }

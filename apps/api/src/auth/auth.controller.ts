@@ -36,6 +36,19 @@ export class AuthController {
     );
   }
 
+  @Post("wechat-login")
+  wechatLogin(@Body() input: unknown) {
+    const body = safeObject(input);
+    return this.auth.loginWechatApp({
+      code: String(body.code ?? ""),
+      state: String(body.state ?? ""),
+      platform: String(body.platform ?? ""),
+      consentAccepted: body.consentAccepted === true,
+      consentVersion: String(body.consentVersion ?? ""),
+      consentSource: "app_v2_wechat",
+    });
+  }
+
   @Post("sms-code")
   requestSms(@Body() input: unknown) {
     const body = safeObject(input);

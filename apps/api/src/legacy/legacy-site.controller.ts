@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Post,
@@ -30,6 +31,28 @@ export class LegacySiteController {
       String(body.username ?? body.mobile ?? ""),
       String(body.password ?? ""),
     );
+    return legacySession(session, await this.legacy.member(session.member.id));
+  }
+
+  @Post("wechat-login")
+  async wechatLogin(@Body() input: unknown) {
+    const body = safeObject(input);
+    if (String(body.group ?? "app").trim().toLowerCase() !== "app") {
+      throw new BadRequestException("登录分组不正确");
+    }
+    const platform = String(body.platform ?? "").trim().toLowerCase();
+    const session = await this.auth.loginWechatApp({
+      code: String(body.code ?? ""),
+      state: String(body.state ?? ""),
+      platform,
+      consentAccepted: legacyBoolean(
+        body.consent_accepted ?? body.consentAccepted,
+      ),
+      consentVersion: String(
+        body.consent_version ?? body.consentVersion ?? "",
+      ),
+      consentSource: `legacy_app_wechat_${platform || "unknown"}`,
+    });
     return legacySession(session, await this.legacy.member(session.member.id));
   }
 
@@ -95,4 +118,8 @@ function normalizeSmsUsage(value: string): string {
   return ["reset", "forgot", "up-pwd", "reset_password"].includes(normalized)
     ? "reset_password"
     : "register";
+}
+
+function legacyBoolean(value: unknown): boolean {
+  return ["1", "true", "yes"].includes(String(value ?? "").trim().toLowerCase());
 }

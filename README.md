@@ -55,7 +55,7 @@ pnpm.cmd build
 - [`docs/architecture.md`](docs/architecture.md)：模块和数据边界。
 - [`docs/api-coverage.md`](docs/api-coverage.md)：App/旧路由/V2/数据来源覆盖。
 - [`docs/api-guide.md`](docs/api-guide.md)：鉴权、参数、错误和完整调用示例。
-- [`docs/api-reference.md`](docs/api-reference.md)：从控制器生成并校验的 269 条接口目录。
+- [`docs/api-reference.md`](docs/api-reference.md)：从控制器生成并校验的 271 条接口目录。
 - [`docs/continuous-deployment.md`](docs/continuous-deployment.md)：修改前更新、显式提交、CI 与自动发布。
 - [`docs/security-model.md`](docs/security-model.md)：鉴权、RBAC、健康数据与推送边界。
 - [`docs/test-matrix.md`](docs/test-matrix.md)：自动化与真机/外部集成验收。
