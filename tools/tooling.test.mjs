@@ -34,6 +34,8 @@ test("automatic release preserves maintenance and rejects schema changes", () =>
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   assert.match(workflow, /needs: verify/);
   assert.match(workflow, /AUTO_DEPLOY_ENABLED == 'true'/);
+  const productionWorkflow = fs.readFileSync(path.join(root, ".github/workflows/deploy-production.yml"), "utf8");
+  assert.match(productionWorkflow, /ServerAliveInterval=20.*ServerAliveCountMax=15.*TCPKeepAlive=yes/);
 });
 
 test("download page stays public, immutable and outside Git artifacts", () => {

@@ -107,6 +107,7 @@ jobs:
           { printf '%s\n' "$GH_TOKEN"; cat deploy-bundle.tgz; } | \
             ssh -i "$key_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile="$key_dir/known_hosts" -o ConnectTimeout=15 \
+              -o ServerAliveInterval=20 -o ServerAliveCountMax=15 -o TCPKeepAlive=yes \
               "$DEPLOY_USER@$DEPLOY_HOST" "release $REVISION"
           actual=$(curl --fail --silent --max-time 15 https://app.saydian.cn/health/ready | jq -r .revision)
           test "$actual" = "$REVISION"
