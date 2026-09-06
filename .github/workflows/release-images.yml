@@ -40,6 +40,6 @@ jobs:
           context: .
           file: docker/${{ matrix.component }}.Dockerfile
           push: true
-          tags: ghcr.io/saydian88-cmyk/saydianapp-server-${{ matrix.component }}:${{ steps.version.outputs.value }}
+          tags: ghcr.io/tangwu88/saydianserver-${{ matrix.component }}:${{ steps.version.outputs.value }}
           provenance: true
           sbom: true

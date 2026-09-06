@@ -9,9 +9,9 @@ expected=0
 missing=0
 for image in $(docker compose --env-file "$env_file" -f "$compose_file" config --images); do
   case "$image" in
-    ghcr.io/saydian88-cmyk/saydianapp-server-api:*|\
-    ghcr.io/saydian88-cmyk/saydianapp-server-worker:*|\
-    ghcr.io/saydian88-cmyk/saydianapp-server-admin:*)
+    ghcr.io/tangwu88/saydianserver-api:*|\
+    ghcr.io/tangwu88/saydianserver-worker:*|\
+    ghcr.io/tangwu88/saydianserver-admin:*)
       expected=$((expected + 1))
       if ! docker image inspect "$image" >/dev/null 2>&1; then
         echo "missing preloaded runtime image: $image" >&2

@@ -1,6 +1,6 @@
 # Saydian赛电 App 服务端交接
 
-交接日期：2026-09-05。源码仓库：`https://github.com/saydian88-cmyk/saydianapp-server`（Private），默认分支 `main`。
+交接日期：2026-09-05。当前源码仓库：`https://github.com/tangwu88/saydianserver`（Public），默认分支 `main`。
 
 ## 1. 当前状态
 
@@ -23,8 +23,8 @@
 环境要求：Node.js 22 或更高版本、pnpm 11.19.0、Git、PowerShell 7；容器运行另需 Docker Compose v2。
 
 ```powershell
-git clone https://github.com/saydian88-cmyk/saydianapp-server.git
-Set-Location saydianapp-server
+git clone https://github.com/tangwu88/saydianserver.git
+Set-Location saydianserver
 pwsh -NoProfile -File tools/Start-Change.ps1
 pnpm.cmd install --frozen-lockfile
 pnpm.cmd db:generate
@@ -44,7 +44,7 @@ git bundle verify .\saydianapp-server.bundle
 git clone .\saydianapp-server.bundle saydianapp-server
 Set-Location saydianapp-server
 git switch main
-git remote add origin https://github.com/saydian88-cmyk/saydianapp-server.git
+git remote add origin https://github.com/tangwu88/saydianserver.git
 git fetch origin --prune
 git rev-list --left-right --count HEAD...origin/main
 ```

@@ -70,7 +70,7 @@ jobs:
           context: .
           file: docker/${{ matrix.service }}.Dockerfile
           push: true
-          tags: ghcr.io/saydian88-cmyk/saydianapp-server-${{ matrix.service }}:sha-${{ needs.resolve.outputs.revision }}
+          tags: ghcr.io/tangwu88/saydianserver-${{ matrix.service }}:sha-${{ needs.resolve.outputs.revision }}
           labels: org.opencontainers.image.revision=${{ needs.resolve.outputs.revision }}
   deploy:
     needs: [resolve, images]

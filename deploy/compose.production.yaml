@@ -102,7 +102,7 @@ services:
     networks: [private]
 
   api:
-    image: ghcr.io/saydian88-cmyk/saydianapp-server-api:${IMAGE_TAG}
+    image: ghcr.io/tangwu88/saydianserver-api:${IMAGE_TAG}
     mem_limit: 512m
     cpus: 1.0
     env_file: .env.production
@@ -133,7 +133,7 @@ services:
         aliases: [saydianapp-api]
 
   worker:
-    image: ghcr.io/saydian88-cmyk/saydianapp-server-worker:${IMAGE_TAG}
+    image: ghcr.io/tangwu88/saydianserver-worker:${IMAGE_TAG}
     mem_limit: 384m
     cpus: 0.75
     env_file: .env.production
@@ -149,7 +149,7 @@ services:
     networks: [private]
 
   admin:
-    image: ghcr.io/saydian88-cmyk/saydianapp-server-admin:${IMAGE_TAG}
+    image: ghcr.io/tangwu88/saydianserver-admin:${IMAGE_TAG}
     mem_limit: 96m
     cpus: 0.25
     depends_on:

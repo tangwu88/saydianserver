@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$RepositoryPath = (Split-Path $PSScriptRoot -Parent),
-  [string]$ExpectedRemote = 'https://github.com/saydian88-cmyk/saydianapp-server.git',
+  [string]$ExpectedRemote = 'https://github.com/tangwu88/saydianserver.git',
   [switch]$Resume
 )
 $ErrorActionPreference = 'Stop'

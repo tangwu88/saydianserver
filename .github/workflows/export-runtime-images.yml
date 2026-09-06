@@ -28,9 +28,9 @@ jobs:
           if [[ ! "$version" =~ ^[A-Za-z0-9._-]+$ ]]; then exit 1; fi
 
           images=(
-            "ghcr.io/saydian88-cmyk/saydianapp-server-api:$version"
-            "ghcr.io/saydian88-cmyk/saydianapp-server-worker:$version"
-            "ghcr.io/saydian88-cmyk/saydianapp-server-admin:$version"
+            "ghcr.io/tangwu88/saydianserver-api:$version"
+            "ghcr.io/tangwu88/saydianserver-worker:$version"
+            "ghcr.io/tangwu88/saydianserver-admin:$version"
           )
           for image in "${images[@]}"; do
             docker pull "$image"
