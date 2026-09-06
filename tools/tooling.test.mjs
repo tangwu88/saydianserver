@@ -31,6 +31,7 @@ test("automatic release preserves maintenance and rejects schema changes", () =>
   assert.doesNotMatch(script, /prisma migrate deploy|MAINTENANCE_READ_ONLY=false|compose down|docker.*prune/);
   assert.match(script, /trap 'rollback \$\?' ERR/);
   assert.match(script, /images\.yaml/);
+  assert.match(script, /for page in admin down/);
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   assert.match(workflow, /needs: verify/);
   assert.match(workflow, /AUTO_DEPLOY_ENABLED == 'true'/);

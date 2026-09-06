@@ -101,8 +101,17 @@ for attempt in $(seq 1 20); do
   sleep 3
 done
 [[ "$ready" == true ]]
-curl --max-time 15 --fail --silent "https://$domain/admin/" > "$rollback_dir/admin-smoke.html"
-grep -qi '<html' "$rollback_dir/admin-smoke.html"
+for page in admin down; do
+  page_ready=false
+  for attempt in $(seq 1 20); do
+    if curl --max-time 15 --fail --silent "https://$domain/$page/" > "$rollback_dir/$page-smoke.html" \
+      && grep -qi '<html' "$rollback_dir/$page-smoke.html"; then
+      page_ready=true; break
+    fi
+    sleep 3
+  done
+  [[ "$page_ready" == true ]]
+done
 for service in api worker admin; do
   container=$(compose ps -q "$service")
   [[ "$(docker inspect -f '{{.State.Running}}' "$container")" == true ]]
