@@ -1,6 +1,6 @@
 # Saydian赛电 App 服务端交接
 
-交接日期：2026-09-05。当前源码仓库：`https://github.com/tangwu88/saydianserver`（Public），默认分支 `main`。
+交接日期：2026-09-06。当前源码仓库：`https://github.com/tangwu88/saydianserver`（Public），默认分支 `main`。
 
 ## 1. 当前状态
 
@@ -9,12 +9,12 @@
 - 商品、订单、售后、评价、优惠券、员工推广、支付、通知、健康档案、付费报告、接口文档和集成配置已进入一个主系统；聚水潭仍是 SKU/库存/履约权威来源。
 - 接口目录共 271 条，详见 [接口调用指南](api-guide.md)、[路由目录](api-reference.md) 和机器可读 [接口目录 JSON](api-catalog.json)。
 - 最新交接前 Git HEAD 必须以 `git rev-parse HEAD origin/main` 为准；不要复制本文件中的旧提交号代替现场核对。
-- 原生微信 App 登录已补入 V1/V2 路由、服务端 code 兑换、独立 App OpenID、UnionID 合并防冲突及明确协议同意；本地已通过类型检查、87 项单元测试（API 72、Worker 9、Contracts 4、Migrator 1、Admin 1）、271 路由目录和全部应用构建。本轮实际提交以现场 `git rev-parse HEAD origin/main` 为准。
-- 本轮 [CI 33955725515](https://github.com/saydian88-cmyk/saydianapp-server/actions/runs/33955725515) 未启动任何步骤：GitHub 注释为账户 Actions 账单失败或额度不足。它不是代码测试失败，也没有提供 PostgreSQL、HTTP 或镜像证据；恢复账户额度后必须对 `59aeffb` 重跑。
-- 最近一次已完成的基线 [CI 33943303305](https://github.com/saydian88-cmyk/saydianapp-server/actions/runs/33943303305) 对应 `a484adf`；它不包含本轮商城/报告数据库迁移。
-- 生产站 `https://app.saydian.cn` 的 live/ready 当前正常，但返回结果没有 `revision`，服务器仍运行旧 `IMAGE_TAG=2026.09.02-1036afa`。新提交 **尚未部署**。
-- 生产 `MAINTENANCE_READ_ONLY=true`；旧 `app.saidian.cc` 未切换，旧数据未迁移。不要把管理后台可打开、CI 通过或 API 探针正常表述成业务全量上线。
-- 2026-09-05 查询仓库变量与 Secrets 仍为空，专用 SSH receiver 和 `AUTO_DEPLOY_ENABLED` 尚未接通；CI 的 auto-deploy 会跳过。本轮包含数据库结构变化，即使以后启用自动部署也必须先人工演练并批准迁移。
+- 新仓库 CI、GHCR 和受限 SSH receiver 已接通，仓库变量 `AUTO_DEPLOY_ENABLED=true`；四个生产 Secret 已配置，但值不进入 Git 或交接文档。
+- [生产部署 34006385576](https://github.com/tangwu88/saydianserver/actions/runs/34006385576) 已成功发布基线 `36ad693917da957f423135bbe8c3e065aeed3290`。后续文档提交也会触发新 CI，因此接手时必须重新核对 Actions 与 `/health/ready`，不能把该 SHA 当作永久当前值。
+- 生产数据库已先备份并完成隔离恢复演练，4/4 Prisma migrations 已应用；自动发布仍会在发现新待执行 migration 时停止，不会擅自改 schema。
+- 生产 `MAINTENANCE_READ_ONLY=true`；旧 `app.saidian.cc` 未切换，旧数据未迁移。不要把自动部署成功、管理后台可打开或 API 探针正常表述成业务全量上线。
+- `/down` 已公开上线三端下载页；Android `0.1.19（23）` 与 HarmonyOS `0.1.3（5）` 可下载，iPhone `0.1.19（23）` 保持 TestFlight 待开放。
+- `app_update` 已归一为 `DownloadManifest v1`。登录后台后从“客服与更新”编辑版本、构建号、状态、链接、文件大小和 SHA-256；后台不上传安装包。
 
 ## 2. 接手第一步
 
@@ -22,17 +22,17 @@
 
 环境要求：Node.js 22 或更高版本、pnpm 11.19.0、Git、PowerShell 7；容器运行另需 Docker Compose v2。
 
-```powershell
+```shell
 git clone https://github.com/tangwu88/saydianserver.git
-Set-Location saydianserver
-pwsh -NoProfile -File tools/Start-Change.ps1
-pnpm.cmd install --frozen-lockfile
-pnpm.cmd db:generate
-pnpm.cmd api:docs:check
-pnpm.cmd tools:test
-pnpm.cmd typecheck
-pnpm.cmd test
-pnpm.cmd build
+cd saydianserver
+pwsh -NoProfile -File ./tools/Start-Change.ps1
+pnpm install --frozen-lockfile
+pnpm db:generate
+pnpm api:docs:check
+pnpm tools:test
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
 `Start-Change.ps1` 只允许安全 fast-forward：工作区脏、分支错误或远端分叉时停止，不覆盖、不强推。继续已审阅的本地改动才使用 `-Resume`。根级命令会生成共享 contracts，必须串行执行。
@@ -69,6 +69,7 @@ git rev-list --left-right --count HEAD...origin/main
 | API 主体 | `apps/api`，NestJS 模块、Prisma schema、V1/V2/Admin 控制器 |
 | Worker | `apps/worker`，Outbox、健康报告、通知活动、推送、ERP 和注销任务 |
 | 管理后台 | `apps/admin-web`，Vue 3 + Element Plus 总后台 |
+| App 下载页 | `apps/download-web`，公开 `/down`、设备识别、二维码和三端下载卡片 |
 | 商城前端 | `apps/shop`，原商城 H5/小程序同源代码；H5 发布到 `/saidian-mall/` |
 | 迁移工具 | `apps/migrator`，旧 App/商城库只读盘点、幂等导入、永久 ID 映射和核验 |
 | 共享契约 | `packages/contracts` |
@@ -93,13 +94,21 @@ git rev-list --left-right --count HEAD...origin/main
 
 - 服务器：腾讯云 Lighthouse `49.232.231.131`，Ubuntu 24.04，4 核/4GB/40GB；项目 `/opt/saydianapp-server`。
 - 本项目与商城/运营系统共享 `saidian-gateway-1` 和 `saidian_default`；禁止 `compose down`、Docker prune 或修改无关网关路由。
-- 服务器 API/PostgreSQL/Redis/MinIO 已健康，根盘交接前约已用 23GB、可用 16GB。过渡存储与备份都在同机，不是异地容灾。
-- 自动发布流程：main push → CI verify → 完整 SHA 镜像 → 受限 SSH receiver → 数据库备份/迁移状态检查 → 更新 API/Worker/Admin+商城 → 外网 revision 验证。
+- 服务器 API/PostgreSQL/Redis/MinIO 已健康。主机只有 40GB 根盘，接手和发布前用 `df -h /` 现场核对；过渡存储与备份都在同机，不是异地容灾。
+- 自动发布已启用：main push → CI verify → 完整 SHA 镜像 → 受限 SSH receiver → 数据库备份/迁移状态检查 → 更新 API/Worker/Admin+商城+下载页 → 外网 revision 验证。
 - 自动脚本保留现有维护值；发现待执行/失败的数据库迁移会停止，不自动改 schema。发布失败尝试恢复旧镜像/配置，但仍须人工核对 readiness。
-- 启用发布前，按 [持续部署说明](continuous-deployment.md) 建立专用账号、核对主机指纹、配置 4 个 GitHub Secrets 和变量。该账号能执行 root/Docker 应用部署，属于生产权限，必须经负责人确认。
+- 专用账号、主机指纹、4 个 GitHub Secrets 和变量已配置。轮换、停用或重建时按 [持续部署说明](continuous-deployment.md) 操作；该账号具备受限生产发布能力。
 - 不要把私钥、Token、生产 `.env`、数据库备份或真实健康数据放进 Git、聊天记录或交接 ZIP。
 
 ## 7. 下一位同事优先级
+
+### 接手后先做
+
+1. 执行 `pwsh -NoProfile -File ./tools/Start-Change.ps1`，确认 `main`、工作区干净且 HEAD 与 `origin/main` 一致。
+2. 查看最近一次 `CI` 和 `Deploy production`；再请求 `/health/ready`，确认线上 `revision` 等于目标提交。
+3. 阅读最新的 `docs/implementation-log/`；历史日志只作证据，当前状态以本文件、Actions 和线上探针为准。
+4. 修改前保持生产只读；涉及 Prisma migration 时先备份、恢复演练和人工执行，自动发布不会代办。
+5. 每轮完成后删除本轮产生的重复、废弃代码，保留兼容和安全边界；运行全量检查并用 `Publish-Change.ps1` 显式提交文件。
 
 ### P0：开放写入前
 
@@ -107,7 +116,7 @@ git rev-list --left-right --count HEAD...origin/main
 2. 用新的旧库最小权限只读账号完成真实字段/数量盘点、迁移 dry-run、冲突复核、金额/附件 SHA 报告和旧会话兼容。旧 root 密码不可使用。
 3. 分别配置并真实验收短信、AI、极光/APNs、微信/支付宝/Apple、企业微信和聚水潭；原生微信登录还需开放平台 HarmonyOS 审核通过、新服务端部署并在 `wechat_login` 集成中安全写入配置；未配置时保持真实不可用。
 4. 完成双账号关爱授权/撤销、历史健康、旧订单、附件及 Android/iPhone 真实网络联调后，再独立决定是否关闭维护只读。
-5. 在生产备份副本演练本轮两项新增迁移，核对锁表时间、磁盘、枚举变更、回滚点和 4GB 主机峰值；未经批准不部署 schema。
+5. 后续新增 schema 前在生产备份副本演练 migration，核对锁表时间、磁盘、枚举变更、回滚点和 4GB 主机峰值；未经批准不部署 schema。
 
 ### P1：已知缺口
 
@@ -125,7 +134,7 @@ git rev-list --left-right --count HEAD...origin/main
 ## 8. 验收清单
 
 - [ ] `git status --short --branch` 干净，HEAD 与 `origin/main` 一致。
-- [ ] 接口目录 271 条校验、工具测试、类型、87 项单元测试和全部应用构建通过。
+- [ ] 接口目录 271 条校验、工具测试、类型、全量单元测试和全部应用构建通过；具体数量以当次输出为准。
 - [ ] CI PostgreSQL 新库迁移/种子、HTTP 断言及 API/Worker/Admin+商城三镜像成功；记录 run URL 和提交 SHA。
 - [ ] 线上 `/health/ready` 的 `revision` 等于目标 SHA，API/Worker/Admin 容器均为该镜像。
 - [ ] 发布前后 `MAINTENANCE_READ_ONLY` 不变；没有重启商城、旧库或其他系统。

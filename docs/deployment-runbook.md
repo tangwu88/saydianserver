@@ -17,7 +17,7 @@
 - 值中若包含 shell 特殊字符，必须按 POSIX shell 规则转义；发布脚本会加载该文件。
 - 默认通过 GHCR 只读凭据拉取私有运行镜像。若使用 `Export runtime images` 工作流导出的短期制品离线导入镜像，则设置 `PRIVATE_IMAGES_PRELOADED=true`；预检查和回滚会核对 API、Worker、Admin 三个精确版本都已存在于本机，不再访问私有仓库。
 - 配置主机外置 `INTEGRATION_MASTER_KEY`、对象存储、所需第三方集成、加密 Restic 异地仓库和已固定的 SSH known_hosts。集成密钥通过总后台写入后不得回显。
-- GitHub `production` Environment 必须启用人工审批。
+- GitHub `production` Environment 当前未设置 required reviewers，自动发布会直接执行。若治理要求人工审批，先单独配置环境保护规则并验证等待/放行流程。
 
 ### 与现有赛电网关共存
 

@@ -7,6 +7,7 @@
 - `apps/api`：NestJS 模块化 API，含账号、健康、商城、统一支付、通知、接口文档、管理端和兼容接口。
 - `apps/worker`：事务 Outbox、健康报告、通知活动、推送、ERP 任务和账号删除。
 - `apps/admin-web`：Vue 3 + Element Plus 总后台，在一个会话内管理会员、健康、商城、支付、通知、内容、接口和集成。
+- `apps/download-web`：公开 App 下载页，发布在 `/down`，读取后台维护的三端版本清单。
 - `apps/shop`：从商城基线提交迁入的 Vue 3 H5/小程序同源前端，发布在 `/saidian-mall/`。
 - `apps/migrator`：旧 App 库和原商城库的只读盘点、幂等导入、永久 ID 映射和迁移核验。
 - `packages/contracts`：前后端共享的公开类型和枚举。
@@ -24,11 +25,11 @@
 不使用容器时可先执行：
 
 ```powershell
-pnpm.cmd install
-pnpm.cmd db:generate
-pnpm.cmd typecheck
-pnpm.cmd test
-pnpm.cmd build
+pnpm install
+pnpm db:generate
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
 本机没有 Docker 时仍可完成静态检查、单元测试和构建；数据库集成与容器冒烟由 GitHub Actions 执行。生产配置、迁移和切换流程见 [`docs/deployment-runbook.md`](docs/deployment-runbook.md) 与 [`docs/migration-runbook.md`](docs/migration-runbook.md)。
@@ -47,7 +48,9 @@ pnpm.cmd build
 - 商品、SKU、购物车、地址、订单、物流、售后、评价、优惠券和推广已迁入主系统；聚水潭仍是 SKU、库存和履约的权威来源，不允许后台直接改权威库存。
 - 健康档案、30 天证据窗口、详细报告权益、微信/支付宝/StoreKit 支付契约、退款撤权、按需 PDF 和 AI 生成任务已实现；正式销售默认关闭，数据不足不创建支付单。
 - 旧库真实字段映射必须以只读盘点结果填写，不能根据旧文档猜测；未提供只读账号前只验证脱敏示例映射。
-- `https://app.saydian.cn` 当前仍是上一版维护只读环境；本轮包含数据库迁移，必须先由 CI 在空库验证，再经人工备份/迁移审批部署。短信、AI、极光/APNs、支付商户、企业微信、聚水潭和异地备份仍按真实回执逐项验收。
+- `https://app.saydian.cn` 已运行新仓库自动发布版本，`main` 通过 CI 后自动部署；现场版本必须以 `/health/ready` 的 `revision` 和 GitHub Actions 为准。
+- 生产仍保持 `MAINTENANCE_READ_ONLY=true`。短信、AI、极光/APNs、支付商户、企业微信、聚水潭和异地备份仍须按真实回执逐项验收，不能因自动部署已接通而视为完成。
+- `/down` 已公开提供 Android、iPhone、HarmonyOS 三端信息；版本、状态和下载链接在后台“客服与更新”维护。安装包保存在服务器挂载目录，不进入 Git。
 - 生产停写、最终增量迁移和 `app.saidian.cc` 切换不在本地预发布动作中。
 
 ## 文档索引

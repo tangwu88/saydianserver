@@ -1,5 +1,12 @@
 # 安全更新、提交与自动部署
 
+## 当前启用状态
+
+- 2026-09-06 已在 `tangwu88/saydianserver` 配置 `DEPLOY_HOST`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`、`DEPLOY_KNOWN_HOSTS` 和 `AUTO_DEPLOY_ENABLED=true`；文档只记录名称，不记录值。
+- 受限 SSH receiver 已安装，`status` 返回线上完整 revision；普通 shell 命令被拒绝。
+- [生产部署 34006385576](https://github.com/tangwu88/saydianserver/actions/runs/34006385576) 已成功。接手时仍须查看最新 run 与 `/health/ready`，不要复用历史结论。
+- GitHub `production` Environment 当前没有 required reviewers。若要增加审批规则，应作为独立权限变更处理。
+
 ## 使用方式
 
 每轮修改前，从仓库根目录执行：
@@ -25,7 +32,7 @@ pwsh -NoProfile -File tools/Start-Change.ps1
 
 `main push → CI verify → SHA 镜像 → 受限 SSH 接收器 → 备份/检查 → 更新 API、Worker、Admin+商城 H5 → 外网版本验收`
 
-- 仅 `AUTO_DEPLOY_ENABLED=true` 时自动发布；默认关闭，先完成下方一次性接入。
+- 仅 `AUTO_DEPLOY_ENABLED=true` 时自动发布；当前仓库已开启。新环境或密钥轮换时重新执行下方一次性接入。
 - CI 包含真实 PostgreSQL/Redis、HTTP 兼容/权限测试、生产 Compose 校验和三镜像构建。本机无 Docker 不影响前置检查，但不能宣称本地容器已通过。
 - 固定使用通过 CI 且仍是 main 最新提交的完整 SHA；旧的排队版本不会主动覆盖新 main。
 - GitHub `production` 环境如设有审核规则，仍会等待审核；本流程不移除审批规则。
@@ -35,7 +42,7 @@ pwsh -NoProfile -File tools/Start-Change.ps1
 - API/公开 readiness 版本不符、启动或页面检查失败时尝试恢复上一版镜像与配置；日志会明确报告回退失败，不假报成功。不会自动覆盖数据库。
 - 首次部署后 `/health/live`、`/health/ready` 的 `revision` 应等于 GitHub 提交号；仅显示 200 不足以证明新版已运行。
 
-## 一次性接入（受控管理员执行）
+## 一次性接入或密钥轮换（受控管理员执行）
 
 1. 为本仓库生成独立 ed25519 密钥，私钥存放在 Git 工作区外，不复用个人 SSH 密钥。不要把任何私钥粘贴到日志或提交 Git。
 2. 通过已认证的服务器连接上传本仓库 `deploy/scripts/ci-receiver.sh`、`install-ci-receiver.sh` 和公钥（不是私钥），检查内容/SHA 后执行：
