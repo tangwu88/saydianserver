@@ -6,12 +6,53 @@ on:
       revision:
         required: true
         type: string
+      download_url:
+        required: false
+        type: string
+        default: ""
+      download_name:
+        required: false
+        type: string
+        default: ""
+      download_size:
+        required: false
+        type: string
+        default: ""
+      download_sha256:
+        required: false
+        type: string
+        default: ""
+      publish_app_update:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       revision:
         description: Full main commit SHA that has passed CI
         required: true
         type: string
+      download_url:
+        description: Temporary GitHub release-assets HTTPS URL
+        required: false
+        type: string
+      download_name:
+        description: Immutable APK or HAP filename
+        required: false
+        type: string
+      download_size:
+        description: Exact file size in bytes
+        required: false
+        type: string
+      download_sha256:
+        description: Exact lowercase SHA-256
+        required: false
+        type: string
+      publish_app_update:
+        description: Publish deploy/app-update.internal-test.json after the package is verified
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,6 +86,34 @@ jobs:
             test "$result" -ge 1
           fi
           echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+      - name: Fetch and verify optional release package
+        if: inputs.download_url != ''
+        env:
+          DOWNLOAD_URL: ${{ inputs.download_url }}
+          DOWNLOAD_NAME: ${{ inputs.download_name }}
+          DOWNLOAD_SIZE: ${{ inputs.download_size }}
+          DOWNLOAD_SHA256: ${{ inputs.download_sha256 }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$DOWNLOAD_URL" == https://release-assets.githubusercontent.com/* ]]
+          [[ "$DOWNLOAD_NAME" =~ ^Saydian-[A-Za-z0-9._-]+\.(apk|hap)$ ]]
+          [[ "$DOWNLOAD_SIZE" =~ ^[1-9][0-9]*$ ]]
+          [[ "$DOWNLOAD_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          mkdir download-package
+          curl --fail --silent --show-error --location --max-redirs 3 \
+            --proto '=https' --proto-redir '=https' \
+            --output "download-package/$DOWNLOAD_NAME" "$DOWNLOAD_URL"
+          test "$(stat -c %s "download-package/$DOWNLOAD_NAME")" = "$DOWNLOAD_SIZE"
+          printf '%s  %s\n' "$DOWNLOAD_SHA256" "$DOWNLOAD_NAME" > download-package/SHA256SUMS
+          (cd download-package && sha256sum --strict --check SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: inputs.download_url != ''
+        with:
+          name: verified-download-package
+          path: download-package
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
   images:
     needs: resolve
     runs-on: ubuntu-24.04
@@ -83,6 +152,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.resolve.outputs.revision }}
+      - uses: actions/download-artifact@v4
+        if: inputs.download_url != ''
+        with:
+          name: verified-download-package
+          path: download-package
       - name: Deploy through constrained SSH receiver
         shell: bash
         env:
@@ -92,6 +166,8 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           GH_TOKEN: ${{ github.token }}
+          DOWNLOAD_URL: ${{ inputs.download_url }}
+          PUBLISH_APP_UPDATE: ${{ inputs.publish_app_update }}
         run: |
           set -Eeuo pipefail
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
@@ -99,11 +175,25 @@ jobs:
           [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
           test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$REVISION"
           key_dir=$(mktemp -d)
-          trap 'rm -f "$key_dir/key" "$key_dir/known_hosts"' EXIT
+          bundle_dir=$(mktemp -d)
+          trap 'rm -rf -- "$key_dir" "$bundle_dir" deploy-bundle.tgz' EXIT
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$key_dir/key"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$key_dir/known_hosts"
           chmod 600 "$key_dir/key" "$key_dir/known_hosts"
-          git archive --format=tar HEAD deploy | gzip > deploy-bundle.tgz
+          git archive --format=tar HEAD deploy | tar -x -C "$bundle_dir"
+          if [[ -n "$DOWNLOAD_URL" ]]; then
+            test -f download-package/SHA256SUMS
+            mkdir -p "$bundle_dir/deploy/downloads"
+            cp -p download-package/SHA256SUMS "$bundle_dir/deploy/downloads/"
+            find download-package -maxdepth 1 -type f \( -name '*.apk' -o -name '*.hap' \) \
+              -exec cp -p {} "$bundle_dir/deploy/downloads/" \;
+          fi
+          if [[ "$PUBLISH_APP_UPDATE" == true ]]; then
+            test -n "$DOWNLOAD_URL"
+            : > "$bundle_dir/deploy/.publish-app-update"
+          fi
+          tar -C "$bundle_dir" -czf deploy-bundle.tgz deploy
+          test "$(stat -c %s deploy-bundle.tgz)" -le 10485760
           { printf '%s\n' "$GH_TOKEN"; cat deploy-bundle.tgz; } | \
             ssh -i "$key_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile="$key_dir/known_hosts" -o ConnectTimeout=15 \

@@ -13,7 +13,7 @@
 - [生产部署 34006385576](https://github.com/tangwu88/saydianserver/actions/runs/34006385576) 已成功发布基线 `36ad693917da957f423135bbe8c3e065aeed3290`。后续文档提交也会触发新 CI，因此接手时必须重新核对 Actions 与 `/health/ready`，不能把该 SHA 当作永久当前值。
 - 生产数据库已先备份并完成隔离恢复演练，4/4 Prisma migrations 已应用；自动发布仍会在发现新待执行 migration 时停止，不会擅自改 schema。
 - 生产 `MAINTENANCE_READ_ONLY=true`；旧 `app.saidian.cc` 未切换，旧数据未迁移。不要把自动部署成功、管理后台可打开或 API 探针正常表述成业务全量上线。
-- `/down` 已公开上线三端下载页；Android `0.1.19（23）` 与 HarmonyOS `0.1.3（7）` 可下载，当前包来自私有 App 仓库预发布 `qa-20260907-r6`，iPhone `0.1.19（23）` 保持 TestFlight 待开放。
+- `/down` 已公开上线三端下载页；Android `0.1.19（23）` 保留预发布 `qa-20260907-r6` 的 QA Release，HarmonyOS 已更新为 `qa-20260907-r7` 的 `0.1.4（8）`，iPhone `0.1.19（23）` 保持 TestFlight 待开放。
 - `app_update` 已归一为 `DownloadManifest v1`。登录后台后从“客服与更新”编辑版本、构建号、状态、链接、文件大小和 SHA-256；后台不上传安装包。
 
 ## 2. 接手第一步

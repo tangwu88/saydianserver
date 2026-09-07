@@ -32,11 +32,18 @@ test("automatic release preserves maintenance and rejects schema changes", () =>
   assert.match(script, /trap 'rollback \$\?' ERR/);
   assert.match(script, /images\.yaml/);
   assert.match(script, /for page in admin down/);
+  assert.match(script, /sha256sum --strict --check SHA256SUMS/);
+  assert.match(script, /install -o root -g root -m 0644/);
+  assert.match(script, /\.publish-app-update/);
+  assert.match(script, /run_setting_tool restore/);
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   assert.match(workflow, /needs: verify/);
   assert.match(workflow, /AUTO_DEPLOY_ENABLED == 'true'/);
   const productionWorkflow = fs.readFileSync(path.join(root, ".github/workflows/deploy-production.yml"), "utf8");
   assert.match(productionWorkflow, /ServerAliveInterval=20.*ServerAliveCountMax=15.*TCPKeepAlive=yes/);
+  assert.match(productionWorkflow, /release-assets\.githubusercontent\.com/);
+  assert.match(productionWorkflow, /actions\/upload-artifact@v4/);
+  assert.match(productionWorkflow, /PUBLISH_APP_UPDATE/);
 });
 
 test("download page stays public, immutable and outside Git artifacts", () => {

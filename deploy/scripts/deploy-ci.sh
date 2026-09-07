@@ -8,6 +8,25 @@ revision=${RELEASE_SHA:?}
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || exit 1
 source_dir=${RELEASE_SOURCE:?}
 [[ "$source_dir" == "$root_dir"/releases/ci-* && -d "$source_dir/deploy" ]] || exit 1
+source_downloads="$source_dir/deploy/downloads"
+download_packages=()
+if [[ -d "$source_downloads" ]]; then
+  [[ -f "$source_downloads/SHA256SUMS" ]]
+  while read -r digest filename extra; do
+    [[ "$digest" =~ ^[0-9a-f]{64}$ && "$filename" =~ ^Saydian-[A-Za-z0-9._-]+\.(apk|hap)$ && -z "${extra:-}" ]]
+    [[ -f "$source_downloads/$filename" ]]
+  done < "$source_downloads/SHA256SUMS"
+  (cd "$source_downloads" && sha256sum --strict --check SHA256SUMS)
+  shopt -s nullglob
+  download_packages=("$source_downloads"/*.apk "$source_downloads"/*.hap)
+  shopt -u nullglob
+  [[ ${#download_packages[@]} -gt 0 ]]
+  [[ "$(wc -l < "$source_downloads/SHA256SUMS")" -eq ${#download_packages[@]} ]]
+  for package in "${download_packages[@]}"; do
+    filename=${package##*/}
+    [[ "$(awk -v name="$filename" '$2 == name { count++ } END { print count + 0 }' "$source_downloads/SHA256SUMS")" -eq 1 ]]
+  done
+fi
 cd "$root_dir"
 env_file="$root_dir/deploy/.env.production"
 compose_file="$root_dir/deploy/compose.production.yaml"
@@ -30,6 +49,16 @@ for service in api worker admin; do
 done
 changed=false
 containers_changed=false
+setting_changed=false
+old_setting_b64=
+setting_script=$(cat "$source_dir/deploy/scripts/publish-app-update.mjs")
+run_setting_tool() {
+  local action=$1 payload=${2:-}
+  compose exec -T \
+    -e APP_UPDATE_ACTION="$action" \
+    -e APP_UPDATE_PAYLOAD_B64="$payload" \
+    api node --input-type=module -e "$setting_script"
+}
 reload_gateway() {
   local gateway
   gateway=$(sed -n 's/^GATEWAY_CONTAINER=//p' "$env_file" | tail -n 1)
@@ -54,6 +83,13 @@ configure_gateway() {
 rollback() {
   local status=${1:-1}
   trap - ERR INT TERM
+  if [[ "$setting_changed" == true ]]; then
+    if run_setting_tool restore "$old_setting_b64"; then
+      echo 'Previous app_update setting restored.' >&2
+    else
+      echo 'APP_UPDATE ROLLBACK FAILED: restore the setting from the retained database backup.' >&2
+    fi
+  fi
   if [[ "$changed" == true ]]; then
     cp -p "$rollback_dir/env.production" "$env_file"
     cp -p "$rollback_dir/compose.production.yaml" "$compose_file"
@@ -77,6 +113,14 @@ test -s "$root_dir/deploy/backups/saydian-ci-$stamp.dump"
 sha256sum "$root_dir/deploy/backups/saydian-ci-$stamp.dump" > "$root_dir/deploy/backups/saydian-ci-$stamp.dump.sha256"
 changed=true
 install -d -m 755 "$root_dir/deploy/downloads"
+for package in "${download_packages[@]}"; do
+  target="$root_dir/deploy/downloads/${package##*/}"
+  if [[ -e "$target" ]]; then
+    cmp --silent "$package" "$target"
+  else
+    install -o root -g root -m 0644 "$package" "$target"
+  fi
+done
 cp "$source_dir/deploy/compose.production.yaml" "$compose_file"
 sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=sha-$revision/" "$env_file"
 if grep -q '^APP_REVISION=' "$env_file"; then
@@ -117,7 +161,23 @@ for service in api worker admin; do
   [[ "$(docker inspect -f '{{.State.Running}}' "$container")" == true ]]
 done
 [[ "$(sed -n 's/^MAINTENANCE_READ_ONLY=//p' "$env_file" | tail -n 1)" == "$read_only" ]]
+if [[ -f "$source_dir/deploy/.publish-app-update" ]]; then
+  [[ ${#download_packages[@]} -gt 0 ]]
+  old_setting_b64=$(run_setting_tool snapshot)
+  [[ "$old_setting_b64" =~ ^[A-Za-z0-9+/=]+$ ]]
+  manifest_b64=$(base64 < "$source_dir/deploy/app-update.internal-test.json" | tr -d '\n')
+  setting_changed=true
+  [[ "$(run_setting_tool apply "$manifest_b64")" == applied ]]
+  manifest_response=$(curl --max-time 15 --fail --silent "https://$domain/api/saydian-app/v2/support/app-update")
+  for package in "${download_packages[@]}"; do
+    filename=${package##*/}
+    expected_sha=$(awk -v name="$filename" '$2 == name { print $1 }' "$source_downloads/SHA256SUMS")
+    printf '%s' "$manifest_response" | grep -Fq "$filename"
+    printf '%s' "$manifest_response" | grep -Fq "$expected_sha"
+  done
+fi
 printf '%s\n' "$revision" > "$root_dir/deploy/.deployed-revision"
 changed=false
+setting_changed=false
 trap - ERR INT TERM
-echo "Deployed $revision; maintenance mode preserved ($read_only); database changes not applied."
+echo "Deployed $revision; maintenance mode preserved ($read_only); schema migrations not applied."

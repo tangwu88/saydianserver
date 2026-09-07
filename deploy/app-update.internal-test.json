@@ -2,7 +2,7 @@
   "value": {
     "schemaVersion": 1,
     "audience": "internal_test",
-    "publishedAt": "2026-09-07T01:01:19.839Z",
+    "publishedAt": "2026-09-07T02:52:44.131Z",
     "releases": [
       {
         "platform": "android",
@@ -25,15 +25,15 @@
       },
       {
         "platform": "harmonyos",
-        "versionName": "0.1.3",
-        "buildNumber": 7,
+        "versionName": "0.1.4",
+        "buildNumber": 8,
         "status": "available",
         "destination": {
           "kind": "direct",
-          "url": "/down/files/Saydian-Harmony-0.1.3-build7-r12-Release-development-signed.hap",
-          "fileName": "Saydian-Harmony-0.1.3-build7-r12-Release-development-signed.hap",
-          "sizeBytes": 9339550,
-          "sha256": "2102b7d3f15b936ef4b0bcb00df333a6c81575dcd81ec69a454f6e5510e20ae8"
+          "url": "/down/files/Saydian-Harmony-0.1.4-build8-r13-Release-development-signed.hap",
+          "fileName": "Saydian-Harmony-0.1.4-build8-r13-Release-development-signed.hap",
+          "sizeBytes": 9394620,
+          "sha256": "1efe85575a9f79ecebd373fd402704a212db3503d01bb606b6ced661c98d0795"
         }
       }
     ]
