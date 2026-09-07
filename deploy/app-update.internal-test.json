@@ -2,7 +2,7 @@
   "value": {
     "schemaVersion": 1,
     "audience": "internal_test",
-    "publishedAt": "2026-09-06T00:00:00+08:00",
+    "publishedAt": "2026-09-07T01:01:19.839Z",
     "releases": [
       {
         "platform": "android",
@@ -11,10 +11,10 @@
         "status": "available",
         "destination": {
           "kind": "direct",
-          "url": "/down/files/Saydian-Android-0.1.19-build23-QA.apk",
-          "fileName": "Saydian-Android-0.1.19-build23-QA.apk",
-          "sizeBytes": 64401320,
-          "sha256": "d81d46ed1b100b13aca43bf3e0323a5c0d2e1004840831a10c2f3cd385c1bf26"
+          "url": "/down/files/Saydian-Android-QA-Release-JPush-0.1.19-build23-20260907-r6.apk",
+          "fileName": "Saydian-Android-QA-Release-JPush-0.1.19-build23-20260907-r6.apk",
+          "sizeBytes": 64661988,
+          "sha256": "b419c738d219c940544392a0013aa8c3d703b075c2a12fce19b38386eaf025aa"
         }
       },
       {
@@ -26,14 +26,14 @@
       {
         "platform": "harmonyos",
         "versionName": "0.1.3",
-        "buildNumber": 5,
+        "buildNumber": 7,
         "status": "available",
         "destination": {
           "kind": "direct",
-          "url": "/down/files/Saydian-HarmonyOS-0.1.3-build5.hap",
-          "fileName": "Saydian-HarmonyOS-0.1.3-build5.hap",
-          "sizeBytes": 8595228,
-          "sha256": "22c03c4b88448e11412f1bb1397275760aa29e72135d395e008f97d53b40358f"
+          "url": "/down/files/Saydian-Harmony-0.1.3-build7-r12-Release-development-signed.hap",
+          "fileName": "Saydian-Harmony-0.1.3-build7-r12-Release-development-signed.hap",
+          "sizeBytes": 9339550,
+          "sha256": "2102b7d3f15b936ef4b0bcb00df333a6c81575dcd81ec69a454f6e5510e20ae8"
         }
       }
     ]
