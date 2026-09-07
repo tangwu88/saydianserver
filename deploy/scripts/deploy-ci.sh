@@ -10,8 +10,7 @@ source_dir=${RELEASE_SOURCE:?}
 [[ "$source_dir" == "$root_dir"/releases/ci-* && -d "$source_dir/deploy" ]] || exit 1
 source_downloads="$source_dir/deploy/downloads"
 download_packages=()
-if [[ -d "$source_downloads" ]]; then
-  [[ -f "$source_downloads/SHA256SUMS" ]]
+if [[ -f "$source_downloads/SHA256SUMS" ]]; then
   while read -r digest filename extra; do
     [[ "$digest" =~ ^[0-9a-f]{64}$ && "$filename" =~ ^Saydian-[A-Za-z0-9._-]+\.(apk|hap)$ && -z "${extra:-}" ]]
     [[ -f "$source_downloads/$filename" ]]
@@ -26,6 +25,9 @@ if [[ -d "$source_downloads" ]]; then
     filename=${package##*/}
     [[ "$(awk -v name="$filename" '$2 == name { count++ } END { print count + 0 }' "$source_downloads/SHA256SUMS")" -eq 1 ]]
   done
+elif compgen -G "$source_downloads/*.apk" > /dev/null || compgen -G "$source_downloads/*.hap" > /dev/null; then
+  echo 'Download package found without SHA256SUMS.' >&2
+  exit 1
 fi
 cd "$root_dir"
 env_file="$root_dir/deploy/.env.production"

@@ -33,6 +33,7 @@ test("automatic release preserves maintenance and rejects schema changes", () =>
   assert.match(script, /images\.yaml/);
   assert.match(script, /for page in admin down/);
   assert.match(script, /sha256sum --strict --check SHA256SUMS/);
+  assert.match(script, /if \[\[ -f "\$source_downloads\/SHA256SUMS" \]\]/);
   assert.match(script, /install -o root -g root -m 0644/);
   assert.match(script, /\.publish-app-update/);
   assert.match(script, /run_setting_tool restore/);
