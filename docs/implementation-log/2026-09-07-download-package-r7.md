@@ -34,7 +34,13 @@
 - 新增显式 `package_only` 模式：跳过镜像构建和服务器镜像拉取，只执行数据库备份、包校验/不可变落盘、清单更新和公网回读；应用容器和线上修订保持不变。
 - 新模式首次 `pnpm tools:test` 为 4/5：新增静态断言误在工作流文件中查找服务器脚本的输出文案。已将该断言分别对准工作流的 `PACKAGE_ONLY` 与服务器脚本的修订不变文案，不改业务实现。
 - `Publish-Change.ps1` 首次执行的全量检查通过，但提交前第二次 `git fetch origin` 因 `LibreSSL SSL_ERROR_SYSCALL` 停止；脚本未暂存或提交文件，现场保留后重试。
-- 待执行：推送 `main`，等待 CI/生产发布，验证公网文件完整 SHA-256、断点下载、清单、`/down` 和健康探针。
+- `package_only` 提交 `4384fbcb1770aacd2ad3786fa1f40e3b094a5648` 已推送；CI [34081562446](https://github.com/tangwu88/saydianserver/actions/runs/34081562446) 全量通过，自动部署按临时关闭的门禁跳过。
+- 首次派发命令因本地安全策略拒绝含 `rm -f` 的临时文件清理写法，未触发工作流；改为在内存中读取 GitHub 响应头后成功派发，未输出短期签名地址。
+- 仅安装包生产发布 [34081805581](https://github.com/tangwu88/saydianserver/actions/runs/34081805581) 成功：Runner 校验并上传 9,394,620 字节包，服务器完成备份、二次哈希校验、不可变落盘、数据库清单更新和公网回读；未构建/拉取镜像，线上应用修订保持 `dc73f05aa839b4cda2feea6cf186f437dab2a3f5`，维护状态保持 `true`。
+- 公网清单返回 HarmonyOS `0.1.4（8）`、精确文件名、大小和 SHA-256；Android `0.1.19（23）` 未变，iPhone 保持 `coming_soon`。
+- 新包 `HEAD` 返回 200、`Content-Length: 9394620`、`Accept-Ranges: bytes`；0-1023 字节请求返回 206 和正确 `Content-Range`，完整流式 SHA-256 与 Release 一致。
+- `/down`、`/admin/` 均返回 200；`/health/ready` 返回 `ready` 且数据库为 `ok`。
+- 为避免本记录的纯文档提交触发无关镜像部署，`AUTO_DEPLOY_ENABLED` 保持临时关闭；本记录 CI 通过后恢复为 `true` 并独立核对。
 
 - 2026-09-07T02:56:20.6047840Z：pnpm api:docs:check，退出码 0。
 
@@ -75,3 +81,13 @@
 - 2026-09-07T04:00:32.3762810Z：pnpm test，退出码 0。
 
 - 2026-09-07T04:00:42.0274650Z：pnpm build，退出码 0。
+
+- 2026-09-07T04:09:36.4833320Z：pnpm api:docs:check，退出码 0。
+
+- 2026-09-07T04:09:41.9737190Z：pnpm tools:test，退出码 0。
+
+- 2026-09-07T04:09:46.6965750Z：pnpm typecheck，退出码 0。
+
+- 2026-09-07T04:09:50.4688690Z：pnpm test，退出码 0。
+
+- 2026-09-07T04:09:59.7964590Z：pnpm build，退出码 0。
