@@ -61,6 +61,21 @@ run_setting_tool() {
     -e APP_UPDATE_PAYLOAD_B64="$payload" \
     api node --input-type=module -e "$setting_script"
 }
+publish_app_update() {
+  [[ -f "$source_dir/deploy/.publish-app-update" && ${#download_packages[@]} -gt 0 ]]
+  old_setting_b64=$(run_setting_tool snapshot)
+  [[ "$old_setting_b64" =~ ^[A-Za-z0-9+/=]+$ ]]
+  manifest_b64=$(base64 < "$source_dir/deploy/app-update.internal-test.json" | tr -d '\n')
+  setting_changed=true
+  [[ "$(run_setting_tool apply "$manifest_b64")" == applied ]]
+  manifest_response=$(curl --max-time 15 --fail --silent "https://$domain/api/saydian-app/v2/support/app-update")
+  for package in "${download_packages[@]}"; do
+    filename=${package##*/}
+    expected_sha=$(awk -v name="$filename" '$2 == name { print $1 }' "$source_downloads/SHA256SUMS")
+    printf '%s' "$manifest_response" | grep -Fq "$filename"
+    printf '%s' "$manifest_response" | grep -Fq "$expected_sha"
+  done
+}
 reload_gateway() {
   local gateway
   gateway=$(sed -n 's/^GATEWAY_CONTAINER=//p' "$env_file" | tail -n 1)
@@ -123,6 +138,17 @@ for package in "${download_packages[@]}"; do
     install -o root -g root -m 0644 "$package" "$target"
   fi
 done
+domain=$(sed -n 's/^APP_DOMAIN=//p' "$env_file" | tail -n 1)
+[[ "$domain" == app.saydian.cn ]] || { echo 'Unexpected domain' >&2; false; }
+if [[ -f "$source_dir/deploy/.package-only" ]]; then
+  publish_app_update
+  [[ "$(sed -n 's/^MAINTENANCE_READ_ONLY=//p' "$env_file" | tail -n 1)" == "$read_only" ]]
+  changed=false
+  setting_changed=false
+  trap - ERR INT TERM
+  echo "Published verified download package; application revision unchanged; maintenance mode preserved ($read_only)."
+  exit 0
+fi
 cp "$source_dir/deploy/compose.production.yaml" "$compose_file"
 sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=sha-$revision/" "$env_file"
 if grep -q '^APP_REVISION=' "$env_file"; then
@@ -138,8 +164,6 @@ containers_changed=true
 compose up -d --no-deps api worker admin
 compose up -d --no-deps --wait --wait-timeout 150 api
 configure_gateway
-domain=$(sed -n 's/^APP_DOMAIN=//p' "$env_file" | tail -n 1)
-[[ "$domain" == app.saydian.cn ]] || { echo 'Unexpected domain' >&2; false; }
 ready=false
 for attempt in $(seq 1 20); do
   response=$(curl --max-time 10 --fail --silent "https://$domain/health/ready") || response=''
@@ -163,21 +187,7 @@ for service in api worker admin; do
   [[ "$(docker inspect -f '{{.State.Running}}' "$container")" == true ]]
 done
 [[ "$(sed -n 's/^MAINTENANCE_READ_ONLY=//p' "$env_file" | tail -n 1)" == "$read_only" ]]
-if [[ -f "$source_dir/deploy/.publish-app-update" ]]; then
-  [[ ${#download_packages[@]} -gt 0 ]]
-  old_setting_b64=$(run_setting_tool snapshot)
-  [[ "$old_setting_b64" =~ ^[A-Za-z0-9+/=]+$ ]]
-  manifest_b64=$(base64 < "$source_dir/deploy/app-update.internal-test.json" | tr -d '\n')
-  setting_changed=true
-  [[ "$(run_setting_tool apply "$manifest_b64")" == applied ]]
-  manifest_response=$(curl --max-time 15 --fail --silent "https://$domain/api/saydian-app/v2/support/app-update")
-  for package in "${download_packages[@]}"; do
-    filename=${package##*/}
-    expected_sha=$(awk -v name="$filename" '$2 == name { print $1 }' "$source_downloads/SHA256SUMS")
-    printf '%s' "$manifest_response" | grep -Fq "$filename"
-    printf '%s' "$manifest_response" | grep -Fq "$expected_sha"
-  done
-fi
+if [[ -f "$source_dir/deploy/.publish-app-update" ]]; then publish_app_update; fi
 printf '%s\n' "$revision" > "$root_dir/deploy/.deployed-revision"
 changed=false
 setting_changed=false

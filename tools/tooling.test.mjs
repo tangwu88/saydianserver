@@ -36,6 +36,7 @@ test("automatic release preserves maintenance and rejects schema changes", () =>
   assert.match(script, /if \[\[ -f "\$source_downloads\/SHA256SUMS" \]\]/);
   assert.match(script, /install -o root -g root -m 0644/);
   assert.match(script, /\.publish-app-update/);
+  assert.match(script, /\.package-only/);
   assert.match(script, /run_setting_tool restore/);
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   assert.match(workflow, /needs: verify/);
@@ -45,6 +46,9 @@ test("automatic release preserves maintenance and rejects schema changes", () =>
   assert.match(productionWorkflow, /release-assets\.githubusercontent\.com/);
   assert.match(productionWorkflow, /actions\/upload-artifact@v4/);
   assert.match(productionWorkflow, /PUBLISH_APP_UPDATE/);
+  assert.match(productionWorkflow, /inputs\.package_only != true/);
+  assert.match(productionWorkflow, /PACKAGE_ONLY/);
+  assert.match(script, /application revision unchanged/);
 });
 
 test("download page stays public, immutable and outside Git artifacts", () => {
