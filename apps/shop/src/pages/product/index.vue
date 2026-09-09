@@ -5,7 +5,7 @@
         ><image
           class="main-image"
           :src="currentImage || productPlaceholder"
-          mode="aspectFill" /><scroll-view scroll-x class="thumbs"
+          mode="aspectFit" /><scroll-view scroll-x class="thumbs"
           ><image
             v-for="image in images"
             :key="image"
@@ -18,7 +18,7 @@
           ><text v-for="tag in product.tags" :key="tag">{{ tag }}</text></view
         ><text class="title">{{ product.displayName || product.name }}</text
         ><text class="subtitle">{{
-          product.subtitle || "赛电智能健康穿戴设备"
+          product.subtitle || ""
         }}</text
         ><view class="price-box"
           ><text>{{ money(selectedSku?.salePriceCents) }}</text
@@ -34,13 +34,13 @@
             @click="selectSku(sku)"
             >{{ sku.specification || "默认规格" }}</view
           ></view
-        ><view class="stock">库存 {{ selectedSku?.stock || 0 }} 件</view
+        ><view class="stock">库存 {{ selectedSku?.stock ?? '未获取' }} 件</view
         ><view class="quantity"
           ><text>数量</text
           ><view
             ><text @click="quantity = Math.max(1, quantity - 1)">−</text
             ><b>{{ quantity }}</b
-            ><text @click="quantity += 1">＋</text></view
+            ><text @click="quantity = Math.min(selectedSku?.stock || 1, quantity + 1)">＋</text></view
           ></view
         ><view class="actions"
           ><view class="outline-btn" @click="toggleFavorite">{{
@@ -49,7 +49,7 @@
           ><view class="outline-btn" @click="addCart">加入购物车</view
           ><view class="primary-btn" @click="buyNow">立即购买</view></view
         ><view class="service-line"
-          >赛电商城 · 在线客服 · 售后进度可查</view
+          >赛电商城 · 帮助与售后 · 订单进度可查</view
         ></view
       ></view
     ><view class="container detail card"
@@ -69,14 +69,16 @@
         ></view
       ></view
     ></view
-  ><view v-else class="empty">正在加载商品…</view>
+  ><view v-else class="empty">{{ error || '正在加载商品…' }}<button v-if="error" @click="load">重新加载</button></view>
 </template>
 <script setup lang="ts">
-import { onLoad } from "@dcloudio/uni-app";
+defineOptions({ inheritAttrs: false });
+import { onLoad, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
-import { api, money, productPlaceholder, toast } from "../../api";
+import { api, money, productPlaceholder, toast, requireLogin, clearCheckoutState } from "../../api";
 import { isLoggedIn } from "../../session";
+const id = ref(''), error = ref(''), busy = ref(false);
 const product = ref<any>(),
   selectedSku = ref<any>(),
   quantity = ref(1),
@@ -90,45 +92,60 @@ const images = computed(() => [
     ].filter(Boolean),
   ),
 ]);
-onLoad(async (o) => {
+onLoad(o => { id.value = String(o?.id || ''); });
+onShow(load);
+async function load() {
   try {
-    product.value = await api(`/storefront/products/${o?.id}`);
-    selectedSku.value = product.value.skus?.[0];
+    error.value = '';
+    const selectedId = selectedSku.value?.id;
+    product.value = await api(`/storefront/products/${encodeURIComponent(id.value)}`);
+    selectedSku.value = product.value.skus?.find((x:any)=>x.id === selectedId) || product.value.skus?.[0];
+    quantity.value = Math.max(1, Math.min(quantity.value, selectedSku.value?.stock || 1));
     currentImage.value = images.value[0] || "";
+    product.value.favorite = false;
+    if (isLoggedIn()) { const favorites:any = await api('/storefront/favorites', {auth:true}); product.value.favorite = favorites.some((x:any)=>(x.productId || x.product?.id || x.id) === id.value); }
   } catch (e) {
-    toast(e);
+    product.value = null;
+    error.value = e instanceof Error ? e.message : String(e);
   }
-});
+}
 function selectSku(sku: any) {
   selectedSku.value = sku;
+  quantity.value = Math.max(1, Math.min(quantity.value, sku.stock || 1));
   if (sku.image) currentImage.value = sku.image;
 }
-function ensure() {
+function ensure(checkStock = true) {
   if (!isLoggedIn()) {
-    uni.navigateTo({ url: "/pages/login/index" });
+    requireLogin('/pages/product/index?id=' + encodeURIComponent(id.value));
     return false;
   }
-  if (!selectedSku.value || selectedSku.value.stock < quantity.value) {
+  if (checkStock && (!selectedSku.value || selectedSku.value.stock < quantity.value)) {
     uni.showToast({ title: "库存不足", icon: "none" });
     return false;
   }
   return true;
 }
 async function addCart() {
-  if (!ensure()) return;
+  if (!ensure() || busy.value) return;
+  busy.value = true;
   try {
     await api("/storefront/cart/items", {
       method: "POST",
       auth: true,
-      data: { skuId: selectedSku.value.id, quantity: quantity.value },
+      data: { skuId: selectedSku.value.id, quantity: quantity.value, mode: 'increment' },
     });
     uni.showToast({ title: "已加入购物车" });
   } catch (e) {
     toast(e);
+  } finally {
+    busy.value = false;
   }
 }
 function buyNow() {
+  if (uni.getStorageSync('checkout-draft')?.uncertain) { toast('先恢复上次下单结果，不会创建新的结算请求');uni.navigateTo({url:'/pages/checkout/index'});return; }
   if (!ensure()) return;
+  clearCheckoutState();
+  uni.setStorageSync('checkout-owner', uni.getStorageSync('saidian-user')?.id);
   uni.setStorageSync("checkout-items", [
     {
       skuId: selectedSku.value.id,
@@ -140,7 +157,8 @@ function buyNow() {
   uni.navigateTo({ url: "/pages/checkout/index" });
 }
 async function toggleFavorite() {
-  if (!ensure()) return;
+  if (!ensure(false) || busy.value) return;
+  busy.value = true;
   try {
     const enabled = !product.value.favorite;
     await api(`/storefront/favorites/${product.value.id}`, {
@@ -151,6 +169,8 @@ async function toggleFavorite() {
     product.value.favorite = enabled;
   } catch (e) {
     toast(e);
+  } finally {
+    busy.value = false;
   }
 }
 </script>
@@ -167,7 +187,7 @@ async function toggleFavorite() {
 .main-image {
   width: 100%;
   height: 720rpx;
-  background: var(--mint);
+  background: #fff;
   border-radius: 24rpx;
 }
 .thumbs {
@@ -212,11 +232,11 @@ async function toggleFavorite() {
 .price-box {
   margin: 28rpx -28rpx;
   padding: 22rpx 28rpx;
-  background: #fff5ef;
+  background: #fff4f5;
 }
 .price-box text {
   font-size: 48rpx;
-  color: #d65f2d;
+  color: #be092d;
   font-weight: 900;
 }
 .price-box del {

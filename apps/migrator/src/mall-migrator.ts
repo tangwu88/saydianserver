@@ -12,7 +12,9 @@ import {
   ProductStatus,
   RefundStatus,
 } from "@prisma/client";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
+import { randomUUID } from "node:crypto";
+import { rowDigest } from "./migrator";
 
 type SourceRow = Record<string, unknown>;
 type EntityCounter = { imported: number; skipped: number; conflicted: number };
@@ -21,7 +23,7 @@ const sourceCommit = "09963c49f255c146ffab2bfd17b8d0961c655ebd";
 
 export class MallMigrator {
   constructor(
-    private readonly source: Pool,
+    private readonly source: Pool | PoolClient,
     private readonly target: PrismaClient,
   ) {}
 
@@ -44,37 +46,37 @@ export class MallMigrator {
   }
 
   async migrate() {
+    if (process.env.MIGRATION_TARGET_WRITES_FROZEN !== "true") throw new Error("Mall migration requires an explicitly frozen target");
+    if (!process.env.MIGRATION_SOURCE_SNAPSHOT_ID?.trim()) throw new Error("Mall migration requires an explicit source snapshot identifier");
+    const adoptedWhere = { sourceSystem: "legacy_mall", executionOwner: "NEW_SYSTEM" };
+    const adopted = await Promise.all([
+      this.target.commerceOrder.count({ where: adoptedWhere }), this.target.paymentIntent.count({ where: adoptedWhere }),
+      this.target.paymentRefund.count({ where: adoptedWhere }), this.target.commerceAfterSale.count({ where: adoptedWhere }),
+      this.target.commerceWithdrawal.count({ where: adoptedWhere }),
+    ]);
+    if (adopted.some((count) => count > 0)) throw new Error("Imported transactions have been adopted; source refresh would overwrite new-system business state");
     const run = await this.target.migrationRun.create({
       data: {
         sourceLabel: `saydian-mall@${sourceCommit}`,
-        sourceDigest: sourceCommit,
+        sourceDigest: process.env.MIGRATION_SOURCE_SNAPSHOT_ID?.trim() || null,
         status: "RUNNING",
         startedAt: new Date(),
       },
     });
     const report: Record<string, EntityCounter> = {};
     try {
-      report.categories = await this.categories(run.id);
-      report.products = await this.products(run.id);
-      report.skus = await this.skus(run.id);
-      report.employees = await this.employees(run.id);
-      report.users = await this.users(run.id);
-      report.addresses = await this.addresses(run.id);
-      report.carts = await this.carts(run.id);
-      report.cartItems = await this.cartItems(run.id);
-      report.favorites = await this.favorites(run.id);
-      report.orders = await this.orders(run.id);
-      report.orderItems = await this.orderItems(run.id);
-      report.payments = await this.payments(run.id);
-      report.shipments = await this.shipments(run.id);
-      report.afterSales = await this.afterSales(run.id);
-      report.refunds = await this.refunds(run.id);
-      report.reviews = await this.reviews(run.id);
-      report.coupons = await this.coupons(run.id);
-      report.couponClaims = await this.couponClaims(run.id);
-      report.commission = await this.commission(run.id);
-      report.configuration = await this.configuration(run.id);
-      report.financeArchive = await this.financeArchive(run.id);
+      for (const step of ["categories", "products", "skus", "employees", "users", "addresses", "carts", "cartItems", "favorites", "orders", "orderItems", "payments", "shipments", "afterSales", "refunds", "reviews", "coupons", "couponClaims", "payoutIdentities", "withdrawals", "commission", "configuration", "financeArchive"] as const) {
+        report[step] = await this.target.$transaction(async (tx) => {
+          const worker = new MallMigrator(this.source, tx as PrismaClient);
+          const result = await worker[step](run.id);
+          await tx.migrationCheckpoint.upsert({
+            where: { runId_sourceTable: { runId: run.id, sourceTable: step } },
+            create: { runId: run.id, sourceSystem: "legacy_mall", sourceTable: step, cursor: "complete", rowCount: result.imported },
+            update: { cursor: "complete", rowCount: result.imported },
+          });
+          return result;
+        }, { timeout: 120_000 });
+      }
       await this.target.migrationRun.update({
         where: { id: run.id },
         data: {
@@ -106,9 +108,9 @@ export class MallMigrator {
       'SELECT COUNT(*)::int AS count, COALESCE(SUM("payableCents"),0)::bigint AS amount FROM "Order"',
     );
     const [mappedOrders, targetAmount, conflicts] = await Promise.all([
-      this.target.legacyIdMap.count({ where: { runId: run.id, entityType: "mall_order" } }),
+      this.target.legacyIdMap.count({ where: { sourceSystem: "legacy_mall", entityType: "mall_order" } }),
       this.target.commerceOrder.aggregate({
-        where: { legacyId: { not: null } },
+        where: { sourceSystem: "legacy_mall" },
         _sum: { payableCents: true },
       }),
       this.target.migrationConflict.count({ where: { runId: run.id } }),
@@ -116,13 +118,31 @@ export class MallMigrator {
     const expectedOrders = Number(sourceOrder.rows[0]?.count ?? 0);
     const expectedAmount = Number(sourceOrder.rows[0]?.amount ?? 0);
     const actualAmount = targetAmount._sum.payableCents ?? 0;
-    const matched = mappedOrders === expectedOrders && actualAmount === expectedAmount;
+    const latest = asRecord(run.report);
+    const importCounters = asRecord(latest.importCounters ?? latest.report ?? latest);
+    const unrecordedConflicts = Object.values(importCounters).reduce<number>((sum, value) => sum + Number(asRecord(value).conflicted ?? 0), 0);
+    const unmigratedUpdates = await this.target.legacyIdMap.count({ where: { sourceSystem: "legacy_mall", sourceHash: null } });
+    const entities = await this.verifyEntities(run.id);
+    const archiveOnlyDomains = ["EmployeeCouponGrant", "CouponGift"];
+    const unverifiedDomains: string[] = [];
+    for (const table of archiveOnlyDomains) {
+      const count = await this.source.query(`SELECT COUNT(*)::int AS count FROM "${table}"`);
+      if (Number(count.rows[0]?.count ?? 0) > 0) unverifiedDomains.push(`${table}:archived_without_operational_takeover`);
+    }
+    const matched = mappedOrders === expectedOrders && actualAmount === expectedAmount && conflicts === 0 && unrecordedConflicts === 0 && unmigratedUpdates === 0 &&
+      entities.every((entity) => entity.matched) && unverifiedDomains.length === 0;
     const report = {
       runId: run.id,
       sourceCommit,
       orders: { expected: expectedOrders, mapped: mappedOrders },
       orderAmountCents: { expected: expectedAmount, actual: actualAmount },
       conflicts,
+      unrecordedConflicts,
+      importCounters,
+      rowsWithoutSourceDigest: unmigratedUpdates,
+      entities,
+      unverifiedDomains,
+      limitation: "Source row digests and per-entity reconciliation must be complete before cutover; an order total alone is not sufficient.",
       matched,
       verifiedAt: new Date().toISOString(),
     };
@@ -137,12 +157,39 @@ export class MallMigrator {
     return report;
   }
 
+  private async verifyEntities(runId: string) {
+    const checks: { sourceTable: string; entityType: string; sourceCount: number; mappedCount: number; changedOrMissing: number; deletedOrUnseen: number; matched: boolean }[] = [];
+    for (const [sourceTable, entityType, idColumn = "id"] of [
+      ["Category", "mall_category"], ["Product", "mall_product"], ["Sku", "mall_sku"], ["Employee", "mall_employee"], ["User", "mall_user"],
+      ["Address", "mall_address"], ["Cart", "mall_cart"], ["CartItem", "mall_cart_item"], ["Order", "mall_order"], ["OrderItem", "mall_order_item"],
+      ["Payment", "mall_payment"], ["Shipment", "mall_shipment"], ["AfterSale", "mall_after_sale"], ["Refund", "mall_refund"], ["Review", "mall_review"],
+      ["Coupon", "mall_coupon"], ["CouponClaim", "mall_coupon_claim"], ["Banner", "mall_banner"],
+      ["Withdrawal", "mall_withdrawal"], ["EmployeePayoutIdentity", "mall_payout_identity", "employeeId"],
+      ["CommissionLedger", "mall_commission_ledger"], ["EmployeeWallet", "mall_employee_wallet", "employeeId"],
+      ["CommissionPlan", "mall_commission_plan"], ["CommissionAccrual", "mall_commission_accrual"],
+    ] as const) {
+      const source = await this.source.query(`SELECT * FROM "${sourceTable}" ORDER BY "${idColumn}"`);
+      const mappings = await this.target.legacyIdMap.findMany({ where: { sourceSystem: "legacy_mall", sourceTable, entityType } });
+      const byId = new Map(mappings.map((mapping) => [mapping.legacyId, mapping]));
+      let changedOrMissing = 0;
+      for (const row of source.rows as SourceRow[]) {
+        const mapping = byId.get(text(row[idColumn]));
+        if (!mapping || mapping.sourceHash !== rowDigest(row)) changedOrMissing += 1;
+      }
+      const sourceIds = new Set((source.rows as SourceRow[]).map((row) => text(row[idColumn])));
+      const deletedOrUnseen = mappings.filter((mapping) => !sourceIds.has(mapping.legacyId) || mapping.runId !== runId).length;
+      checks.push({ sourceTable, entityType, sourceCount: source.rows.length, mappedCount: mappings.length, changedOrMissing, deletedOrUnseen,
+        matched: source.rows.length === mappings.length && changedOrMissing === 0 && deletedOrUnseen === 0 });
+    }
+    return checks;
+  }
+
   private async categories(runId: string) {
     const counter = emptyCounter();
     const rows = await this.read("Category");
     for (const row of rows) {
       const legacyId = text(row.id);
-      const saved = await this.target.commerceCategory.upsert({
+      const saved = await this.target.commerceCategory.upsert(sourceUpsert({
         where: { legacyId },
         create: {
           legacyId,
@@ -152,7 +199,7 @@ export class MallMigrator {
           enabled: row.enabled !== false,
         },
         update: {},
-      });
+      }));
       await this.map(runId, "mall_category", legacyId, saved.id, "Category");
       counter.imported += 1;
     }
@@ -176,7 +223,7 @@ export class MallMigrator {
       const categoryId = row.categoryId
         ? await this.targetId("mall_category", text(row.categoryId))
         : null;
-      const saved = await this.target.commerceProduct.upsert({
+      const saved = await this.target.commerceProduct.upsert(sourceUpsert({
         where: { erpItemId: text(row.erpItemId) },
         create: {
           legacyId,
@@ -199,7 +246,7 @@ export class MallMigrator {
           erpModifiedAt: date(row.erpModifiedAt),
         },
         update: {},
-      });
+      }));
       await this.map(runId, "mall_product", legacyId, saved.id, "Product");
       counter.imported += 1;
     }
@@ -216,7 +263,7 @@ export class MallMigrator {
         continue;
       }
       const legacyId = text(row.id);
-      const saved = await this.target.commerceSku.upsert({
+      const saved = await this.target.commerceSku.upsert(sourceUpsert({
         where: { erpSkuId: text(row.erpSkuId) },
         create: {
           legacyId,
@@ -226,7 +273,7 @@ export class MallMigrator {
           specification: nullable(row.specification),
           barcode: nullable(row.barcode),
           image: nullable(row.image),
-          salePriceCents: integer(row.salePriceCents),
+          salePriceCents: sourceCents(row.salePriceCents),
           marketPriceCents: nullableInteger(row.marketPriceCents),
           costPriceCents: nullableInteger(row.costPriceCents),
           stock: Math.max(0, integer(row.stock)),
@@ -235,7 +282,7 @@ export class MallMigrator {
           erpModifiedAt: date(row.erpModifiedAt),
         },
         update: {},
-      });
+      }));
       await this.map(runId, "mall_sku", legacyId, saved.id, "Sku");
       counter.imported += 1;
     }
@@ -246,7 +293,7 @@ export class MallMigrator {
     const counter = emptyCounter();
     for (const row of await this.read("Employee")) {
       const legacyId = text(row.id);
-      const saved = await this.target.commerceEmployee.upsert({
+      const saved = await this.target.commerceEmployee.upsert(sourceUpsert({
         where: { wecomUserId: text(row.wecomUserId) },
         create: {
           legacyId,
@@ -259,7 +306,7 @@ export class MallMigrator {
           active: row.active !== false,
         },
         update: {},
-      });
+      }));
       await this.map(runId, "mall_employee", legacyId, saved.id, "Employee");
       counter.imported += 1;
     }
@@ -302,26 +349,28 @@ export class MallMigrator {
   }
 
   private async addresses(runId: string) {
-    return this.importUserOwned(runId, "Address", "mall_address", async (row, userId) => {
-      const saved = await this.target.commerceAddress.create({
-        data: {
+    return this.importUserOwned(runId, "Address", "mall_address", async (row, userId, existingId) => {
+      const saved = await this.target.commerceAddress.upsert(sourceUpsert({
+        where: { id: existingId ?? randomUUID() },
+        create: {
+          legacyId: text(row.id),
           userId,
           name: text(row.name), mobile: text(row.mobile), province: text(row.province),
           provinceCode: nullable(row.provinceCode), city: text(row.city), cityCode: nullable(row.cityCode),
           district: text(row.district), districtCode: nullable(row.districtCode), detail: text(row.detail),
           postalCode: nullable(row.postalCode), isDefault: row.isDefault === true,
-          createdAt: date(row.createdAt) ?? new Date(), updatedAt: date(row.updatedAt) ?? new Date(),
-        },
-      });
+          createdAt: sourceDate(row.createdAt), updatedAt: sourceDate(row.updatedAt),
+        }, update: {},
+      }));
       return saved.id;
     });
   }
 
   private async carts(runId: string) {
     return this.importUserOwned(runId, "Cart", "mall_cart", async (row, userId) => {
-      const saved = await this.target.commerceCart.upsert({
+      const saved = await this.target.commerceCart.upsert(sourceUpsert({
         where: { userId }, create: { userId }, update: {},
-      });
+      }));
       return saved.id;
     });
   }
@@ -332,11 +381,11 @@ export class MallMigrator {
       const cartId = await this.targetId("mall_cart", text(row.cartId));
       const skuId = await this.targetId("mall_sku", text(row.skuId));
       if (!cartId || !skuId) { counter.conflicted += 1; continue; }
-      const saved = await this.target.commerceCartItem.upsert({
+      const saved = await this.target.commerceCartItem.upsert(sourceUpsert({
         where: { cartId_skuId: { cartId, skuId } },
         create: { cartId, skuId, quantity: Math.max(1, integer(row.quantity)), selected: row.selected !== false },
         update: {},
-      });
+      }));
       await this.map(runId, "mall_cart_item", text(row.id), saved.id, "CartItem");
       counter.imported += 1;
     }
@@ -349,10 +398,10 @@ export class MallMigrator {
       const userId = await this.targetId("mall_user", text(row.userId));
       const productId = await this.targetId("mall_product", text(row.productId));
       if (!userId || !productId) { counter.conflicted += 1; continue; }
-      await this.target.commerceFavorite.upsert({
+      await this.target.commerceFavorite.upsert(sourceUpsert({
         where: { userId_productId: { userId, productId } },
-        create: { userId, productId, createdAt: date(row.createdAt) ?? new Date() }, update: {},
-      });
+        create: { userId, productId, createdAt: sourceDate(row.createdAt) }, update: {},
+      }));
       counter.imported += 1;
     }
     return counter;
@@ -368,13 +417,13 @@ export class MallMigrator {
       }
       const employeeId = row.referralEmployeeId ? await this.targetId("mall_employee", text(row.referralEmployeeId)) : null;
       const legacyId = text(row.id);
-      const saved = await this.target.commerceOrder.upsert({
+      const saved = await this.target.commerceOrder.upsert(sourceUpsert({
         where: { orderNo: text(row.orderNo) },
         create: {
-          legacyId, orderNo: text(row.orderNo), userId, status: orderStatus(row.status),
+          legacyId, sourceSystem: "legacy_mall", executionOwner: "LEGACY_SYSTEM", orderNo: text(row.orderNo), userId, status: orderStatus(row.status),
           referralEmployeeId: employeeId, referralCodeSnapshot: nullable(row.referralCodeSnapshot),
-          subtotalCents: integer(row.subtotalCents), discountCents: integer(row.discountCents),
-          shippingCents: integer(row.shippingCents), payableCents: integer(row.payableCents),
+          subtotalCents: sourceCents(row.subtotalCents), discountCents: sourceCents(row.discountCents),
+          shippingCents: sourceCents(row.shippingCents), payableCents: sourceCents(row.payableCents),
           recipientName: text(row.recipientName), recipientMobile: text(row.recipientMobile),
           province: text(row.province), city: text(row.city), district: text(row.district),
           addressDetail: text(row.addressDetail), buyerRemark: nullable(row.buyerRemark), adminRemark: nullable(row.adminRemark),
@@ -382,9 +431,9 @@ export class MallMigrator {
           erpShopId: nullable(row.erpShopId), erpOrderId: nullable(row.erpOrderId), erpStatus: nullable(row.erpStatus),
           idempotencyKey: `mall-order:${legacyId}`, paidAt: date(row.paidAt), shippedAt: date(row.shippedAt),
           receivedAt: date(row.receivedAt), cancelledAt: date(row.cancelledAt),
-          createdAt: date(row.createdAt) ?? new Date(), updatedAt: date(row.updatedAt) ?? new Date(),
+          createdAt: sourceDate(row.createdAt), updatedAt: sourceDate(row.updatedAt),
         }, update: {},
-      });
+      }));
       await this.map(runId, "mall_order", legacyId, saved.id, "Order");
       counter.imported += 1;
     }
@@ -399,14 +448,15 @@ export class MallMigrator {
       const skuId = await this.targetId("mall_sku", text(row.skuId));
       if (!orderId || !productId || !skuId) { counter.conflicted += 1; continue; }
       const existing = await this.targetId("mall_order_item", text(row.id));
-      const saved = existing ? { id: existing } : await this.target.commerceOrderItem.create({
-        data: {
+      const saved = await this.target.commerceOrderItem.upsert(sourceUpsert({
+        where: { id: existing ?? randomUUID() },
+        create: {
           orderId, productId, skuId, erpSkuIdSnapshot: text(row.erpSkuIdSnapshot),
           nameSnapshot: text(row.nameSnapshot), specificationSnapshot: nullable(row.specificationSnapshot),
-          imageSnapshot: nullable(row.imageSnapshot), unitPriceCents: integer(row.unitPriceCents),
-          quantity: integer(row.quantity), totalCents: integer(row.totalCents),
-        },
-      });
+          imageSnapshot: nullable(row.imageSnapshot), unitPriceCents: sourceCents(row.unitPriceCents),
+          quantity: integer(row.quantity), totalCents: sourceCents(row.totalCents),
+        }, update: {},
+      }));
       await this.map(runId, "mall_order_item", text(row.id), saved.id, "OrderItem");
       counter.imported += 1;
     }
@@ -420,18 +470,19 @@ export class MallMigrator {
       const order = orderId ? await this.target.commerceOrder.findUnique({ where: { id: orderId } }) : null;
       if (!order) { counter.conflicted += 1; continue; }
       const legacyId = text(row.id);
-      const saved = await this.target.paymentIntent.upsert({
+      const saved = await this.target.paymentIntent.upsert(sourceUpsert({
         where: { paymentNo: text(row.paymentNo) },
         create: {
-          paymentNo: text(row.paymentNo), userId: order.userId, businessType: BusinessType.COMMERCE_ORDER,
+          paymentNo: text(row.paymentNo), sourceSystem: "legacy_mall", executionOwner: "LEGACY_SYSTEM", userId: order.userId, businessType: BusinessType.COMMERCE_ORDER,
           businessId: order.id, commerceOrderId: order.id, channel: paymentChannel(row.channel),
-          status: paymentStatus(row.status), amountCents: integer(row.amountCents),
+          status: paymentStatus(row.status), amountCents: sourceCents(row.amountCents),
           description: `迁移商城订单 ${order.orderNo}`, idempotencyKey: `mall-payment:${legacyId}`,
           providerTransactionId: nullable(row.providerTransactionId),
+          providerMerchantId: nullable(row.providerMerchantId), providerAppId: nullable(row.providerAppId),
           providerPayload: row.providerPayload ? json(row.providerPayload) : Prisma.JsonNull,
-          paidAt: date(row.paidAt), createdAt: date(row.createdAt) ?? new Date(), updatedAt: date(row.updatedAt) ?? new Date(),
+          paidAt: date(row.paidAt), createdAt: sourceDate(row.createdAt), updatedAt: sourceDate(row.updatedAt),
         }, update: {},
-      });
+      }));
       await this.map(runId, "mall_payment", legacyId, saved.id, "Payment");
       counter.imported += 1;
     }
@@ -443,14 +494,14 @@ export class MallMigrator {
     for (const row of await this.read("Shipment")) {
       const orderId = await this.targetId("mall_order", text(row.orderId));
       if (!orderId) { counter.conflicted += 1; continue; }
-      const saved = await this.target.commerceShipment.upsert({
+      const saved = await this.target.commerceShipment.upsert(sourceUpsert({
         where: { orderId_trackingNo: { orderId, trackingNo: text(row.trackingNo) } },
         create: {
           orderId, logisticsCompany: text(row.logisticsCompany), logisticsCode: nullable(row.logisticsCode),
           trackingNo: text(row.trackingNo), traceJson: row.traceJson ? json(row.traceJson) : Prisma.JsonNull,
           shippedAt: date(row.shippedAt), deliveredAt: date(row.deliveredAt),
         }, update: {},
-      });
+      }));
       await this.map(runId, "mall_shipment", text(row.id), saved.id, "Shipment");
       counter.imported += 1;
     }
@@ -463,17 +514,17 @@ export class MallMigrator {
       const orderId = await this.targetId("mall_order", text(row.orderId));
       if (!orderId) { counter.conflicted += 1; continue; }
       const legacyId = text(row.id);
-      const saved = await this.target.commerceAfterSale.upsert({
+      const saved = await this.target.commerceAfterSale.upsert(sourceUpsert({
         where: { afterSaleNo: text(row.afterSaleNo) },
         create: {
-          legacyId, afterSaleNo: text(row.afterSaleNo), orderId, type: afterSaleType(row.type),
+          legacyId, sourceSystem: "legacy_mall", executionOwner: "LEGACY_SYSTEM", afterSaleNo: text(row.afterSaleNo), orderId, type: afterSaleType(row.type),
           status: afterSaleStatus(row.status), reason: text(row.reason), description: nullable(row.description),
-          evidenceImages: strings(row.evidenceImages), requestedCents: integer(row.requestedCents),
+          evidenceImages: strings(row.evidenceImages), requestedCents: sourceCents(row.requestedCents),
           erpAfterSaleId: nullable(row.erpAfterSaleId), erpStatus: nullable(row.erpStatus),
           returnLogisticsCompany: nullable(row.returnLogisticsCompany), returnTrackingNo: nullable(row.returnTrackingNo),
-          createdAt: date(row.createdAt) ?? new Date(), updatedAt: date(row.updatedAt) ?? new Date(),
+          createdAt: sourceDate(row.createdAt), updatedAt: sourceDate(row.updatedAt),
         }, update: {},
-      });
+      }));
       await this.map(runId, "mall_after_sale", legacyId, saved.id, "AfterSale");
       counter.imported += 1;
     }
@@ -487,16 +538,16 @@ export class MallMigrator {
       const afterSaleId = row.afterSaleId ? await this.targetId("mall_after_sale", text(row.afterSaleId)) : null;
       if (!paymentIntentId) { counter.conflicted += 1; continue; }
       const legacyId = text(row.id);
-      const saved = await this.target.paymentRefund.upsert({
+      const saved = await this.target.paymentRefund.upsert(sourceUpsert({
         where: { refundNo: text(row.refundNo) },
         create: {
-          refundNo: text(row.refundNo), paymentIntentId, afterSaleId, status: refundStatus(row.status),
-          amountCents: integer(row.amountCents), reason: text(row.reason), idempotencyKey: `mall-refund:${legacyId}`,
+          refundNo: text(row.refundNo), sourceSystem: "legacy_mall", executionOwner: "LEGACY_SYSTEM", paymentIntentId, afterSaleId, status: refundStatus(row.status),
+          amountCents: sourceCents(row.amountCents), reason: text(row.reason), idempotencyKey: `mall-refund:${legacyId}`,
           providerRefundId: nullable(row.providerRefundId),
           providerPayload: row.providerPayload ? json(row.providerPayload) : Prisma.JsonNull,
-          completedAt: date(row.completedAt), createdAt: date(row.createdAt) ?? new Date(), updatedAt: date(row.updatedAt) ?? new Date(),
+          completedAt: date(row.completedAt), createdAt: sourceDate(row.createdAt), updatedAt: sourceDate(row.updatedAt),
         }, update: {},
-      });
+      }));
       await this.map(runId, "mall_refund", legacyId, saved.id, "Refund");
       counter.imported += 1;
     }
@@ -510,11 +561,11 @@ export class MallMigrator {
       const productId = await this.targetId("mall_product", text(row.productId));
       const orderItemId = await this.targetId("mall_order_item", text(row.orderItemId));
       if (!userId || !productId || !orderItemId) { counter.conflicted += 1; continue; }
-      const saved = await this.target.commerceReview.upsert({
+      const saved = await this.target.commerceReview.upsert(sourceUpsert({
         where: { orderItemId },
         create: { userId, productId, orderItemId, rating: integer(row.rating), content: text(row.content), images: strings(row.images), published: row.published !== false },
         update: {},
-      });
+      }));
       await this.map(runId, "mall_review", text(row.id), saved.id, "Review");
       counter.imported += 1;
     }
@@ -529,16 +580,17 @@ export class MallMigrator {
         counter.conflicted += 1; continue;
       }
       const existingId = await this.targetId("mall_coupon", text(row.id));
-      const saved = existingId ? { id: existingId } : await this.target.commerceCoupon.create({
-        data: {
+      const saved = await this.target.commerceCoupon.upsert(sourceUpsert({
+        where: { id: existingId ?? randomUUID() },
+        create: {
           name: text(row.name), type: CouponType.CASH, status: couponStatus(row.status), value: integer(row.value),
-          minimumSpendCents: integer(row.minimumSpendCents), totalQuantity: nullableInteger(row.totalQuantity),
+          minimumSpendCents: sourceCents(row.minimumSpendCents), totalQuantity: nullableInteger(row.totalQuantity),
           claimedQuantity: integer(row.claimedQuantity), employeeDistributable: row.employeeDistributable === true,
           perEmployeeLimit: integer(row.perEmployeeLimit), validFrom: date(row.validFrom) ?? new Date(),
-          validUntil: date(row.validUntil) ?? new Date(), createdAt: date(row.createdAt) ?? new Date(),
-          updatedAt: date(row.updatedAt) ?? new Date(),
-        },
-      });
+          validUntil: date(row.validUntil) ?? new Date(), createdAt: sourceDate(row.createdAt),
+          updatedAt: sourceDate(row.updatedAt),
+        }, update: {},
+      }));
       await this.map(runId, "mall_coupon", text(row.id), saved.id, "Coupon");
       counter.imported += 1;
     }
@@ -553,11 +605,11 @@ export class MallMigrator {
       if (!couponId || !userId) { counter.conflicted += 1; continue; }
       const orderId = row.orderId ? await this.targetId("mall_order", text(row.orderId)) : null;
       const sourceEmployeeId = row.sourceEmployeeId ? await this.targetId("mall_employee", text(row.sourceEmployeeId)) : null;
-      const saved = await this.target.commerceCouponClaim.upsert({
+      const saved = await this.target.commerceCouponClaim.upsert(sourceUpsert({
         where: { couponId_userId: { couponId, userId } },
         create: { couponId, userId, orderId, claimedAt: date(row.claimedAt) ?? new Date(), usedAt: date(row.usedAt), sourceEmployeeId, sourceGiftId: nullable(row.sourceGiftId) },
         update: {},
-      });
+      }));
       await this.map(runId, "mall_coupon_claim", text(row.id), saved.id, "CouponClaim");
       counter.imported += 1;
     }
@@ -568,43 +620,110 @@ export class MallMigrator {
     const counter = emptyCounter();
     const plans = await this.read("CommissionPlan");
     for (const row of plans) {
-      await this.target.commerceCommissionPlan.upsert({
+      const plan = await this.target.commerceCommissionPlan.upsert(sourceUpsert({
         where: { id: "default" },
-        create: { id: "default", enabled: row.enabled === true, rateBps: integer(row.rateBps), settlementDays: integer(row.settlementDays) || 7, enabledAt: date(row.enabledAt) },
+        create: {
+          id: "default", enabled: row.enabled === true, rateBps: integer(row.rateBps), settlementDays: sourceCents(row.settlementDays), enabledAt: date(row.enabledAt),
+          withdrawalEnabled: row.withdrawalEnabled === true,
+          minimumWithdrawCents: row.minimumWithdrawCents == null ? null : sourceCents(row.minimumWithdrawCents),
+          dailyWithdrawLimitCents: row.dailyWithdrawLimitCents == null ? null : sourceCents(row.dailyWithdrawLimitCents),
+          // Reviewed manual payout remains mandatory even if the original plan allowed automation.
+          reviewRequired: true,
+          createdAt: sourceDate(row.createdAt), updatedAt: sourceDate(row.updatedAt),
+        },
         update: {},
-      });
+      }));
+      await this.map(runId, "mall_commission_plan", text(row.id), plan.id, "CommissionPlan");
       counter.imported += 1;
     }
     for (const row of await this.read("EmployeeWallet")) {
       const employeeId = await this.targetId("mall_employee", text(row.employeeId));
       if (!employeeId) { counter.conflicted += 1; continue; }
-      await this.target.commerceEmployeeWallet.upsert({
+      await this.target.commerceEmployeeWallet.upsert(sourceUpsert({
         where: { employeeId },
-        create: { employeeId, frozenCents: integer(row.frozenCents), availableCents: integer(row.availableCents), withdrawingCents: integer(row.withdrawingCents), debtCents: integer(row.debtCents), totalPaidCents: integer(row.totalPaidCents) },
+        create: { employeeId, frozenCents: sourceCents(row.frozenCents), availableCents: sourceCents(row.availableCents), withdrawingCents: sourceCents(row.withdrawingCents), debtCents: sourceCents(row.debtCents), totalPaidCents: sourceCents(row.totalPaidCents) },
         update: {},
-      });
+      }));
+      await this.map(runId, "mall_employee_wallet", text(row.employeeId), employeeId, "EmployeeWallet", "employeeId");
       counter.imported += 1;
     }
     for (const row of await this.read("CommissionAccrual")) {
       const employeeId = await this.targetId("mall_employee", text(row.employeeId));
       const orderId = await this.targetId("mall_order", text(row.orderId));
       if (!employeeId || !orderId) { counter.conflicted += 1; continue; }
-      await this.target.commerceCommissionAccrual.upsert({
+      const accrual = await this.target.commerceCommissionAccrual.upsert(sourceUpsert({
         where: { orderId },
-        create: { employeeId, orderId, baseCents: integer(row.baseCents), refundedBaseCents: integer(row.refundedBaseCents), rateBps: integer(row.rateBps), grossBonusCents: integer(row.grossBonusCents), reversedBonusCents: integer(row.reversedBonusCents), status: text(row.status), availableAt: date(row.availableAt), settledAt: date(row.settledAt) },
+        create: { employeeId, orderId, baseCents: sourceCents(row.baseCents), refundedBaseCents: sourceCents(row.refundedBaseCents), rateBps: integer(row.rateBps), grossBonusCents: sourceCents(row.grossBonusCents), reversedBonusCents: sourceCents(row.reversedBonusCents), status: text(row.status), availableAt: date(row.availableAt), settledAt: date(row.settledAt), createdAt: sourceDate(row.createdAt), updatedAt: sourceDate(row.updatedAt), settlementDaysSnapshot: row.settlementDaysSnapshot == null ? null : sourceCents(row.settlementDaysSnapshot) },
         update: {},
-      });
+      }));
+      await this.map(runId, "mall_commission_accrual", text(row.id), accrual.id, "CommissionAccrual");
       counter.imported += 1;
     }
     for (const row of await this.read("CommissionLedger")) {
       const employeeId = await this.targetId("mall_employee", text(row.employeeId));
       if (!employeeId) { counter.conflicted += 1; continue; }
       const orderId = row.orderId ? await this.targetId("mall_order", text(row.orderId)) : null;
-      await this.target.commerceCommissionLedger.upsert({
+      const refundId = row.refundId ? await this.targetId("mall_refund", text(row.refundId)) : null;
+      const withdrawalId = row.withdrawalId ? await this.targetId("mall_withdrawal", text(row.withdrawalId)) : null;
+      if ((row.refundId && !refundId) || (row.withdrawalId && !withdrawalId)) { counter.conflicted += 1; continue; }
+      const withdrawal = withdrawalId ? await this.target.commerceWithdrawal.findUnique({ where: { id: withdrawalId } }) : null;
+      const type = text(row.type);
+      const withdrawingDeltaCents = !withdrawal ? 0 : type === "WITHDRAW_HOLD" ? withdrawal.amountCents : ["WITHDRAW_RELEASE", "WITHDRAW_SUCCESS"].includes(type) ? -withdrawal.amountCents : 0;
+      const paidDeltaCents = type === "WITHDRAW_SUCCESS" ? withdrawal?.amountCents ?? 0 : 0;
+      const ledger = await this.target.commerceCommissionLedger.upsert(sourceUpsert({
         where: { idempotencyKey: text(row.idempotencyKey) },
-        create: { employeeId, orderId, refundId: nullable(row.refundId), type: text(row.type), frozenDeltaCents: integer(row.frozenDeltaCents), availableDeltaCents: integer(row.availableDeltaCents), debtDeltaCents: integer(row.debtDeltaCents), idempotencyKey: text(row.idempotencyKey), memo: nullable(row.memo), createdAt: date(row.createdAt) ?? new Date() },
+        create: { employeeId, orderId, refundId, withdrawalId, withdrawingDeltaCents, paidDeltaCents, type, frozenDeltaCents: sourceCents(row.frozenDeltaCents), availableDeltaCents: sourceCents(row.availableDeltaCents), debtDeltaCents: sourceCents(row.debtDeltaCents), idempotencyKey: text(row.idempotencyKey), memo: nullable(row.memo), createdAt: sourceDate(row.createdAt) },
         update: {},
-      });
+      }));
+      await this.map(runId, "mall_commission_ledger", text(row.id), ledger.id, "CommissionLedger");
+      counter.imported += 1;
+    }
+    return counter;
+  }
+
+  private async payoutIdentities(runId: string) {
+    const counter = emptyCounter();
+    for (const row of await this.read("EmployeePayoutIdentity")) {
+      const employeeId = await this.targetId("mall_employee", text(row.employeeId));
+      if (!employeeId || !text(row.openId)) { counter.conflicted += 1; continue; }
+      await this.target.commerceEmployeePayoutIdentity.upsert(sourceUpsert({
+        where: { employeeId }, create: { employeeId, openId: text(row.openId), authorizationId: nullable(row.authorizationId),
+          outAuthorizationNo: nullable(row.outAuthorizationNo), authorizationStatus: text(row.authorizationStatus),
+          authorizedAt: date(row.authorizedAt), revokedAt: date(row.revokedAt) }, update: {},
+      }));
+      await this.map(runId, "mall_payout_identity", text(row.employeeId), employeeId, "EmployeePayoutIdentity", "employeeId");
+      counter.imported += 1;
+    }
+    return counter;
+  }
+
+  private async withdrawals(runId: string) {
+    const counter = emptyCounter();
+    for (const row of await this.read("Withdrawal")) {
+      const employeeId = await this.targetId("mall_employee", text(row.employeeId));
+      const status = text(row.status);
+      if (!employeeId || !["SUBMITTED", "APPROVED", "PROCESSING", "WAIT_USER_CONFIRM", "SUCCEEDED", "FAILED", "REJECTED", "CANCELLED"].includes(status) ||
+        !Number.isSafeInteger(row.amountCents) || Number(row.amountCents) <= 0 || !text(row.withdrawalNo)) {
+        await this.conflict(runId, "mall_withdrawal", text(row.id), "提现原身份、编号、状态或分单位金额未验证", "Withdrawal");
+        counter.conflicted += 1; continue;
+      }
+      if (["PROCESSING", "WAIT_USER_CONFIRM", "SUCCEEDED"].includes(status) && (!text(row.providerBillId) || !text(row.openIdSnapshot))) {
+        await this.conflict(runId, "mall_withdrawal", text(row.id), "在途或成功提现缺原转账号或收款身份，不能接管", "Withdrawal");
+        counter.conflicted += 1; continue;
+      }
+      const saved = await this.target.commerceWithdrawal.upsert(sourceUpsert({
+        where: { legacyId: text(row.id) }, create: {
+          legacyId: text(row.id), sourceSystem: "legacy_mall", executionOwner: "LEGACY_SYSTEM", withdrawalNo: text(row.withdrawalNo),
+          employeeId, amountCents: Number(row.amountCents), status, providerTransferId: nullable(row.providerBillId),
+          idempotencyKey: `mall-withdrawal:${text(row.id)}`, requestHash: rowDigest({ employeeId, amountCents: row.amountCents, sourceId: row.id }),
+          payoutIdentitySnapshot: { openId: nullable(row.openIdSnapshot), authorizationId: nullable(row.authorizationIdSnapshot) },
+          providerPayload: row.providerPayload ? json(row.providerPayload) : Prisma.JsonNull,
+          packageInfo: nullable(row.packageInfo), failureReason: nullable(row.failureReason),
+          reviewedAt: date(row.reviewedAt), completedAt: date(row.completedAt), paidAt: status === "SUCCEEDED" ? date(row.completedAt) : null,
+          createdAt: sourceDate(row.createdAt), updatedAt: sourceDate(row.updatedAt),
+        }, update: {},
+      }));
+      await this.map(runId, "mall_withdrawal", text(row.id), saved.id, "Withdrawal");
       counter.imported += 1;
     }
     return counter;
@@ -613,19 +732,19 @@ export class MallMigrator {
   private async configuration(runId: string) {
     const counter = emptyCounter();
     for (const row of await this.read("BusinessConfig")) {
-      await this.target.commerceBusinessConfig.upsert({
+      await this.target.commerceBusinessConfig.upsert(sourceUpsert({
         where: { key: text(row.key) },
         create: { key: text(row.key), label: text(row.label), value: row.value ? json(row.value) : Prisma.JsonNull, enabled: row.enabled === true },
         update: {},
-      });
+      }));
       counter.imported += 1;
     }
     for (const row of await this.read("Banner")) {
-      const saved = await this.target.commerceBanner.upsert({
+      const saved = await this.target.commerceBanner.upsert(sourceUpsert({
         where: { legacyId: text(row.id) },
         create: { legacyId: text(row.id), title: text(row.title), imageUrl: text(row.imageUrl), targetUrl: nullable(row.targetUrl), sort: integer(row.sort), enabled: row.enabled !== false },
         update: {},
-      });
+      }));
       await this.map(runId, "mall_banner", text(row.id), saved.id, "Banner");
       counter.imported += 1;
     }
@@ -634,15 +753,15 @@ export class MallMigrator {
 
   private async financeArchive(runId: string) {
     const counter = emptyCounter();
-    for (const table of ["Withdrawal", "EmployeePayoutIdentity", "EmployeeCouponGrant", "CouponGift"] as const) {
+    for (const table of ["Withdrawal", "EmployeePayoutIdentity", "CommissionPlan", "EmployeeCouponGrant", "CouponGift"] as const) {
       for (const row of await this.read(table)) {
         const employeeLegacyId = text(row.employeeId);
         const employeeId = employeeLegacyId ? await this.targetId("mall_employee", employeeLegacyId) : null;
-        await this.target.legacyCommerceFinanceProjection.upsert({
+        await this.target.legacyCommerceFinanceProjection.upsert(sourceUpsert({
           where: { sourceType_legacyId: { sourceType: `mall_${table.toLowerCase()}`, legacyId: text(row.id ?? row.employeeId) } },
           create: { employeeId, sourceType: `mall_${table.toLowerCase()}`, legacyId: text(row.id ?? row.employeeId), snapshot: json(row), occurredAt: date(row.createdAt) },
           update: {},
-        });
+        }));
         counter.imported += 1;
       }
     }
@@ -653,19 +772,18 @@ export class MallMigrator {
     runId: string,
     table: string,
     entityType: string,
-    create: (row: SourceRow, userId: string) => Promise<string>,
+    create: (row: SourceRow, userId: string, existingId: string | null) => Promise<string>,
   ) {
     const counter = emptyCounter();
     for (const row of await this.read(table)) {
       const legacyId = text(row.id);
       const existing = await this.targetId(entityType, legacyId);
-      if (existing) { counter.skipped += 1; continue; }
       const userId = await this.targetId("mall_user", text(row.userId));
       if (!userId) {
         await this.conflict(runId, entityType, legacyId, "会员映射缺失", table);
         counter.conflicted += 1; continue;
       }
-      const targetId = await create(row, userId);
+      const targetId = await create(row, userId, existing);
       await this.map(runId, entityType, legacyId, targetId, table);
       counter.imported += 1;
     }
@@ -683,18 +801,23 @@ export class MallMigrator {
     return (await this.source.query(`SELECT * FROM "${table}" ORDER BY 1`)).rows as SourceRow[];
   }
 
-  private async map(runId: string, entityType: string, legacyId: string, targetId: string, sourceTable: string) {
+  private async map(runId: string, entityType: string, legacyId: string, targetId: string, sourceTable: string, idColumn = "id") {
+    if (!/^[A-Za-z0-9_]+$/.test(sourceTable) || !/^[A-Za-z0-9_]+$/.test(idColumn)) throw new Error("Unsafe source table or column");
+    const rows = await this.source.query(`SELECT * FROM "${sourceTable}" WHERE "${idColumn}" = $1 LIMIT 1`, [legacyId]);
+    const sourceRow = rows.rows[0] as SourceRow | undefined;
+    if (!sourceRow) throw new Error("Source row disappeared inside the migration snapshot");
+    const sourceHash = rowDigest(sourceRow);
     await this.target.legacyIdMap.upsert({
-      where: { entityType_legacyId: { entityType, legacyId } },
-      create: { entityType, legacyId, targetId, sourceTable, runId },
-      update: {},
+      where: { sourceSystem_entityType_legacyId: { sourceSystem: "legacy_mall", entityType, legacyId } },
+      create: { sourceSystem: "legacy_mall", entityType, legacyId, targetId, sourceTable, runId, sourceHash },
+      update: { runId, sourceHash, sourceUpdatedAt: date(sourceRow.updatedAt), sourceDeletedAt: null },
     });
   }
 
   private async targetId(entityType: string, legacyId: string) {
     if (!legacyId) return null;
     return (await this.target.legacyIdMap.findUnique({
-      where: { entityType_legacyId: { entityType, legacyId } },
+      where: { sourceSystem_entityType_legacyId: { sourceSystem: "legacy_mall", entityType, legacyId } },
       select: { targetId: true },
     }))?.targetId ?? null;
   }
@@ -706,6 +829,27 @@ export class MallMigrator {
       update: { reason, snapshot: json({ sourceTable, ...snapshot }) },
     });
   }
+}
+
+function sourceUpsert<T extends { create: object; update: object }>(input: T): T {
+  return { ...input, update: { ...input.create, ...input.update } };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+export function sourceCents(value: unknown): number {
+  if (value === null || value === undefined || !/^-?\d+$/.test(String(value))) throw new Error("Source amount in cents is missing or invalid");
+  const amount = Number(value);
+  if (!Number.isSafeInteger(amount) || amount < -2_147_483_648 || amount > 2_147_483_647) throw new Error("Source amount in cents is out of range");
+  return amount;
+}
+
+function sourceDate(value: unknown): Date {
+  const parsed = date(value);
+  if (!parsed) throw new Error("Source historical timestamp is missing or invalid");
+  return parsed;
 }
 
 function emptyCounter(): EntityCounter { return { imported: 0, skipped: 0, conflicted: 0 }; }
@@ -720,37 +864,44 @@ function cleanError(error: unknown): string { return (error instanceof Error ? e
 
 function productStatus(value: unknown): ProductStatus {
   const status = text(value).toUpperCase();
+  if (!["PUBLISHED", "DISABLED", "DRAFT"].includes(status)) throw new Error("Unknown source product status");
   return status === "PUBLISHED" ? ProductStatus.PUBLISHED : status === "DISABLED" ? ProductStatus.OFF_SHELF : ProductStatus.DRAFT;
 }
 function orderStatus(value: unknown): CommerceOrderStatus {
   const status = text(value).toUpperCase();
   if (status === "ERP_SYNCING") return CommerceOrderStatus.WAITING_FULFILLMENT;
-  return Object.values(CommerceOrderStatus).includes(status as CommerceOrderStatus) ? status as CommerceOrderStatus : CommerceOrderStatus.PENDING_PAYMENT;
+  if (!Object.values(CommerceOrderStatus).includes(status as CommerceOrderStatus)) throw new Error("Unknown source order status");
+  return status as CommerceOrderStatus;
 }
 function paymentChannel(value: unknown): PaymentChannel {
   const status = text(value).toUpperCase() as PaymentChannel;
-  if (!Object.values(PaymentChannel).includes(status) || status === PaymentChannel.APPLE_IAP) return PaymentChannel.WECHAT_APP;
+  if (!Object.values(PaymentChannel).includes(status) || status === PaymentChannel.APPLE_IAP) throw new Error("Unknown source mall payment channel");
   return status;
 }
 function paymentStatus(value: unknown): PaymentStatus {
   const status = text(value).toUpperCase() as PaymentStatus;
-  return Object.values(PaymentStatus).includes(status) ? status : PaymentStatus.CREATED;
+  if (!Object.values(PaymentStatus).includes(status)) throw new Error("Unknown source payment status");
+  return status;
 }
 function afterSaleType(value: unknown): AfterSaleType {
   const type = text(value).toUpperCase() as AfterSaleType;
-  return Object.values(AfterSaleType).includes(type) ? type : AfterSaleType.REFUND_ONLY;
+  if (!Object.values(AfterSaleType).includes(type)) throw new Error("Unknown source after-sale type");
+  return type;
 }
 function afterSaleStatus(value: unknown): AfterSaleStatus {
   const status = text(value).toUpperCase();
   if (status === "ERP_SYNCING" || status === "PROCESSING") return AfterSaleStatus.REVIEWING;
   if (status === "RECEIVED") return AfterSaleStatus.RETURNED;
-  return Object.values(AfterSaleStatus).includes(status as AfterSaleStatus) ? status as AfterSaleStatus : AfterSaleStatus.APPLIED;
+  if (!Object.values(AfterSaleStatus).includes(status as AfterSaleStatus)) throw new Error("Unknown source after-sale status");
+  return status as AfterSaleStatus;
 }
 function refundStatus(value: unknown): RefundStatus {
   const status = text(value).toUpperCase() as RefundStatus;
-  return Object.values(RefundStatus).includes(status) ? status : RefundStatus.CREATED;
+  if (!Object.values(RefundStatus).includes(status)) throw new Error("Unknown source refund status");
+  return status;
 }
 function couponStatus(value: unknown): CouponStatus {
   const status = text(value).toUpperCase() as CouponStatus;
-  return Object.values(CouponStatus).includes(status) ? status : CouponStatus.DRAFT;
+  if (!Object.values(CouponStatus).includes(status)) throw new Error("Unknown source coupon status");
+  return status;
 }

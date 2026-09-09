@@ -1,5 +1,7 @@
 {
   "sourceLabel": "legacy-saydian-readonly",
+  "sourceSystem": "legacy_app",
+  "sourceSnapshotId": "REPLACE_WITH_VERIFIED_IMMUTABLE_SNAPSHOT_ID",
   "member": {
     "table": "member",
     "id": "id",
@@ -13,7 +15,9 @@
     "birthday": "birthday",
     "height": "height",
     "weight": "weight",
-    "createdAt": "created_at"
+    "createdAt": "created_at",
+    "status": "status",
+    "activeStatusValue": "REPLACE_WITH_VERIFIED_ACTIVE_STATUS"
   },
   "healthSources": [
     {

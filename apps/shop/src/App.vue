@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { onLaunch } from "@dcloudio/uni-app";
-import { ensureMiniProgramSession } from "./api";
+import { ensureMiniProgramSession, startMallSessionSync } from "./api";
 import { bindReferral, captureReferral, isLoggedIn } from "./session";
 onLaunch((options) => {
+  startMallSessionSync();
   const query = (options as any)?.query ?? {};
   const referral =
     query.ref ||
@@ -24,7 +25,7 @@ onLaunch((options) => {
     new URLSearchParams(hashQuery).get("ref");
   captureReferral(h5Referral ?? undefined);
   if (isLoggedIn()) void bindReferral();
-  if (!/wxwork/i.test(navigator.userAgent) || isLoggedIn()) return;
+  if (!/wxwork/i.test(navigator.userAgent)) return;
   const currentRoute = promotionTarget(pageUrl.hash);
   if (currentRoute.startsWith("/pages/employee/index")) return;
   setTimeout(() => uni.reLaunch({ url: "/pages/employee/index" }), 0);
@@ -46,8 +47,9 @@ function promotionTarget(hash: string): string {
 </script>
 <style lang="scss">
 page {
-  background: #f7f9fc;
-  color: #0b1f3a;
+  background: #f1f2f4;
+  color: #333333;
+  font-size: 16px;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
 }

@@ -69,74 +69,59 @@ export class HealthService {
     }
     const scope = legacyRequest?.scope ?? "health_batch_v2";
     const requestHash = sha256(JSON.stringify(legacyRequest ? legacyRequest.fingerprint : body));
-    const existing = await this.prisma.idempotencyRecord.findUnique({
-      where: {
-        userId_scope_key: {
-          userId,
-          scope,
-          key: idempotencyKey,
-        },
-      },
-    });
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        throw new ConflictException("同一幂等键不能用于不同的同步内容");
+    // Serialize all ingestion scopes for this member. The records, warning outbox
+    // and idempotency response must commit together; a failed commit is retryable.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${"health-ingest:" + userId}, 0))`;
+      const existing = await tx.idempotencyRecord.findUnique({
+        where: { userId_scope_key: { userId, scope, key: idempotencyKey } },
+      });
+      if (existing) {
+        if (existing.requestHash !== requestHash) {
+          throw new ConflictException("同一幂等键不能用于不同的同步内容");
+        }
+        return existing.responseBody as unknown as HealthBatchResultContract;
       }
-      return existing.responseBody as unknown as HealthBatchResultContract;
-    }
-
-    const acceptedIds: string[] = [];
-    const rejected: HealthBatchResultContract["rejected"] = [];
-    let lastRecord: HealthRecordInputContract | undefined;
-    for (const raw of rawRecords) {
-      const result = validateHealthRecord(raw);
-      if (!result.valid) {
-        rejected.push(result.rejection);
-        continue;
-      }
-      try {
-        await this.saveRecord(userId, result.record);
-        acceptedIds.push(result.record.id);
-        lastRecord = result.record;
-      } catch (error) {
-        if (isUniqueConstraint(error)) {
-          acceptedIds.push(result.record.id);
-          lastRecord = result.record;
+      const acceptedIds: string[] = [];
+      const rejected: HealthBatchResultContract["rejected"] = [];
+      let lastRecord: HealthRecordInputContract | undefined;
+      for (const raw of rawRecords) {
+        const result = validateHealthRecord(raw);
+        if (!result.valid) {
+          rejected.push(result.rejection);
           continue;
         }
-        rejected.push({
-          id: result.record.id,
-          code: "storage_failed",
-          message: "健康记录暂时无法保存，请稍后重试",
-        });
+        try {
+          await this.saveRecord(tx, userId, result.record);
+          acceptedIds.push(result.record.id);
+          lastRecord = result.record;
+        } catch (error) {
+          // These checks run before any write for the record. SQL/storage failures
+          // must abort the transaction, never become a false accepted duplicate.
+          if (!(error instanceof BadRequestException || error instanceof ConflictException)) throw error;
+          rejected.push({
+            id: result.record.id,
+            code: error instanceof ConflictException ? "record_conflict" : "invalid_artifact",
+            message: error.message,
+          });
+        }
       }
-    }
-    const nextCursor = lastRecord
-      ? Buffer.from(`${lastRecord.observedAt}|${lastRecord.id}`).toString("base64url")
-      : typeof body.cursor === "string"
-        ? body.cursor
-        : null;
-    const response: HealthBatchResultContract = {
-      acceptedIds,
-      rejected,
-      nextCursor,
-    };
-    try {
-      await this.prisma.idempotencyRecord.create({
+      const response: HealthBatchResultContract = {
+        acceptedIds,
+        rejected,
+        nextCursor: lastRecord
+          ? Buffer.from(`${lastRecord.observedAt}|${lastRecord.id}`).toString("base64url")
+          : typeof body.cursor === "string" ? body.cursor : null,
+      };
+      await tx.idempotencyRecord.create({
         data: {
-          userId,
-          scope,
-          key: idempotencyKey,
-          requestHash,
-          responseCode: 200,
+          userId, scope, key: idempotencyKey, requestHash, responseCode: 200,
           responseBody: response as unknown as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         },
       });
-    } catch (error) {
-      if (!isUniqueConstraint(error)) throw error;
-    }
-    return response;
+      return response;
+    }, { maxWait: 10_000, timeout: 30_000 });
   }
 
   async list(
@@ -147,16 +132,16 @@ export class HealthService {
   ) {
     const metric = metricInput ? metricMap[metricInput as HealthMetric] : undefined;
     if (metricInput && !metric) throw new BadRequestException("健康指标不正确");
-    const limit = Math.min(Math.max(Number(limitInput) || 50, 1), 200);
-    const before = beforeInput ? new Date(beforeInput) : undefined;
-    if (before && Number.isNaN(before.valueOf())) {
-      throw new BadRequestException("游标时间不正确");
+    if (!Number.isInteger(Number(limitInput)) || Number(limitInput) < 1) {
+      throw new BadRequestException("分页数量必须为正整数");
     }
+    const limit = Math.min(Number(limitInput), 200);
+    const before = healthPageFilter(beforeInput);
     const records = await this.prisma.healthRecord.findMany({
       where: {
         userId,
         ...(metric ? { metric } : {}),
-        ...(before ? { observedAt: { lt: before } } : {}),
+        ...before,
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
       take: limit,
@@ -186,7 +171,7 @@ export class HealthService {
       })),
       nextCursor:
         records.length === limit
-          ? records[records.length - 1]?.observedAt.toISOString() ?? null
+          ? healthPageCursor(records[records.length - 1]!)
           : null,
     };
   }
@@ -195,7 +180,10 @@ export class HealthService {
     const body = safeObject(input);
     const rules = Array.isArray(body.rules) ? body.rules : [];
     if (rules.length > 20) throw new BadRequestException("预警设置数量过多");
-    for (const item of rules) {
+    // Validate the entire request before the first write. Persist the complete
+    // batch atomically so a later invalid rule or storage error cannot partially
+    // change the member's thresholds while returning an error.
+    const normalized = rules.map((item) => {
       const rule = safeObject(item);
       const metric = metricMap[String(rule.metric) as HealthMetric];
       if (!metric) throw new BadRequestException("预警指标不正确");
@@ -215,29 +203,26 @@ export class HealthService {
       if (low != null && high != null && low >= high) {
         throw new BadRequestException("最低值必须小于最高值");
       }
-      await this.prisma.healthWarningRule.upsert({
-        where: { userId_metric: { userId, metric } },
-        create: {
-          userId,
-          metric,
-          enabled: rule.enabled !== false,
-          lowThreshold: low,
-          highThreshold: high,
-          secondaryHighThreshold:
-            metric === PrismaHealthMetric.BLOOD_PRESSURE ? secondaryHigh : null,
-          shareWithCare: rule.shareWithCare === true,
-        },
-        update: {
-          enabled: rule.enabled !== false,
-          lowThreshold: low,
-          highThreshold: high,
-          secondaryHighThreshold:
-            metric === PrismaHealthMetric.BLOOD_PRESSURE ? secondaryHigh : null,
-          shareWithCare: rule.shareWithCare === true,
-        },
-      });
-    }
-    return this.prisma.healthWarningRule.findMany({ where: { userId } });
+      return {
+        metric,
+        enabled: rule.enabled !== false,
+        lowThreshold: low,
+        highThreshold: high,
+        secondaryHighThreshold:
+          metric === PrismaHealthMetric.BLOOD_PRESSURE ? secondaryHigh : null,
+        shareWithCare: rule.shareWithCare === true,
+      };
+    });
+    return this.prisma.$transaction(async (tx) => {
+      for (const { metric, ...data } of normalized) {
+        await tx.healthWarningRule.upsert({
+          where: { userId_metric: { userId, metric } },
+          create: { userId, metric, ...data },
+          update: data,
+        });
+      }
+      return tx.healthWarningRule.findMany({ where: { userId } });
+    });
   }
 
   async legacyRecords(userId: string, metrics: HealthMetric[], from?: Date, to?: Date, page?: number) {
@@ -306,56 +291,76 @@ export class HealthService {
   }
 
   private async saveRecord(
+    tx: Prisma.TransactionClient,
     userId: string,
     record: HealthRecordInputContract,
   ): Promise<void> {
     const deviceBinding = record.source.deviceId
-      ? await this.prisma.deviceBinding.findUnique({
+      ? await tx.deviceBinding.findUnique({
           where: { hardwareKey: sha256(`${userId}:${record.source.deviceId}`) },
         })
       : null;
-    await this.prisma.$transaction(async (tx) => {
-      const created = await tx.healthRecord.create({
+    const data = {
+      userId,
+      clientRecordId: record.id,
+      metric: metricMap[record.metric],
+      observedAt: new Date(record.observedAt),
+      timezoneOffsetMinutes: record.timezoneOffsetMinutes,
+      values: record.values as Prisma.InputJsonValue,
+      unit: record.unit ?? null,
+      quality: qualityMap[record.quality ?? "unknown"],
+      sourcePlatform: record.source.platform,
+      sourceModel: record.source.model ?? null,
+      sourceFirmware: record.source.firmware ?? null,
+      deviceBindingId: deviceBinding?.id ?? null,
+      sourceDeviceKey: record.source.deviceId ? sha256(`${userId}:${record.source.deviceId}`) : null,
+    };
+    const existing = await tx.healthRecord.findUnique({
+      where: { userId_clientRecordId: { userId, clientRecordId: record.id } },
+      include: { ecgArtifact: true },
+    });
+    if (existing) {
+      const sameFields = Object.entries(data).every(([key, value]) =>
+        // Binding may legitimately be created after the first upload. The scoped
+        // fingerprint is the durable identity, not the optional binding row.
+        (key === "deviceBindingId" && data.sourceDeviceKey !== null)
+        || stableHealthValue(existing[key as keyof typeof existing]) === stableHealthValue(value),
+      );
+      const artifact = existing.ecgArtifact;
+      const sameArtifact = record.ecgArtifact
+        ? artifact?.objectKey === record.ecgArtifact.uploadObjectKey
+          && artifact.sha256.toLowerCase() === record.ecgArtifact.sha256.toLowerCase()
+          && artifact.sampleRateHz === record.ecgArtifact.sampleRateHz
+          && artifact.sampleCount === record.ecgArtifact.sampleCount
+        : !artifact;
+      if (!sameFields || !sameArtifact) {
+        throw new ConflictException("记录编号已存在且内容不同，请使用新的记录编号");
+      }
+      return;
+    }
+    const file = record.ecgArtifact
+      ? await tx.fileObject.findUnique({ where: { objectKey: record.ecgArtifact.uploadObjectKey } })
+      : null;
+    if (record.ecgArtifact) {
+      if (!file || file.ownerUserId !== userId || file.status !== "ACTIVE"
+        || file.sha256.toLowerCase() !== record.ecgArtifact.sha256.toLowerCase()) {
+        throw new BadRequestException("心电数据文件尚未完成上传验证");
+      }
+      if (await tx.ecgArtifact.findUnique({ where: { objectKey: file.objectKey } })) {
+        throw new ConflictException("心电文件已关联其他记录，不能重复关联");
+      }
+    }
+    const created = await tx.healthRecord.create({ data });
+    if (record.ecgArtifact && file) {
+      await tx.ecgArtifact.create({
         data: {
-          userId,
-          clientRecordId: record.id,
-          metric: metricMap[record.metric],
-          observedAt: new Date(record.observedAt),
-          timezoneOffsetMinutes: record.timezoneOffsetMinutes,
-          values: record.values as Prisma.InputJsonValue,
-          unit: record.unit ?? null,
-          quality: qualityMap[record.quality ?? "unknown"],
-          sourcePlatform: record.source.platform,
-          sourceModel: record.source.model ?? null,
-          sourceFirmware: record.source.firmware ?? null,
-          deviceBindingId: deviceBinding?.id ?? null,
+          healthRecordId: created.id, objectKey: file.objectKey, sha256: file.sha256,
+          sampleRateHz: record.ecgArtifact.sampleRateHz, sampleCount: record.ecgArtifact.sampleCount,
+          byteSize: file.byteSize, compression: "gzip",
         },
       });
-      if (record.ecgArtifact) {
-        const file = await tx.fileObject.findUnique({
-          where: { objectKey: record.ecgArtifact.uploadObjectKey },
-        });
-        if (
-          !file ||
-          file.ownerUserId !== userId ||
-          file.sha256.toLowerCase() !== record.ecgArtifact.sha256.toLowerCase()
-        ) {
-          throw new BadRequestException("心电数据文件尚未完成上传验证");
-        }
-        await tx.ecgArtifact.create({
-          data: {
-            healthRecordId: created.id,
-            objectKey: file.objectKey,
-            sha256: file.sha256,
-            sampleRateHz: record.ecgArtifact.sampleRateHz,
-            sampleCount: record.ecgArtifact.sampleCount,
-            byteSize: file.byteSize,
-            compression: "gzip",
-          },
-        });
-      }
-      await this.createWarningIfNeeded(tx, userId, record);
-    });
+    }
+    await this.createWarningIfNeeded(tx, userId, record);
   }
 
   private async createWarningIfNeeded(
@@ -433,8 +438,43 @@ export class HealthService {
   }
 }
 
-function isUniqueConstraint(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+function stableHealthValue(value: unknown): string | undefined {
+  const canonical = (item: unknown): unknown => {
+    if (item instanceof Date) return item.toISOString();
+    if (Array.isArray(item)) return item.map(canonical);
+    if (item && typeof item === "object") {
+      return Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, child]) => [key, canonical(child)]));
+    }
+    return item;
+  };
+  return JSON.stringify(canonical(value));
+}
+
+export function healthPageCursor(record: { id: string; observedAt: Date }): string {
+  return Buffer.from(JSON.stringify({ v: 1, observedAt: record.observedAt.toISOString(), id: record.id })).toString("base64url");
+}
+
+export function healthPageFilter(input?: string): Prisma.HealthRecordWhereInput {
+  if (!input) return {};
+  // Continue to accept historical ISO before dates; new responses carry both
+  // ordering keys so records with identical observedAt cannot disappear.
+  if (/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(input)) {
+    const observedAt = new Date(input);
+    if (Number.isFinite(observedAt.valueOf())) return { observedAt: { lt: observedAt } };
+  }
+  try {
+    const cursor = JSON.parse(Buffer.from(input, "base64url").toString("utf8"));
+    const observedAt = new Date(cursor.observedAt);
+    if (cursor.v === 1 && isUuid(cursor.id) && typeof cursor.observedAt === "string"
+      && Number.isFinite(observedAt.valueOf())) {
+      return { OR: [
+        { observedAt: { lt: observedAt } },
+        { observedAt, id: { lt: cursor.id } },
+      ] };
+    }
+  } catch { /* A malformed cursor is a client error, not a database query. */ }
+  throw new BadRequestException("分页游标不正确");
 }
 
 export function healthWarningValue(

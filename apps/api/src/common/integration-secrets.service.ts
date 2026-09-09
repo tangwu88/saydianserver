@@ -55,6 +55,9 @@ export class IntegrationSecretsService {
     integrationKey: string,
     environmentMap: Record<string, string>,
   ): Promise<Record<string, string>> {
+    if (process.env.H5_DEMO_ENABLED === "true") {
+      throw new ServiceUnavailableException("独立演示环境禁止调用真实第三方渠道");
+    }
     const stored = await this.read(integrationKey);
     const resolved: Record<string, string> = {};
     for (const [key, environmentName] of Object.entries(environmentMap)) {

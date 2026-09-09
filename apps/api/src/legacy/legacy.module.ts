@@ -9,6 +9,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { SupportModule } from "../support/support.module";
 import {
   LegacyAddressController,
+  LegacyCartController,
   LegacyOrderController,
   LegacyPagesController,
   LegacyPaymentController,
@@ -41,6 +42,7 @@ import { LegacyService } from "./legacy.service";
     LegacyProductController,
     LegacyOrderController,
     LegacyAddressController,
+    LegacyCartController,
     LegacyPaymentController,
   ],
   providers: [LegacyService, LegacyCommerceMapper],

@@ -15,12 +15,13 @@
     { "path": "pages/address-edit/index", "style": { "navigationBarTitleText": "编辑地址" } },
     { "path": "pages/favorites/index", "style": { "navigationBarTitleText": "我的收藏" } },
     { "path": "pages/coupons/index", "style": { "navigationBarTitleText": "优惠券" } },
+    { "path": "pages/points/index", "style": { "navigationBarTitleText": "积分与流水" } },
     { "path": "pages/coupon-gift/index", "style": { "navigationBarTitleText": "领取优惠券" } },
     { "path": "pages/help/index", "style": { "navigationBarTitleText": "帮助与服务" } },
     { "path": "pages/employee/index", "style": { "navigationBarTitleText": "推广中心" } }
   ],
   "tabBar": {
-    "color": "#75837f", "selectedColor": "#176b5b", "backgroundColor": "#ffffff", "borderStyle": "white",
+    "color": "#69717b", "selectedColor": "#005bad", "backgroundColor": "#ffffff", "borderStyle": "white",
     "list": [
       { "pagePath": "pages/home/index", "text": "首页" },
       { "pagePath": "pages/category/index", "text": "分类" },

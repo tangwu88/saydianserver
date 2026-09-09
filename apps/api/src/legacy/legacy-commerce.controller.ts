@@ -1,5 +1,6 @@
 import {
   Body,
+  NotFoundException,
   Controller,
   Delete,
   Get,
@@ -100,7 +101,8 @@ export class LegacyOrderController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: Record<string, string>,
   ) {
-    const normalized = await this.mapper.previewQuery(query);
+    const cart = query.type === "cart" ? await this.commerce.forUser(user.id, "GET", "/cart") : undefined;
+    const normalized = await this.mapper.previewQuery(query, cart);
     const result = await this.commerce.forUser(
       user.id,
       "POST",
@@ -116,7 +118,8 @@ export class LegacyOrderController {
     @Body() input: unknown,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {
-    const normalized = await this.mapper.orderRequest(input);
+    const cart = safeObject(input).type === "cart" ? await this.commerce.forUser(user.id, "GET", "/cart") : undefined;
+    const normalized = await this.mapper.orderRequest(input, cart);
     const result = await this.commerce.forUser(
       user.id,
       "POST",
@@ -161,7 +164,7 @@ export class LegacyOrderController {
       user.id,
       "POST",
       `/order-items/${encodeURIComponent(id)}/after-sales`,
-      body,
+      this.mapper.refundRequest(body, id),
     );
     return legacySuccess(unwrapCommerce(result), "售后申请已提交");
   }
@@ -180,6 +183,45 @@ export class LegacyOrderController {
     return legacySuccess({
       data: this.mapper.shipments(unwrapCommerce(result)),
     });
+  }
+}
+
+@Controller("api/inv-shop/v1/member/cart-item")
+@RawResponse()
+@UseGuards(UserAuthGuard)
+@UseInterceptors(NoFilesInterceptor({ limits: { fields: 10, fieldSize: 16 * 1024 } }))
+export class LegacyCartController {
+  constructor(private readonly commerce: CommerceService, private readonly mapper: LegacyCommerceMapper) {}
+
+  @Get("index")
+  async index(@CurrentUser() user: AuthenticatedUser) {
+    return legacySuccess(await this.mapper.cart(await this.commerce.forUser(user.id, "GET", "/cart")));
+  }
+
+  @Post("create")
+  async create(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    const body = await this.mapper.cartMutation(input);
+    const cart = await this.commerce.forUser(user.id, "POST", "/cart/items", { ...body, mode: "increment" });
+    return legacySuccess(await this.mapper.cart(cart));
+  }
+
+  @Post("update-num")
+  async updateNumber(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    const body = await this.mapper.cartMutation(input);
+    const cart = safeObject(await this.commerce.forUser(user.id, "GET", "/cart"));
+    if (!Array.isArray(cart.items) || !cart.items.some((row) => safeObject(row).skuId === body.skuId)) {
+      throw new NotFoundException("购物车商品不存在");
+    }
+    const updated = await this.commerce.forUser(user.id, "POST", "/cart/items", { ...body, mode: "set" });
+    return legacySuccess(await this.mapper.cart(updated));
+  }
+
+  @Post("delete-ids")
+  async deleteIds(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    const cart = await this.commerce.forUser(user.id, "GET", "/cart");
+    const ids = await this.mapper.cartDeletionIds(input, cart);
+    for (const id of ids) await this.commerce.forUser(user.id, "DELETE", `/cart/items/${encodeURIComponent(id)}`);
+    return this.index(user);
   }
 }
 

@@ -15,7 +15,7 @@
           ><text class="small"
             >{{ date(item.coupon.validFrom) }} -
             {{ date(item.coupon.validUntil) }}</text
-          ><em>{{ item.usedAt ? "已使用" : "可使用" }}</em></view
+          ><em>{{ item.usedAt ? '已使用' : item.coupon.status!=='ACTIVE' ? '已停用' : new Date(item.coupon.validUntil).getTime() < Date.now() ? '已过期' : new Date(item.coupon.validFrom).getTime() > Date.now() ? '未到使用时间' : '可使用' }}</em></view
         ></view
       ><view v-if="!coupons.length" class="empty card">暂无优惠券</view></view
     ></view
@@ -27,6 +27,7 @@ import { ref } from "vue";
 import { api, money, toast } from "../../api";
 const coupons = ref<any[]>([]);
 onShow(async () => {
+  coupons.value=[];
   try {
     coupons.value = await api("/storefront/coupons", { auth: true });
   } catch (e) {
@@ -50,7 +51,7 @@ function date(v: string) {
   padding: 28rpx;
 }
 .coupon > view:first-child {
-  background: linear-gradient(135deg, #1c7968, #135246);
+  background: #005bad;
   color: #fff;
   text-align: center;
 }

@@ -14,10 +14,16 @@ function request(path: string, originalUrl: string): RequestWithContext {
 
 describe("MaintenanceMiddleware", () => {
   const previous = process.env.MAINTENANCE_READ_ONLY;
+  const previousMemberAuth = process.env.MAINTENANCE_ALLOW_MEMBER_AUTH;
+  const previousBusinessPause = process.env.BUSINESS_WRITES_PAUSED;
 
   afterEach(() => {
     if (previous === undefined) delete process.env.MAINTENANCE_READ_ONLY;
     else process.env.MAINTENANCE_READ_ONLY = previous;
+    if (previousMemberAuth === undefined) delete process.env.MAINTENANCE_ALLOW_MEMBER_AUTH;
+    else process.env.MAINTENANCE_ALLOW_MEMBER_AUTH = previousMemberAuth;
+    if (previousBusinessPause === undefined) delete process.env.BUSINESS_WRITES_PAUSED;
+    else process.env.BUSINESS_WRITES_PAUSED = previousBusinessPause;
   });
 
   it("allows admin login when the mounted path is trimmed", () => {
@@ -78,5 +84,36 @@ describe("MaintenanceMiddleware", () => {
       next,
     );
     expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("allows verified callback receipt, but not similarly named callback paths", () => {
+    process.env.MAINTENANCE_READ_ONLY = "true";
+    const next = vi.fn();
+    new MaintenanceMiddleware().use(request("/", "/api/saydian-app/v2/billing/payments/wechat/notify"), {} as Response, next);
+    expect(next).toHaveBeenCalledOnce();
+    const status = vi.fn(() => ({ json: vi.fn() }));
+    new MaintenanceMiddleware().use(request("/", "/unknown/payments/wechat/notify"), { status } as unknown as Response, next);
+    expect(status).toHaveBeenCalledWith(503);
+  });
+
+  it("blocks the legacy GET that marks a notification read during a freeze", () => {
+    process.env.BUSINESS_WRITES_PAUSED = "true";
+    const status = vi.fn(() => ({ json: vi.fn() }));
+    const next = vi.fn();
+    const getRequest = { ...request("/", "/api/v1/member/notify/123"), method: "GET" } as RequestWithContext;
+    new MaintenanceMiddleware().use(getRequest, { status } as unknown as Response, next);
+    expect(status).toHaveBeenCalledWith(503);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("can explicitly allow member login for a read-only verification window without allowing registration", () => {
+    process.env.MAINTENANCE_READ_ONLY = "true";
+    process.env.MAINTENANCE_ALLOW_MEMBER_AUTH = "true";
+    const next = vi.fn();
+    new MaintenanceMiddleware().use(request("/", "/api/saydian-app/v2/auth/login"), {} as Response, next);
+    expect(next).toHaveBeenCalledOnce();
+    const status = vi.fn(() => ({ json: vi.fn() }));
+    new MaintenanceMiddleware().use(request("/", "/api/saydian-app/v2/auth/register"), { status } as unknown as Response, next);
+    expect(status).toHaveBeenCalledWith(503);
   });
 });

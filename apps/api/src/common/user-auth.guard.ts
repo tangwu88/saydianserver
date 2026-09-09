@@ -9,6 +9,8 @@ import { UserStatus } from "@prisma/client";
 import { env } from "./environment";
 import { PrismaService } from "./prisma.service";
 import type { RequestWithContext } from "./request-context";
+import { resolveLegacySession } from "./legacy-session-bridge";
+import { requiresVerifiedCommerceMobile } from "./commerce-mobile-policy";
 
 interface AccessClaims {
   sub: string;
@@ -34,6 +36,7 @@ export class UserAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestWithContext>();
+    const path = (request.originalUrl || request.url || request.path).split("?")[0] || request.path;
     const token = bearerToken(request);
     if (!token) throw new UnauthorizedException("请先登录");
     try {
@@ -52,7 +55,9 @@ export class UserAuthGuard implements CanActivate {
           accessJti: claims.jti,
           revokedAt: null,
           expiresAt: { gt: new Date() },
-          user: { status: UserStatus.ACTIVE },
+          user: { status: UserStatus.ACTIVE,
+            ...(requiresVerifiedCommerceMobile(path) ? { mobile: { not: null }, mobileVerifiedAt: { not: null } } : {}),
+          },
         },
         select: { id: true },
       });
@@ -60,6 +65,11 @@ export class UserAuthGuard implements CanActivate {
       request.authUser = { id: claims.sub, sessionId: claims.sid };
       return true;
     } catch {
+      const imported = await resolveLegacySession(this.prisma, token, path);
+      if (imported) {
+        request.authUser = imported;
+        return true;
+      }
       throw new UnauthorizedException("登录已失效，请重新登录");
     }
   }

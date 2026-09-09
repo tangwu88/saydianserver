@@ -3,18 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { notes } from "./api-notes.mjs";
+import { routeContract } from "./api-field-contracts.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const files = [
-  "status.controller.ts",
-  ...["auth", "members", "health", "devices", "care", "notifications", "content", "support", "commerce", "admin"].map(name => `${name}/${name}.controller.ts`),
-  "commerce/commerce-compat.controller.ts",
-  "commerce/commerce-employee.controller.ts",
-  "reports/health-reports.controller.ts",
-  "billing/billing.controller.ts",
-  "api-docs/api-documentation.controller.ts",
-  ...["site", "member", "content", "commerce", "files"].map(name => `legacy/legacy-${name}.controller.ts`),
-];
+const files = fs.readdirSync(path.join(root, "apps/api/src"), { recursive: true })
+  .map(String).filter(file => file.endsWith(".controller.ts")).map(file => file.replaceAll("\\", "/")).sort();
 const methods = new Set(["Get", "Post", "Put", "Patch", "Delete", "Head", "Options"]);
 const decorators = node => (ts.canHaveDecorators(node) ? ts.getDecorators(node) : []) ?? [];
 function calls(node) {
@@ -36,14 +29,16 @@ for (const file of files) {
       if (!notes[key]) throw new Error(`Missing interface explanation: ${key}`);
       const guards = [...(named(controller, "UseGuards")?.arguments ?? []), ...(named(method, "UseGuards")?.arguments ?? [])].map(arg => arg.getText());
       const auth = guards.includes("AdminAuthGuard") ? "admin" : guards.includes("EmployeeAuthGuard") ? "employee" : guards.includes("UserAuthGuard") ? "member" : "public";
-      const roles = (named(method, "AdminRoles")?.arguments ?? []).map(arg => arg.getText().replace("AdminRole.", ""));
+      const roles = (named(method, "AdminRoles")?.arguments ?? named(controller, "AdminRoles")?.arguments ?? []).map(arg => arg.getText().replace("AdminRole.", ""));
       const parameters = method.parameters.flatMap(parameter => calls(parameter).filter(call => ["Body", "Query", "Param", "Headers", "UploadedFile"].includes(call.expression.getText())).map(call => ({
         in: { Body: "body", Query: "query", Param: "path", Headers: "header", UploadedFile: "file" }[call.expression.getText()],
         name: literal(call.arguments[0]) || (call.expression.getText() === "UploadedFile" ? "file" : "*"),
         type: parameter.type?.getText(source) ?? "unknown",
         optional: Boolean(parameter.questionToken || parameter.initializer),
       })));
-      routes.push({ key, method: route.expression.getText().toUpperCase(), path: "/" + [literal(prefix.arguments[0]), literal(route.arguments[0])].filter(Boolean).join("/"), auth, roles, parameters, envelope: named(controller, "RawResponse") || named(method, "RawResponse") ? "raw-or-legacy" : "v2", source: relative, ...notes[key] });
+      const metadata = { key, method: route.expression.getText().toUpperCase(), path: "/" + [literal(prefix.arguments[0]), literal(route.arguments[0])].filter(Boolean).join("/"), auth, roles, parameters, envelope: named(controller, "RawResponse") || named(method, "RawResponse") ? "raw-or-legacy" : "v2", source: relative, ...notes[key] };
+      const status = named(method, "HttpCode")?.arguments[0];
+      routes.push({ ...metadata, successStatus: status && ts.isNumericLiteral(status) ? Number(status.text) : metadata.method === "POST" ? 201 : 200, contract: routeContract(metadata) });
     }
   }
 }
@@ -65,7 +60,7 @@ for (const [name, predicate] of [["健康检查", r => r.path.startsWith("/healt
   }
   lines.push("");
 }
-const catalog = { schemaVersion: 2, routes };
+const catalog = { schemaVersion: 3, routes };
 const outputs = {
   "docs/api-reference.md": lines.join("\n"),
   "docs/api-catalog.json": JSON.stringify(catalog, null, 2) + "\n",

@@ -5,6 +5,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { findMissingConsumers } from "./check-client-contracts.mjs";
+import { fieldContracts } from "./api-field-contracts.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bash = process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash";
@@ -15,6 +17,38 @@ function run(command, args, cwd = root) {
 test("API reference is complete and up to date", () => {
   const result = run(process.execPath, ["tools/generate-api-reference.mjs", "--check"]);
   assert.equal(result.status, 0, result.output);
+});
+
+test("frozen Flutter consumers all have a matching method and normalized path", () => {
+  const fixture = JSON.parse(fs.readFileSync(path.join(root, "apps/api/src/legacy/fixtures/flutter-fa79aa3-consumers.json"), "utf8"));
+  const catalog = JSON.parse(fs.readFileSync(path.join(root, "docs/api-catalog.json"), "utf8"));
+  assert.equal(fixture.clientCommit, "fa79aa3610be25762fc4b5e7245de0f1f86245ef");
+  assert.deepEqual(findMissingConsumers(fixture.consumers, catalog.routes), []);
+  assert.equal(findMissingConsumers([{ method: "POST", path: "/orders/{orderId}" }], [{ method: "GET", path: "/orders/:id" }]).length, 1);
+});
+
+function sampleMatches(value, schema) {
+  if (!schema) return true;
+  if (schema.oneOf) return schema.oneOf.filter(candidate => sampleMatches(value, candidate)).length === 1;
+  if (schema.enum && !schema.enum.includes(value)) return false;
+  if ("const" in schema && schema.const !== value) return false;
+  const types = schema.type ? [schema.type].flat() : [];
+  if (types.length && !types.some(type => type === "null" ? value === null : type === "integer" ? Number.isSafeInteger(value) : type === "array" ? Array.isArray(value) : type === "object" ? value !== null && typeof value === "object" && !Array.isArray(value) : typeof value === type)) return false;
+  if (typeof value === "number" && ((schema.minimum !== undefined && value < schema.minimum) || (schema.maximum !== undefined && value > schema.maximum))) return false;
+  if (typeof value === "string" && ((schema.pattern && !new RegExp(schema.pattern).test(value)) || (schema.minLength && value.length < schema.minLength) || (schema.maxLength && value.length > schema.maxLength))) return false;
+  if (Array.isArray(value)) return value.every(item => sampleMatches(item, schema.items));
+  if (value && typeof value === "object") {
+    if ((schema.required ?? []).some(key => !(key in value))) return false;
+    return Object.entries(value).every(([key, item]) => sampleMatches(item, schema.properties?.[key]));
+  }
+  return true;
+}
+
+test("all authored request and response samples satisfy the emitted schema vocabulary", () => {
+  for (const [key, contract] of Object.entries(fieldContracts)) {
+    if (contract.requestExample !== null) assert.ok(sampleMatches(contract.requestExample, contract.requestSchema), `${key}: request sample differs from schema`);
+    if (contract.responseExample !== null) assert.ok(sampleMatches(contract.responseExample, contract.responseSchema), `${key}: response sample differs from schema`);
+  }
 });
 test("deployment shell syntax and receiver rejection", () => {
   for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh"]) {

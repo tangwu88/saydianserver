@@ -16,10 +16,8 @@
             {{
               service.phone ? "客服电话：" + service.phone : "客服电话未配置"
             }}
-          </p>
-          <p>
-            {{ service.wecomUrl ? "企业客服入口已配置" : "企业客服入口未配置" }}
-          </p></template
+          </p><button v-if="service.phone" class="outline-btn" @click="callService">拨打客服</button>
+          <p>{{ service.wecomUrl ? "企业客服入口已配置" : "企业客服入口未配置" }}</p><button v-if="service.wecomUrl" class="outline-btn" @click="openService">联系企业客服</button></template
         ><template v-else-if="active === 'afterSale'"
           ><h2>售后政策</h2>
           <rich-text v-if="policies.afterSale" :nodes="policies.afterSale" />
@@ -58,15 +56,25 @@ const sections = [
   { key: "agreement", label: "用户协议" },
 ];
 onLoad(async (o) => {
-  active.value = o?.section || "service";
+  const section = o?.section === 'terms' ? 'agreement' : o?.section;
+  active.value = sections.some(x=>x.key===section) ? String(section) : 'service';
   try {
     const r: any = await api("/storefront/bootstrap");
-    Object.assign(service, r.configs?.["customer.service"]?.value || {});
-    Object.assign(policies, r.configs?.policies?.value || {});
+    Object.assign(service, r.configs?.["customer.service"]?.enabled ? r.configs['customer.service'].value : {});
+    Object.assign(policies, r.configs?.policies?.enabled ? r.configs.policies.value : {});
   } catch (e) {
     toast(e);
   }
 });
+function callService(){ if (/^[+\d -]{5,30}$/.test(String(service.phone))) uni.makePhoneCall({phoneNumber:String(service.phone)}); else toast('客服电话格式尚未配置正确'); }
+function openService(){try { const url = new URL(String(service.wecomUrl)); if (url.protocol!=='https:' || url.hostname!=='work.weixin.qq.com' || url.username || url.password) throw new Error('企业客服地址未正确配置');
+  /* #ifdef H5 */
+  location.assign(url.href);
+  /* #endif */
+  /* #ifndef H5 */
+  uni.setClipboardData({data:url.href});
+  /* #endif */
+}catch(e){toast(e);}}
 </script>
 <style scoped lang="scss">
 .help-layout {

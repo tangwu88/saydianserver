@@ -12,6 +12,7 @@ import { compare } from "bcryptjs";
 import { PrismaService } from "../common/prisma.service";
 import { randomToken, sha256 } from "../common/crypto";
 import type { RequestWithContext } from "../common/request-context";
+import { canAdminResource } from "@saydian/app-contracts";
 
 const ADMIN_ROLES_KEY = "saydian.admin-roles";
 export const AdminRoles = (...roles: AdminRole[]) =>
@@ -39,6 +40,7 @@ export class AdminAuthService {
         username: admin.username,
         displayName: admin.displayName,
         role: admin.role,
+        roles: admin.roles?.length ? admin.roles : [admin.role],
       },
       sessionId: session.id,
     };
@@ -82,12 +84,21 @@ export class AdminAuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    if (roles?.length && !roles.includes(session.admin.role)) {
+    const grantedRoles = session.admin.roles?.length ? session.admin.roles : [session.admin.role];
+    if (roles?.length && !grantedRoles.some((role) => roles.includes(role))) {
       throw new ForbiddenException("当前账号无权执行此操作");
+    }
+    const path = request.path.replace(/^\/api\/saydian-app\/admin\/v1\/?/, "");
+    const resource = path.split("/")[0] || "dashboard";
+    const action = ["GET", "HEAD"].includes(request.method) ? "read"
+      : /\/(?:refunds?|shipping-refunds)$/.test(path) ? "refund" : "write";
+    if (!canAdminResource(grantedRoles, resource, action)) {
+      throw new ForbiddenException("当前角色无权访问此业务模块");
     }
     request.authAdmin = {
       id: session.admin.id,
       role: session.admin.role,
+      roles: grantedRoles,
       sessionId: session.id,
     };
     return true;

@@ -53,6 +53,11 @@ export class AdminController {
     return { loggedOut: true };
   }
 
+  @Get("auth/me")
+  currentAdmin(@CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
+    return { id: current.id, role: current.role, roles: current.roles ?? [current.role] };
+  }
+
   @Get("dashboard")
   dashboard() {
     return this.admin.dashboard();
@@ -229,17 +234,25 @@ export class AdminController {
   }
 
   @Get("commerce-products")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
   commerceProducts(
     @Query("search") search?: string,
     @Query("page") page?: string,
+    @Query("status") status?: string,
   ) {
-    return this.admin.commerceProducts(search, Number(page ?? 1));
+    return this.admin.commerceProducts(search, Number(page ?? 1), status);
   }
 
   @Post("commerce-products")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
   createCommerceProduct(@Body() input: unknown) {
     return this.admin.saveCommerceProduct(undefined, input);
+  }
+
+  @Post("commerce-products/batch")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  batchCommerceProducts(@Body() input: unknown) {
+    return this.admin.batchCommerceProducts(input);
   }
 
   @Patch("commerce-products/:id")
@@ -249,6 +262,7 @@ export class AdminController {
   }
 
   @Get("commerce-categories")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
   commerceCategories() {
     return this.admin.commerceCategories();
   }
@@ -266,6 +280,7 @@ export class AdminController {
   }
 
   @Get("commerce-banners")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.READ_ONLY)
   commerceBanners() {
     return this.admin.commerceBanners();
   }
@@ -283,6 +298,7 @@ export class AdminController {
   }
 
   @Get("commerce-business-configs")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.READ_ONLY)
   commerceBusinessConfigs() {
     return this.admin.commerceBusinessConfigs();
   }
@@ -294,6 +310,7 @@ export class AdminController {
   }
 
   @Get("commerce-reviews")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
   commerceReviews() {
     return this.admin.commerceReviews();
   }
@@ -309,11 +326,13 @@ export class AdminController {
   }
 
   @Get("commerce-orders")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
   commerceOrders(
     @Query("status") status?: string,
     @Query("page") page?: string,
+    @Query("search") search?: string,
   ) {
-    return this.admin.commerceOrders(status, Number(page ?? 1));
+    return this.admin.commerceOrders(status, Number(page ?? 1), search);
   }
 
   @Patch("commerce-orders/:id")
@@ -322,7 +341,35 @@ export class AdminController {
     return this.admin.updateCommerceOrder(id, input);
   }
 
+  @Get("commerce-orders/:id/fulfillment-preview")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  commerceFulfillmentPreview(@Param("id") id: string,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
+    return this.admin.commerceFulfillmentPreview(id, current);
+  }
+
+  @Post("commerce-orders/:id/shipments")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  createCommerceShipment(@Param("id") id: string, @Body() input: unknown,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
+    return this.admin.createCommerceShipment(id, input, current);
+  }
+
+  @Get("commerce-orders/:id/shipping-refunds/preview")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+  shippingRefundPreview(@Param("id") id: string) {
+    return this.admin.shippingRefundPreview(id);
+  }
+
+  @Post("commerce-orders/:id/shipping-refunds")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+  createShippingRefund(@Param("id") id: string, @Body() input: unknown,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
+    return this.admin.createShippingRefund(id, input, current);
+  }
+
   @Get("commerce-after-sales")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
   commerceAfterSales(@Query("status") status?: string) {
     return this.admin.commerceAfterSales(status);
   }
@@ -332,12 +379,15 @@ export class AdminController {
     AdminRole.SUPER_ADMIN,
     AdminRole.COMMERCE_OPERATIONS,
     AdminRole.CUSTOMER_SERVICE,
+    AdminRole.FINANCE,
   )
-  updateCommerceAfterSale(@Param("id") id: string, @Body() input: unknown) {
-    return this.admin.updateCommerceAfterSale(id, input);
+  updateCommerceAfterSale(@Param("id") id: string, @Body() input: unknown,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
+    return this.admin.updateCommerceAfterSale(id, input, current);
   }
 
   @Get("commerce-coupons")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
   commerceCoupons() {
     return this.admin.commerceCoupons();
   }
@@ -355,6 +405,7 @@ export class AdminController {
   }
 
   @Get("commerce-employees")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.READ_ONLY)
   commerceEmployees() {
     return this.admin.commerceEmployees();
   }
@@ -370,7 +421,14 @@ export class AdminController {
     return this.admin.commerceCommissions();
   }
 
+  @Patch("commerce-commissions/plan")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+  saveCommerceCommissionPlan(@Body() input: unknown) {
+    return this.admin.saveCommerceCommissionPlan(input);
+  }
+
   @Get("commerce-jobs")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.INTEGRATION_ADMIN, AdminRole.READ_ONLY)
   commerceJobs(@Query("status") status?: string) {
     return this.admin.commerceJobs(status);
   }

@@ -47,7 +47,7 @@ const metricNames: Record<string, HealthMetric> = {
 };
 
 const candidates: Record<HealthMetric, string[]> = {
-  sleep: ["minutes", "durationMinutes", "duration", "hours"],
+  sleep: ["minutes", "durationMinutes", "duration", "hours", "value"],
   steps: ["steps", "value"],
   distance: ["meters", "value"],
   calories: ["kcal", "value"],
@@ -58,8 +58,8 @@ const candidates: Record<HealthMetric, string[]> = {
   temperature: ["celsius", "temperature", "value"],
   hrv: ["ms", "hrv", "value"],
   ecg: ["heartRate", "bpm", "value"],
-  body_composition: ["weightKg", "bodyFatPercent", "bmi", "value"],
-  blood_composition: ["uricAcid", "cholesterol", "value"],
+  body_composition: ["weightKg", "bodyFatPercent", "bmi", "value", "BMI", "bodyFatRate"],
+  blood_composition: ["uricAcid", "cholesterol", "totalCholesterol", "uricAcidVal", "value"],
 };
 
 export function buildHealthEvidence(records: EvidenceRecord[]): HealthEvidence {

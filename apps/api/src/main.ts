@@ -63,7 +63,9 @@ async function bootstrap(): Promise<void> {
   }
 
   const port = Number(env("PORT", "8080"));
-  await app.listen(port, "0.0.0.0");
+  const trustedProxies = env("TRUST_PROXY", "");
+  if (trustedProxies) app.getHttpAdapter().getInstance().set("trust proxy", trustedProxies.split(",").map(value => value.trim()));
+  await app.listen(port, env("HOST", "0.0.0.0"));
 }
 
 void bootstrap();

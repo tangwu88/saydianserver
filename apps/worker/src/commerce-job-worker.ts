@@ -7,6 +7,8 @@ import {
   PrismaClient,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { settleCommerceCommission } from "@saydian/commerce-domain";
+import { shouldPauseWorkers } from "@saydian/app-contracts";
 import {
   markWorkerIntegrationVerified,
   resolveWorkerSecrets,
@@ -22,9 +24,13 @@ type JstSettings = {
 };
 
 export class CommerceJobWorker {
+  private nextSettlementScan = 0;
+  private settlementCursor: string | undefined;
   constructor(private readonly prisma: PrismaClient) {}
 
   async runOnce(): Promise<boolean> {
+    if (shouldPauseWorkers(process.env)) return false;
+    await this.scheduleSettlements();
     await this.recoverStaleClaims();
     const job = await this.prisma.commerceIntegrationJob.findFirst({
       where: {
@@ -74,6 +80,15 @@ export class CommerceJobWorker {
 
   private async dispatch(type: string, payload: Record<string, unknown>) {
     const identifier = (key: string) => String(payload[key] ?? "").trim();
+    if (type === "COMMISSION_SETTLEMENT") {
+      const id = identifier("accrualId");
+      const changed = await this.prisma.$transaction((tx) => settleCommerceCommission(tx, id));
+      if (!changed) {
+        const accrual = await this.prisma.commerceCommissionAccrual.findUnique({ where: { id } });
+        if (accrual?.status === "FROZEN") throw new Error("Commission settlement waits for after-sale or migration review");
+      }
+      return;
+    }
     if (type === "JUSHUITAN_ORDER_PUSH") {
       await this.uploadOrder(identifier("orderId"));
       return;
@@ -105,6 +120,10 @@ export class CommerceJobWorker {
       },
     });
     if (!order) throw new PermanentCommerceJobError("Commerce order not found");
+    if (order.executionOwner !== "NEW_SYSTEM") throw new Error("Order takeover has not been verified");
+    if (![CommerceOrderStatus.PAID, CommerceOrderStatus.WAITING_FULFILLMENT].includes(order.status as "PAID" | "WAITING_FULFILLMENT")) {
+      throw new PermanentCommerceJobError("Order is no longer awaiting ERP fulfillment");
+    }
     if (!order.paymentIntents.length) throw new Error("Commerce order is not paid");
     const result = await this.call(settings, settings.paths.orderUpload!, [
       {
@@ -161,9 +180,12 @@ export class CommerceJobWorker {
     if (!settings.shopId) throw new Error("Jushuitan shop id is unconfigured");
     const afterSale = await this.prisma.commerceAfterSale.findUnique({
       where: { id: afterSaleId },
-      include: { order: { include: { items: true } } },
+      include: { order: { include: { items: true } }, items: { include: { orderItem: true } } },
     });
     if (!afterSale) throw new PermanentCommerceJobError("After-sale record not found");
+    if (afterSale.executionOwner !== "NEW_SYSTEM" || afterSale.order.executionOwner !== "NEW_SYSTEM") throw new Error("After-sale takeover has not been verified");
+    if (!["APPROVED", "WAITING_RETURN", "RETURNED"].includes(afterSale.status)) throw new PermanentCommerceJobError("After-sale is no longer approved for ERP submission");
+    if (!afterSale.items.length) throw new PermanentCommerceJobError("After-sale lines require migration verification");
     const result = await this.call(settings, settings.paths.afterSaleUpload!, [
       {
         outer_as_id: afterSale.afterSaleNo,
@@ -174,11 +196,11 @@ export class CommerceJobWorker {
         remark: afterSale.reason,
         total_amount: afterSale.requestedCents / 100,
         refund: afterSale.requestedCents / 100,
-        items: afterSale.order.items.map((item) => ({
-          outer_oi_id: item.id,
-          sku_id: item.erpSkuIdSnapshot,
+        items: afterSale.items.map((item) => ({
+          outer_oi_id: item.orderItemId,
+          sku_id: item.orderItem.erpSkuIdSnapshot,
           qty: item.quantity,
-          amount: item.totalCents / 100,
+          amount: item.amountCents / 100,
           type: afterSale.type === "EXCHANGE" ? "换货" : "退货",
         })),
       },
@@ -215,6 +237,9 @@ export class CommerceJobWorker {
         const existing = await this.prisma.commerceProduct.findUnique({
           where: { erpItemId: mapped.erpItemId },
         });
+        if (existing && existing.source !== "ERP") throw new PermanentCommerceJobError("ERP product code conflicts with a local product");
+        const existingSku = await this.prisma.commerceSku.findUnique({ where: { erpSkuId: mapped.erpSkuId }, include: { product: true } });
+        if (existingSku && existingSku.product.source !== "ERP") throw new PermanentCommerceJobError("ERP SKU code conflicts with a local SKU");
         const product = await this.prisma.commerceProduct.upsert({
           where: { erpItemId: mapped.erpItemId },
           create: {
@@ -276,7 +301,7 @@ export class CommerceJobWorker {
         const erpSkuId = String(item.sku_id ?? item.skuId ?? "").trim();
         if (!erpSkuId) continue;
         await this.prisma.commerceSku.updateMany({
-          where: { erpSkuId },
+          where: { erpSkuId, product: { source: "ERP" } },
           data: {
             stock: Math.max(0, Math.floor(Number(item.avl_qty ?? item.qty ?? item.stock ?? 0))),
           },
@@ -289,6 +314,7 @@ export class CommerceJobWorker {
     const settings = await this.settings();
     const orders = await this.prisma.commerceOrder.findMany({
       where: {
+        executionOwner: "NEW_SYSTEM",
         status: {
           in: [
             CommerceOrderStatus.WAITING_FULFILLMENT,
@@ -324,10 +350,11 @@ export class CommerceJobWorker {
           },
           update: { traceJson: item as Prisma.InputJsonValue },
         }),
-        this.prisma.commerceOrder.update({
-          where: { id: order.id },
+        this.prisma.commerceOrder.updateMany({
+          where: { id: order.id, executionOwner: "NEW_SYSTEM", status: { in: [CommerceOrderStatus.WAITING_FULFILLMENT, CommerceOrderStatus.SHIPPED] } },
           data: {
             status: CommerceOrderStatus.SHIPPED,
+            version: { increment: 1 },
             shippedAt: order.shippedAt ?? new Date(),
             erpStatus: "SENT",
           },
@@ -371,6 +398,23 @@ export class CommerceJobWorker {
         fulfillment: String(customPaths.fulfillment ?? "/open/logistic/query"),
       },
     };
+  }
+
+  private async scheduleSettlements() {
+    if (Date.now() < this.nextSettlementScan) return;
+    this.nextSettlementScan = Date.now() + 60_000;
+    const due = await this.prisma.commerceCommissionAccrual.findMany({ where: {
+      status: "FROZEN", availableAt: { lte: new Date() }, settlementDaysSnapshot: { not: null },
+      order: { executionOwner: "NEW_SYSTEM" },
+    }, take: 100, orderBy: { id: "asc" },
+      ...(this.settlementCursor ? { cursor: { id: this.settlementCursor }, skip: 1 } : {}),
+    });
+    for (const accrual of due) await this.prisma.commerceIntegrationJob.upsert({
+      where: { idempotencyKey: `commission-settlement:${accrual.id}` },
+      create: { type: "COMMISSION_SETTLEMENT", aggregateType: "commerce_commission", aggregateId: accrual.id,
+        payload: { accrualId: accrual.id }, idempotencyKey: `commission-settlement:${accrual.id}` }, update: {},
+    });
+    this.settlementCursor = due.length === 100 ? due[due.length - 1]!.id : undefined;
   }
 
   private async call(

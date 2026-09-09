@@ -1,11 +1,11 @@
 :root {
-  --green: #087bea;
-  --deep: #061b31;
+  --green: #005bad;
+  --deep: #005bad;
   --mint: #eef6ff;
   --orange: #087bea;
-  --ink: #0b1f3a;
-  --muted: #718096;
-  --line: #e4e9f0;
+  --ink: #333333;
+  --muted: #69717b;
+  --line: #e5e7eb;
 }
 * {
   box-sizing: border-box;
@@ -54,7 +54,7 @@
   font-weight: 700;
 }
 .primary-btn {
-  background: #087bea;
+  background: var(--green);
   color: #fff;
 }
 .outline-btn {
@@ -148,7 +148,7 @@
   margin-top: 14rpx;
 }
 .price {
-  color: #087bea;
+  color: #be092d;
   font-weight: 900;
   font-size: 32rpx;
 }
@@ -183,24 +183,25 @@
     height: 100% !important;
   }
   page {
-    background: #f7f9fc;
+    background: #f1f2f4;
   }
   .desktop-header {
     display: block;
     height: 78px;
-    background: #061b31;
-    border-bottom: 1px solid #123450;
+    background: #ffffff;
+    border-bottom: 1px solid var(--line);
     position: sticky;
     top: 0;
     z-index: 40;
   }
   .head-inner {
-    max-width: 1360px;
+    max-width: 1200px;
+    padding: 0 20px;
     height: 100%;
     margin: 0 auto;
     display: flex;
     align-items: center;
-    gap: 42px;
+    gap: 30px;
   }
   .brand {
     display: flex;
@@ -209,7 +210,7 @@
     cursor: pointer;
     font-size: 19px;
     font-weight: 850;
-    color: #fff;
+    color: var(--ink);
   }
   .brand .small {
     display: block;
@@ -219,10 +220,9 @@
     color: #8a9894;
   }
   .brand-logo {
-    width: 200px;
-    height: 28px;
+    width: 110px;
+    height: 46px;
     object-fit: contain;
-    filter: brightness(0) invert(1);
   }
   .desktop-search {
     flex: 1;
@@ -239,7 +239,7 @@
   .head-links {
     display: flex;
     gap: 24px;
-    color: #f5f8fb;
+    color: var(--ink);
     font-size: 14px;
   }
   .head-links text {

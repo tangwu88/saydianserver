@@ -11,6 +11,8 @@
     "mall:inspect": "tsx src/main.ts mall-inspect",
     "mall:migrate": "tsx src/main.ts mall-migrate",
     "mall:verify": "tsx src/main.ts mall-verify",
+    "takeover:check": "tsx src/main.ts takeover-check",
+    "takeover:activate": "tsx src/main.ts takeover-activate",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"

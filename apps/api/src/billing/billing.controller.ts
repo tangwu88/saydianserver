@@ -128,6 +128,12 @@ export class BillingController {
 export class BillingAdminController {
   constructor(private readonly billing: BillingService) {}
 
+  @Post("provider-events/replay")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+  replayProviderEvents(@Body() body: unknown) {
+    return this.billing.replayVerifiedProviderEvents(body);
+  }
+
   @Post("commerce-after-sales/:id/refund")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   refundAfterSale(@Param("id") id: string, @Body() body: unknown) {

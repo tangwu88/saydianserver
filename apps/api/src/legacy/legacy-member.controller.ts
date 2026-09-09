@@ -32,12 +32,15 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { SupportService } from "../support/support.service";
 import {
   canonicalToLegacyDaily,
+  canonicalToLegacyComposition,
   legacyDailyToCanonical,
+  legacyCompositionToCanonical,
   parseLegacyDate,
 } from "./legacy-health-mapper";
 import { legacySuccess } from "./legacy-response";
 import { LegacyService } from "./legacy.service";
 import { legacyCareMetrics, legacyCareNames } from "./legacy-care-mapper";
+import { canonicalToLegacyWarnings, legacyWarningsToCanonical } from "./legacy-warning-mapper";
 
 const legacyDailyMetric: Record<string, HealthMetric> = {
   pulsereat: "heart_rate",
@@ -125,6 +128,29 @@ export class LegacyMemberController {
   ) {
     const key = request.header("idempotency-key")?.trim() || digestKey(input);
     return legacySuccess(await this.health.ingestBatch(user.id, key, input));
+  }
+
+  @Get("health-warning/preview")
+  async warningSettings(@CurrentUser() user: AuthenticatedUser) {
+    return legacySuccess(canonicalToLegacyWarnings(await this.health.warningRules(user.id)));
+  }
+
+  @Post("health-warning")
+  async saveWarningSettings(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    const current = await this.health.warningRules(user.id);
+    await this.health.saveWarningRules(user.id, legacyWarningsToCanonical(input, current));
+    return this.warningSettings(user);
+  }
+
+  @Post("feedback")
+  async feedback(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    const body = safeObject(input);
+    return legacySuccess(await this.support.createFeedback(user.id, {
+      category: body.type ?? body.category,
+      content: body.content,
+      contact: body.contact,
+      attachments: body.attachments,
+    }), "反馈已提交");
   }
 
   @Post("jrjk")
@@ -293,7 +319,8 @@ export class LegacyMemberController {
 
   @Get("bodycomposition/:id")
   async bodyDetail(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
-    return legacySuccess(await this.health.legacyDetail(user.id, "body_composition", id));
+    const detail = await this.health.legacyDetail(user.id, "body_composition", id);
+    return legacySuccess({ ...detail, ...canonicalToLegacyComposition("body_composition", detail) });
   }
 
   @Get("care")
@@ -367,7 +394,7 @@ export class LegacyMemberController {
     const relationship = await this.legacy.relationshipByCompatibilityId(query.id);
     const rows = await this.healthRows(
       user.id,
-      { ...query, selectmember: String(relationship.recipient.compatibilityId) },
+      { ...query, selectmember: String(this.legacy.memberContract(relationship.recipient).id) },
       ["steps", "distance", "calories", ...allDailyMetrics],
       request.requestId,
     );
@@ -469,7 +496,7 @@ export class LegacyMemberController {
           metric,
           observedAt: observedAt.toISOString(),
           timezoneOffsetMinutes: 480,
-          values: scalarValues(data, ["date"]),
+          values: legacyCompositionToCanonical(metric, scalarValues(data, ["date"])),
           quality: "unknown",
           source: { platform: "mini_program" },
         },
@@ -491,7 +518,9 @@ export class LegacyMemberController {
       records.map((record) => ({
         id: record.id,
         date: record.observedAt,
-        ...safeObject(record.values),
+        ...(metric === "body_composition" || metric === "blood_composition"
+          ? canonicalToLegacyComposition(metric, record.values)
+          : safeObject(record.values)),
         ...(record.ecgArtifact ? { ecgArtifact: record.ecgArtifact } : {}),
       })),
     );

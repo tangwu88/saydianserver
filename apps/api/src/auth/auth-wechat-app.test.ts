@@ -119,7 +119,6 @@ describe("native WeChat account mapping", () => {
     expect(update).toHaveBeenCalledWith({
       where: { id: baseUser.id },
       data: expect.objectContaining({
-        status: UserStatus.ACTIVE,
         wechatAppOpenId: "app-open-id",
         wechatUnionId: "shared-union-id",
         avatarUrl: "https://thirdwx.example/avatar.png",

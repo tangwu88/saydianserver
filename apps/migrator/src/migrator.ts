@@ -6,6 +6,7 @@ import {
   UserStatus,
 } from "@prisma/client";
 import type { Connection, RowDataPacket } from "mysql2/promise";
+import { createHash, createHmac } from "node:crypto";
 import type { HealthSourceMap, MigrationMap, TableColumnMap } from "./config";
 
 type LegacyRow = RowDataPacket & Record<string, unknown>;
@@ -16,6 +17,11 @@ export class LegacyMigrator {
     private readonly target: PrismaClient,
     private readonly map: MigrationMap,
   ) {}
+
+  private get sourceSystem() { return this.map.sourceSystem ?? "legacy_app"; }
+  private mappingKey(entityType: string, legacyId: string) {
+    return { sourceSystem_entityType_legacyId: { sourceSystem: this.sourceSystem, entityType, legacyId } };
+  }
 
   async inspect(): Promise<Record<string, unknown>> {
     const [tables] = await this.source.query<RowDataPacket[]>(
@@ -33,14 +39,20 @@ export class LegacyMigrator {
     };
   }
 
-  async migrate(): Promise<Record<string, unknown>> {
-    const run = await this.target.migrationRun.create({
+  async migrate(resumeRunId?: string): Promise<Record<string, unknown>> {
+    if (process.env.MIGRATION_TARGET_WRITES_FROZEN !== "true") throw new Error("Migration requires an explicitly frozen target");
+    if (!this.map.member.status || this.map.member.activeStatusValue === undefined) throw new Error("Member migration requires reviewed status semantics; missing status must not reactivate accounts");
+    if (resumeRunId && !this.map.sourceSnapshotId) throw new Error("Resume requires the same immutable sourceSnapshotId");
+    const run = resumeRunId ? await this.target.migrationRun.findUniqueOrThrow({ where: { id: resumeRunId } }) : await this.target.migrationRun.create({
       data: {
         sourceLabel: this.map.sourceLabel,
+        sourceDigest: this.map.sourceSnapshotId ?? null,
         status: "RUNNING",
         startedAt: new Date(),
       },
     });
+    if (run.sourceLabel !== this.map.sourceLabel || (resumeRunId && run.sourceDigest !== this.map.sourceSnapshotId)) throw new Error("Migration source snapshot does not match the resumed run");
+    if (resumeRunId) await this.target.migrationRun.update({ where: { id: run.id }, data: { status: "RUNNING", completedAt: null } });
     const report: {
       users: MigrationCounters;
       health: Record<string, MigrationCounters>;
@@ -49,8 +61,7 @@ export class LegacyMigrator {
       health: {},
     };
     try {
-      let cursor: string | number =
-        this.map.member.idType === "string" ? "" : 0;
+      let cursor: string | number = await this.resumeCursor(run.id, this.map.member.table, this.map.member.idType);
       while (true) {
         const rows = await this.readMemberChunk(this.map.member, cursor, 500);
         if (rows.length === 0) break;
@@ -60,14 +71,19 @@ export class LegacyMigrator {
             this.map.member.idType === "string"
               ? legacyId
               : Number(legacyId) || cursor;
-          const outcome = await this.migrateMember(run.id, row, this.map.member);
+          const outcome = await this.target.$transaction(async (tx) => {
+            const worker = new LegacyMigrator(this.source, tx as PrismaClient, this.map);
+            const result = await worker.migrateMember(run.id, row, this.map.member);
+            await worker.checkpoint(run.id, this.map.member.table, String(cursor));
+            return result;
+          });
           report.users[outcome] += 1;
         }
       }
       for (const source of this.map.healthSources) {
         const sourceReport = counters();
         report.health[source.table] = sourceReport;
-        let cursor: string | number = source.idType === "string" ? "" : 0;
+        let cursor: string | number = await this.resumeCursor(run.id, source.table, source.idType);
         while (true) {
           const rows = await this.readChunk(source.table, source.id, cursor, 500);
           if (rows.length === 0) break;
@@ -77,11 +93,17 @@ export class LegacyMigrator {
               source.idType === "string"
                 ? legacyId
                 : Number(legacyId) || cursor;
-            const outcome = await this.migrateHealthRecord(run.id, row, source);
+            const outcome = await this.target.$transaction(async (tx) => {
+              const worker = new LegacyMigrator(this.source, tx as PrismaClient, this.map);
+              const result = await worker.migrateHealthRecord(run.id, row, source);
+              await worker.checkpoint(run.id, source.table, String(cursor));
+              return result;
+            });
             sourceReport[outcome] += 1;
           }
         }
       }
+      await this.importVerifiedSessions(run.id);
       await this.target.migrationRun.update({
         where: { id: run.id },
         data: {
@@ -103,6 +125,19 @@ export class LegacyMigrator {
       });
       throw error;
     }
+  }
+
+  private async resumeCursor(runId: string, table: string, idType?: string): Promise<string | number> {
+    const checkpoint = await this.target.migrationCheckpoint.findUnique({ where: { runId_sourceTable: { runId, sourceTable: table } } });
+    return idType === "string" ? checkpoint?.cursor ?? "" : Number(checkpoint?.cursor ?? 0);
+  }
+
+  private checkpoint(runId: string, sourceTable: string, cursor: string) {
+    return this.target.migrationCheckpoint.upsert({
+      where: { runId_sourceTable: { runId, sourceTable } },
+      create: { runId, sourceSystem: this.sourceSystem, sourceTable, cursor, rowCount: 1 },
+      update: { cursor, rowCount: { increment: 1 } },
+    });
   }
 
   async verify(runId?: string): Promise<Record<string, unknown>> {
@@ -128,7 +163,8 @@ export class LegacyMigrator {
         ),
       ),
     );
-    const matched =
+    const unresolvedConflicts = await this.target.migrationConflict.count({ where: { runId: run.id, resolvedAt: null } });
+    const matched = unresolvedConflicts === 0 &&
       userVerification.matched &&
       healthVerification.every((item) => item.matched);
     const report = {
@@ -139,6 +175,7 @@ export class LegacyMigrator {
       ),
       verifiedAt: new Date().toISOString(),
       matched,
+      unresolvedConflicts,
     };
     await this.target.migrationRun.update({
       where: { id: run.id },
@@ -183,13 +220,23 @@ export class LegacyMigrator {
   ): Promise<"migrated" | "skipped" | "conflicts"> {
     const legacyId = String(row[map.id]);
     const mapped = await this.target.legacyIdMap.findUnique({
-      where: { entityType_legacyId: { entityType: "user", legacyId } },
+      where: this.mappingKey("user", legacyId),
     });
-    if (mapped) return "skipped";
+    const sourceHash = rowDigest(row);
+    if (mapped?.sourceHash === sourceHash) {
+      await this.target.legacyIdMap.update({ where: { id: mapped.id }, data: { runId } });
+      return "skipped";
+    }
+    if (map.deletedAt && row[map.deletedAt]) {
+      await this.recordConflict(runId, "user", legacyId, "source_deleted_requires_review", { sourceTable: map.table });
+      if (mapped) await this.target.legacyIdMap.update({ where: { id: mapped.id }, data: { sourceDeletedAt: safeDate(row[map.deletedAt]) ?? new Date() } });
+      return "conflicts";
+    }
     const mobile = nullableText(row[map.mobile]);
     const unionId = map.unionId ? nullableText(row[map.unionId]) : null;
     const candidates = await this.target.user.findMany({
       where: {
+        ...(mapped ? { id: { not: mapped.targetId } } : {}),
         OR: [
           ...(mobile ? [{ mobile }] : []),
           ...(unionId ? [{ wechatUnionId: unionId }] : []),
@@ -223,13 +270,15 @@ export class LegacyMigrator {
       return "conflicts";
     }
     const passwordHash = compatiblePasswordHash(row[map.passwordHash]);
-    const target = await this.target.user.create({
-      data: {
-        legacyMemberId: legacyId,
+    if (nullableText(row[map.passwordHash]) && !passwordHash) {
+      await this.recordConflict(runId, "password", legacyId, "source_password_algorithm_unsupported", { sourceTable: map.table });
+    }
+    const memberData = {
+        legacyMemberId: this.sourceSystem === "legacy_app" ? legacyId : null,
         mobile,
         wechatUnionId: unionId,
         passwordHash,
-        status: UserStatus.ACTIVE,
+        status: map.status && String(row[map.status]) !== map.activeStatusValue ? UserStatus.DISABLED : UserStatus.ACTIVE,
         nickname: nullableText(row[map.nickname]) || `用户${mobile?.slice(-4) ?? legacyId}`,
         avatarUrl: map.avatar ? nullableText(row[map.avatar]) : null,
         gender: legacyGender(map.gender ? row[map.gender] : null),
@@ -239,17 +288,27 @@ export class LegacyMigrator {
         ...(map.createdAt && safeDate(row[map.createdAt])
           ? { createdAt: safeDate(row[map.createdAt])! }
           : {}),
-      },
-    });
-    await this.target.legacyIdMap.create({
-      data: {
+      };
+    const target = mapped
+      ? await this.target.user.update({ where: { id: mapped.targetId }, data: memberData })
+      : await this.target.user.create({ data: memberData });
+    await this.target.legacyIdMap.upsert({
+      where: this.mappingKey("user", legacyId),
+      create: {
+        sourceSystem: this.sourceSystem,
         entityType: "user",
         legacyId,
         targetId: target.id,
         sourceTable: map.table,
         runId,
+        sourceHash,
+        sourceUpdatedAt: map.updatedAt ? safeDate(row[map.updatedAt]) : null,
       },
+      update: { runId, sourceHash, sourceUpdatedAt: map.updatedAt ? safeDate(row[map.updatedAt]) : null, sourceDeletedAt: null },
     });
+    if (target.status !== UserStatus.ACTIVE) await this.target.userSession.updateMany({ where: { userId: target.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    if (map.pointBalance) await this.importPointBalance(runId, legacyId, target.id, row[map.pointBalance], map.pointBalanceUnit);
+    await this.target.migrationConflict.updateMany({ where: { runId, entityType: "user", legacyId, resolvedAt: null }, data: { resolvedAt: new Date(), resolution: "source_row_imported" } });
     return "migrated";
   }
 
@@ -261,24 +320,23 @@ export class LegacyMigrator {
     const sourceLegacyId = String(row[map.id]);
     const legacyId = `${map.table}:${sourceLegacyId}`;
     const existing = await this.target.legacyIdMap.findUnique({
-      where: {
-        entityType_legacyId: { entityType: "health_record", legacyId },
-      },
+      where: this.mappingKey("health_record", legacyId),
     });
-    if (existing) return "skipped";
+    const sourceHash = rowDigest(row);
+    if (existing?.sourceHash === sourceHash) {
+      await this.target.legacyIdMap.update({ where: { id: existing.id }, data: { runId } });
+      return "skipped";
+    }
     const memberLegacyId = String(row[map.memberId] ?? "").trim();
     const userMap = await this.target.legacyIdMap.findUnique({
-      where: {
-        entityType_legacyId: {
-          entityType: "user",
-          legacyId: memberLegacyId,
-        },
-      },
+      where: this.mappingKey("user", memberLegacyId),
     });
     const metric = normalizedMetric(row[map.metric]);
     const observedAt = safeDate(row[map.observedAt]);
     const values = safeJsonObject(row[map.valuesJson]);
-    const invalidReason = !userMap
+    const invalidReason = map.deletedAt && row[map.deletedAt]
+      ? "source_deleted_requires_review"
+      : !userMap
       ? "member_mapping_missing"
       : !metric
         ? "health_metric_unknown"
@@ -304,8 +362,7 @@ export class LegacyMigrator {
     const boundedTimezone = Number.isInteger(timezoneOffset) && Math.abs(timezoneOffset) <= 840
       ? timezoneOffset
       : 480;
-    const record = await this.target.healthRecord.create({
-      data: {
+    const recordData = {
         userId: userMap.targetId,
         clientRecordId: `legacy:${map.table}:${sourceLegacyId}`,
         metric,
@@ -313,18 +370,26 @@ export class LegacyMigrator {
         timezoneOffsetMinutes: boundedTimezone,
         values: values as Prisma.InputJsonValue,
         quality: DataQuality.UNKNOWN,
-        sourcePlatform: "migration",
-      },
-    });
-    await this.target.legacyIdMap.create({
-      data: {
+        sourcePlatform: this.sourceSystem,
+      };
+    const record = existing
+      ? await this.target.healthRecord.update({ where: { id: existing.targetId }, data: recordData })
+      : await this.target.healthRecord.create({ data: recordData });
+    await this.target.legacyIdMap.upsert({
+      where: this.mappingKey("health_record", legacyId),
+      create: {
+        sourceSystem: this.sourceSystem,
         entityType: "health_record",
         legacyId,
         targetId: record.id,
         sourceTable: map.table,
         runId,
+        sourceHash,
+        sourceUpdatedAt: map.updatedAt ? safeDate(row[map.updatedAt]) : null,
       },
+      update: { runId, sourceHash, sourceUpdatedAt: map.updatedAt ? safeDate(row[map.updatedAt]) : null },
     });
+    await this.target.migrationConflict.updateMany({ where: { runId, entityType: "health_record", legacyId, resolvedAt: null }, data: { resolvedAt: new Date(), resolution: "source_row_imported" } });
     return "migrated";
   }
 
@@ -338,10 +403,13 @@ export class LegacyMigrator {
       `SELECT COUNT(*) AS count, MIN(\`${idColumn}\`) AS firstId, MAX(\`${idColumn}\`) AS lastId FROM \`${table}\``,
     );
     const targetMapped = await this.target.legacyIdMap.count({
-      where: { entityType, sourceTable: table },
+      where: { sourceSystem: this.sourceSystem, entityType, sourceTable: table },
     });
     const conflicts = await this.target.migrationConflict.count({
-      where: { runId, entityType, legacyId: { startsWith: entityType === "health_record" ? `${table}:` : "" } },
+      where: { runId, entityType, resolvedAt: null, legacyId: { startsWith: entityType === "health_record" ? `${table}:` : "" } },
+    });
+    const notSeen = await this.target.legacyIdMap.count({
+      where: { sourceSystem: this.sourceSystem, entityType, sourceTable: table, OR: [{ runId: { not: runId } }, { runId: null }] },
     });
     const source = (sourceRows[0] ?? {}) as Record<string, unknown>;
     return {
@@ -349,7 +417,8 @@ export class LegacyMigrator {
       source,
       targetMapped,
       conflicts,
-      matched: Number(source.count ?? 0) === targetMapped + conflicts,
+      missingOrDeletedSinceSnapshot: notSeen,
+      matched: Number(source.count ?? 0) === targetMapped && conflicts === 0 && notSeen === 0,
     };
   }
 
@@ -369,9 +438,76 @@ export class LegacyMigrator {
         reason,
         snapshot: snapshot as Prisma.InputJsonValue,
       },
-      update: { reason, snapshot: snapshot as Prisma.InputJsonValue },
+      update: { reason, snapshot: snapshot as Prisma.InputJsonValue, resolvedAt: null, resolution: null },
     });
   }
+
+  private async importPointBalance(runId: string, legacyId: string, userId: string, value: unknown, unit?: string) {
+    const cents = sourceMoneyCents(value, unit);
+    if (cents === null) {
+      await this.recordConflict(runId, "point_balance", legacyId, "source_balance_or_unit_unknown", { sourceTable: this.map.member.table });
+      return;
+    }
+    const previous = await this.target.commercePointAccount.findUnique({ where: { userId } });
+    if (previous?.balanceCents === cents) return;
+    const deltaCents = cents - (previous?.balanceCents ?? 0);
+    await this.target.commercePointAccount.upsert({ where: { userId }, create: { userId, balanceCents: cents }, update: { balanceCents: cents, version: { increment: 1 } } });
+    await this.target.commercePointLedger.create({ data: { userId, deltaCents, type: "MIGRATION_BALANCE", idempotencyKey: `migration-point:${runId}:${legacyId}:${cents}` } });
+    await this.target.migrationConflict.updateMany({ where: { runId, entityType: "point_balance", legacyId, resolvedAt: null }, data: { resolvedAt: new Date(), resolution: "source_amount_verified_and_imported" } });
+  }
+
+  private async importVerifiedSessions(runId: string) {
+    const map = this.map.sessions;
+    if (!map) return;
+    const key = process.env.LEGACY_SESSION_HASH_KEY?.trim() ?? "";
+    if (process.env.MIGRATION_ALLOW_VERIFIED_SESSION_IMPORT !== "true" || key.length < 32 || this.sourceSystem !== "legacy_app") {
+      throw new Error("Verified-session import requires explicit authorization, the reviewed legacy_app mapping and a secure digest key");
+    }
+    const importStartedAt = new Date();
+    let cursor: string | number = "";
+    while (true) {
+      const rows = await this.readChunk(map.table, map.id, cursor, 500);
+      if (!rows.length) break;
+      for (const row of rows) {
+        cursor = String(row[map.id]);
+        const sourceSessionId = String(row[map.id]);
+        const token = String(row[map.token] ?? "");
+        const expiresAt = map.expiryFormat === "unix_seconds" ? new Date(Number(row[map.expiresAt]) * 1000) : safeDate(row[map.expiresAt]);
+        const user = await this.target.legacyIdMap.findUnique({ where: this.mappingKey("user", String(row[map.memberId])) });
+        if (!user || token.length < 16 || !expiresAt || !Number.isFinite(expiresAt.valueOf())) {
+          await this.recordConflict(runId, "legacy_session", sourceSessionId, "source_session_unverifiable", { sourceTable: map.table });
+          continue;
+        }
+        const tokenDigest = createHmac("sha256", key).update(`legacy_app\0${token}`).digest("hex");
+        const existing = await this.target.legacySessionCredential.findUnique({ where: { sourceSystem_tokenDigest: { sourceSystem: this.sourceSystem, tokenDigest } } });
+        if (existing && existing.userId !== user.targetId) {
+          await this.recordConflict(runId, "legacy_session", sourceSessionId, "source_token_has_conflicting_member_mapping", { sourceTable: map.table });
+          continue;
+        }
+        const data = { userId: user.targetId, sourceSessionId, sourceVerifiedAt: new Date(), verificationEvidence: map.verificationEvidence, expiresAt, revokedAt: map.revokedAt ? safeDate(row[map.revokedAt]) : null };
+        await this.target.legacySessionCredential.upsert({ where: { sourceSystem_tokenDigest: { sourceSystem: this.sourceSystem, tokenDigest } }, create: { sourceSystem: this.sourceSystem, tokenDigest, ...data }, update: data });
+      }
+    }
+    // Logout by deleting/replacing the source session must not leave an older
+    // imported token valid until the bridge deadline.
+    await this.target.legacySessionCredential.updateMany({
+      where: { sourceSystem: this.sourceSystem, sourceVerifiedAt: { lt: importStartedAt }, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+}
+
+export function rowDigest(row: Record<string, unknown>): string {
+  return createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(row).sort(([a], [b]) => a.localeCompare(b))))).digest("hex");
+}
+
+export function sourceMoneyCents(value: unknown, unit?: string): number | null {
+  const source = String(value ?? "").trim();
+  if (!source || !["cents", "yuan"].includes(unit ?? "") || !/^\d+(?:\.\d{1,2})?$/.test(source)) return null;
+  const [whole, fraction = ""] = source.split(".");
+  if (unit === "cents" && fraction) return null;
+  const cents = unit === "yuan" ? Number(whole) * 100 + Number(fraction.padEnd(2, "0")) : Number(whole);
+  return Number.isSafeInteger(cents) && cents <= 2_147_483_647 ? cents : null;
 }
 
 type MigrationOutcome = "migrated" | "skipped" | "conflicts";
@@ -386,9 +522,9 @@ function nullableText(value: unknown): string | null {
   return result ? result : null;
 }
 
-function compatiblePasswordHash(value: unknown): string | null {
+export function compatiblePasswordHash(value: unknown): string | null {
   const hash = nullableText(value);
-  return hash && /^\$2[aby]\$\d{2}\$/.test(hash) ? hash : null;
+  return hash && /^\$2[aby]\$(?:0[4-9]|1[0-6])\$[./A-Za-z0-9]{53}$/.test(hash) ? hash : null;
 }
 
 function legacyGender(value: unknown): "MALE" | "FEMALE" | "UNSPECIFIED" {

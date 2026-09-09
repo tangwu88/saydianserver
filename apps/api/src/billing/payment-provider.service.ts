@@ -14,11 +14,14 @@ import {
 import { PrismaService } from "../common/prisma.service";
 import { env } from "../common/environment";
 import { safeObject } from "../common/crypto";
+import QRCode from "qrcode";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
 
 type IntentForProvider = {
   id: string;
+  userId?: string;
+  businessType?: string;
   paymentNo: string;
   amountCents: number;
   currency: string;
@@ -41,6 +44,11 @@ export type RefundForProvider = {
 export type ProviderRefundResult = {
   completed: boolean;
   providerRefundId: string | null;
+  amountCents: number;
+  refundNo: string;
+  paymentNo: string;
+  providerTransactionId: string;
+  currency: string | null;
   payload: Record<string, unknown>;
 };
 
@@ -50,6 +58,42 @@ export class PaymentProviderService {
     private readonly prisma: PrismaService,
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
+
+  async identity(channel: PaymentChannel): Promise<{ merchantId: string | null; appId: string | null }> {
+    if (channel === PaymentChannel.APPLE_IAP) return { merchantId: null, appId: null };
+    await this.assertConfigured(channel.startsWith("WECHAT") ? "wechat_pay" : "alipay");
+    if (channel.startsWith("WECHAT")) {
+      const secrets = await this.wechatSecrets();
+      const appId = channel === PaymentChannel.WECHAT_APP ? secrets.appIdApp : channel === PaymentChannel.WECHAT_MINI ? secrets.appIdMini : secrets.appIdOfficial;
+      if (!secrets.merchantId || !appId) throw new ServiceUnavailableException("微信支付商户或应用未配置");
+      return { merchantId: secrets.merchantId, appId };
+    }
+    const secrets = await this.alipaySecrets();
+    if (!secrets.appId) throw new ServiceUnavailableException("支付宝应用未配置");
+    return { merchantId: null, appId: secrets.appId };
+  }
+
+  async assertIdentity(intent: { channel: PaymentChannel; providerMerchantId: string | null; providerAppId: string | null }) {
+    if (intent.channel === PaymentChannel.APPLE_IAP) return;
+    const identity = await this.identity(intent.channel);
+    if (!intent.providerAppId || intent.providerAppId !== identity.appId ||
+      (intent.channel.startsWith("WECHAT") && (!intent.providerMerchantId || intent.providerMerchantId !== identity.merchantId))) {
+      throw new BadRequestException("原交易商户或应用与当前配置未核验一致，禁止重新发起资金请求");
+    }
+  }
+
+  // Also call before reserving a JSAPI PaymentIntent so missing identity does
+  // not leave an order with an un-dispatchable pending relation.
+  async resolveOfficialPayer(userId: string, appId: string): Promise<string> {
+    const identity = await this.prisma.wechatOfficialIdentity.findUnique({
+      where: { userId_appId: { userId, appId } },
+      include: { user: { select: { status: true, mobileVerifiedAt: true } } },
+    });
+    if (!identity || identity.user.status !== "ACTIVE" || !identity.user.mobileVerifiedAt) {
+      throw new BadRequestException("请先在当前公众号中授权并验证手机号");
+    }
+    return identity.openId;
+  }
 
   async create(
     intent: IntentForProvider,
@@ -159,7 +203,7 @@ export class PaymentProviderService {
         ? secrets.appIdMini ?? ""
         : intent.channel === PaymentChannel.WECHAT_APP
           ? secrets.appIdApp ?? ""
-          : secrets.appIdOfficial ?? secrets.appIdMini ?? "";
+          : secrets.appIdOfficial ?? "";
     if (!appId) {
       throw new ServiceUnavailableException("微信支付暂时无法使用，请稍后再试");
     }
@@ -182,10 +226,13 @@ export class PaymentProviderService {
         intent.channel,
       )
     ) {
-      if (!context.wechatOpenId) {
+      const payerOpenId = intent.channel === PaymentChannel.WECHAT_JSAPI
+        ? (intent.userId ? await this.resolveOfficialPayer(intent.userId, appId) : null)
+        : context.wechatOpenId;
+      if (!payerOpenId) {
         throw new BadRequestException("当前账号未绑定微信，不能使用此支付方式");
       }
-      body.payer = { openid: context.wechatOpenId };
+      body.payer = { openid: payerOpenId };
     }
     if (intent.channel === PaymentChannel.WECHAT_H5) {
       body.scene_info = {
@@ -203,10 +250,14 @@ export class PaymentProviderService {
       privateKeyPem,
     });
     if (intent.channel === PaymentChannel.WECHAT_NATIVE) {
-      return { type: "QR", codeUrl: String(result.code_url ?? "") };
+      const codeUrl = String(result.code_url ?? "");
+      assertNativeCodeUrl(codeUrl);
+      return { type: "QR", codeUrl, qrDataUrl: await QRCode.toDataURL(codeUrl, { width: 320, margin: 2 }) };
     }
     if (intent.channel === PaymentChannel.WECHAT_H5) {
-      return { type: "REDIRECT", url: String(result.h5_url ?? "") };
+      const url = trustedPaymentUrl(String(result.h5_url ?? ""), "wechat");
+      if (intent.businessType === "COMMERCE_ORDER") url.searchParams.set("redirect_url", commercePaymentReturnUrl(intent.businessId));
+      return { type: "REDIRECT", url: url.toString() };
     }
     const prepayId = String(result.prepay_id ?? "");
     const timestamp = String(Math.floor(Date.now() / 1_000));
@@ -270,8 +321,9 @@ export class PaymentProviderService {
           `${requiredEnv("PUBLIC_BASE_URL").replace(/\/$/, "")}/api/saydian-app/v2/billing/payments/alipay/notify`,
       ),
       return_url: String(
-        publicConfig.returnUrl ??
-          `${env("STOREFRONT_URL", requiredEnv("PUBLIC_BASE_URL"))}/#/orders`,
+        intent.businessType === "COMMERCE_ORDER"
+          ? commercePaymentReturnUrl(intent.businessId)
+          : publicConfig.returnUrl ?? `${env("STOREFRONT_URL", requiredEnv("PUBLIC_BASE_URL"))}/#/orders`,
       ),
       biz_content: JSON.stringify({
         out_trade_no: intent.paymentNo,
@@ -292,7 +344,7 @@ export class PaymentProviderService {
     }
     return {
       type: "FORM",
-      url: String(publicConfig.gateway ?? "https://openapi.alipay.com/gateway.do"),
+      url: trustedPaymentUrl(String(publicConfig.gateway ?? "https://openapi.alipay.com/gateway.do"), "alipay").toString(),
       method: "POST",
       fields: params,
     };
@@ -350,11 +402,7 @@ export class PaymentProviderService {
       },
       { merchantId, serialNo, privateKeyPem },
     );
-    return {
-      completed: String(payload.status ?? "").toUpperCase() === "SUCCESS",
-      providerRefundId: String(payload.refund_id ?? "").trim() || null,
-      payload,
-    };
+    return parseWechatRefundResponse(payload, refund);
   }
 
   private async refundAlipay(
@@ -413,12 +461,9 @@ export class PaymentProviderService {
     if (!response.ok || String(result.code ?? "") !== "10000") {
       throw new ServiceUnavailableException("支付宝退款暂时无法完成，请稍后再试");
     }
+    const refundResult = parseAlipayRefundResponse(result, refund);
     await markIntegrationVerified(this.prisma, "alipay");
-    return {
-      completed: true,
-      providerRefundId: String(result.trade_no ?? refund.providerTransactionId ?? "").trim() || null,
-      payload: result,
-    };
+    return refundResult;
   }
 
   private async assertConfigured(key: string): Promise<Record<string, unknown>> {
@@ -457,6 +502,10 @@ export class PaymentProviderService {
     body: unknown,
     credentials: { merchantId: string; serialNo: string; privateKeyPem: string },
   ): Promise<Record<string, unknown>> {
+    const responseVerification = await this.wechatSecrets();
+    if (!responseVerification.platformPublicKeyPem || !responseVerification.platformSerialNo) {
+      throw new ServiceUnavailableException("微信响应验签配置缺失，不能发起交易请求");
+    }
     const bodyText = JSON.stringify(body);
     const timestamp = String(Math.floor(Date.now() / 1_000));
     const nonce = randomBytes(16).toString("hex");
@@ -472,13 +521,119 @@ export class PaymentProviderService {
       body: bodyText,
       signal: AbortSignal.timeout(20_000),
     });
-    const result = safeObject(await response.json().catch(() => ({})));
+    const raw = await response.text();
     if (!response.ok) {
       throw new ServiceUnavailableException("微信支付暂时无法使用，请稍后再试");
     }
+    const result = verifyWechatResponse(raw, response.headers, responseVerification.platformPublicKeyPem, responseVerification.platformSerialNo);
     await markIntegrationVerified(this.prisma, "wechat_pay");
     return result;
   }
+}
+
+/** Parses only authenticated provider payloads; never substitutes expected money or transaction IDs. */
+export function parseWechatRefundResponse(payload: Record<string, unknown>, request: RefundForProvider): ProviderRefundResult {
+  const amount = safeObject(payload.amount);
+  const amountCents = providerIntegerCents(amount.refund);
+  const totalCents = providerIntegerCents(amount.total);
+  const refundNo = providerText(payload.out_refund_no, "微信退款请求号");
+  const paymentNo = providerText(payload.out_trade_no, "微信原支付单号");
+  const providerTransactionId = providerText(payload.transaction_id, "微信原渠道交易号");
+  const providerRefundId = providerText(payload.refund_id, "微信渠道退款号");
+  const currency = providerText(amount.currency, "微信退款币种");
+  const status = providerText(payload.status, "微信退款状态");
+  if (!["SUCCESS", "PROCESSING", "CLOSED", "ABNORMAL"].includes(status)) throw new BadRequestException("微信退款响应状态未知，需核对原退款");
+  assertRefundBinding(request, { refundNo, paymentNo, providerTransactionId, amountCents, currency });
+  if (totalCents !== request.totalCents) throw new BadRequestException("微信退款响应原交易金额不一致");
+  return { completed: status === "SUCCESS", amountCents, refundNo, paymentNo, providerTransactionId, providerRefundId, currency, payload };
+}
+
+export function parseAlipayRefundResponse(payload: Record<string, unknown>, request: RefundForProvider): ProviderRefundResult {
+  if (payload.code !== "10000") throw new BadRequestException("支付宝退款响应不是成功结果");
+  const amountCents = providerYuanToCents(payload.refund_fee);
+  const paymentNo = providerText(payload.out_trade_no, "支付宝原支付单号");
+  const providerTransactionId = providerText(payload.trade_no, "支付宝原渠道交易号");
+  // This API may omit out_request_no. Its verified synchronous response is bound
+  // to the exact request sent above; no money or original transaction is inferred.
+  const refundNo = payload.out_request_no === undefined ? request.refundNo : providerText(payload.out_request_no, "支付宝退款请求号");
+  const currency = payload.refund_currency === undefined ? null : providerText(payload.refund_currency, "支付宝退款币种");
+  assertRefundBinding(request, { refundNo, paymentNo, providerTransactionId, amountCents, currency });
+  return { completed: true, amountCents, refundNo, paymentNo, providerTransactionId,
+    providerRefundId: `alipay:${encodeURIComponent(providerTransactionId)}:${encodeURIComponent(refundNo)}`, currency, payload };
+}
+
+function assertRefundBinding(request: RefundForProvider, result: Pick<ProviderRefundResult, "refundNo" | "paymentNo" | "providerTransactionId" | "amountCents" | "currency">) {
+  if (result.refundNo !== request.refundNo || result.paymentNo !== request.paymentNo ||
+    (request.providerTransactionId && result.providerTransactionId !== request.providerTransactionId)) throw new BadRequestException("退款响应与原退款请求或支付交易不匹配");
+  if (result.amountCents !== request.amountCents) throw new BadRequestException("退款响应实际金额不一致");
+  if (result.currency && result.currency !== request.currency) throw new BadRequestException("退款响应币种不一致");
+}
+
+export function trustedPaymentUrl(value: string, provider: "wechat" | "alipay"): URL {
+  try {
+    const url = new URL(value);
+    const hosts = provider === "wechat" ? ["wx.tenpay.com", "payapp.weixin.qq.com"] :
+      ["openapi.alipay.com", "openapi-sandbox.dl.alipaydev.com", "openapi.alipaydev.com"];
+    if (url.protocol !== "https:" || url.username || url.password || url.hash || (url.port && url.port !== "443") ||
+        !hosts.includes(url.hostname) || (provider === "alipay" && url.pathname !== "/gateway.do")) throw new Error("untrusted");
+    return url;
+  } catch { throw new BadRequestException("支付渠道返回了不可信的跳转地址"); }
+}
+
+export function commercePaymentReturnUrl(orderId: string): string {
+  try {
+    const url = new URL(env("COMMERCE_STOREFRONT_URL", ""));
+    const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if (url.username || url.password || (url.protocol !== "https:" &&
+        !(process.env.NODE_ENV !== "production" && local && url.protocol === "http:"))) throw new Error("untrusted");
+    url.pathname = "/saidian-mall/";
+    url.search = "";
+    url.hash = `/pages/order-detail/index?id=${encodeURIComponent(orderId)}`;
+    return url.toString();
+  } catch { throw new ServiceUnavailableException("商城支付返回地址未配置"); }
+}
+
+function assertNativeCodeUrl(value: string): void {
+  try {
+    const url = new URL(value);
+    if (value.length > 2048 || url.protocol !== "weixin:" || url.hostname !== "wxpay" ||
+        url.pathname !== "/bizpayurl" || url.username || url.password || url.hash) throw new Error("untrusted");
+  } catch { throw new BadRequestException("微信支付二维码内容无效"); }
+}
+
+function providerText(value: unknown, label: string) {
+  if (typeof value !== "string" || !value || value !== value.trim() || value.length > 256 || /\s/.test(value)) throw new BadRequestException(`${label}缺失或格式无效`);
+  return value;
+}
+
+function providerIntegerCents(value: unknown) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new BadRequestException("供应商退款金额缺失或不是正整数分");
+  return value;
+}
+
+function providerYuanToCents(value: unknown) {
+  if (typeof value !== "string" || !/^\d{1,12}(?:\.\d{1,2})?$/.test(value)) throw new BadRequestException("支付宝实际退款金额缺失或格式无效");
+  const [yuan, decimal = ""] = value.split(".");
+  const cents = BigInt(yuan!) * 100n + BigInt(decimal.padEnd(2, "0"));
+  if (cents <= 0 || cents > BigInt(Number.MAX_SAFE_INTEGER)) throw new BadRequestException("支付宝实际退款金额超出范围");
+  return Number(cents);
+}
+
+export function verifyWechatResponse(raw: string, headers: Headers, publicKey: string, serialNo: string): Record<string, unknown> {
+  const verifiedHeaders = validateWechatNotificationHeaders({
+    "wechatpay-timestamp": headers.get("Wechatpay-Timestamp") ?? undefined,
+    "wechatpay-nonce": headers.get("Wechatpay-Nonce") ?? undefined,
+    "wechatpay-signature": headers.get("Wechatpay-Signature") ?? undefined,
+    "wechatpay-serial": headers.get("Wechatpay-Serial") ?? undefined,
+  }, serialNo);
+  const verifier = createVerify("RSA-SHA256");
+  verifier.update(`${verifiedHeaders.timestamp}\n${verifiedHeaders.nonce}\n${raw}\n`);
+  if (!verifier.verify(publicKey, verifiedHeaders.signature, "base64")) throw new BadRequestException("微信交易响应签名验证失败");
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not object");
+    return parsed as Record<string, unknown>;
+  } catch { throw new BadRequestException("微信交易响应JSON无效"); }
 }
 
 function requiredEnv(name: string): string {

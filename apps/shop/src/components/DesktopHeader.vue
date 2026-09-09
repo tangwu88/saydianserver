@@ -1,61 +1,11 @@
-<template>
-  <view class="desktop-header"
-    ><view class="head-inner"
-      ><view class="brand" @click="go('/')"
-        ><image
-          class="brand-logo"
-          src="https://www.saydian.cn/pic/logo.png"
-          mode="aspectFit"
-        /></view
-      ><view class="head-links category-links"
-        ><text class="active" @click="go('/')">首页</text
-        ><text @click="goCategory">智能戒指</text
-        ><text @click="goCategory">智能手表</text
-        ><text @click="goCategory">智能手环</text
-        ><text @click="goCategory">配件</text></view
-      ><view class="desktop-search" @click="go('/pages/search/index')"
-        >搜索智能手表、手环、智能戒指</view
-      ><view class="head-links account-links"
-        ><text @click="go('/pages/profile/index')">我的账户</text
-        ><text @click="go('/pages/cart/index')">购物车</text></view
-      ></view
-    ></view
-  >
-</template>
+<template><view class="desktop-header"><view class="head-inner">
+  <button class="brand" aria-label="赛电商城首页" @click="go('/pages/home/index')"><image class="brand-logo" :src="brandLogo" mode="aspectFit" /></button>
+  <view class="head-links category-links"><button @click="go('/pages/home/index')">首页</button><button @click="go('/pages/category/index')">产品中心</button><button @click="go('/pages/help/index')">帮助与服务</button></view>
+  <button class="desktop-search" @click="go('/pages/search/index')">搜索商品</button>
+  <view class="head-links"><button @click="go('/pages/profile/index')">我的账户</button><button @click="go('/pages/cart/index')">购物车</button></view>
+</view></view></template>
 <script setup lang="ts">
-function go(url: string) {
-  const tabPages: Record<string, string> = {
-    "/": "/pages/home/index",
-    "/pages/cart/index": "/pages/cart/index",
-    "/pages/profile/index": "/pages/profile/index",
-  };
-  if (tabPages[url]) uni.switchTab({ url: tabPages[url] });
-  else uni.navigateTo({ url });
-}
-function goCategory() {
-  uni.switchTab({ url: "/pages/category/index" });
-}
+import { brandLogo } from "../storefront";
+function go(url: string) { if (/^\/pages\/(home|category|cart|profile)\/index$/.test(url)) uni.switchTab({ url }); else uni.navigateTo({ url }); }
 </script>
-<style scoped lang="scss">
-.category-links {
-  gap: 30px;
-  white-space: nowrap;
-}
-.category-links text {
-  height: 78px;
-  display: flex;
-  align-items: center;
-  border-bottom: 3px solid transparent;
-}
-.category-links text.active {
-  border-color: #1195ff;
-}
-.account-links {
-  white-space: nowrap;
-}
-@media (max-width: 1180px) {
-  .category-links {
-    display: none;
-  }
-}
-</style>
+<style scoped>.brand,.head-links button { background:transparent;margin:0;padding:0;color:inherit;line-height:44px;font-size:16px;border-radius:0; }.brand::after,.head-links button::after {border:0}.head-links button:hover {color:var(--green)}.desktop-search {margin:0;justify-content:flex-start;font-size:14px;}@media(max-width:1100px){.category-links {display:none}}</style>

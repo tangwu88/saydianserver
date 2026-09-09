@@ -32,6 +32,7 @@ const items = ref<any[]>([]),
 onLoad((o) => (selectMode.value = o?.select === "1"));
 onShow(load);
 async function load() {
+  items.value = [];
   try {
     items.value = await api("/storefront/addresses", { auth: true });
   } catch (e) {
@@ -42,6 +43,7 @@ function edit(id: string) {
   uni.navigateTo({ url: `/pages/address-edit/index${id ? `?id=${id}` : ""}` });
 }
 async function remove(id: string) {
+  const answer=await uni.showModal({title:'删除收货地址',content:'确认删除这个收货地址？'});if(!answer.confirm)return;
   try {
     await api(`/storefront/addresses/${id}`, { method: "DELETE", auth: true });
     await load();

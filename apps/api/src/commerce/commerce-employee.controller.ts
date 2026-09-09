@@ -19,6 +19,7 @@ import { RawResponse } from "../common/raw-response.decorator";
 import { safeObject } from "../common/crypto";
 import { EmployeeAuthGuard } from "./employee-auth.guard";
 import { EmployeePromotionService } from "./employee-promotion.service";
+import type { EmployeeDashboardQuery } from "./employee-dashboard-query";
 
 @ApiTags("commerce-employee-compatibility")
 @Controller("api/saidian-mall/v1")
@@ -40,10 +41,9 @@ export class CommerceEmployeeController {
   @UseGuards(EmployeeAuthGuard)
   dashboard(
     @CurrentEmployee() employee: AuthenticatedEmployee,
-    @Query("from") from?: string,
-    @Query("to") to?: string,
+    @Query() query: EmployeeDashboardQuery,
   ) {
-    return this.employees.dashboard(employee.id, from, to);
+    return this.employees.dashboard(employee.id, query);
   }
 
   @Get("wecom/me/promotion")

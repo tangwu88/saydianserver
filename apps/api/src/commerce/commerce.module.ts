@@ -8,6 +8,8 @@ import { CommerceCompatibilityController } from "./commerce-compat.controller";
 import { CommerceEmployeeController } from "./commerce-employee.controller";
 import { EmployeeAuthGuard } from "./employee-auth.guard";
 import { EmployeePromotionService } from "./employee-promotion.service";
+import { CommerceCapabilitiesService } from "./commerce-capabilities.service";
+import { CommerceWithdrawalService } from "./commerce-withdrawal.service";
 
 @Module({
   imports: [AuthModule, BillingModule],
@@ -20,7 +22,9 @@ import { EmployeePromotionService } from "./employee-promotion.service";
     CommerceService,
     CommerceStoreService,
     EmployeePromotionService,
+    CommerceWithdrawalService,
     EmployeeAuthGuard,
+    CommerceCapabilitiesService,
   ],
   exports: [CommerceService],
 })

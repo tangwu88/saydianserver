@@ -38,9 +38,9 @@
           >商品说明、库存、订单与售后进度均以商城页面为准。</text
         ><view class="service-grid"
           ><view><b>正品</b><text class="small">官方商城</text></view
-          ><view><b>支付</b><text class="small">微信/支付宝</text></view
+          ><view><b>支付</b><text class="small">以已开通渠道为准</text></view
           ><view><b>售后</b><text class="small">全程可查</text></view></view
-        ></view
+        ><button v-if="user" class="outline-btn" @click="logout">退出顾客账号</button></view
       ></view
     ></view
   >
@@ -51,11 +51,13 @@ import { onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import StoreFooter from "../../components/StoreFooter.vue";
+import { clearMallSession, toast } from "../../api";
 const user = ref<any>();
 const menus = [
   { icon: "地", label: "收货地址", url: "/pages/addresses/index" },
   { icon: "藏", label: "我的收藏", url: "/pages/favorites/index" },
   { icon: "券", label: "优惠券", url: "/pages/coupons/index" },
+  { icon: "分", label: "积分与流水", url: "/pages/points/index" },
   { icon: "票", label: "发票信息", url: "/pages/help/index?section=invoice" },
   { icon: "服", label: "客服与帮助", url: "/pages/help/index" },
   { icon: "推", label: "员工推广中心", url: "/pages/employee/index" },
@@ -65,6 +67,14 @@ onShow(() => {
 });
 function go(url: string) {
   uni.navigateTo({ url });
+}
+async function logout() {
+  const answer = await uni.showModal({title:'退出顾客账号',content:'本地购物与个人缓存将清理，订单和积分保留在服务端。员工身份不受影响。'});
+  if (!answer.confirm) return;
+  try {
+    await clearMallSession(); user.value = null;
+    uni.reLaunch({url:'/pages/profile/index'});
+  } catch (error) { toast(error); }
 }
 </script>
 <style scoped lang="scss">
@@ -80,14 +90,15 @@ function go(url: string) {
   display: flex;
   align-items: center;
   gap: 20rpx;
-  background: linear-gradient(135deg, #153f39, #287d6c);
+  background: #005bad;
   color: #fff;
 }
 .avatar {
   width: 100rpx;
   height: 100rpx;
   border-radius: 50%;
-  background: #ddbb80;
+  background: #ffffff;
+  color: #be092d;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -156,7 +167,7 @@ function go(url: string) {
   color: #a7b0ad;
 }
 .member {
-  background: linear-gradient(145deg, #f7f2e8, #fff);
+  background: #fff;
 }
 .member > text {
   display: block;

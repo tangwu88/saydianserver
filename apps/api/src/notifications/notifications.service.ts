@@ -116,12 +116,19 @@ export class NotificationsService {
   }
 
   async list(userId: string, pageInput = 1, pageSizeInput = 30) {
-    const page = Math.max(Number(pageInput) || 1, 1);
-    const pageSize = Math.min(Math.max(Number(pageSizeInput) || 30, 1), 100);
+    if (!Number.isSafeInteger(Number(pageInput)) || Number(pageInput) < 1
+      || !Number.isSafeInteger(Number(pageSizeInput)) || Number(pageSizeInput) < 1) {
+      throw new BadRequestException("分页参数必须为正整数");
+    }
+    const page = Number(pageInput);
+    const pageSize = Math.min(Number(pageSizeInput), 100);
+    if (!Number.isSafeInteger((page - 1) * pageSize)) {
+      throw new BadRequestException("分页参数超出范围");
+    }
     const [items, total] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
         where: { userId },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

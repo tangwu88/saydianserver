@@ -8,6 +8,7 @@ import { BillingService } from "../billing/billing.service";
 import { isUuid, safeObject } from "../common/crypto";
 import { PrismaService } from "../common/prisma.service";
 import { CommerceStoreService } from "./commerce-store.service";
+import { integerCents, pointFaceValueCents } from "./commerce-policy";
 
 @Injectable()
 export class CommerceService {
@@ -51,14 +52,19 @@ export class CommerceService {
   ) {
     const body = safeObject(input);
     const url = parsePath(path);
-    const pathname = url.pathname;
+    let pathname = url.pathname;
     const orderPath = /^\/orders\/([^/?]+)(?:\/|$)/.exec(pathname);
     const orderId = orderPath?.[1]
       ? decodeURIComponent(orderPath[1])
       : pathname === "/payments"
         ? String(body.orderId ?? body.order_id ?? "")
         : "";
-    if (method !== "GET" && orderId) {
+    if (orderId) {
+      const canonical = await this.resolveCanonicalOrder(userId, orderId);
+      if (canonical) {
+        if (pathname === "/payments") body.orderId = canonical.id;
+        else pathname = pathname.replace(/^\/orders\/[^/]+/, `/orders/${canonical.id}`);
+      } else if (method !== "GET") {
       const legacy = await this.prisma.legacyOrderProjection.findFirst({
         where: {
           userId,
@@ -66,7 +72,8 @@ export class CommerceService {
         },
         select: { id: true },
       });
-      if (legacy) throw new ConflictException("历史订单仅供查看，不能重复操作");
+      if (legacy) throw new ConflictException("该订单尚未完成明细及资金迁移核验，请稍后重试");
+      }
     }
     if (pathname === "/cart" && method === "GET") return this.store.cart(userId);
     if (pathname === "/cart/items" && method === "POST") {
@@ -75,6 +82,7 @@ export class CommerceService {
         String(body.skuId ?? body.sku_id ?? ""),
         Number(body.quantity ?? body.num ?? 1),
         body.selected !== false,
+        body.mode === "increment" ? "increment" : "set",
       );
     }
     const cartItem = /^\/cart\/items\/([^/]+)$/.exec(pathname);
@@ -117,6 +125,12 @@ export class CommerceService {
     if (cancel?.[1] && method === "POST") {
       return this.store.cancelOrder(userId, decodeURIComponent(cancel[1]));
     }
+    const returnLogistics = /^\/orders\/([^/]+)\/after-sales\/([^/]+)\/return-logistics$/.exec(pathname);
+    if (returnLogistics?.[1] && returnLogistics[2] && method === "POST") {
+      return this.store.submitReturnLogistics(userId, decodeURIComponent(returnLogistics[1]), decodeURIComponent(returnLogistics[2]), body);
+    }
+    const previewAfterSale = /^\/orders\/([^/]+)\/after-sales\/preview$/.exec(pathname);
+    if (previewAfterSale?.[1] && method === "POST") return this.store.afterSaleQuote(userId, decodeURIComponent(previewAfterSale[1]), body);
     const afterSale = /^\/orders\/([^/]+)\/after-sales$/.exec(pathname);
     if (afterSale?.[1] && method === "POST") {
       return this.store.createAfterSale(userId, decodeURIComponent(afterSale[1]), body);
@@ -153,6 +167,17 @@ export class CommerceService {
     throw new NotFoundException("商城功能不存在或已调整");
   }
 
+  async points(userId: string, page = 1) {
+    if (!Number.isInteger(page) || page < 1 || page > 100000) throw new BadRequestException("页码不正确");
+    const pageSize = 20;
+    const [account, items, total] = await this.prisma.$transaction([
+      this.prisma.commercePointAccount.findUnique({ where: { userId }, select: { balanceCents: true, updatedAt: true } }),
+      this.prisma.commercePointLedger.findMany({ where: { userId }, select: { id: true, deltaCents: true, type: true, orderId: true, createdAt: true }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize }),
+      this.prisma.commercePointLedger.count({ where: { userId } }),
+    ]);
+    return { balanceCents: account?.balanceCents ?? null, verified: !!account, reason: account ? null : "积分账户尚未核验", items, pagination: { page, pageSize, total, hasMore: page * pageSize < total } };
+  }
+
   async orders(userId: string, status?: string) {
     const [current, legacy] = await Promise.all([
       this.store.listOrders(userId, status),
@@ -163,7 +188,7 @@ export class CommerceService {
     ]);
     return [
       ...current.map((item) => ({ ...item, readOnly: false, source: "commerce" })),
-      ...legacy.map((item) => ({
+      ...legacy.filter((item) => !current.some((order) => order.orderNo === item.orderNo || order.legacyId === item.legacyOrderId)).map((item) => ({
         id: item.id,
         legacyOrderId: item.legacyOrderId,
         orderNo: item.orderNo,
@@ -181,6 +206,9 @@ export class CommerceService {
   }
 
   async orderDetail(userId: string, id: string) {
+    const canonical = await this.resolveCanonicalOrder(userId, id);
+    if (canonical) return { ...(await this.store.order(userId, canonical.id)),
+      readOnly: canonical.executionOwner !== "NEW_SYSTEM", source: canonical.sourceSystem };
     const legacy = await this.prisma.legacyOrderProjection.findFirst({
       where: {
         userId,
@@ -206,6 +234,21 @@ export class CommerceService {
       readOnly: false,
       source: "commerce",
     };
+  }
+
+  private async resolveCanonicalOrder(userId: string, id: string) {
+    const direct = await this.prisma.commerceOrder.findFirst({ where: { userId,
+      OR: [...(isUuid(id) ? [{ id }] : []), { legacyId: id }, { orderNo: id }],
+    } });
+    if (direct) return direct;
+    const maps = await this.prisma.legacyIdMap.findMany({ where: {
+      entityType: "mall_order", legacyId: id, sourceSystem: { in: ["legacy_mall", "legacy_app"] },
+    } });
+    const targets = [...new Set(maps.map((map) => map.targetId))].filter(isUuid);
+    if (!targets.length) return null;
+    const orders = await this.prisma.commerceOrder.findMany({ where: { id: { in: targets }, userId } });
+    if (orders.length > 1) throw new ConflictException("旧订单编号在多个来源重复，请先核验订单映射");
+    return orders[0] ?? null;
   }
 
   setFavorite(userId: string, productId: string, enabled: boolean) {
@@ -247,6 +290,7 @@ function normalizeOrderInput(body: Record<string, unknown>, mode: "preview" | "c
   return {
     addressId,
     items,
+    pointCents: body.point !== undefined ? pointFaceValueCents(body.point) : integerCents(body.pointCents ?? 0, "积分抵扣"),
     ...(body.couponClaimId
       ? { couponClaimId: String(body.couponClaimId) }
       : {}),

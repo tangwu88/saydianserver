@@ -3,7 +3,7 @@ import {
   PrismaClient,
   type OutboxEvent,
 } from "@prisma/client";
-import { buildSafePushPayload } from "@saydian/app-contracts";
+import { buildSafePushPayload, shouldPauseWorkers } from "@saydian/app-contracts";
 import Redis from "ioredis";
 import type { AccountDeletionWorker } from "./account-deletion-worker";
 import type { PushProvider } from "./push-provider";
@@ -35,7 +35,6 @@ export class OutboxWorker {
   }
 
   async run(): Promise<void> {
-    await this.recoverStaleClaims();
     while (!this.stopping) {
       const processed = await this.runOnce();
       if (!processed) await delay(1000);
@@ -43,6 +42,8 @@ export class OutboxWorker {
   }
 
   async runOnce(): Promise<boolean> {
+    if (shouldPauseWorkers(process.env)) return false;
+    await this.recoverStaleClaims();
     const deletionProcessed = await this.accountDeletions?.runOnce();
     const commerceProcessed = await this.commerceJobs?.runOnce();
     const candidates = await this.prisma.outboxEvent.findMany({
@@ -56,7 +57,10 @@ export class OutboxWorker {
     if (candidates.length === 0) {
       return Boolean(deletionProcessed || commerceProcessed);
     }
-    for (const event of candidates) await this.claimAndProcess(event);
+    for (const event of candidates) {
+      if (shouldPauseWorkers(process.env)) break;
+      await this.claimAndProcess(event);
+    }
     return true;
   }
 

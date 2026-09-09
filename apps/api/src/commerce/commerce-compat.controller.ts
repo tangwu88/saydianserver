@@ -16,6 +16,9 @@ import {
 import { ApiTags } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import { AuthService } from "../auth/auth.service";
+import { WechatH5AuthService } from "../auth/wechat-h5-auth.service";
+import { CommerceCapabilitiesService } from "./commerce-capabilities.service";
+import { Throttle } from "@nestjs/throttler";
 import { BillingService } from "../billing/billing.service";
 import { safeObject } from "../common/crypto";
 import { RawResponse } from "../common/raw-response.decorator";
@@ -41,12 +44,55 @@ export class CommerceCompatibilityController {
     private readonly auth: AuthService,
     private readonly commerce: CommerceService,
     private readonly billing: BillingService,
+    private readonly wechatH5: WechatH5AuthService,
+    private readonly capabilities: CommerceCapabilitiesService,
   ) {}
+
+  @Post("auth/password/login")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  loginPassword(@Body() input: unknown) {
+    const body = safeObject(input);
+    return this.auth.loginForMall(String(body.mobile ?? ""), String(body.password ?? ""),
+      body.referralCode ? String(body.referralCode) : undefined);
+  }
+
+  @Post("auth/wechat/h5/authorize-url")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  authorizeWechatH5(@Body() input: unknown) {
+    const body = safeObject(input);
+    return this.wechatH5.authorize({ returnTo: String(body.returnTo ?? "/"), codeChallenge: String(body.codeChallenge ?? ""),
+      ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}) });
+  }
+
+  @Post("auth/wechat/h5/login")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  loginWechatH5(@Body() input: unknown) {
+    const body = safeObject(input);
+    return this.wechatH5.login({ code: String(body.code ?? ""), state: String(body.state ?? ""),
+      codeVerifier: String(body.codeVerifier ?? ""), consentVersion: String(body.consentVersion ?? "") });
+  }
+
+  @Post("auth/wechat/h5/bind-mobile")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  bindWechatH5Mobile(@Body() input: unknown) {
+    const body = safeObject(input);
+    return this.wechatH5.bindMobile({ bindTicket: String(body.bindTicket ?? ""), mobile: String(body.mobile ?? ""),
+      code: String(body.code ?? ""), consentVersion: String(body.consentVersion ?? "") });
+  }
+
+  @Get("storefront/capabilities")
+  storefrontCapabilities() { return this.capabilities.publicCapabilities(); }
+
+  @Get("payments/:id")
+  @UseGuards(UserAuthGuard)
+  payment(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.billing.payment(user.id, id);
+  }
 
   @Post("auth/sms/request")
   async requestSms(@Body() input: unknown) {
     const body = safeObject(input);
-    const result = await this.auth.requestSmsCode(String(body.mobile ?? ""), "login");
+    const result = await this.auth.requestSmsCode(String(body.mobile ?? ""), body.usage === "bind_mobile" ? "bind_mobile" : "login");
     return { configured: true, ...result };
   }
 
@@ -93,9 +139,10 @@ export class CommerceCompatibilityController {
   }
 
   @Get("storefront/bootstrap")
-  bootstrap(@Query("ref") referralCode?: string) {
+  async bootstrap(@Query("ref") referralCode?: string) {
     const suffix = referralCode ? `?referralCode=${encodeURIComponent(referralCode)}` : "";
-    return this.commerce.publicGet(`/storefront/bootstrap${suffix}`);
+    const [storefront, capabilities] = await Promise.all([this.commerce.publicGet(`/storefront/bootstrap${suffix}`), this.capabilities.publicCapabilities()]);
+    return { ...storefront, capabilities };
   }
 
   @Get("storefront/products")
@@ -265,6 +312,25 @@ export class CommerceCompatibilityController {
       `/orders/${encodeURIComponent(id)}/after-sales`,
       input,
     );
+  }
+
+  @Post("storefront/orders/:id/after-sales/:saleId/return-logistics")
+  @HttpCode(200)
+  @UseGuards(UserAuthGuard)
+  returnLogistics(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Param("saleId") saleId: string, @Body() input: unknown) {
+    return this.commerce.forUser(user.id, "POST", `/orders/${encodeURIComponent(id)}/after-sales/${encodeURIComponent(saleId)}/return-logistics`, input);
+  }
+
+  @Post("storefront/orders/:id/after-sales/preview")
+  @UseGuards(UserAuthGuard)
+  previewAfterSale(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() input: unknown) {
+    return this.commerce.forUser(user.id, "POST", `/orders/${encodeURIComponent(id)}/after-sales/preview`, input);
+  }
+
+  @Get("storefront/points")
+  @UseGuards(UserAuthGuard)
+  points(@CurrentUser() user: AuthenticatedUser, @Query("page") page?: string) {
+    return this.commerce.points(user.id, Number(page ?? 1));
   }
 
   @Get("storefront/orders/:id/logistics")

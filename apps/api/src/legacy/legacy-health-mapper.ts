@@ -26,8 +26,15 @@ export function legacyDailyToCanonical(
         )
       )
         return;
+      // Preserve the pre-normalization fingerprint so a retried old upload does not duplicate sleep.
+      const fingerprintValues = { ...values };
+      if (metric === "sleep" && "minutes" in fingerprintValues) {
+        const { minutes, ...other } = fingerprintValues;
+        Object.keys(fingerprintValues).forEach((key) => delete fingerprintValues[key]);
+        Object.assign(fingerprintValues, { value: minutes, ...other });
+      }
       records.push({
-        id: `${sourceId}-${sha256(JSON.stringify([base.observedAt, metric, values])).slice(0, 40)}`,
+        id: `${sourceId}-${sha256(JSON.stringify([base.observedAt, metric, fingerprintValues])).slice(0, 40)}`,
         metric,
         ...base,
         values,
@@ -78,7 +85,7 @@ export function legacyDailyToCanonical(
       add(
         "sleep",
         {
-          value: numericOrNull(sleep.allSleepTime),
+          minutes: numericOrNull(sleep.allSleepTime),
           deepMinutes: numericOrNull(sleep.deepSleepTime),
           lightMinutes: numericOrNull(sleep.lowSleepTime),
           wakeCount: numericOrNull(sleep.wakeCount),
@@ -155,7 +162,7 @@ export function canonicalToLegacyDaily(rows: Array<Record<string, unknown>>) {
       row.HRVData = [values.value];
     } else if (metric === "sleep") {
       row.sleepData = {
-        allSleepTime: values.value,
+        allSleepTime: values.minutes ?? values.durationMinutes ?? values.value ?? null,
         deepSleepTime: values.deepMinutes,
         lowSleepTime: values.lightMinutes,
         wakeCount: values.wakeCount,
@@ -168,6 +175,39 @@ export function canonicalToLegacyDaily(rows: Array<Record<string, unknown>>) {
   return [...grouped.entries()]
     .sort(([a], [b]) => b.localeCompare(a))
     .flatMap(([, entries]) => entries.map((entry) => entry.row));
+}
+
+const compositionAliases = {
+  body_composition: {
+    BMI: "bmi", bodyFatRate: "bodyFatPercent", fatRate: "fatMass", FFM: "fatFreeMass",
+    bodyWater: "bodyWaterRate", waterContent: "waterMass", proteinProportion: "proteinRate",
+  },
+  blood_composition: {
+    uricAcidVal: "uricAcid", cholesterol: "totalCholesterol", triacylglycerol: "triglycerides",
+    highDensity: "highDensityLipoprotein", lowDensity: "lowDensityLipoprotein",
+  },
+} as const;
+
+export function legacyCompositionToCanonical(
+  metric: keyof typeof compositionAliases,
+  input: Record<string, number | string | boolean | null>,
+): Record<string, number | string | boolean | null> {
+  const result = { ...input };
+  for (const [oldKey, key] of Object.entries(compositionAliases[metric])) {
+    if (oldKey in result) {
+      if (!(key in result)) result[key] = numericOrNull(result[oldKey]);
+      delete result[oldKey];
+    }
+  }
+  return result;
+}
+
+export function canonicalToLegacyComposition(metric: keyof typeof compositionAliases, input: unknown) {
+  const result = { ...safeObject(input) };
+  for (const [oldKey, key] of Object.entries(compositionAliases[metric])) {
+    if (key in result) result[oldKey] = result[key];
+  }
+  return result;
 }
 
 export function numericOrNull(value: unknown): number | null {

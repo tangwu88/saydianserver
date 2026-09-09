@@ -1,98 +1,14 @@
-<template>
-  <view class="page"
-    ><view class="container card"
-      ><view class="section-title">申请售后</view
-      ><view class="field"
-        ><text>售后类型</text
-        ><picker
-          :range="types.map((x) => x.label)"
-          @change="changeType"
-          ><view
-            >{{ types.find((x) => x.value === type)?.label }} ›</view
-          ></picker
-        ></view
-      ><view class="field"
-        ><text>申请金额</text
-        ><input
-          v-model="amount"
-          type="digit"
-          placeholder="按实际可退金额填写" /></view
-      ><view class="field"
-        ><text>售后原因</text
-        ><input v-model="reason" placeholder="请简要说明原因" /></view
-      ><textarea
-        v-model="description"
-        class="textarea"
-        placeholder="补充问题描述（选填）"
-      /><view class="tip"
-        >申请将同步至聚水潭 ERP，退款在售后状态满足条件后原路退回。</view
-      ><view class="primary-btn" @click="submit">提交申请</view></view
-    ></view
-  >
-</template>
+<template><DesktopHeader/><view class="page"><view class="container card form"><h2>申请商品售后</h2><view v-if="error" class="notice">{{ error }}</view><template v-if="order"><view class="muted">选择商品与数量，现金退款和积分返还将根据原订单分摊计算。</view><view v-for="item in lines" :key="item.id" class="item"><b>{{ item.nameSnapshot }}</b><view class="muted">{{ item.specificationSnapshot }}</view><view v-if="item.available.quantityRemaining" class="quantity"><text>剩余可申请 {{ item.available.quantityRemaining }} 件</text><button size="mini" :disabled="busy || item.quantity===0" @click="change(item,-1)">−</button><text>{{ item.quantity }}</text><button size="mini" :disabled="busy || item.quantity>=item.available.quantityRemaining" @click="change(item,1)">＋</button></view><text v-else class="muted">{{ item.available.unavailableReason || '暂无可申请数量' }}</text></view>
+<picker :range="types.map(x=>x.label)" :value="typeIndex" @change="typeIndex=Number($event.detail.value);preview()"><view class="field">售后类型 <b>{{ types[typeIndex]?.label }} ›</b></view></picker><view class="field"><text>售后原因</text><input v-model="reason" maxlength="200" placeholder="请说明具体原因"/></view><textarea v-model="description" class="textarea" maxlength="2000" placeholder="补充问题描述（选填）"/>
+<view v-if="quote" class="summary"><view>现金商品退款 <b>{{ money(quote.merchandiseRefundCents) }}</b></view><view>运费退款 <b>{{ money(quote.shippingRefundCents) }}</b></view><view>积分返还（抵扣金额） <b>{{ money(quote.pointReturnCents) }}</b></view><view>现金退款合计 <b>{{ money(quote.requestedCents) }}</b></view></view><view class="muted note">部分退款默认不退运费。积分在现金退款确认成功后返还；纯积分商品经售后审核后返还，不发起零元渠道退款。换货不退款或返积分。</view><button class="primary-btn" :disabled="busy || !quote || !reason.trim()" @click="submit">{{ busy?'正在处理…':'确认提交申请' }}</button></template><view v-else-if="!error">正在加载订单…</view></view></view></template>
 <script setup lang="ts">
-import { onLoad } from "@dcloudio/uni-app";
-import { ref } from "vue";
-import { api, toast } from "../../api";
-const types = [
-    { label: "仅退款", value: "REFUND_ONLY" },
-    { label: "退货退款", value: "RETURN_REFUND" },
-    { label: "换货", value: "EXCHANGE" },
-  ],
-  type = ref("REFUND_ONLY"),
-  amount = ref(""),
-  reason = ref(""),
-  description = ref(""),
-  orderId = ref("");
-onLoad((o) => (orderId.value = o?.orderId || ""));
-function changeType(event: { detail: { value: string | number } }) {
-  const selected = types[Number(event.detail.value)];
-  if (selected) type.value = selected.value;
-}
-async function submit() {
-  if (!reason.value) return toast("请填写售后原因");
-  try {
-    await api(`/storefront/orders/${orderId.value}/after-sales`, {
-      method: "POST",
-      auth: true,
-      data: {
-        type: type.value,
-        requestedCents: amount.value
-          ? Math.round(Number(amount.value) * 100)
-          : undefined,
-        reason: reason.value,
-        description: description.value,
-        evidenceImages: [],
-      },
-    });
-    uni.showToast({ title: "申请已提交" });
-    setTimeout(() => uni.navigateBack(), 800);
-  } catch (e) {
-    toast(e);
-  }
-}
+import { onLoad } from '@dcloudio/uni-app';import { ref } from 'vue';import DesktopHeader from '../../components/DesktopHeader.vue';import { api,money,toast } from '../../api';
+const types=[{label:'仅退款',value:'REFUND_ONLY'},{label:'退货退款',value:'RETURN_REFUND'},{label:'换货',value:'EXCHANGE'}];
+const id=ref(''),order=ref<any>(),lines=ref<any[]>([]),typeIndex=ref(0),quote=ref<any>(),reason=ref(''),description=ref(''),busy=ref(false),error=ref('');let revision=0;
+onLoad(async o=>{id.value=String(o?.orderId||'');try{order.value=await api('/storefront/orders/'+encodeURIComponent(id.value),{auth:true});lines.value=order.value.items.map((item:any)=>({...item,quantity:0,available:order.value.afterSaleEligibleItems?.find((x:any)=>x.orderItemId===item.id)||{quantityRemaining:0,unavailableReason:order.value.unavailableReason||'当前不可申请'}}));}catch(e){error.value=e instanceof Error?e.message:String(e);}});
+const input=()=>({type:types[typeIndex.value]!.value,items:lines.value.filter(x=>x.quantity>0).map(x=>({orderItemId:x.id,quantity:x.quantity}))});
+function change(item:any,amount:number){item.quantity=Math.max(0,Math.min(item.available.quantityRemaining,item.quantity+amount));void preview();}
+async function preview(){const current=++revision;quote.value=null;error.value='';if(!input().items.length)return;try{const result=await api('/storefront/orders/'+id.value+'/after-sales/preview',{method:'POST',auth:true,data:input()});if(current===revision)quote.value=result;}catch(e){if(current===revision)error.value=e instanceof Error?e.message:String(e);}}
+async function submit(){if(busy.value||!quote.value)return;busy.value=true;try{await preview();if(!quote.value)return;await api('/storefront/orders/'+id.value+'/after-sales',{method:'POST',auth:true,data:{...input(),orderVersion:quote.value.orderVersion,requestedCents:quote.value.requestedCents,reason:reason.value.trim(),description:description.value,evidenceImages:[]}});uni.redirectTo({url:'/pages/order-detail/index?id='+encodeURIComponent(id.value)});}catch(e){toast(e);await preview();}finally{busy.value=false;}}
 </script>
-<style scoped lang="scss">
-.field {
-  min-height: 96rpx;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--line);
-}
-.field input,
-.field picker {
-  flex: 1;
-  text-align: right;
-  margin-left: 28rpx;
-}
-.textarea {
-  margin-top: 24rpx;
-}
-.tip {
-  margin: 24rpx 0;
-  color: var(--muted);
-  font-size: 23rpx;
-  line-height: 1.7;
-}
-</style>
+<style scoped>.form{max-width:760px}.form h2{margin:0 0 20px}.muted{font-size:14px;line-height:1.7}.item{padding:20px 0;border-bottom:1px solid var(--line)}.quantity{display:flex;align-items:center;gap:12px;margin-top:12px;font-size:14px}.quantity button{margin:0}.quantity>text:first-child{flex:1}.field{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:60px;border-bottom:1px solid var(--line);font-size:15px}.field input{flex:1;text-align:right}.textarea{margin-top:18px}.summary{padding:16px;background:#f4f8fc;margin-top:20px}.summary view{display:flex;justify-content:space-between;margin:12px 0;font-size:15px}.note{margin:20px 0}.notice{color:#a82435;padding:12px;background:#fff4f5;margin:12px 0}</style>

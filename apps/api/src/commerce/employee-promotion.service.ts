@@ -20,6 +20,8 @@ import { randomToken, safeObject, sha256 } from "../common/crypto";
 import { PrismaService } from "../common/prisma.service";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
+import { CommerceWithdrawalService } from "./commerce-withdrawal.service";
+import { employeeDashboardQuery, type EmployeeDashboardQuery } from "./employee-dashboard-query";
 
 type WeComSettings = {
   corpId: string;
@@ -36,6 +38,7 @@ export class EmployeePromotionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly integrationSecrets: IntegrationSecretsService,
+    private readonly withdrawals: CommerceWithdrawalService,
   ) {}
 
   async authorizeUrl(redirectUriInput: string) {
@@ -94,115 +97,76 @@ export class EmployeePromotionService {
     };
   }
 
-  async dashboard(employeeId: string, fromInput?: string, toInput?: string) {
-    const end = validDate(toInput) ?? new Date();
-    const start =
-      validDate(fromInput) ?? new Date(end.getFullYear(), end.getMonth(), 1);
-    if (start > end) throw new BadRequestException("查询日期不正确");
-    const [employee, paid, refunded, orders, plan, wallet, legacyWithdrawals] =
-      await Promise.all([
-        this.prisma.commerceEmployee.findFirstOrThrow({
-          where: { id: employeeId, active: true },
-          select: {
-            id: true,
-            name: true,
-            avatarUrl: true,
-            referralCode: true,
-            departmentNames: true,
-          },
-        }),
-        this.prisma.commerceOrder.aggregate({
-          where: {
-            referralEmployeeId: employeeId,
-            paidAt: { gte: start, lte: end },
-          },
-          _count: true,
-          _sum: { payableCents: true },
-        }),
-        this.prisma.paymentRefund.aggregate({
-          where: {
-            status: RefundStatus.SUCCEEDED,
-            completedAt: { gte: start, lte: end },
-            paymentIntent: {
-              commerceOrder: { is: { referralEmployeeId: employeeId } },
-            },
-          },
-          _sum: { amountCents: true },
-        }),
-        this.prisma.commerceOrder.findMany({
-          where: { referralEmployeeId: employeeId },
-          select: {
-            id: true,
-            orderNo: true,
-            status: true,
-            payableCents: true,
-            paidAt: true,
-            createdAt: true,
-            user: { select: { nickname: true } },
-          },
-          orderBy: { createdAt: "desc" },
-          take: 100,
-        }),
-        this.prisma.commerceCommissionPlan.findUnique({ where: { id: "default" } }),
-        this.prisma.commerceEmployeeWallet.findUnique({ where: { employeeId } }),
-        this.prisma.legacyCommerceFinanceProjection.findMany({
-          where: { employeeId, sourceType: { contains: "withdraw", mode: "insensitive" } },
-          orderBy: [{ occurredAt: "desc" }, { migratedAt: "desc" }],
-          take: 20,
-        }),
-      ]);
-    const promotion = await this.promotion(employeeId);
+  async dashboard(employeeId: string, query: EmployeeDashboardQuery = {}) {
+    const filter = employeeDashboardQuery(query);
+    const period = { gte: filter.start, lt: filter.end };
+    const orderWhere = { referralEmployeeId: employeeId, createdAt: period };
+    const [employee, paid, refunded, orders, total, plan, withdrawal, recentAccruals] = await Promise.all([
+      this.prisma.commerceEmployee.findFirstOrThrow({
+        where: { id: employeeId, active: true },
+        select: { id: true, name: true, avatarUrl: true, referralCode: true, departmentNames: true },
+      }),
+      this.prisma.commerceOrder.aggregate({
+        where: { referralEmployeeId: employeeId, paidAt: period },
+        _count: true, _sum: { payableCents: true },
+      }),
+      this.prisma.paymentRefund.aggregate({
+        where: { status: RefundStatus.SUCCEEDED, completedAt: period,
+          paymentIntent: { commerceOrder: { is: { referralEmployeeId: employeeId } } } },
+        _sum: { amountCents: true },
+      }),
+      this.prisma.commerceOrder.findMany({
+        where: orderWhere,
+        select: { id: true, orderNo: true, status: true, payableCents: true, paidAt: true, createdAt: true,
+          user: { select: { nickname: true } } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: filter.skip, take: filter.pageSize,
+      }),
+      this.prisma.commerceOrder.count({ where: orderWhere }),
+      this.prisma.commerceCommissionPlan.findUnique({ where: { id: "default" } }),
+      this.withdrawals.employeeSummary(employeeId),
+      this.prisma.commerceCommissionAccrual.findMany({
+        where: { employeeId, createdAt: period }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 10,
+      }),
+    ]);
+    let promotion: Awaited<ReturnType<EmployeePromotionService["promotion"]>> | null = null;
+    try { promotion = await this.promotion(employeeId); }
+    catch (error) { if (!(error instanceof ServiceUnavailableException)) throw error; }
+    // Aggregate null means a verified empty result set, not missing imported balances.
     const salesCents = paid._sum.payableCents ?? 0;
     const refundCents = refunded._sum.amountCents ?? 0;
     return {
-      employee,
-      range: { start, end },
-      paidOrders: paid._count,
-      salesCents,
-      refundCents,
-      netSalesCents: salesCents - refundCents,
-      trend: [],
-      orders,
-      promotion,
+      employee, range: { key: filter.range, start: filter.start, end: filter.end, endExclusive: true, timezone: filter.timezone },
+      paidOrders: paid._count, salesCents, refundCents, netSalesCents: salesCents - refundCents,
+      metricBasis: { sales: "paidAt", refunds: "completedAt", orders: "createdAt" },
+      trend: null, trendStatus: "UNAVAILABLE", trendReason: "当前接口尚未提供逐日汇总，不以空数组或随机趋势代替",
+      orders, pagination: { page: filter.page, pageSize: filter.pageSize, total, hasMore: filter.skip + orders.length < total },
+      promotion, promotionStatus: promotion ? "AVAILABLE" : "UNCONFIGURED",
       bonus: {
-        plan: {
-          enabled: plan?.enabled ?? false,
-          rateBps: plan?.rateBps ?? 0,
-          settlementDays: plan?.settlementDays ?? 0,
-          withdrawalEnabled: false,
-        },
-        wallet: wallet ?? {
-          frozenCents: 0,
-          availableCents: 0,
-          withdrawingCents: 0,
-          debtCents: 0,
-          totalPaidCents: 0,
-        },
-        recentAccruals: await this.prisma.commerceCommissionAccrual.findMany({
-          where: { employeeId },
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        }),
-        recentWithdrawals: legacyWithdrawals.map((row) =>
-          presentLegacyWithdrawal(row.id, row.snapshot, row.occurredAt),
-        ),
+        plan: plan ? { enabled: plan.enabled, rateBps: plan.rateBps, settlementDays: plan.settlementDays,
+          withdrawalEnabled: withdrawal.plan.enabled, minimumWithdrawCents: withdrawal.plan.minimumWithdrawCents,
+          dailyWithdrawLimitCents: withdrawal.plan.dailyWithdrawLimitCents, reviewRequired: true } : null,
+        wallet: withdrawal.wallet, walletStatus: withdrawal.wallet ? "AVAILABLE" : "UNAVAILABLE",
+        recentAccruals, recentWithdrawals: withdrawal.withdrawals.slice(0, 20),
+        withdrawal: { canApply: withdrawal.canApply, identity: withdrawal.identity, pendingCount: withdrawal.pendingCount,
+          availableAmountCents: withdrawal.availableAmountCents, dailyUsedCents: withdrawal.dailyUsedCents,
+          dailyRemainingCents: withdrawal.dailyRemainingCents, payoutMode: withdrawal.payoutMode },
       },
     };
   }
 
   async promotion(employeeId: string, productId?: string) {
-    const [employee, settings] = await Promise.all([
+    const [employee, storefrontUrl] = await Promise.all([
       this.prisma.commerceEmployee.findFirstOrThrow({
         where: { id: employeeId, active: true },
         select: { name: true, referralCode: true },
       }),
-      this.wecomSettings(),
+      this.storefrontBase(),
     ]);
-    const base = settings.storefrontUrl.replace(/\/+$/, "");
+    const base = storefrontUrl.replace(/\/+$/, "");
     const route = productId
       ? `/pages/product/index?id=${encodeURIComponent(productId)}`
       : "/pages/home/index";
-    const linkUrl = `${base}/?ref=${encodeURIComponent(employee.referralCode)}&wechatAutoLogin=1#${route}`;
+    const linkUrl = `${base}/?ref=${encodeURIComponent(employee.referralCode)}#${route}`;
     const qrDataUrl = await QRCode.toDataURL(linkUrl, {
       width: 600,
       margin: 2,
@@ -421,8 +385,7 @@ export class EmployeePromotionService {
     gift: { id: string; code: string; status: CouponGiftStatus; expiresAt: Date },
     token: string,
   ) {
-    const settings = await this.wecomSettings();
-    const base = settings.storefrontUrl.replace(/\/+$/, "");
+    const base = (await this.storefrontBase()).replace(/\/+$/, "");
     const linkUrl = `${base}/#/pages/coupon-gift/index?token=${encodeURIComponent(token)}`;
     return {
       id: gift.id,
@@ -545,6 +508,19 @@ export class EmployeePromotionService {
     return value;
   }
 
+  // Generating a local share link is not an enterprise-WeChat provider call.
+  // OAuth itself still uses wecomSettings and remains unavailable without credentials.
+  private async storefrontBase() {
+    const config = await this.prisma.integrationConfig.findUnique({ where: { key: "wecom" } });
+    const configured = env("COMMERCE_STOREFRONT_URL", String(safeObject(config?.publicConfig).storefrontUrl ?? "")).replace(/#.*$/, "");
+    try {
+      const url = new URL(configured);
+      const local = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+      if (url.username || url.password || url.search || (url.protocol !== "https:" && !(env("NODE_ENV", "development") !== "production" && local && url.protocol === "http:"))) throw new Error();
+      return url.toString().replace(/\/+$/, "");
+    } catch { throw new ServiceUnavailableException("商城推广地址尚未配置"); }
+  }
+
   private async wecomSettings(): Promise<WeComSettings> {
     const integration = await this.prisma.integrationConfig.findUnique({
       where: { key: "wecom" },
@@ -628,26 +604,9 @@ export function employeeCouponQuantity(input: unknown, batchSize: number) {
   );
 }
 
-function validDate(value?: string) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function optionalString(value: unknown) {
   const text = String(value ?? "").trim();
   return text || null;
-}
-
-function presentLegacyWithdrawal(id: string, snapshot: Prisma.JsonValue, occurredAt: Date | null) {
-  const row = safeObject(snapshot);
-  return {
-    id,
-    amountCents: Math.max(0, Number(row.amountCents ?? row.amount_cents ?? 0)),
-    status: String(row.status ?? "HISTORY"),
-    createdAt: String(row.createdAt ?? row.created_at ?? occurredAt?.toISOString() ?? ""),
-    readOnly: true,
-  };
 }
 
 function promotionPoster(name: string, referralCode: string, qrDataUrl: string) {

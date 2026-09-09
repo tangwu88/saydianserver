@@ -1,67 +1,13 @@
-<template>
-  <view class="product-card" @click="$emit('open', product.id)"
-    ><image
-      class="product-image"
-      :src="product.coverImage || productPlaceholder"
-      mode="aspectFit"
-    /><view class="product-body"
-      ><text class="product-name">{{ product.name }}</text
-      ><text class="product-subtitle">{{
-        product.subtitle || "赛电智能健康穿戴设备"
-      }}</text
-      ><view class="tag-row"
-        ><text
-          v-for="tag in product.tags?.slice(0, 2)"
-          :key="tag"
-          class="tag"
-          >{{ tag }}</text
-        ></view
-      ><view class="price-row"
-        ><text class="price">{{ money(product.priceCents) }}</text
-        ><text class="sales">库存 {{ product.stock ?? 0 }}</text></view
-      ><view class="product-actions"
-        ><view class="cart-action" @click.stop="$emit('open', product.id)"
-          >查看详情</view
-        ><view class="buy-action" @click.stop="$emit('buy', product)"
-          >立即购买</view
-        ></view
-      ></view
-    ></view
-  >
-</template>
+<template><view class="product-card">
+  <view class="product-image-wrap" role="button" tabindex="0" :aria-label="product.name" @click="$emit('open',product.id)" @keydown.enter="$emit('open',product.id)">
+    <image v-if="product.coverImage && !imageFailed" class="product-image" :src="product.coverImage" mode="aspectFit" @error="imageFailed=true" /><view v-else class="product-image missing-image">暂无商品图片</view>
+  </view><view class="product-body"><text class="product-name" @click="$emit('open',product.id)">{{ product.name }}</text><text v-if="product.subtitle" class="product-subtitle">{{ product.subtitle }}</text>
+  <view v-if="product.tags?.length" class="tag-row"><text v-for="tag in product.tags.slice(0,2)" :key="tag" class="tag">{{ tag }}</text></view>
+  <view class="price-row"><text class="price">{{ product.priceCents == null ? "价格待确认" : money(product.priceCents) }}</text><text class="sales">{{ product.stock == null ? "库存待确认" : product.stock > 0 ? "有货" : "暂时缺货" }}</text></view>
+  <button class="product-buy" @click="$emit('open',product.id)">{{ product.stock === 0 ? "查看详情" : "选择规格" }} <text>→</text></button>
+</view></view></template>
 <script setup lang="ts">
-import { money, productPlaceholder } from "../api";
-defineProps<{ product: any }>();
-defineEmits<{ open: [id: string]; buy: [product: any] }>();
+import { ref } from "vue"; import { money } from "../api";
+defineProps<{product:any}>();defineEmits<{open:[id:string];buy:[product:any]}>();const imageFailed=ref(false);
 </script>
-<style scoped lang="scss">
-.product-actions {
-  display: grid;
-  grid-template-columns: 1fr 1.7fr;
-  gap: 12rpx;
-  margin-top: 18rpx;
-}
-.product-actions > view {
-  height: 64rpx;
-  border-radius: 10rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 23rpx;
-  font-weight: 700;
-}
-.cart-action {
-  color: var(--ink);
-  border: 1px solid var(--line);
-}
-.buy-action {
-  color: #fff;
-  background: var(--green);
-}
-@media (min-width: 900px) {
-  .product-actions > view {
-    height: 38px;
-    font-size: 13px;
-  }
-}
-</style>
+<style scoped>.product-buy{margin:14px 0 0;display:flex;justify-content:space-between;align-items:center;min-height:44px;line-height:1.4;padding:10px 12px;border-radius:4px;background:var(--green);color:#fff;font-size:14px}.product-buy::after{border:0}.product-image-wrap{cursor:pointer}.missing-image{display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);background:#f7f7f7}</style>

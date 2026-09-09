@@ -1,13 +1,15 @@
 # Saydian赛电 App 服务端交接
 
-交接日期：2026-09-06。当前源码仓库：`https://github.com/tangwu88/saydianserver`（Public），默认分支 `main`。
+交接基线日期：2026-09-06；2026-09-09 补记隔离本地场景调试，下面既有生产发布记录未在本轮重新核验。当前源码仓库：`https://github.com/tangwu88/saydianserver`（Public），默认分支 `main`。
 
 ## 1. 当前状态
 
 - 已建立统一 NestJS API、Worker、总管理后台、商城 H5、PostgreSQL/Redis、私有 MinIO 过渡存储、V1/V2/商城兼容接口、旧 App/商城迁移器及部署模板。
 - 当前 Flutter App 契约是第一标准；原商城 H5/小程序基线 `09963c4` 已迁入 `apps/shop`，旧 Apifox/旧服务行为只作迁移参考。
-- 商品、订单、售后、评价、优惠券、员工推广、支付、通知、健康档案、付费报告、接口文档和集成配置已进入一个主系统；聚水潭仍是 SKU/库存/履约权威来源。
-- 接口目录共 271 条，详见 [接口调用指南](api-guide.md)、[路由目录](api-reference.md) 和机器可读 [接口目录 JSON](api-catalog.json)。
+- 商品、订单、售后、评价、优惠券、员工推广、支付、通知、健康档案、付费报告、接口文档和集成配置进入一个主系统；商品区分 ERP 与 LOCAL，聚水潭只对 ERP 来源数据具有权威性。本轮实施/缺口以 [统一实施验收表](unification/implementation-status.md) 为准，不能把菜单或源码迁入视为接管验收。
+- 当前源码接口目录共 302 条，详见 [接口调用指南](api-guide.md)、[路由目录](api-reference.md) 和机器可读 [接口目录 JSON](api-catalog.json)。其中只有已标记的字段契约完成请求复核，不能把路由数量等同于完整兼容。
+- 2026-09-08 H5 本地交付见 [隔离演示说明](h5-demo.md) 与 [实施记录](implementation-log/2026-09-08-h5-storefront.md)。只使用 saydian_h5_demo、8081/5174/5175，不把本地适配器验收写成真实支付/企微上线。
+- 2026-09-09 新增三会员、十后台角色与保留模拟场景，修复注册/失效账号、跨标签身份、LOCAL分包、健康幂等/分页/预警和公开配置边界；复现方式和未验收项见 [全系统模拟验收](system-qa.md)。生产接管、换货再次换出、细粒度数据范围及真实渠道仍有门槛。
 - 最新交接前 Git HEAD 必须以 `git rev-parse HEAD origin/main` 为准；不要复制本文件中的旧提交号代替现场核对。
 - 新仓库 CI、GHCR 和受限 SSH receiver 已接通，仓库变量 `AUTO_DEPLOY_ENABLED=true`；四个生产 Secret 已配置，但值不进入 Git 或交接文档。
 - [生产部署 34006385576](https://github.com/tangwu88/saydianserver/actions/runs/34006385576) 已成功发布基线 `36ad693917da957f423135bbe8c3e065aeed3290`。后续文档提交也会触发新 CI，因此接手时必须重新核对 Actions 与 `/health/ready`，不能把该 SHA 当作永久当前值。
@@ -56,7 +58,7 @@ git rev-list --left-right --count HEAD...origin/main
 - API 为模块化单体，Worker 处理 Outbox、推送和注销等异步任务；详细模块图见 [架构说明](architecture.md)。
 - 健康数据进入本项目 PostgreSQL；未知值保持缺失，不能补 `0`，不能生成诊断、治疗或准确性承诺。
 - BLE/手表指令留在 Android/iOS；服务端只保存设备绑定、能力快照、固件、在线时间和同步游标。
-- 商品、购物车、地址、新订单、物流、售后、评价、优惠券与员工推广已进入主库；聚水潭继续负责 SKU、库存和履约权威数据。旧订单仅为不可变投影，不得重放支付、库存或 ERP。
+- 商品、购物车、地址、订单、物流、售后、评价、优惠券与员工推广进入主库；自建商品与 ERP 商品并存。用户已选择全部旧业务一次性接管：运行订单/支付/退款必须经过来源映射、资金核验和 executionOwner 接管门禁；未完成的旧投影不可操作，不能伪装为已接管。任何迁移/回放都不得重复发起支付、退款、库存或 ERP 副作用。
 - 商城订单、单次报告和健康会员共用 `PaymentIntent`；金额只能由服务端确定。微信、支付宝、StoreKit 和退款通知未获得真实回执前保持未配置。
 - 健康报告先清洗数据并建立证据索引，再由 AI 表达；未知/无效值不参与，异常提醒免费，报告不能输出诊断或处方。
 - V1 历史拼写、multipart 和 HTTP 200 业务包裹只留在 `legacy`；V2 使用规范字段及真实 HTTP 状态。

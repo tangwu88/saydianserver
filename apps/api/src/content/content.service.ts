@@ -26,8 +26,15 @@ export class ContentService {
   }
 
   async articles(categoryId?: string, pageInput = 1, pageSizeInput = 20) {
-    const page = Math.max(Number(pageInput) || 1, 1);
-    const pageSize = Math.min(Math.max(Number(pageSizeInput) || 20, 1), 50);
+    if (!Number.isSafeInteger(Number(pageInput)) || Number(pageInput) < 1
+      || !Number.isSafeInteger(Number(pageSizeInput)) || Number(pageSizeInput) < 1) {
+      throw new BadRequestException("分页参数必须为正整数");
+    }
+    const page = Number(pageInput);
+    const pageSize = Math.min(Number(pageSizeInput), 50);
+    if (!Number.isSafeInteger((page - 1) * pageSize)) {
+      throw new BadRequestException("分页参数超出范围");
+    }
     const where = {
       status: "PUBLISHED",
       publishedAt: { lte: new Date() },
@@ -36,7 +43,7 @@ export class ContentService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.article.findMany({
         where,
-        orderBy: { publishedAt: "desc" },
+        orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: {

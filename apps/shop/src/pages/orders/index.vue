@@ -18,21 +18,22 @@
           ><view class="row between"
             ><text class="order-no">{{ order.orderNo }}</text
             ><text class="status">{{ label(order.status) }}</text></view
-          ><view v-for="item in order.items" :key="item.id" class="order-item"
+          ><text v-if="order.readOnly" class="small">历史订单 · 只读</text
+          ><view v-for="item in orderItemSummary(order).items" :key="item.id" class="order-item"
             ><image
               :src="item.imageSnapshot || productPlaceholder"
-              mode="aspectFill"
+            mode="aspectFit"
             /><view
-              ><b>{{ item.nameSnapshot }}</b
+              ><b>{{ item.nameSnapshot || '商品名称未获取' }}</b
               ><text class="small">{{ item.specificationSnapshot }}</text
               ><text
                 >{{ money(item.unitPriceCents) }} × {{ item.quantity }}</text
               ></view
             ></view
+          ><view v-if="orderItemSummary(order).quantity === null" class="small">商品明细未获取</view
           ><view class="order-total"
-            >共
-            {{ order.items.reduce((s: any, x: any) => s + x.quantity, 0) }}
-            件，实付 <b>{{ money(order.payableCents) }}</b></view
+            >{{ orderItemSummary(order).quantity === null ? '商品数量未获取' : '共 ' + orderItemSummary(order).quantity + ' 件' }}，
+            {{ order.readOnly ? '订单金额' : order.paidAt ? '支付金额' : '应付' }} <b>{{ money(order.payableCents) }}</b></view
           ></view
         ></view
       ><view v-else class="empty card">当前没有订单</view></view
@@ -40,10 +41,11 @@
   >
 </template>
 <script setup lang="ts">
-import { onShow } from "@dcloudio/uni-app";
+import { onLoad, onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import { api, money, productPlaceholder, toast } from "../../api";
+import { orderItemSummary } from "../../commerce-model";
 const tabs = [
     { label: "全部", value: "" },
     { label: "待付款", value: "PENDING_PAYMENT" },
@@ -53,8 +55,10 @@ const tabs = [
   ],
   status = ref(""),
   orders = ref<any[]>([]);
+onLoad(o=>{status.value=String(o?.status || '');});
 onShow(load);
 async function load() {
+  orders.value=[];
   try {
     orders.value = await api(`/storefront/orders?status=${status.value}`, {
       auth: true,

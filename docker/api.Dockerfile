@@ -3,12 +3,15 @@ WORKDIR /workspace
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/commerce-domain/package.json packages/commerce-domain/package.json
 COPY apps/api/package.json apps/api/package.json
 RUN pnpm install --frozen-lockfile --filter @saydian/app-api...
 COPY packages/contracts packages/contracts
+COPY packages/commerce-domain packages/commerce-domain
 COPY apps/api apps/api
 RUN pnpm --filter @saydian/app-contracts build \
  && pnpm --filter @saydian/app-api prisma:generate \
+ && pnpm --filter @saydian/commerce-domain build \
  && pnpm --filter @saydian/app-api build
 
 FROM node:24.8.0-alpine AS runtime
@@ -17,6 +20,7 @@ ENV NODE_ENV=production
 RUN apk add --no-cache font-noto-cjk
 COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
 COPY --from=build --chown=node:node /workspace/packages/contracts ./packages/contracts
+COPY --from=build --chown=node:node /workspace/packages/commerce-domain ./packages/commerce-domain
 COPY --from=build --chown=node:node /workspace/apps/api ./apps/api
 COPY --from=build --chown=node:node /workspace/package.json /workspace/pnpm-lock.yaml /workspace/pnpm-workspace.yaml ./
 USER node

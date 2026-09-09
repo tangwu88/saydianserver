@@ -25,7 +25,7 @@
               :product="product"
               @open="openProduct"
               @buy="buyNow" /></view
-          ><view v-else class="empty">当前分类暂无已上架商品</view></view
+          ><view v-else class="empty">{{ busy ? '正在加载…' : '当前分类暂无已上架商品' }}</view><button v-if="products.length < total" class="outline-btn" :disabled="busy" @click="load(true)">加载更多</button></view
         ></view
       ></view
     ></view
@@ -39,6 +39,7 @@ import DesktopHeader from "../../components/DesktopHeader.vue";
 import ProductCard from "../../components/ProductCard.vue";
 import StoreFooter from "../../components/StoreFooter.vue";
 import { api, toast } from "../../api";
+const busy=ref(false);let page=1,revision=0;
 const categories = ref<any[]>([]),
   products = ref<any[]>([]),
   selected = ref(""),
@@ -52,6 +53,7 @@ onShow(async () => {
     const boot: any = await api("/storefront/bootstrap");
     categories.value = boot.categories;
     const stored = String(uni.getStorageSync("saidian-category-selected") || "");
+    if (uni.getStorageInfoSync().keys.includes("saidian-category-selected") && !stored) selected.value = "";
     if (stored && categories.value.some((item) => item.id === stored))
       selected.value = stored;
     uni.removeStorageSync("saidian-category-selected");
@@ -60,13 +62,17 @@ onShow(async () => {
     toast(e);
   }
 });
-async function load() {
+async function load(more=false) {
+  const request=++revision, next=more?page+1:1;
+  busy.value=true;
   const categoryQuery = selected.value
     ? `&categoryId=${encodeURIComponent(selected.value)}`
     : "";
-  const data: any = await api(`/storefront/products?pageSize=60${categoryQuery}`);
-  products.value = data.items;
-  total.value = data.total;
+  try{const data: any = await api(`/storefront/products?page=${next}&pageSize=24${categoryQuery}`);
+    if(request!==revision)return;
+    products.value = more ? [...products.value,...data.items] : data.items;
+    total.value = data.total;page=next;
+  }catch(e){toast(e);}finally{if(request===revision)busy.value=false;}
 }
 async function select(id: string) {
   selected.value = id;
@@ -79,23 +85,7 @@ async function select(id: string) {
 function openProduct(id: string) {
   uni.navigateTo({ url: `/pages/product/index?id=${id}` });
 }
-function buyNow(product: any) {
-  if (!product.defaultSku) return openProduct(product.id);
-  uni.setStorageSync("checkout-items", [
-    {
-      skuId: product.defaultSku.id,
-      quantity: 1,
-      sku: product.defaultSku,
-      product: {
-        id: product.id,
-        name: product.name,
-        displayName: product.name,
-        coverImage: product.coverImage,
-      },
-    },
-  ]);
-  uni.navigateTo({ url: "/pages/checkout/index" });
-}
+function buyNow(product: any) { uni.navigateTo({url:'/pages/product/index?id='+encodeURIComponent(product.id)}); }
 </script>
 <style scoped lang="scss">
 .category-layout {

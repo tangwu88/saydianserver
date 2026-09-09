@@ -1,0 +1,392 @@
+{
+  "schemaVersion": 1,
+  "client": "saydianapp Flutter",
+  "clientCommit": "fa79aa3610be25762fc4b5e7245de0f1f86245ef",
+  "sourceFiles": [
+    "lib/services/api_client.dart",
+    "lib/services/app_update_service.dart"
+  ],
+  "notes": "Snapshot of active API consumers. 74 distinct source string literals normalize to 72 paths and 76 method/path pairs; path interpolation names are normalized. This is a route-presence gate, not a claim of field-level or device acceptance.",
+  "consumers": [
+    {
+      "method": "POST",
+      "path": "/api/inv-shop/v1/member/cart-item/create",
+      "source": "lib/services/api_client.dart:862"
+    },
+    {
+      "method": "POST",
+      "path": "/api/inv-shop/v1/member/cart-item/delete-ids",
+      "source": "lib/services/api_client.dart:893"
+    },
+    {
+      "method": "GET",
+      "path": "/api/inv-shop/v1/member/cart-item/index",
+      "source": "lib/services/api_client.dart:848"
+    },
+    {
+      "method": "POST",
+      "path": "/api/inv-shop/v1/member/cart-item/update-num",
+      "source": "lib/services/api_client.dart:879"
+    },
+    {
+      "method": "GET",
+      "path": "/api/inv-shop/v1/member/order-product-express/details",
+      "source": "lib/services/api_client.dart:1192"
+    },
+    {
+      "method": "POST",
+      "path": "/api/inv-shop/v1/member/order-product/refund-apply",
+      "source": "lib/services/api_client.dart:1144"
+    },
+    {
+      "method": "GET",
+      "path": "/api/inv-shop/v1/member/order/index",
+      "source": "lib/services/api_client.dart:804"
+    },
+    {
+      "method": "POST",
+      "path": "/api/inv-shop/v1/member/order/take-delivery",
+      "source": "lib/services/api_client.dart:1130"
+    },
+    {
+      "method": "GET",
+      "path": "/api/inv-shop/v1/member/order/view",
+      "source": "lib/services/api_client.dart:813"
+    },
+    {
+      "method": "POST",
+      "path": "/api/inv-shop/v1/order/order/create",
+      "source": "lib/services/api_client.dart:1033"
+    },
+    {
+      "method": "GET",
+      "path": "/api/inv-shop/v1/order/order/preview",
+      "source": "lib/services/api_client.dart:998"
+    },
+    {
+      "method": "GET",
+      "path": "/api/inv-shop/v1/product/product/view",
+      "source": "lib/services/api_client.dart:839"
+    },
+    {
+      "method": "GET",
+      "path": "/api/rf-article/article-cate/index",
+      "source": "lib/services/api_client.dart:615"
+    },
+    {
+      "method": "GET",
+      "path": "/api/rf-article/article-single/view",
+      "source": "lib/services/api_client.dart:649"
+    },
+    {
+      "method": "GET",
+      "path": "/api/rf-article/article/index",
+      "source": "lib/services/api_client.dart:604"
+    },
+    {
+      "method": "GET",
+      "path": "/api/rf-article/article/view",
+      "source": "lib/services/api_client.dart:640"
+    },
+    {
+      "method": "POST",
+      "path": "/api/rf-article/chat/create",
+      "source": "lib/services/api_client.dart:793"
+    },
+    {
+      "method": "GET",
+      "path": "/api/rf-article/chat/index",
+      "source": "lib/services/api_client.dart:779"
+    },
+    {
+      "method": "POST",
+      "path": "/api/saydian-app/v2/billing/apple/transactions/verify",
+      "source": "lib/services/api_client.dart:1709"
+    },
+    {
+      "method": "GET",
+      "path": "/api/saydian-app/v2/billing/entitlements",
+      "source": "lib/services/api_client.dart:1664"
+    },
+    {
+      "method": "GET",
+      "path": "/api/saydian-app/v2/billing/offers",
+      "source": "lib/services/api_client.dart:1643"
+    },
+    {
+      "method": "POST",
+      "path": "/api/saydian-app/v2/billing/payments",
+      "source": "lib/services/api_client.dart:1679"
+    },
+    {
+      "method": "GET",
+      "path": "/api/saydian-app/v2/billing/payments/:id",
+      "source": "lib/services/api_client.dart:1698"
+    },
+    {
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/profile",
+      "source": "lib/services/api_client.dart:1555"
+    },
+    {
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/profile/analysis-consent",
+      "source": "lib/services/api_client.dart:1565"
+    },
+    {
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/reports",
+      "source": "lib/services/api_client.dart:1584"
+    },
+    {
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/reports",
+      "source": "lib/services/api_client.dart:1595"
+    },
+    {
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/reports/:id/export",
+      "source": "lib/services/api_client.dart:1624"
+    },
+    {
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/reports/:id/full",
+      "source": "lib/services/api_client.dart:1615"
+    },
+    {
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/reports/:id/retry",
+      "source": "lib/services/api_client.dart:1605"
+    },
+    {
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/reports/eligibility",
+      "source": "lib/services/api_client.dart:1577"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/file/images",
+      "source": "lib/services/api_client.dart:564"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/account/delete",
+      "source": "lib/services/api_client.dart:1763"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/address",
+      "source": "lib/services/api_client.dart:821"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/address",
+      "source": "lib/services/api_client.dart:1184"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/address/:id",
+      "source": "lib/services/api_client.dart:1157"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/member/address/:id",
+      "source": "lib/services/api_client.dart:1185"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/bloodcomposition",
+      "source": "lib/services/api_client.dart:1515"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/bloodcomposition/preview",
+      "source": "lib/services/api_client.dart:2220"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/bodycomposition",
+      "source": "lib/services/api_client.dart:1493"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/bodycomposition/preview",
+      "source": "lib/services/api_client.dart:2214"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/care",
+      "source": "lib/services/api_client.dart:2814"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/care",
+      "source": "lib/services/api_client.dart:522"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/care-setting",
+      "source": "lib/services/api_client.dart:2911"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/care-setting/preview",
+      "source": "lib/services/api_client.dart:2889"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/care/my",
+      "source": "lib/services/api_client.dart:424"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/care/preview",
+      "source": "lib/services/api_client.dart:2115"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/care/save",
+      "source": "lib/services/api_client.dart:2876"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/daily-date",
+      "source": "lib/services/api_client.dart:1368"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/daily-date/preview",
+      "source": "lib/services/api_client.dart:2149"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/e-c-g",
+      "source": "lib/services/api_client.dart:1528"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/e-c-g/preview",
+      "source": "lib/services/api_client.dart:2208"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/feedback",
+      "source": "lib/services/api_client.dart:1290"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/health-warning",
+      "source": "lib/services/api_client.dart:1267"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/health-warning/preview",
+      "source": "lib/services/api_client.dart:1207"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/jrjk",
+      "source": "lib/services/api_client.dart:1334"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/member-mubiao",
+      "source": "lib/services/api_client.dart:595"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/member-mubiao/preview",
+      "source": "lib/services/api_client.dart:583"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/member/my",
+      "source": "lib/services/api_client.dart:530"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/member/save",
+      "source": "lib/services/api_client.dart:543"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/notify",
+      "source": "lib/services/api_client.dart:657"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/notify/:id",
+      "source": "lib/services/api_client.dart:669"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/notify/:id/read",
+      "source": "lib/services/api_client.dart:751"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/notify/statistics",
+      "source": "lib/services/api_client.dart:717"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/member/notify/unread-count",
+      "source": "lib/services/api_client.dart:719"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/member/push-devices",
+      "source": "lib/services/api_client.dart:695"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/member/push-devices/:installationId",
+      "source": "lib/services/api_client.dart:710"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/pages",
+      "source": "lib/services/api_client.dart:830"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/pay",
+      "source": "lib/services/api_client.dart:1092"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/site/login",
+      "source": "lib/services/api_client.dart:283"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/site/logout",
+      "source": "lib/services/api_client.dart:1745"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/site/refresh",
+      "source": "lib/services/api_client.dart:339"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/site/register",
+      "source": "lib/services/api_client.dart:290"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/site/sms-code",
+      "source": "lib/services/api_client.dart:300"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/site/up-pwd",
+      "source": "lib/services/api_client.dart:325"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/site/version",
+      "source": "lib/services/app_update_service.dart:502"
+    }
+  ]
+}

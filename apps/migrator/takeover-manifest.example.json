@@ -1,0 +1,19 @@
+{
+  "sourceSystem": "legacy_mall",
+  "migrationRunId": "REPLACE_WITH_COMPLETED_MIGRATION_RUN_UUID",
+  "sourceSnapshotId": "REPLACE_WITH_VERIFIED_IMMUTABLE_SNAPSHOT_ID",
+  "expectedStateDigest": "",
+  "windowStartedAt": "",
+  "enqueueErpOrderIds": [],
+  "evidence": {
+    "client_contract": { "path": "reviewed/client-contract.json", "sha256": "" },
+    "source_freeze": { "path": "reviewed/source-freeze.json", "sha256": "" },
+    "callback_route": { "path": "reviewed/callback-route.json", "sha256": "" },
+    "media": { "path": "reviewed/media.json", "sha256": "" },
+    "identity": { "path": "reviewed/identity.json", "sha256": "" },
+    "financial": { "path": "reviewed/financial.json", "sha256": "" },
+    "inventory": { "path": "reviewed/inventory.json", "sha256": "" },
+    "reverse_replay": { "path": "reviewed/reverse-replay.json", "sha256": "" },
+    "outstanding_jobs": { "path": "reviewed/outstanding-jobs.json", "sha256": "" }
+  }
+}

@@ -50,7 +50,8 @@ export class AuthService {
     private readonly wechatApp: WechatAppAuthService,
   ) {}
 
-  async register(input: RegisterInput): Promise<SessionContract> {
+  async register(input: RegisterInput, mobileVerified = false): Promise<SessionContract> {
+    if (!mobileVerified) throw new BadRequestException("请使用手机验证码完成注册");
     const mobile = normalizedMobile(input.mobile);
     this.assertPassword(input.password);
     if (!mobile) throw new BadRequestException("手机号格式不正确");
@@ -58,24 +59,16 @@ export class AuthService {
       throw new BadRequestException("请先阅读并同意用户协议与隐私政策");
     }
     const existing = await this.prisma.user.findUnique({ where: { mobile } });
-    if (existing && existing.status !== UserStatus.DELETED) {
+    if (existing) {
       throw new ConflictException("该手机号已注册，请直接登录");
     }
     const passwordHash = await hash(input.password, 12);
     const user = await this.prisma.$transaction(async (tx) => {
-      const created = existing
-        ? await tx.user.update({
-            where: { id: existing.id },
-            data: {
-              passwordHash,
-              status: UserStatus.ACTIVE,
-              nickname: input.nickname?.trim() || `用户${mobile.slice(-4)}`,
-            },
-          })
-        : await tx.user.create({
+      const created = await tx.user.create({
             data: {
               mobile,
               passwordHash,
+              mobileVerifiedAt: new Date(),
               nickname: input.nickname?.trim() || `用户${mobile.slice(-4)}`,
             },
           });
@@ -102,7 +95,7 @@ export class AuthService {
     return this.issueSession(user.id);
   }
 
-  async login(mobileInput: string, password: string): Promise<SessionContract> {
+  private async passwordUser(mobileInput: string, password: string) {
     const mobile = normalizedMobile(mobileInput);
     if (!mobile || !password) throw new UnauthorizedException("账号或密码错误");
     const user = await this.prisma.user.findUnique({ where: { mobile } });
@@ -119,6 +112,11 @@ export class AuthService {
         data: { passwordHash: await hash(password, 12) },
       });
     }
+    return user;
+  }
+
+  async login(mobileInput: string, password: string): Promise<SessionContract> {
+    const user = await this.passwordUser(mobileInput, password);
     return this.issueSession(user.id);
   }
 
@@ -168,6 +166,26 @@ export class AuthService {
     return this.mallSession(session, session.member.mobileMasked ?? null);
   }
 
+  async loginForMall(mobile: string, password: string, referralCode?: string) {
+    const user = await this.passwordUser(mobile, password);
+    if (!user.mobileVerifiedAt) throw new UnauthorizedException("请先使用手机验证码验证后登录商城");
+    const session = await this.issueSession(user.id);
+    if (referralCode) await this.bindReferral(user.id, referralCode);
+    return this.mallSession(session, user.mobile);
+  }
+
+  async issueMallSession(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (user.status !== UserStatus.ACTIVE || !user.mobile || !user.mobileVerifiedAt) {
+      throw new UnauthorizedException("请先完成手机号验证");
+    }
+    return this.mallSession(await this.issueSession(userId), user.mobile);
+  }
+
+  consumeMobileBindingCode(mobile: string, code: string) {
+    return this.consumeSms(mobile, code, "bind_mobile");
+  }
+
   async logout(sessionId: string): Promise<void> {
     await this.prisma.userSession.updateMany({
       where: { id: sessionId, revokedAt: null },
@@ -182,7 +200,7 @@ export class AuthService {
     const mobile = normalizedMobile(mobileInput);
     const usage = usageInput.trim() || "register";
     if (!mobile) throw new BadRequestException("手机号格式不正确");
-    if (!["register", "reset_password", "login"].includes(usage)) {
+    if (!["register", "reset_password", "login", "bind_mobile"].includes(usage)) {
       throw new BadRequestException("验证码用途不正确");
     }
     const recent = await this.prisma.smsCode.count({
@@ -216,7 +234,7 @@ export class AuthService {
     input: RegisterInput & { code: string },
   ): Promise<SessionContract> {
     await this.consumeSms(input.mobile, input.code, "register");
-    return this.register(input);
+    return this.register(input, true);
   }
 
   async loginWithSms(input: {
@@ -237,14 +255,14 @@ export class AuthService {
       : null;
     const user = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.user.findUnique({ where: { mobile } });
-      if (existing?.status === UserStatus.DELETION_PENDING) {
-        throw new ConflictException("账号正在注销，如需恢复请联系客服");
+      if (existing && existing.status !== UserStatus.ACTIVE) {
+        throw new UnauthorizedException("账号不可用，请联系客服核验状态");
       }
       const saved = existing
         ? await tx.user.update({
             where: { id: existing.id },
             data: {
-              status: UserStatus.ACTIVE,
+              mobileVerifiedAt: new Date(),
               ...(existing.referralEmployeeId || !employee
                 ? {}
                 : { referralEmployeeId: employee.id }),
@@ -253,6 +271,7 @@ export class AuthService {
         : await tx.user.create({
             data: {
               mobile,
+              mobileVerifiedAt: new Date(),
               nickname: `用户${mobile.slice(-4)}`,
               ...(employee ? { referralEmployeeId: employee.id } : {}),
             },
@@ -318,14 +337,13 @@ export class AuthService {
         throw new ConflictException("微信账号关联存在冲突，请联系客服处理");
       }
       const existing = byUnionId ?? byOpenId;
-      if (existing?.status === UserStatus.DELETION_PENDING) {
-        throw new ConflictException("账号正在注销，如需恢复请联系客服");
+      if (existing && existing.status !== UserStatus.ACTIVE) {
+        throw new UnauthorizedException("账号不可用，请联系客服核验状态");
       }
       const saved = existing
         ? await tx.user.update({
             where: { id: existing.id },
             data: {
-              status: UserStatus.ACTIVE,
               wechatOpenId: openId,
               ...(unionId ? { wechatUnionId: unionId } : {}),
               ...(existing.referralEmployeeId || !employee
@@ -376,14 +394,13 @@ export class AuthService {
         throw new ConflictException("微信账号关联存在冲突，请联系客服处理");
       }
       const existing = byUnionId ?? byOpenId;
-      if (existing?.status === UserStatus.DELETION_PENDING) {
-        throw new ConflictException("账号正在注销，如需恢复请联系客服");
+      if (existing && existing.status !== UserStatus.ACTIVE) {
+        throw new UnauthorizedException("账号不可用，请联系客服核验状态");
       }
       const saved = existing
         ? await tx.user.update({
             where: { id: existing.id },
             data: {
-              status: UserStatus.ACTIVE,
               wechatAppOpenId: identity.openId,
               ...(identity.unionId ? { wechatUnionId: identity.unionId } : {}),
               ...wechatProfileBackfill(existing, identity),

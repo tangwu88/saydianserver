@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { api, readableError, responseData } from "../api";
+import { api, getAdminRoles, readableError, responseData } from "../api";
+import { canAdminResource } from "@saydian/app-contracts";
+import CommerceWorkspace from "../components/CommerceWorkspace.vue";
+import RichTextEditor from "../components/RichTextEditor.vue";
 import {
   downloadEditorToManifest,
   downloadManifestFromPublicData,
@@ -15,12 +18,20 @@ const route = useRoute();
 const loading = ref(false);
 const saving = ref(false);
 const rows = ref<Row[]>([]);
+const resourceMeta = ref<Row>({});
+const categoryOptions = ref<Row[]>([]);
 const search = ref("");
+const commerceStatus = ref("");
+const currentPage = ref(1);
 const dialogVisible = ref(false);
 const dialogTitle = ref("");
 const dialogMode = ref<"edit" | "health">("edit");
 const form = ref<Row>({});
 const detailRows = ref<Row[]>([]);
+const shipmentVisible = ref(false);
+const shipmentBusy = ref(false);
+const shipmentPreview = ref<Row>({});
+const shipmentForm = ref({ logisticsCompany: "", trackingNo: "", quantities: {} as Record<string, number> });
 const downloadPlatformOptions = [
   { key: "android", label: "Android", packageLabel: "APK" },
   { key: "ios", label: "iPhone", packageLabel: "TestFlight / App Store" },
@@ -56,17 +67,28 @@ const fieldLabels: Record<string, string> = {
 };
 const resource = computed(() => String(route.params.resource || ""));
 const title = computed(() => titles[resource.value] || resource.value);
+const commerceResources = [
+  "commerce-products", "commerce-categories", "commerce-banners", "commerce-business-configs",
+  "commerce-orders", "commerce-after-sales", "commerce-reviews", "commerce-coupons",
+  "commerce-employees", "commerce-commissions", "commerce-jobs", "payments",
+];
+const isCommerceResource = computed(() => commerceResources.includes(resource.value));
+const canWrite = computed(() => canAdminResource(getAdminRoles(), resource.value, "write"));
+const canReadRawHealth = computed(() => getAdminRoles().some((role) => ["SUPER_ADMIN", "HEALTH_AUDITOR"].includes(role)));
 const editable = computed(() => [
   "articles", "article-categories", "legal-documents", "settings", "integrations", "admin-users",
   "commerce-products", "commerce-categories", "commerce-orders", "commerce-after-sales",
   "commerce-banners", "commerce-business-configs", "commerce-reviews", "commerce-coupons",
   "health-report-offers", "notification-campaigns",
-].includes(resource.value));
+].includes(resource.value) && canAdminResource(getAdminRoles(), resource.value, "write"));
 const createable = computed(() => [
   "articles", "article-categories", "legal-documents", "admin-users",
-  "commerce-categories", "commerce-banners", "commerce-coupons", "health-report-offers", "notification-campaigns",
-].includes(resource.value));
-const searchable = computed(() => ["members", "commerce-products"].includes(resource.value));
+  "commerce-categories", "commerce-banners", "commerce-business-configs", "commerce-coupons", "health-report-offers", "notification-campaigns",
+  "commerce-products",
+].includes(resource.value) && canAdminResource(getAdminRoles(), resource.value, "write"));
+const searchable = computed(() => ["members", "commerce-products", "commerce-orders"].includes(resource.value));
+const paginatedResources = ["commerce-products", "commerce-orders", "payments"];
+const serverStatusResources = ["commerce-products", "commerce-orders", "commerce-after-sales", "commerce-jobs", "payments"];
 const columns = computed(() => {
   const first = rows.value[0];
   return first ? Object.keys(first)
@@ -74,24 +96,63 @@ const columns = computed(() => {
     .slice(0, 10) : [];
 });
 
+let loadRequestId = 0;
+
 async function load(): Promise<void> {
-  if (resource.value === "commerce") return;
+  const requestedResource = resource.value;
+  if (requestedResource === "commerce") return;
+  const requestId = ++loadRequestId;
   loading.value = true;
   try {
-    const response = await api.get(`/${resource.value}`, {
-      params: searchable.value && search.value ? { search: search.value } : {},
+    const params: Row = {
+      ...(searchable.value && search.value ? { search: search.value } : {}),
+      ...(paginatedResources.includes(requestedResource) ? { page: currentPage.value } : {}),
+      ...(serverStatusResources.includes(requestedResource) && commerceStatus.value
+        ? { status: commerceStatus.value }
+        : {}),
+    };
+    const response = await api.get(`/${requestedResource}`, {
+      params,
     });
     const data = responseData<unknown>(response);
-    const loadedRows = Array.isArray(data) ? data as Row[] : ((data as { items?: Row[] })?.items ?? []);
-    rows.value = resource.value === "settings"
+    const dataObject = !Array.isArray(data) && data && typeof data === "object" ? data as Row : {};
+    const loadedRows = Array.isArray(data) ? data as Row[] : (dataObject.items ?? []);
+    const finalRows = requestedResource === "settings"
       ? await withDownloadSetting(loadedRows)
       : loadedRows;
+    if (requestId !== loadRequestId || requestedResource !== resource.value) return;
+    resourceMeta.value = dataObject;
+    rows.value = finalRows;
+    if (requestedResource === "commerce-categories") categoryOptions.value = loadedRows;
   } catch (error) {
-    ElMessage.error(readableError(error));
-  } finally { loading.value = false; }
+    if (requestId === loadRequestId && requestedResource === resource.value) {
+      ElMessage.error(readableError(error));
+    }
+  } finally {
+    if (requestId === loadRequestId) loading.value = false;
+  }
+}
+
+async function refreshCommerce(): Promise<void> {
+  currentPage.value = 1;
+  await load();
+}
+
+async function changeCommercePage(page: number): Promise<void> {
+  currentPage.value = page;
+  await load();
+}
+
+async function changeCommerceStatus(status: string): Promise<void> {
+  commerceStatus.value = status;
+  currentPage.value = 1;
+  if (serverStatusResources.includes(resource.value)) await load();
 }
 
 async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
+  if (!loadedRows.some((row) => row.key === "legacy_app_update")) loadedRows = [...loadedRows, {
+    key: "legacy_app_update", public: true, value: { schemaVersion: 1, audience: "production", releases: [] },
+  }];
   if (loadedRows.some((row) => row.key === "app_update")) return loadedRows;
   try {
     const response = await fetch("/api/saydian-app/v2/support/app-update", {
@@ -119,14 +180,16 @@ function render(value: unknown): string {
   return String(value);
 }
 
-function openCreate(): void {
+async function openCreate(): Promise<void> {
+  if (["commerce-products", "commerce-categories"].includes(resource.value)) await ensureCommerceCategories();
   dialogMode.value = "edit";
   dialogTitle.value = `新增${title.value}`;
   const defaults: Record<string, Row> = {
-    "admin-users": { role: "READ_ONLY", active: true },
-    "commerce-products": { status: "DRAFT", gallery: [], tags: [], featured: false, sort: 0 },
-    "commerce-categories": { enabled: true, sort: 0 },
+    "admin-users": { role: "READ_ONLY", roles: ["READ_ONLY"], active: true },
+    "commerce-products": { source: "LOCAL", status: "DRAFT", gallery: [], tags: [], featured: false, sort: 0, skus: [{ specification: "默认规格", salePriceCents: 1, stock: 0, enabled: true }] },
+    "commerce-categories": { _isNew: true, enabled: true, sort: 0 },
     "commerce-banners": { enabled: true, sort: 0 },
+    "commerce-business-configs": { _isNew: true, key: "", label: "", enabled: false, valueText: "{}" },
     "commerce-coupons": { status: "DRAFT", value: 100, minimumSpendCents: 0, totalQuantity: 100 },
     "health-report-offers": { entitlement: "SINGLE_REPORT", creditCount: 1, platforms: ["android", "h5"], active: false },
     "notification-campaigns": { type: "SYSTEM", audienceAllActive: false, audienceUserIds: "" },
@@ -135,11 +198,15 @@ function openCreate(): void {
   dialogVisible.value = true;
 }
 
-function openEdit(row: Row): void {
+async function openEdit(row: Row): Promise<void> {
+  if (["commerce-products", "commerce-categories"].includes(resource.value)) await ensureCommerceCategories();
   dialogMode.value = "edit";
   dialogTitle.value = `编辑${title.value}`;
   const nextForm: Row = {
     ...row,
+    roles: Array.isArray(row.roles) && row.roles.length ? [...row.roles] : [row.role ?? "READ_ONLY"],
+    skus: Array.isArray(row.skus) ? row.skus.map((sku: Row) => ({ ...sku })) : [],
+    _isNew: false,
     publicConfigText: row.publicConfig ? JSON.stringify(row.publicConfig, null, 2) : "{}",
     secretsText: "",
     clearSecrets: false,
@@ -160,6 +227,16 @@ function openEdit(row: Row): void {
   }
   form.value = nextForm;
   dialogVisible.value = true;
+}
+
+async function ensureCommerceCategories(): Promise<void> {
+  if (categoryOptions.value.length) return;
+  try {
+    const data = responseData<unknown>(await api.get("/commerce-categories"));
+    categoryOptions.value = Array.isArray(data) ? data as Row[] : [];
+  } catch (error) {
+    ElMessage.error(readableError(error));
+  }
 }
 
 async function save(): Promise<void> {
@@ -186,12 +263,16 @@ async function save(): Promise<void> {
       };
       await api.patch(`/settings/${encodeURIComponent(String(form.value.key))}`, payload);
     } else if (resource.value === "commerce-business-configs") {
+      const configKey = String(form.value.key ?? "").trim();
+      if (!configKey) throw new Error("请填写配置项标识");
       payload = {
         label: form.value.label,
         value: JSON.parse(String(form.value.valueText || "{}")),
         enabled: form.value.enabled === true,
       };
-      await api.patch(`/commerce-business-configs/${encodeURIComponent(String(form.value.key))}`, payload);
+      await api.patch(`/commerce-business-configs/${encodeURIComponent(configKey)}`, payload);
+    } else if (resource.value === "commerce-commissions") {
+      await api.patch("/commerce-commissions/plan", pick(form.value, ["enabled", "rateBps", "settlementDays", "withdrawalEnabled", "minimumWithdrawCents", "dailyWithdrawLimitCents", "reviewRequired"]));
     } else if (id) {
       await api.patch(`/${resource.value}/${encodeURIComponent(id)}`, payload);
     } else {
@@ -224,8 +305,8 @@ function payloadForResource(current: string, source: Row): Row {
     "commerce-categories": ["name", "parentId", "iconUrl", "sort", "enabled"],
     "commerce-banners": ["title", "imageUrl", "targetUrl", "sort", "enabled"],
     "commerce-reviews": ["published"],
-    "commerce-orders": ["adminRemark"],
-    "commerce-after-sales": ["status", "returnLogisticsCompany", "returnTrackingNo"],
+    "commerce-orders": ["adminRemark", "version"],
+    "commerce-after-sales": ["status", "returnLogisticsCompany", "returnTrackingNo", "version"],
     "commerce-coupons": ["name", "status", "value", "minimumSpendCents", "totalQuantity", "validFrom", "validUntil", "employeeDistributable", "perEmployeeLimit"],
     "health-report-offers": ["offerKey", "title", "description", "entitlement", "priceCents", "currency", "creditCount", "durationDays", "platforms", "appleProductId", "active", "effectiveFrom", "effectiveUntil"],
     "notification-campaigns": ["name", "type", "title", "body", "deepLink", "scheduledAt"],
@@ -233,6 +314,7 @@ function payloadForResource(current: string, source: Row): Row {
   if (current === "commerce-products") {
     return {
       ...pick(source, fields["commerce-products"]!),
+      ...(source.source === "LOCAL" ? { name: source.name, ...(source.erpItemId ? { erpItemId: source.erpItemId } : {}), source: "LOCAL", skus: source.skus } : {}),
       gallery: String(source.galleryText ?? "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
       tags: String(source.tagsText ?? "").split(/[,，\r\n]/).map((value) => value.trim()).filter(Boolean),
     };
@@ -303,11 +385,23 @@ async function runAction(path: string, success: string): Promise<void> {
   }
 }
 
+async function batchProducts(ids: string[], action: string): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`确认对 ${ids.length} 件商品执行${action === "ARCHIVE" ? "归档" : action === "PUBLISH" ? "上架" : "下架"}？`, "批量操作");
+    await api.post("/commerce-products/batch", { ids, action });
+    ElMessage.success("商品已更新");
+    await load();
+  } catch (error) { if (error !== "cancel" && error !== "close") ElMessage.error(readableError(error)); }
+}
+
 async function refundAfterSale(row: Row): Promise<void> {
   try {
+    const local = Number(row.requestedCents) === 0;
+    const pointText = row.pointReturnCents == null ? "待核验" : (Number(row.pointReturnCents) / 100).toFixed(2);
     const response = await ElMessageBox.prompt(
-      `将按售后申请金额 ${Number(row.requestedCents ?? 0) / 100} 元原路退款。支付渠道受理不等于退款成功，最终以验签回调为准。`,
-      "发起退款",
+      local ? `本单现金退款为0，将本地返还积分 ${pointText}。此操作不向支付渠道发起零元退款。`
+        : `本次现金原路退款 ${Number(row.requestedCents) / 100} 元（含运费 ${row.shippingRefundCents == null ? "待核验" : Number(row.shippingRefundCents) / 100} 元），渠道确认成功后返还积分 ${pointText}。受理不等于成功。`,
+      local ? "结算积分" : row.type === "SHIPPING_ONLY" ? "执行已审核运费退款" : "发起退款",
       {
         type: "warning",
         inputValue: String(row.reason ?? "售后退款"),
@@ -316,7 +410,7 @@ async function refundAfterSale(row: Row): Promise<void> {
       },
     );
     await api.post(`/commerce-after-sales/${row.id}/refund`, { reason: response.value.trim() });
-    ElMessage.success("退款请求已提交，请等待渠道结果");
+    ElMessage.success(local ? "本地积分结算已完成" : "退款请求已提交，请等待渠道结果");
     await load();
   } catch (error) {
     if (error === "cancel" || error === "close") return;
@@ -324,51 +418,148 @@ async function refundAfterSale(row: Row): Promise<void> {
   }
 }
 
-onMounted(load);
+async function openShipment(row: Row): Promise<void> {
+  try {
+    shipmentPreview.value = responseData<Row>(await api.get(`/commerce-orders/${encodeURIComponent(String(row.id))}/fulfillment-preview`));
+    shipmentForm.value = { logisticsCompany: "", trackingNo: "", quantities: Object.fromEntries(
+      (shipmentPreview.value.items ?? []).map((item: Row) => [item.orderItemId, 0]),
+    ) };
+    shipmentVisible.value = true;
+  } catch (error) { ElMessage.error(readableError(error)); }
+}
+
+async function saveShipment(): Promise<void> {
+  if (shipmentBusy.value || shipmentPreview.value.unavailableReason) return;
+  const items = Object.entries(shipmentForm.value.quantities).filter(([, quantity]) => quantity > 0)
+    .map(([orderItemId, quantity]) => ({ orderItemId, quantity }));
+  const logisticsCompany = shipmentForm.value.logisticsCompany.trim();
+  const trackingNo = shipmentForm.value.trackingNo.trim();
+  if (!logisticsCompany || !trackingNo || !items.length) { ElMessage.warning("请填写承运公司、运单号，并选择本包裹商品数量"); return; }
+  shipmentBusy.value = true;
+  try {
+    await api.post(`/commerce-orders/${encodeURIComponent(String(shipmentPreview.value.orderId))}/shipments`,
+      { version: shipmentPreview.value.version, logisticsCompany, trackingNo, items });
+    ElMessage.success("包裹已登记；物流轨迹以承运方实际结果为准");
+    shipmentVisible.value = false;
+    await load();
+  } catch (error) { ElMessage.error(readableError(error)); }
+  finally { shipmentBusy.value = false; }
+}
+
+const shippingRequestKeys = new Map<string, { signature: string; key: string }>();
+async function requestShippingRefund(row: Row): Promise<void> {
+  try {
+    const preview = responseData<Row>(await api.get(`/commerce-orders/${encodeURIComponent(String(row.id))}/shipping-refunds/preview`));
+    if (Number(preview.maximumCents) <= 0) { ElMessage.warning("已无可申请的运费或现金额度"); return; }
+    const amount = await ElMessageBox.prompt(
+      `剩余可申请运费 ${(Number(preview.maximumCents) / 100).toFixed(2)} 元。商品退款后不自动退运费，本申请需财务审核。`, "申请单独退运费",
+      { inputValue: (Number(preview.maximumCents) / 100).toFixed(2), inputPattern: /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/, inputErrorMessage: "请填写最多两位小数的正金额" });
+    const [whole, fraction = ""] = amount.value.trim().split(".");
+    const amountCents = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+    if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > Number(preview.maximumCents)) throw new Error("金额超过可申请额度");
+    const reason = await ElMessageBox.prompt("请填写单独退运费的审批依据", "退运费原因",
+      { inputValidator: value => value.trim().length >= 2 && value.trim().length <= 256 || "请填写2至256字原因" });
+    const signature = JSON.stringify([amountCents, reason.value.trim()]);
+    const cached = shippingRequestKeys.get(String(row.id));
+    const key = cached?.signature === signature ? cached.key : crypto.randomUUID();
+    shippingRequestKeys.set(String(row.id), { signature, key });
+    await api.post(`/commerce-orders/${encodeURIComponent(String(row.id))}/shipping-refunds`,
+      { amountCents, reason: reason.value.trim(), orderVersion: preview.orderVersion, requestKey: key });
+    shippingRequestKeys.delete(String(row.id));
+    ElMessage.success("运费申请已提交，请到售后退款中审核后执行");
+    await load();
+  } catch (error) {
+    if (error !== "cancel" && error !== "close") ElMessage.error(readableError(error));
+  }
+}
+
+watch(resource, async () => {
+  rows.value = [];
+  resourceMeta.value = {};
+  search.value = "";
+  commerceStatus.value = "";
+  currentPage.value = 1;
+  await load();
+}, { immediate: true });
 </script>
 
 <template>
   <section class="page">
     <h1 class="page-title">{{ title }}</h1>
     <div class="resource-content">
-      <div class="toolbar">
-        <el-input v-if="searchable" v-model="search" :placeholder="resource === 'members' ? '昵称、旧会员编号或手机号' : '商品名或ERP编号'" clearable style="width: 300px" @keyup.enter="load" />
-        <el-button type="primary" @click="load">刷新</el-button>
-        <el-button v-if="createable" @click="openCreate">新增</el-button>
-        <el-button v-if="resource === 'commerce-jobs'" @click="runAction('/commerce-jobs/product-sync', '已安排同步最近24小时商品')">同步商品</el-button>
-        <el-button v-if="resource === 'commerce-jobs'" @click="runAction('/commerce-jobs/fulfillment-sync', '已安排物流同步')">同步物流</el-button>
-        <span class="muted">敏感字段已在服务端脱敏；无权限时不会返回原始健康数据。</span>
-      </div>
-      <el-table v-loading="loading" :data="rows" border stripe empty-text="暂无记录">
-        <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" min-width="145" show-overflow-tooltip>
-          <template #default="scope">{{ render(scope.row[column]) }}</template>
-        </el-table-column>
-        <el-table-column v-if="resource === 'members'" label="健康数据" width="230" fixed="right">
-          <template #default="scope">
-            <el-button size="small" @click="viewHealth(scope.row, false)">查看摘要</el-button>
-            <el-button size="small" type="warning" plain @click="viewHealth(scope.row, true)">原始记录</el-button>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="resource === 'feedback'" label="处理" width="170" fixed="right">
-          <template #default="scope">
-            <el-select :model-value="scope.row.status" size="small" @change="(value: string) => updateFeedback(scope.row, value)">
-              <el-option label="待处理" value="OPEN" /><el-option label="处理中" value="IN_PROGRESS" />
-              <el-option label="已解决" value="RESOLVED" /><el-option label="已关闭" value="CLOSED" />
-            </el-select>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="editable || ['commerce-jobs', 'health-reports'].includes(resource)" label="操作" min-width="110" fixed="right">
-          <template #default="scope">
-            <el-button v-if="editable" size="small" @click="openEdit(scope.row)">编辑</el-button>
-            <el-button v-if="resource === 'commerce-jobs' && ['FAILED', 'DEAD_LETTER'].includes(scope.row.status)" size="small" type="warning" @click="runAction(`/commerce-jobs/${scope.row.id}/retry`, '任务已重新排队')">重试</el-button>
-            <el-button v-if="resource === 'health-reports' && scope.row.status === 'FAILED'" size="small" type="warning" @click="runAction(`/health-reports/${scope.row.id}/retry`, '报告已重新排队')">重试</el-button>
-            <el-button v-if="resource === 'notification-campaigns' && scope.row.status === 'DRAFT'" size="small" type="primary" @click="runAction(`/notification-campaigns/${scope.row.id}/schedule`, '通知已安排发送')">安排发送</el-button>
-            <el-button v-if="resource === 'commerce-after-sales' && ['APPROVED', 'RETURNED'].includes(scope.row.status)" size="small" type="danger" @click="refundAfterSale(scope.row)">发起退款</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <CommerceWorkspace
+        v-if="isCommerceResource"
+        v-model:search="search"
+        :resource="resource"
+        :rows="rows"
+        :meta="resourceMeta"
+        :loading="loading"
+        :createable="createable"
+        @refresh="refreshCommerce"
+        @page-change="changeCommercePage"
+        @status-change="changeCommerceStatus"
+        @create="openCreate"
+        @edit="openEdit"
+        @refund="refundAfterSale"
+        @ship="openShipment"
+        @shipping-refund="requestShippingRefund"
+        @run-action="runAction"
+        @batch-products="batchProducts"
+      />
+      <template v-else>
+        <div class="toolbar">
+          <el-input v-if="searchable" v-model="search" placeholder="昵称、旧会员编号或手机号" clearable style="width: 300px" @keyup.enter="load" />
+          <el-button type="primary" @click="load">刷新</el-button>
+          <el-button v-if="createable" @click="openCreate">新增</el-button>
+          <span class="muted">敏感字段已在服务端脱敏；无权限时不会返回原始健康数据。</span>
+        </div>
+        <el-table v-loading="loading" :data="rows" border stripe empty-text="暂无记录">
+          <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" min-width="145" show-overflow-tooltip>
+            <template #default="scope">{{ render(scope.row[column]) }}</template>
+          </el-table-column>
+          <el-table-column v-if="resource === 'members'" label="健康数据" width="230" fixed="right">
+            <template #default="scope">
+              <el-button size="small" @click="viewHealth(scope.row, false)">查看摘要</el-button>
+              <el-button v-if="canReadRawHealth" size="small" type="warning" plain @click="viewHealth(scope.row, true)">原始记录</el-button>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="canWrite && resource === 'feedback'" label="处理" width="170" fixed="right">
+            <template #default="scope">
+              <el-select :model-value="scope.row.status" size="small" @change="(value: string) => updateFeedback(scope.row, value)">
+                <el-option label="待处理" value="OPEN" /><el-option label="处理中" value="IN_PROGRESS" />
+                <el-option label="已解决" value="RESOLVED" /><el-option label="已关闭" value="CLOSED" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="editable || (canWrite && resource === 'health-reports')" label="操作" min-width="110" fixed="right">
+            <template #default="scope">
+              <el-button v-if="editable" size="small" @click="openEdit(scope.row)">编辑</el-button>
+              <el-button v-if="canWrite && resource === 'health-reports' && scope.row.status === 'FAILED'" size="small" type="warning" @click="runAction(`/health-reports/${scope.row.id}/retry`, '报告已重新排队')">重试</el-button>
+              <el-button v-if="canWrite && resource === 'notification-campaigns' && scope.row.status === 'DRAFT'" size="small" type="primary" @click="runAction(`/notification-campaigns/${scope.row.id}/schedule`, '通知已安排发送')">安排发送</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
     </div>
 
+    <el-dialog v-model="shipmentVisible" title="本地商品分包发货" width="min(860px, 94vw)" :close-on-click-modal="false" destroy-on-close>
+      <el-alert v-if="shipmentPreview.unavailableReason" :title="shipmentPreview.unavailableReason" type="warning" :closable="false" />
+      <p>只登记实际交运的包裹，可分多次发货。ERP 或售后归属不明确的订单需先核验。</p>
+      <el-table :data="shipmentPreview.items ?? []" border>
+        <el-table-column label="商品 / 规格" min-width="150"><template #default="scope"><div>{{ scope.row.name }}</div><small class="muted">{{ scope.row.specification || '规格未获取' }}</small></template></el-table-column>
+        <el-table-column prop="quantity" label="购买" width="65" />
+        <el-table-column prop="shippedQuantity" label="已发" width="65" />
+        <el-table-column prop="afterSaleReservedQuantity" label="售后占用" width="90" />
+        <el-table-column prop="refundedQuantity" label="已退" width="65" />
+        <el-table-column prop="remainingQuantity" label="可发" width="65" />
+        <el-table-column label="本包裹数量" width="175"><template #default="scope"><el-input-number v-model="shipmentForm.quantities[scope.row.orderItemId]" :min="0" :max="scope.row.remainingQuantity" :precision="0" :disabled="!!shipmentPreview.unavailableReason || shipmentBusy" /></template></el-table-column>
+      </el-table>
+      <el-form label-width="90px" style="margin-top: 20px">
+        <el-form-item label="承运公司"><el-input v-model="shipmentForm.logisticsCompany" maxlength="60" placeholder="填写实际承运公司" :disabled="shipmentBusy" /></el-form-item>
+        <el-form-item label="运单号"><el-input v-model="shipmentForm.trackingNo" maxlength="100" placeholder="填写实际运单号；同单号重复提交不会重复登记" :disabled="shipmentBusy" /></el-form-item>
+      </el-form>
+      <template #footer><el-button :disabled="shipmentBusy" @click="shipmentVisible = false">关闭</el-button><el-button type="primary" :loading="shipmentBusy" :disabled="!!shipmentPreview.unavailableReason" @click="saveShipment">登记包裹</el-button></template>
+    </el-dialog>
     <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="resource === 'settings' && form.key === 'app_update' ? '980px' : '720px'" destroy-on-close>
       <el-table v-if="dialogMode === 'health'" :data="detailRows" border max-height="520" empty-text="暂无记录">
         <el-table-column v-for="column in Object.keys(detailRows[0] || {}).slice(0, 9)" :key="column" :label="fieldLabels[column] || column" min-width="145">
@@ -376,12 +567,22 @@ onMounted(load);
         </el-table-column>
       </el-table>
       <el-form v-else label-width="110px">
-        <template v-if="resource === 'articles'">
+        <template v-if="resource === 'commerce-commissions'">
+          <el-alert title="奖金规则只影响新支付订单；已有奖金使用原快照。提现仅可使用可用余额，仍需财务人工审核。" type="info" :closable="false" />
+          <el-form-item label="启用奖金"><el-switch v-model="form.enabled" /></el-form-item>
+          <el-form-item label="奖金比例"><el-input-number v-model="form.rateBps" :min="0" :max="10000" :precision="0" /><span class="muted">基点（100 = 1%）</span></el-form-item>
+          <el-form-item label="收货等待天数"><el-input-number v-model="form.settlementDays" :min="0" :max="3650" :precision="0" /></el-form-item>
+          <el-form-item label="启用提现"><el-switch v-model="form.withdrawalEnabled" /></el-form-item>
+          <el-form-item label="最低提现（分）"><el-input-number v-model="form.minimumWithdrawCents" :min="1" :precision="0" placeholder="未配置时无法提现" /></el-form-item>
+          <el-form-item label="每日额度（分）"><el-input-number v-model="form.dailyWithdrawLimitCents" :min="1" :precision="0" placeholder="不填则无额外限制" /></el-form-item>
+          <el-form-item label="人工审核"><el-switch v-model="form.reviewRequired" disabled /></el-form-item>
+        </template>
+        <template v-else-if="resource === 'articles'">
           <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
           <el-form-item label="摘要"><el-input v-model="form.summary" type="textarea" /></el-form-item>
           <el-form-item label="分类编号"><el-input v-model="form.categoryId" /></el-form-item>
           <el-form-item label="封面地址"><el-input v-model="form.coverUrl" /></el-form-item>
-          <el-form-item label="正文"><el-input v-model="form.contentHtml" type="textarea" :rows="10" /></el-form-item>
+          <el-form-item label="正文"><RichTextEditor v-model="form.contentHtml" /></el-form-item>
           <el-form-item label="状态"><el-select v-model="form.status"><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select></el-form-item>
         </template>
         <template v-else-if="resource === 'article-categories'">
@@ -398,24 +599,36 @@ onMounted(load);
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
         <template v-else-if="resource === 'commerce-products'">
-          <el-alert title="商品展示资料在这里维护；SKU、库存和履约数据以聚水潭真实同步结果为准。" type="info" :closable="false" show-icon />
-          <el-form-item label="ERP商品编号"><el-input v-model="form.erpItemId" disabled /></el-form-item>
-          <el-form-item label="ERP商品名称"><el-input v-model="form.name" disabled /></el-form-item>
+          <el-form-item label="商品来源"><el-tag>{{ form.source === 'LOCAL' ? '本地商品' : 'ERP同步商品' }}</el-tag></el-form-item>
+          <el-form-item label="商品编号"><el-input v-model="form.erpItemId" :disabled="form.source !== 'LOCAL'" placeholder="留空自动生成" /></el-form-item>
+          <el-form-item label="商品名称"><el-input v-model="form.name" :disabled="form.source !== 'LOCAL'" /></el-form-item>
           <el-form-item label="展示名称"><el-input v-model="form.displayName" /></el-form-item>
           <el-form-item label="副标题"><el-input v-model="form.subtitle" /></el-form-item>
           <el-form-item label="品牌"><el-input v-model="form.brand" /></el-form-item>
-          <el-form-item label="分类编号"><el-input v-model="form.categoryId" /></el-form-item>
+          <el-form-item label="商城分类"><el-select v-model="form.categoryId" clearable filterable placeholder="请选择分类"><el-option v-for="item in categoryOptions" :key="item.id" :label="item.parent?.name ? `${item.parent.name} / ${item.name}` : item.name" :value="item.id" /></el-select></el-form-item>
           <el-form-item label="封面地址"><el-input v-model="form.coverImage" /></el-form-item>
           <el-form-item label="相册地址"><el-input v-model="form.galleryText" type="textarea" :rows="4" placeholder="每行一个图片地址" /></el-form-item>
           <el-form-item label="标签"><el-input v-model="form.tagsText" placeholder="多个标签用逗号分隔" /></el-form-item>
-          <el-form-item label="商品详情"><el-input v-model="form.detailHtml" type="textarea" :rows="8" /></el-form-item>
+          <el-form-item label="商品详情"><RichTextEditor v-model="form.detailHtml" /></el-form-item>
+          <el-form-item v-if="form.source === 'LOCAL'" label="商品规格">
+            <div style="width: 100%">
+              <el-table :data="form.skus" border>
+                <el-table-column label="规格"><template #default="scope"><el-input v-model="scope.row.specification" /></template></el-table-column>
+                <el-table-column label="SKU编码"><template #default="scope"><el-input v-model="scope.row.erpSkuId" placeholder="自动生成" /></template></el-table-column>
+                <el-table-column label="售价（分）" width="145"><template #default="scope"><el-input-number v-model="scope.row.salePriceCents" :min="1" controls-position="right" style="width:120px" /></template></el-table-column>
+                <el-table-column label="库存" width="130"><template #default="scope"><el-input-number v-model="scope.row.stock" :min="0" controls-position="right" style="width:105px" /></template></el-table-column>
+                <el-table-column label="启用" width="65"><template #default="scope"><el-switch v-model="scope.row.enabled" /></template></el-table-column>
+              </el-table>
+              <el-button style="margin-top:8px" @click="form.skus.push({ specification: '', salePriceCents: 1, stock: 0, enabled: true })">添加规格</el-button>
+            </div>
+          </el-form-item>
           <el-form-item label="状态"><el-select v-model="form.status"><el-option label="草稿" value="DRAFT" /><el-option label="在售" value="PUBLISHED" /><el-option label="下架" value="OFF_SHELF" /></el-select></el-form-item>
           <el-form-item label="首页推荐"><el-switch v-model="form.featured" /></el-form-item>
           <el-form-item label="排序"><el-input-number v-model="form.sort" /></el-form-item>
         </template>
         <template v-else-if="resource === 'commerce-categories'">
           <el-form-item label="分类名称"><el-input v-model="form.name" /></el-form-item>
-          <el-form-item label="上级编号"><el-input v-model="form.parentId" clearable /></el-form-item>
+          <el-form-item label="上级分类"><el-select v-model="form.parentId" clearable filterable placeholder="不选则为一级分类"><el-option v-for="item in categoryOptions.filter((item) => item.id !== form.id)" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
           <el-form-item label="图标地址"><el-input v-model="form.iconUrl" /></el-form-item>
           <el-form-item label="排序"><el-input-number v-model="form.sort" /></el-form-item>
           <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
@@ -428,7 +641,8 @@ onMounted(load);
           <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
         </template>
         <template v-else-if="resource === 'commerce-business-configs'">
-          <el-form-item label="配置项"><el-input v-model="form.key" disabled /></el-form-item>
+          <el-alert title="配置项建议按业务分组命名，例如 order.autoClose、shipping.default、invoice.default。支付和外部平台密钥请在集成中心维护。" type="info" :closable="false" show-icon />
+          <el-form-item label="配置项"><el-input v-model="form.key" :disabled="!form._isNew" placeholder="如 shipping.default" /></el-form-item>
           <el-form-item label="名称"><el-input v-model="form.label" /></el-form-item>
           <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
           <el-form-item label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="10" /></el-form-item>
@@ -446,7 +660,7 @@ onMounted(load);
         </template>
         <template v-else-if="resource === 'commerce-after-sales'">
           <el-alert title="退款成功状态不能手工填写，只能由已验签的支付渠道回调更新。" type="warning" :closable="false" show-icon />
-          <el-form-item label="处理状态"><el-select v-model="form.status"><el-option label="审核中" value="REVIEWING" /><el-option label="通过" value="APPROVED" /><el-option label="拒绝" value="REJECTED" /><el-option label="等待退货" value="WAITING_RETURN" /><el-option label="已退回" value="RETURNED" /><el-option label="已取消" value="CANCELLED" /></el-select></el-form-item>
+          <el-form-item label="处理状态"><el-select v-model="form.status"><el-option v-for="status in [...new Set([rows.find((row) => row.id === form.id)?.status, ...(form.allowedTransitions || [])])].filter(Boolean)" :key="status" :label="({APPLIED:'已申请',REVIEWING:'审核中',APPROVED:'通过',REJECTED:'拒绝',WAITING_RETURN:'等待退货',RETURNED:'已退回',CANCELLED:'已取消',REFUNDING:'退款中',COMPLETED:'已完成'} as Record<string,string>)[status] || status" :value="status" /></el-select></el-form-item>
           <el-form-item label="退货物流"><el-input v-model="form.returnLogisticsCompany" /></el-form-item>
           <el-form-item label="退货单号"><el-input v-model="form.returnTrackingNo" /></el-form-item>
         </template>
@@ -498,6 +712,7 @@ onMounted(load);
         <template v-else-if="resource === 'settings'">
           <el-form-item label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
           <el-form-item label="公开"><el-switch v-model="form.public" /></el-form-item>
+          <el-alert v-if="form.key === 'legacy_app_update'" title="正式客户端升级配置。每个平台仅发布一个已核验版本；Android 安装包需校验 SHA-256，iPhone 使用 App Store 链接。空 releases 表示暂不发布升级。" type="info" :closable="false" />
           <template v-if="form.key === 'app_update' && form.downloadEditor">
             <el-alert title="保存后下载页会读取新配置。此处不上传安装包；Android/HarmonyOS 文件需先放入服务器 /down/files/ 目录。" type="warning" :closable="false" show-icon />
             <el-form-item label="发布时间" class="download-published-at">
@@ -562,7 +777,7 @@ onMounted(load);
           <el-form-item label="账号"><el-input v-model="form.username" :disabled="Boolean(form.id)" /></el-form-item>
           <el-form-item label="显示名称"><el-input v-model="form.displayName" /></el-form-item>
           <el-form-item v-if="!form.id" label="初始密码"><el-input v-model="form.password" type="password" show-password /></el-form-item>
-          <el-form-item label="角色"><el-select v-model="form.role"><el-option label="超级管理员" value="SUPER_ADMIN" /><el-option label="App 运营" value="APP_OPERATIONS" /><el-option label="商城运营" value="COMMERCE_OPERATIONS" /><el-option label="财务" value="FINANCE" /><el-option label="内容编辑" value="CONTENT_EDITOR" /><el-option label="客服" value="CUSTOMER_SERVICE" /><el-option label="健康数据审计员" value="HEALTH_AUDITOR" /><el-option label="集成管理员" value="INTEGRATION_ADMIN" /><el-option label="接口文档编辑" value="API_DOC_EDITOR" /><el-option label="只读" value="READ_ONLY" /></el-select></el-form-item>
+          <el-form-item label="角色"><el-select v-model="form.roles" multiple><el-option label="超级管理员" value="SUPER_ADMIN" /><el-option label="App 运营" value="APP_OPERATIONS" /><el-option label="商城运营" value="COMMERCE_OPERATIONS" /><el-option label="财务" value="FINANCE" /><el-option label="内容编辑" value="CONTENT_EDITOR" /><el-option label="客服" value="CUSTOMER_SERVICE" /><el-option label="健康数据审计员" value="HEALTH_AUDITOR" /><el-option label="集成管理员" value="INTEGRATION_ADMIN" /><el-option label="接口文档编辑" value="API_DOC_EDITOR" /><el-option label="只读" value="READ_ONLY" /></el-select></el-form-item>
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
       </el-form>

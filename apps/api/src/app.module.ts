@@ -7,6 +7,7 @@ import { AuthModule } from "./auth/auth.module";
 import { BillingModule } from "./billing/billing.module";
 import { CareModule } from "./care/care.module";
 import { CommerceModule } from "./commerce/commerce.module";
+import { CommerceWithdrawalModule } from "./commerce/commerce-withdrawal.module";
 import { DatabaseModule } from "./common/database.module";
 import { MaintenanceMiddleware } from "./common/maintenance.middleware";
 import { RequestIdMiddleware } from "./common/request-id.middleware";
@@ -35,6 +36,7 @@ import { SupportModule } from "./support/support.module";
     ContentModule,
     SupportModule,
     CommerceModule,
+    CommerceWithdrawalModule,
     AdminModule,
     ApiDocumentationModule,
     LegacyModule,

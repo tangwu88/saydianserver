@@ -1,6 +1,7 @@
 import axios from "axios";
 
 const tokenKey = "saydian-admin-token";
+const rolesKey = "saydian-admin-roles";
 
 export const api = axios.create({
   baseURL: "/api/saydian-app/admin/v1",
@@ -18,6 +19,7 @@ api.interceptors.response.use(
   (error: unknown) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       sessionStorage.removeItem(tokenKey);
+      sessionStorage.removeItem(rolesKey);
       if (!location.pathname.endsWith("/login")) {
         location.assign(`${import.meta.env.BASE_URL}login`);
       }
@@ -32,6 +34,20 @@ export function setAdminToken(token: string): void {
 
 export function clearAdminToken(): void {
   sessionStorage.removeItem(tokenKey);
+  sessionStorage.removeItem(rolesKey);
+}
+
+export function getAdminRoles(): string[] {
+  try { const roles = JSON.parse(sessionStorage.getItem(rolesKey) ?? "[]"); return Array.isArray(roles) ? roles.map(String) : []; }
+  catch { return []; }
+}
+
+export function setAdminRoles(roles: string[]): void { sessionStorage.setItem(rolesKey, JSON.stringify(roles)); }
+
+export async function ensureAdminRoles(): Promise<void> {
+  if (getAdminRoles().length) return;
+  const profile = responseData<{ role: string; roles?: string[] }>(await api.get("/auth/me"));
+  setAdminRoles(profile.roles?.length ? profile.roles : [profile.role]);
 }
 
 export function hasAdminToken(): boolean {

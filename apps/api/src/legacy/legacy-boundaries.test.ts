@@ -35,16 +35,17 @@ describe("legacy identifiers and payment boundaries", () => {
     },
   );
 
-  it("blocks historical-order payment before touching the mall", async () => {
+  it("blocks unverified historical-order payment before touching billing", async () => {
     const findFirst = vi.fn().mockResolvedValue({ id: "projection" });
     const store = { listOrders: vi.fn() };
     const billing = { createPayment: vi.fn() };
     const commerce = new CommerceService(
-      { legacyOrderProjection: { findFirst } } as unknown as PrismaService,
+      { legacyOrderProjection: { findFirst }, commerceOrder: { findFirst: vi.fn().mockResolvedValue(null) },
+        legacyIdMap: { findMany: vi.fn().mockResolvedValue([]) } } as unknown as PrismaService,
       store as never,
       billing as never,
     );
-    await expect(commerce.forUser("owner", "POST", "/payments", { orderId: "9527" })).rejects.toThrow("历史订单仅供查看");
+    await expect(commerce.forUser("owner", "POST", "/payments", { orderId: "9527" })).rejects.toThrow("尚未完成明细及资金迁移核验");
     expect(findFirst.mock.calls[0]?.[0].where).toEqual({ userId: "owner", OR: [{ legacyOrderId: "9527" }] });
     expect(billing.createPayment).not.toHaveBeenCalled();
   });

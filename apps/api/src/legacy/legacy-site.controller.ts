@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Post,
+  Query,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
@@ -23,6 +25,11 @@ export class LegacySiteController {
     private readonly auth: AuthService,
     private readonly legacy: LegacyService,
   ) {}
+
+  @Get("version")
+  async version(@Query("platform") platform: string, @Query("v") build?: string) {
+    return legacySuccess(await this.legacy.appUpdate(platform, build));
+  }
 
   @Post("login")
   async login(@Body() input: unknown) {

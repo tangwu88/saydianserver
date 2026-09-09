@@ -17,6 +17,7 @@ export interface RequestWithContext extends Request {
   authAdmin?: {
     id: string;
     role: string;
+    roles?: string[];
     sessionId: string;
   };
 }

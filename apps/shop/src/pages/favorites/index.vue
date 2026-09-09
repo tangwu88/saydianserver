@@ -20,6 +20,7 @@ import ProductCard from "../../components/ProductCard.vue";
 import { api, toast } from "../../api";
 const products = ref<any[]>([]);
 onShow(async () => {
+  products.value=[];
   try {
     products.value = await api("/storefront/favorites", { auth: true });
   } catch (e) {

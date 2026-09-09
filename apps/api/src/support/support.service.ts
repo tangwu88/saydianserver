@@ -55,7 +55,11 @@ export class SupportService {
   }
 
   async supportConfig() {
-    const setting = await this.prisma.appSetting.findUnique({ where: { key: "support" } });
+    // Read only the explicitly published support record; do not load private JSON.
+    const setting = await this.prisma.appSetting.findFirst({
+      where: { key: "support", public: true },
+      select: { value: true },
+    });
     return (
       setting?.value ?? {
         configured: false,

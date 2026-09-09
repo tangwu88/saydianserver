@@ -2,7 +2,7 @@
 import { reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import { api, readableError, responseData, setAdminToken } from "../api";
+import { api, readableError, responseData, setAdminToken, setAdminRoles } from "../api";
 
 const router = useRouter();
 const loading = ref(false);
@@ -15,10 +15,11 @@ async function submit(): Promise<void> {
   }
   loading.value = true;
   try {
-    const result = responseData<{ token: string }>(
+    const result = responseData<{ token: string; user: { role: string; roles?: string[] } }>(
       await api.post("/auth/login", form),
     );
     setAdminToken(result.token);
+    setAdminRoles(result.user.roles?.length ? result.user.roles : [result.user.role]);
     await router.replace("/");
   } catch (error) {
     ElMessage.error(readableError(error));

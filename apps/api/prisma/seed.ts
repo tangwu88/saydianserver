@@ -37,6 +37,7 @@ async function main(): Promise<void> {
   for (const [key, state, publicConfig] of [
     ["sms", IntegrationState.UNCONFIGURED, { provider: null }],
     ["push", IntegrationState.UNCONFIGURED, { provider: null }],
+    ["wechat_official", IntegrationState.UNCONFIGURED, { provider: "wechat_official_account", redirectUri: null }],
     ["ai", IntegrationState.UNCONFIGURED, { provider: null }],
     [
       "wechat_login",

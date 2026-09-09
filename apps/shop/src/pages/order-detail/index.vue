@@ -1,270 +1,51 @@
 <template>
-  <DesktopHeader /><view v-if="order" class="page"
-    ><view class="container detail-layout"
-      ><view
-        ><view class="status-card card"
-          ><text>{{ label(order.status) }}</text
-          ><text class="small">{{ statusHelp(order.status) }}</text></view
-        ><view v-if="order.shipments?.length" class="card block"
-          ><view class="block-title">物流信息</view
-          ><view v-for="ship in order.shipments" :key="ship.id"
-            ><b>{{ ship.logisticsCompany }} {{ ship.trackingNo }}</b
-            ><text class="small"
-              >发货时间：{{ date(ship.shippedAt) }}</text
-            ></view
-          ></view
-        ><view class="card block"
-          ><view class="block-title">收货信息</view
-          ><b>{{ order.recipientName }} {{ order.recipientMobile }}</b
-          ><text class="small"
-            >{{ order.province }}{{ order.city }}{{ order.district
-            }}{{ order.addressDetail }}</text
-          ></view
-        ><view class="card block"
-          ><view class="block-title">商品信息</view
-          ><view v-for="item in order.items" :key="item.id" class="item"
-            ><image
-              :src="item.imageSnapshot || productPlaceholder"
-              mode="aspectFill"
-            /><view
-              ><b>{{ item.nameSnapshot }}</b
-              ><text class="small">{{ item.specificationSnapshot }}</text
-              ><text
-                >{{ money(item.unitPriceCents) }} × {{ item.quantity }}</text
-              ></view
-            ></view
-          ></view
-        ><view v-if="order.afterSales?.length" class="card block"
-          ><view class="block-title">售后进度</view
-          ><view v-for="item in order.afterSales" :key="item.id" class="after"
-            ><b>{{ afterLabel(item.type) }} · {{ labelAfter(item.status) }}</b
-            ><text class="small"
-              >{{ item.reason }} · {{ money(item.requestedCents) }}</text
-            ></view
-          ></view
-        ></view
-      ><view class="card aside"
-        ><view class="line"
-          ><text>订单号</text><b selectable>{{ order.orderNo }}</b></view
-        ><view class="line"
-          ><text>商品金额</text><b>{{ money(order.subtotalCents) }}</b></view
-        ><view class="line"
-          ><text>优惠</text><b>-{{ money(order.discountCents) }}</b></view
-        ><view class="line"
-          ><text>运费</text><b>{{ money(order.shippingCents) }}</b></view
-        ><view class="line total"
-          ><text>实付</text><b>{{ money(order.payableCents) }}</b></view
-        ><view
-          v-if="order.status === 'PENDING_PAYMENT'"
-          class="primary-btn"
-          @click="repay"
-          >继续支付</view
-        ><view
-          v-if="order.status === 'PENDING_PAYMENT'"
-          class="outline-btn"
-          @click="cancel"
-          >取消订单</view
-        ><view
-          v-if="order.status === 'SHIPPED'"
-          class="primary-btn"
-          @click="receipt"
-          >确认收货</view
-        ><view v-if="canAfterSale" class="outline-btn" @click="afterSale"
-          >申请退款/退货/换货</view
-        ></view
-      ></view
-    ></view
-  >
+  <DesktopHeader /><view class="page"><view v-if="order" class="container detail-layout">
+    <view class="blocks">
+      <view v-if="order.readOnly" class="card"><h3>历史订单 · 只读</h3><text class="muted">仅展示已获取的信息；缺少明细不代表商品数量或金额为零。此订单暂不提供支付或售后操作。</text></view>
+      <view class="card status-card"><h2>{{ labels[order.status] || order.status }}</h2><text>{{ order.status === 'PENDING_PAYMENT' ? '订单已保存，可继续支付；请勿重复下单。' : '付款、物流和售后结果以服务端确认状态为准。' }}</text></view>
+      <view v-if="order.shipments?.length" class="card"><h3>物流与包裹</h3><view v-for="(ship,index) in order.shipments" :key="ship.id" class="block"><b>包裹 {{ Number(index)+1 }} · {{ ship.logisticsCompany || '承运商待补充' }}</b><text selectable>{{ ship.trackingNo || '单号待补充' }}</text><text class="muted">{{ date(ship.shippedAt) }}</text><text v-for="line in (ship.items || [])" :key="line.orderItemId">{{ shipmentItemName(line.orderItemId) }} × {{ line.quantity }}</text><text v-if="!ship.items?.length" class="muted">包裹商品明细未获取</text><view v-for="(trace,i) in (ship.traces || [])" :key="i">{{ trace.description || trace.context }} {{ date(trace.time) }}</view><text v-if="!ship.traces?.length" class="muted">物流轨迹未获取，登记单号不代表已签收。</text></view></view>
+      <view class="card"><h3>收货信息</h3><b>{{ order.recipientName || '收货人未获取' }} {{ order.recipientMobile || '联系方式未获取' }}</b><view v-if="order.addressDetail">{{ order.province }}{{ order.city }}{{ order.district }}{{ order.addressDetail }}</view><view v-else class="muted">收货地址未获取</view></view>
+      <view class="card"><h3>商品信息</h3><view v-if="orderItemSummary(order).quantity === null" class="muted">商品明细与数量未获取</view><view v-for="item in orderItemSummary(order).items" :key="item.id" class="item"><image v-if="item.imageSnapshot" :src="item.imageSnapshot" mode="aspectFit"/><view v-else class="no-image">暂无图片</view><view><b>{{ item.nameSnapshot || '商品名称未获取' }}</b><text class="muted">{{ item.specificationSnapshot }}</text><text>{{ money(item.unitPriceCents) }} × {{ item.quantity }}</text><button v-if="!order.readOnly && ['RECEIVED','COMPLETED','CLOSED'].includes(order.status)" size="mini" @click="reviewItem=item.id">评价商品</button></view></view></view>
+      <view v-if="reviewItem" class="card"><h3>商品评价</h3><picker :range="['1星','2星','3星','4星','5星']" :value="rating-1" @change="rating=Number($event.detail.value)+1"><view class="input">评分：{{ rating }} 星</view></picker><textarea v-model="reviewText" class="textarea" maxlength="2000" placeholder="分享真实使用体验"/><button class="primary-btn" :disabled="busy" @click="review">提交评价</button><button class="outline-btn" @click="reviewItem=''">取消</button></view>
+      <view v-if="order.afterSales?.length" class="card"><h3>售后进度</h3><view v-for="sale in order.afterSales" :key="sale.id" class="block"><b>{{ afterLabels[sale.status] || sale.status }}</b><text>{{ sale.reason }}</text><text>现金退款 {{ money(sale.requestedCents) }} · 积分返还 {{ money(sale.pointReturnCents) }}</text><text v-if="sale.returnTrackingNo" selectable>退货单号 {{ sale.returnTrackingNo }}</text><button v-if="!order.readOnly && sale.status==='WAITING_RETURN'" size="mini" @click="editReturn(sale)">{{ sale.returnTrackingNo ? '更新寄回物流' : '填写寄回物流' }}</button></view></view>
+      <view v-if="returnSale" class="card"><h3>登记退货物流</h3><text class="muted">请按审核要求寄回。填写单号不会自动确认收货或退款。</text><input v-model="returnCompany" class="input" maxlength="80" placeholder="退货物流公司"/><input v-model="returnTracking" class="input" maxlength="100" placeholder="退货运单号"/><button class="primary-btn" :disabled="busy" @click="saveReturn">保存寄回信息</button><button class="outline-btn" @click="returnSale=null">取消填写</button></view>
+    </view>
+    <view class="card aside"><view class="line"><text>订单号</text><b selectable>{{ order.orderNo }}</b></view><view class="line"><text>商品金额</text><b>{{ money(order.subtotalCents) }}</b></view><view class="line"><text>优惠券</text><b>-{{ money(order.discountCents) }}</b></view><view class="line"><text>积分抵扣</text><b>-{{ money(order.pointDiscountCents) }}</b></view><view class="line"><text>运费</text><b>{{ money(order.shippingCents) }}</b></view><view class="line total"><text>{{ order.paidAt ? '支付金额' : '现金应付' }}</text><b>{{ money(order.payableCents) }}</b></view>
+      <template v-if="can('PAY')"><view class="payment-options"><button v-for="option in channels" :key="option.channel" :class="channel===option.channel?'selected':''" :disabled="!option.enabled || busy" @click="channel=option.channel">{{ paymentLabels[option.channel] }}<text v-if="!option.enabled" class="muted"> · {{ option.reason || '未配置' }}</text></button><view v-if="!channels.some(x=>x.enabled)" class="muted">当前没有可用支付渠道，订单保持待付款。</view></view><button class="primary-btn" :disabled="busy || !channel" @click="pay">{{ busy ? '正在处理…' : '继续支付' }}</button></template>
+      <view v-if="qr" class="qr"><image :src="qr" mode="aspectFit"/><text>请使用微信扫码，支付后点击查询结果。</text></view><view v-if="paymentNote" role="status" class="notice">{{ paymentNote }}</view>
+      <button class="outline-btn" :disabled="busy" @click="checkPayment">刷新支付与订单状态</button><button v-if="can('CANCEL')" class="outline-btn" :disabled="busy" @click="action('cancel','确定取消此订单？积分和优惠券按服务端规则释放。')">取消订单</button><button v-if="can('CONFIRM_RECEIPT')" class="primary-btn" :disabled="busy" @click="action('receipt','确认已收到商品？')">确认收货</button><button v-if="can('APPLY_AFTER_SALE')" class="outline-btn" @click="afterSale">申请商品售后</button><view v-if="order.unavailableReason" class="muted">{{ order.unavailableReason }}</view>
+    </view>
+  </view><view v-else class="empty card">{{ error || '正在读取订单…' }}<button v-if="error" @click="load">重新加载</button></view></view>
 </template>
 <script setup lang="ts">
-import { onLoad } from "@dcloudio/uni-app";
-import { computed, ref } from "vue";
-import DesktopHeader from "../../components/DesktopHeader.vue";
-import { api, money, productPlaceholder, toast } from "../../api";
-const order = ref<any>(),
-  id = ref("");
-const canAfterSale = computed(
-  () =>
-    ["PAID", "WAITING_FULFILLMENT", "SHIPPED", "RECEIVED"].includes(
-      order.value?.status,
-    ) &&
-    !order.value?.afterSales?.some(
-      (x: any) => !["COMPLETED", "REJECTED", "CANCELLED"].includes(x.status),
-    ),
-);
-onLoad(async (o) => {
-  id.value = o?.id || "";
-  await load();
-});
-async function load() {
-  try {
-    order.value = await api(`/storefront/orders/${id.value}`, { auth: true });
-  } catch (e) {
-    toast(e);
-  }
-}
-async function cancel() {
-  try {
-    await api(`/storefront/orders/${id.value}/cancel`, {
-      method: "POST",
-      auth: true,
-    });
-    await load();
-  } catch (e) {
-    toast(e);
-  }
-}
-async function receipt() {
-  try {
-    await api(`/storefront/orders/${id.value}/receipt`, {
-      method: "POST",
-      auth: true,
-    });
-    await load();
-  } catch (e) {
-    toast(e);
-  }
-}
-function afterSale() {
-  uni.navigateTo({ url: `/pages/after-sale/index?orderId=${id.value}` });
-}
-function repay() {
-  uni.showToast({ title: "请从订单支付入口选择支付方式", icon: "none" });
-}
-const labels: any = {
-  PENDING_PAYMENT: "等待付款",
-  PAID: "支付成功",
-  ERP_SYNCING: "正在同步 ERP",
-  WAITING_FULFILLMENT: "等待发货",
-  SHIPPED: "已发货",
-  RECEIVED: "已签收",
-  CANCELLED: "订单已取消",
-  AFTER_SALE: "售后处理中",
-  REFUNDED: "退款完成",
-  CLOSED: "订单已关闭",
-};
-function label(v: string) {
-  return labels[v] || v;
-}
-function statusHelp(v: string) {
-  return v === "SHIPPED"
-    ? "商品正在配送，请留意物流动态"
-    : v === "WAITING_FULFILLMENT"
-      ? "订单已同步，仓库正在处理"
-      : v === "PENDING_PAYMENT"
-        ? "请在订单关闭前完成支付"
-        : "订单状态会与聚水潭 ERP 保持同步";
-}
-const afterLabels: any = {
-  APPLIED: "已申请",
-  ERP_SYNCING: "同步中",
-  PROCESSING: "处理中",
-  WAITING_RETURN: "待寄回",
-  RECEIVED: "已收货",
-  REFUNDING: "退款中",
-  COMPLETED: "已完成",
-  REJECTED: "已拒绝",
-  CANCELLED: "已取消",
-};
-function labelAfter(v: string) {
-  return afterLabels[v] || v;
-}
-function afterLabel(v: string) {
-  return v === "REFUND_ONLY"
-    ? "仅退款"
-    : v === "RETURN_REFUND"
-      ? "退货退款"
-      : "换货";
-}
-function date(v: string) {
-  return v ? new Date(v).toLocaleString() : "-";
-}
+defineOptions({ inheritAttrs: false });
+import { onLoad,onShow,onHide,onUnload } from '@dcloudio/uni-app';
+import { computed,ref } from 'vue';
+import DesktopHeader from '../../components/DesktopHeader.vue';
+import { api,money,toast } from '../../api';
+import { channelsForEnvironment,orderItemSummary } from '../../commerce-model';
+import { confirmPayment,createOrderPayment,invokePayment,paymentEnvironment,paymentLabels } from '../../payments';
+const id=ref(''),order=ref<any>(null),error=ref(''),capabilities=ref<any>({payments:[]}),busy=ref(false),channel=ref(''),qr=ref(''),paymentNote=ref(''),paymentId=ref(''),reviewItem=ref(''),reviewText=ref(''),rating=ref(5);
+let poll:ReturnType<typeof setInterval>|undefined, polls=0;
+const returnSale=ref<any>(null),returnCompany=ref(''),returnTracking=ref('');
+function editReturn(sale:any){returnSale.value=sale;returnCompany.value=sale.returnLogisticsCompany||'';returnTracking.value=sale.returnTrackingNo||'';}
+async function saveReturn(){if(busy.value)return;if(!returnCompany.value.trim()||!returnTracking.value.trim())return toast('请填写物流公司和运单号');busy.value=true;try{await api('/storefront/orders/'+encodeURIComponent(id.value)+'/after-sales/'+encodeURIComponent(returnSale.value.id)+'/return-logistics',{method:'POST',auth:true,data:{logisticsCompany:returnCompany.value.trim(),trackingNo:returnTracking.value.trim(),version:returnSale.value.version}});returnSale.value=null;await load();toast('寄回信息已保存，等待后台收货审核');}catch(e){toast(e);}finally{busy.value=false;}}
+const channels=computed(()=>channelsForEnvironment(capabilities.value.payments || [],paymentEnvironment(),uni.getSystemInfoSync().windowWidth>=900));
+const labels:Record<string,string>={PENDING_PAYMENT:'等待付款',PAID:'支付成功',ERP_SYNCING:'履约处理中',WAITING_FULFILLMENT:'等待发货',SHIPPED:'已发货',RECEIVED:'已签收',COMPLETED:'已完成',CANCELLED:'已取消',AFTER_SALE:'售后处理中',REFUNDED:'已退款',CLOSED:'已关闭'};
+const afterLabels:Record<string,string>={APPLIED:'待审核',REVIEWING:'审核中',APPROVED:'已批准',PROCESSING:'处理中',WAITING_RETURN:'待寄回',RETURNED:'退货已收货',REFUNDING:'退款中',COMPLETED:'已完成',REJECTED:'已拒绝',CANCELLED:'已取消',ERP_SYNCING:'处理中'};
+onLoad(o=>{id.value=String(o?.id||'');});
+onShow(()=>{void load();});onHide(stopPoll);onUnload(stopPoll);
+function can(action:string){return !order.value?.readOnly && (order.value?.allowedActions?.includes(action) || false);}
+async function load(){try{error.value='';const [value,config]=await Promise.all([api<any>('/storefront/orders/'+encodeURIComponent(id.value),{auth:true}),api('/storefront/capabilities')]);order.value=value;capabilities.value=config;channel.value=channels.value.find(x=>x.enabled)?.channel||'';const pending=value.paymentIntents?.find((x:any)=>x.status==='PENDING');paymentId.value=pending?.id || paymentId.value;if(value.status!=='PENDING_PAYMENT'){qr.value='';stopPoll();}}catch(e){order.value=null;error.value=e instanceof Error?e.message:String(e);}}
+function stopPoll(){if(poll)clearInterval(poll);poll=undefined;}
+async function checkPayment(){try{if(paymentId.value){const result=await confirmPayment(paymentId.value);paymentNote.value=result.paid?'服务端已确认支付。':'支付尚未确认，请稍后查询；无需重新下单。';if(result.paid)stopPoll();}await load();}catch(e){toast(e);}}
+async function pay(){if(busy.value||!channel.value)return;busy.value=true;try{const payment:any=await createOrderPayment(id.value,channel.value);paymentId.value=payment.id;if(payment.status?.toLowerCase()!=='pending'){await checkPayment();return;}const result=await invokePayment(payment.invoke);qr.value=result.qr||'';paymentNote.value='已发起支付，正在等待服务端确认。';await checkPayment();stopPoll();polls=0;if(order.value?.status==='PENDING_PAYMENT')poll=setInterval(()=>{if(++polls>24){stopPoll();return;}void checkPayment();},5000);}catch(e){toast(e);paymentNote.value='支付未完成，可留在本页查询或稍后从订单继续支付。';await load();}finally{busy.value=false;}}
+async function action(path:string,content:string){const answer=await uni.showModal({title:'订单操作',content});if(!answer.confirm||busy.value)return;busy.value=true;try{await api('/storefront/orders/'+id.value+'/'+path,{method:'POST',auth:true});await load();}catch(e){toast(e);}finally{busy.value=false;}}
+function afterSale(){uni.navigateTo({url:'/pages/after-sale/index?orderId='+encodeURIComponent(id.value)});}
+async function review(){if(!reviewText.value.trim())return toast('请填写评价内容');busy.value=true;try{await api('/storefront/reviews',{method:'POST',auth:true,data:{orderItemId:reviewItem.value,rating:rating.value,content:reviewText.value,images:[]}});reviewItem.value='';reviewText.value='';toast('评价已提交');}catch(e){toast(e);}finally{busy.value=false;}}
+function date(value:unknown){return value?new Date(String(value)).toLocaleString():'时间未获取';}
+function shipmentItemName(itemId:string){const item=order.value?.items?.find((row:any)=>row.id===itemId);return item?[item.nameSnapshot,item.specificationSnapshot].filter(Boolean).join(' · '):'商品明细未获取';}
 </script>
 <style scoped lang="scss">
-.detail-layout {
-  display: grid;
-  gap: 22rpx;
-}
-.detail-layout > view {
-  display: grid;
-  gap: 22rpx;
-}
-.status-card {
-  background: linear-gradient(135deg, #195e52, #2a8c78);
-  color: #fff;
-}
-.status-card text {
-  display: block;
-  font-size: 42rpx;
-  font-weight: 900;
-}
-.status-card .small {
-  display: block;
-  color: #d1ebe4;
-  margin-top: 12rpx;
-}
-.block-title {
-  font-size: 30rpx;
-  font-weight: 850;
-  margin-bottom: 24rpx;
-}
-.block .small {
-  display: block;
-  color: var(--muted);
-  margin-top: 10rpx;
-  line-height: 1.6;
-}
-.item {
-  display: grid;
-  grid-template-columns: 130rpx 1fr;
-  gap: 18rpx;
-  padding: 18rpx 0;
-  border-top: 1px solid var(--line);
-}
-.item image {
-  width: 130rpx;
-  height: 130rpx;
-  border-radius: 14rpx;
-}
-.item b,
-.item .small,
-.item text {
-  display: block;
-}
-.after {
-  padding: 16rpx 0;
-  border-top: 1px solid var(--line);
-}
-.line {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 22rpx;
-}
-.line b {
-  max-width: 68%;
-  text-align: right;
-}
-.line.total {
-  padding-top: 22rpx;
-  border-top: 1px solid var(--line);
-}
-.total b {
-  color: #d95f29;
-  font-size: 36rpx;
-}
-.aside .primary-btn,
-.aside .outline-btn {
-  margin-top: 16rpx;
-}
-@media (min-width: 900px) {
-  .detail-layout {
-    grid-template-columns: 1fr 360px;
-    gap: 28px;
-    align-items: start;
-  }
-  .aside {
-    position: sticky;
-    top: 108px;
-  }
-}
+.detail-layout,.blocks{display:grid;gap:18px}.card h2,.card h3{margin:0 0 16px}.status-card{border-top:4px solid var(--green)}.status-card text,.muted{font-size:14px;line-height:1.7}.block{padding:14px 0;border-top:1px solid var(--line)}.block text,.item text{display:block;margin-top:6px}.item{display:grid;grid-template-columns:90px 1fr;gap:16px;padding:16px 0;border-top:1px solid var(--line)}.item image,.no-image{width:90px;height:90px}.no-image{background:#f5f5f5;display:grid;place-items:center;font-size:12px;color:var(--muted)}.line{display:flex;justify-content:space-between;gap:15px;margin-bottom:16px;font-size:14px}.line b{max-width:68%;overflow-wrap:anywhere;text-align:right}.total{border-top:1px solid var(--line);padding-top:16px}.total b{color:#be092d;font-size:24px}.aside button{margin-top:12px;font-size:15px;min-height:44px;height:auto;padding:12px}.payment-options button{background:#f6f8fb;text-align:left;border:1px solid var(--line);border-radius:6px;line-height:1.6}.payment-options .selected{border-color:var(--green)}.qr{display:grid;justify-items:center;gap:10px;font-size:14px;margin-top:16px}.qr image{width:240px;height:240px}.notice{background:#eef6ff;padding:12px;margin-top:12px;line-height:1.7;font-size:14px}.textarea{margin:12px 0}@media(min-width:900px){.detail-layout{grid-template-columns:minmax(0,1fr) 360px;align-items:start}.aside{position:sticky;top:108px}}
 </style>

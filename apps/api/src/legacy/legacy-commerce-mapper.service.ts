@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { safeObject } from "../common/crypto";
 import { LegacyService } from "./legacy.service";
 
@@ -9,11 +9,53 @@ const entity = {
   orderItem: "mall_order_item",
   product: "mall_product",
   sku: "mall_sku",
+  cartItem: "mall_cart_item",
 } as const;
 
 @Injectable()
 export class LegacyCommerceMapper {
   constructor(private readonly legacy: LegacyService) {}
+
+  async cart(input: unknown) {
+    const rows = list(safeObject(input).items);
+    return Promise.all(rows.map(async (inputRow) => {
+      const row = safeObject(inputRow);
+      const sku = safeObject(row.sku);
+      const product = safeObject(sku.product);
+      const id = await this.compatibilityId(entity.cartItem, row.id);
+      const skuId = await this.compatibilityId(entity.sku, row.skuId ?? sku.id);
+      const productId = await this.compatibilityId(entity.product, sku.productId ?? product.id);
+      return {
+        id, cart_item_id: id, sku_id: skuId, product_id: productId,
+        num: integer(row.quantity), quantity: integer(row.quantity),
+        price: moneyFromCents(sku.salePriceCents, sku.price),
+        stock: integer(sku.stock), selected: row.selected === true ? 1 : 0,
+        available: row.available === true,
+        sku_name: text(sku.specification),
+        product_name: text(product.displayName ?? product.name),
+        product_picture: text(sku.image ?? product.coverImage),
+        product: {
+          id: productId, name: text(product.displayName ?? product.name),
+          picture: text(product.coverImage),
+        },
+      };
+    }));
+  }
+
+  async cartMutation(input: unknown) {
+    const body = safeObject(input);
+    return {
+      skuId: await this.externalId(entity.sku, body.sku_id),
+      quantity: requiredQuantity(body.num),
+    };
+  }
+
+  async cartDeletionIds(input: unknown, cartInput: unknown): Promise<string[]> {
+    const skuIds = parseLegacyIds(safeObject(input).sku_ids, "商品规格");
+    const resolved = await Promise.all(skuIds.map((id) => this.externalId(entity.sku, id)));
+    const rows = list(safeObject(cartInput).items).map(safeObject);
+    return rows.filter((row) => resolved.includes(text(row.skuId))).map((row) => text(row.id));
+  }
 
   async home(bootstrapInput: unknown, catalogInput: unknown) {
     const bootstrap = safeObject(bootstrapInput);
@@ -293,15 +335,27 @@ export class LegacyCommerceMapper {
     return this.externalId(entity.address, value);
   }
 
-  async orderRequest(input: unknown) {
+  async orderRequest(input: unknown, cartInput?: unknown) {
     const body = safeObject(input);
-    const legacyItem = parseObject(body.data);
-    const rawItems = Array.isArray(body.items)
-      ? body.items
-      : Object.keys(legacyItem).length
-        ? [legacyItem]
-        : [];
+    const type = text(body.type || "buy_now");
+    if (!["buy_now", "cart"].includes(type)) throw new BadRequestException("结算类型不正确");
+    let rawItems: unknown[];
+    if (type === "cart") {
+      const ids = parseLegacyIds(body.data, "购物车记录");
+      const rows = list(safeObject(cartInput).items).map(safeObject);
+      rawItems = await Promise.all(ids.map(async (id) => {
+        const externalId = await this.externalId(entity.cartItem, id);
+        const row = rows.find((candidate) => text(candidate.id) === externalId);
+        if (!row) throw new NotFoundException("购物车记录不存在或不属于当前账号");
+        if (row.available !== true) throw new ConflictException("购物车中有商品已下架或库存不足");
+        return { skuId: row.skuId, quantity: row.quantity };
+      }));
+    } else {
+      const legacyItem = parseObject(body.data);
+      rawItems = Array.isArray(body.items) ? body.items : Object.keys(legacyItem).length ? [legacyItem] : [];
+    }
     if (!rawItems.length) throw new BadRequestException("请选择商品");
+    if (rawItems.length > 100) throw new BadRequestException("每单最多100种商品");
     const items = await Promise.all(
       rawItems.map(async (inputItem) => {
         const item = safeObject(inputItem);
@@ -310,7 +364,7 @@ export class LegacyCommerceMapper {
             entity.sku,
             item.skuId ?? item.sku_id,
           ),
-          quantity: positiveInteger(item.quantity ?? item.num) ?? 1,
+          quantity: requiredQuantity(item.quantity ?? item.num),
         };
       }),
     );
@@ -321,14 +375,29 @@ export class LegacyCommerceMapper {
         : "",
       items,
       buyerRemark: text(body.buyerRemark ?? body.buyer_message),
+      ...(body.point !== undefined ? { point: moneyCents(body.point, "积分抵扣金额", true) / 100 } : {}),
     };
   }
 
-  async previewQuery(input: Record<string, string>) {
-    const request = await this.orderRequest(input);
+  async previewQuery(input: Record<string, string>, cartInput?: unknown) {
+    const request = await this.orderRequest(input, cartInput);
     return {
       addressId: request.addressId,
       items: request.items,
+    };
+  }
+
+  refundRequest(input: unknown, orderItemId: string) {
+    const body = safeObject(input);
+    const type = String(body.refund_type ?? "");
+    if (type !== "1" && type !== "2") throw new BadRequestException("售后类型不正确");
+    const reason = text(body.refund_reason);
+    if (!reason || reason.length > 1000) throw new BadRequestException("请填写1至1000字的售后原因");
+    return {
+      type: type === "1" ? "REFUND_ONLY" : "RETURN_REFUND",
+      requestedCents: moneyCents(body.refund_require_money, "申请退款金额"),
+      reason,
+      orderItemId,
     };
   }
 
@@ -476,6 +545,34 @@ function integer(input: unknown): number {
 function positiveInteger(input: unknown): number | null {
   const value = integer(input);
   return value > 0 ? value : null;
+}
+
+function requiredQuantity(input: unknown) {
+  const raw = text(input);
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1 || value > 999) {
+    throw new BadRequestException("商品数量必须为1至999的整数");
+  }
+  return value;
+}
+
+function parseLegacyIds(input: unknown, label: string): string[] {
+  const values = Array.isArray(input) ? input.map(text) : text(input).split(",").map((value) => value.trim());
+  if (!values.length || values.length > 100 || values.some((value) => !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)))) {
+    throw new BadRequestException(`${label}编号不正确`);
+  }
+  return [...new Set(values)];
+}
+
+function moneyCents(input: unknown, label: string, allowZero = false) {
+  const raw = text(input);
+  if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(raw)) throw new BadRequestException(`${label}必须精确到分`);
+  const [whole = "", fraction = ""] = raw.split(".");
+  const value = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  if (!Number.isSafeInteger(value) || value > 2_147_483_647 || value < (allowZero ? 0 : 1)) {
+    throw new BadRequestException(`${label}不正确`);
+  }
+  return value;
 }
 
 function optionalInteger(input: unknown): number | null {

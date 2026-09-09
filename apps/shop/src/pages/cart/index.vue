@@ -20,13 +20,13 @@
                 item.sku.product.coverImage ||
                 productPlaceholder
               "
-              mode="aspectFill"
+              mode="aspectFit"
             /><view class="cart-info"
               ><text class="name">{{
                 item.sku.product.displayName || item.sku.product.name
               }}</text
               ><text class="small">{{
-                item.sku.specification || item.sku.erpSkuId
+                item.sku.specification || '默认规格'
               }}</text
               ><text class="price">{{ money(item.sku.salePriceCents) }}</text
               ><view class="cart-bottom"
@@ -70,10 +70,11 @@
 </template>
 <script setup lang="ts">
 import { onShow } from "@dcloudio/uni-app";
-import { computed, reactive } from "vue";
+import { computed, reactive, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import StoreFooter from "../../components/StoreFooter.vue";
-import { api, money, productPlaceholder, toast } from "../../api";
+import { api, money, productPlaceholder, toast, clearCheckoutState } from "../../api";
+const busy = ref(false);
 const cart = reactive<any>({ items: [] });
 const selected = computed(() =>
   cart.items.filter((x: any) => x.selected && x.available),
@@ -86,6 +87,7 @@ const total = computed(() =>
 );
 onShow(load);
 async function load() {
+  cart.items = [];
   try {
     Object.assign(cart, await api("/storefront/cart", { auth: true }));
   } catch (e) {
@@ -93,6 +95,9 @@ async function load() {
   }
 }
 async function update(item: any, quantity: number, selected: boolean) {
+  if (busy.value) return;
+  if (quantity > item.sku.stock) return toast('库存不足，请减少数量');
+  busy.value = true;
   try {
     Object.assign(
       cart,
@@ -104,9 +109,13 @@ async function update(item: any, quantity: number, selected: boolean) {
     );
   } catch (e) {
     toast(e);
+  } finally {
+    busy.value = false;
   }
 }
 async function remove(id: string) {
+  if (busy.value) return;
+  busy.value = true;
   try {
     Object.assign(
       cart,
@@ -117,10 +126,16 @@ async function remove(id: string) {
     );
   } catch (e) {
     toast(e);
+  } finally {
+    busy.value = false;
   }
 }
 function checkout() {
+  if (busy.value) return;
+  if (uni.getStorageSync('checkout-draft')?.uncertain) { toast('先恢复上次下单结果，不会创建新的结算请求');uni.navigateTo({url:'/pages/checkout/index'});return; }
   if (!selected.value.length) return toast("请选择有库存的商品");
+  clearCheckoutState();
+  uni.setStorageSync('checkout-owner', uni.getStorageSync('saidian-user')?.id);
   uni.setStorageSync(
     "checkout-items",
     selected.value.map((x: any) => ({
