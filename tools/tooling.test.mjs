@@ -66,6 +66,12 @@ test("deployment shell syntax and receiver rejection", () => {
   assert.notEqual(denied.status, 0);
   assert.match(denied.output, /Only release SHA or status/);
 });
+test("production Redis expands the configured password in its container shell", () => {
+  const compose = fs.readFileSync(path.join(root, "deploy/compose.production.yaml"), "utf8");
+  assert.match(compose, /--requirepass \\"\$\$REDIS_PASSWORD\\"/);
+  assert.match(compose, /redis-cli -a \\"\$\$REDIS_PASSWORD\\" ping/);
+  assert.doesNotMatch(compose, /'\$\$REDIS_PASSWORD'/);
+});
 test("automatic release preserves maintenance and rejects schema changes", () => {
   const script = fs.readFileSync(path.join(root, "deploy/scripts/deploy-ci.sh"), "utf8");
   assert.match(script, /prisma migrate status/);
