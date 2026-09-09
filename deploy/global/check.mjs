@@ -39,12 +39,23 @@ check(Object.values(compose.volumes).every((volume) => !volume.external && !volu
 const fixed = {
   NODE_ENV: "production", APP_REALM: "global", AUTH_ISSUER: "saydian-global-server",
   AUTH_AUDIENCE: "saydian-global-app", PUBLIC_BASE_URL: "https://app.saydian.cn/global",
-  MAINTENANCE_READ_ONLY: "true", MAINTENANCE_ALLOW_MEMBER_AUTH: "false",
-  BUSINESS_WRITES_PAUSED: "true", WORKER_OUTBOUND_PAUSED: "true", CALLBACK_PROCESSING_PAUSED: "true",
+  MAINTENANCE_ALLOW_MEMBER_AUTH: "false",
+  WORKER_OUTBOUND_PAUSED: "true", CALLBACK_PROCESSING_PAUSED: "true",
   LEGACY_SESSION_BRIDGE_ENABLED: "false", LEGACY_TOKEN_EXCHANGE_ENABLED: "false", ALLOW_TEST_OTP: "false",
   SMS_PROVIDER: "disabled", GLOBAL_EMAIL_PROVIDER: "disabled", GLOBAL_SMS_PROVIDER: "disabled",
-  GLOBAL_UNVERIFIED_REGISTRATION_ENABLED: "false",
   PUSH_PROVIDER: "disabled", AI_PROVIDER: "disabled", ENABLE_HEALTH_REPORT_SALES: "false",
+};
+const controlledQaSwitches = {
+  MAINTENANCE_READ_ONLY: "${GLOBAL_MAINTENANCE_READ_ONLY:-true}",
+  BUSINESS_WRITES_PAUSED: "${GLOBAL_BUSINESS_WRITES_PAUSED:-true}",
+  GLOBAL_UNVERIFIED_REGISTRATION_ENABLED: "${GLOBAL_UNVERIFIED_REGISTRATION_ENABLED:-false}",
+};
+const resourceLimits = {
+  "global-postgres": { mem_limit: "384m", cpus: 0.5, pids_limit: 150 },
+  "global-redis": { mem_limit: "96m", cpus: 0.25, pids_limit: 100 },
+  "global-minio": { mem_limit: "256m", cpus: 0.5, pids_limit: 150 },
+  "global-api": { mem_limit: "384m", cpus: 0.75, pids_limit: 200 },
+  "global-worker": { mem_limit: "256m", cpus: 0.5, pids_limit: 150 },
 };
 for (const name of ["global-api", "global-worker"]) {
   const service = compose.services[name];
@@ -52,6 +63,10 @@ for (const name of ["global-api", "global-worker"]) {
   for (const [key, value] of Object.entries(fixed)) {
     check(service.environment[key] === value, `${name}: ${key} must be fixed to ${value}`);
   }
+  for (const [key, value] of Object.entries(controlledQaSwitches)) {
+    check(service.environment[key] === value, `${name}: ${key} must retain its safe default and require an explicit private-env override`);
+  }
+  check(service.environment.APP_REVISION === "${GLOBAL_APP_REVISION:?Set the verified full global source commit SHA}", `${name}: runtime revision must be independent from the registry tag`);
   check(service.environment.DATABASE_URL.includes("@global-postgres:5432/saydian_global?schema=public"), `${name}: independent global database`);
   check(service.environment.DATABASE_URL.startsWith("postgresql://global_app:"), `${name}: runtime must not use bootstrap database owner`);
   check(service.environment.REDIS_URL.includes("@global-redis:6379/0"), `${name}: independent global Redis`);
@@ -59,6 +74,13 @@ for (const name of ["global-api", "global-worker"]) {
   check(service.environment.OBJECT_STORAGE_BUCKET === "saydian-global-private", `${name}: private global bucket`);
   check(!service.environment.OBJECT_STORAGE_ACCESS_KEY.includes("MINIO_ROOT"), `${name}: runtime must not use storage administrator`);
   check(!Object.keys(service.environment).some((key) => /^(LEGACY_DATABASE_URL|MALL_DATABASE_URL|ADMIN_BOOTSTRAP_)/.test(key)), `${name}: no domestic DB or automatic administrator bootstrap`);
+}
+for (const [name, expected] of Object.entries(resourceLimits)) {
+  const service = compose.services[name];
+  for (const [key, value] of Object.entries(expected)) {
+    check(service[key] === value, `${name}: ${key} must stay within the reviewed host budget`);
+  }
+  check(service.logging?.driver === "json-file" && service.logging?.options?.["max-size"] === "10m" && service.logging?.options?.["max-file"] === "3", `${name}: bounded container logs are required`);
 }
 for (const [, key] of composeText.matchAll(/(?<!\$)\$\{(GLOBAL_[A-Z_]+)/g)) {
   check(keys.has(key), `env.example must document ${key}`);

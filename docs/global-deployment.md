@@ -13,7 +13,9 @@
 
 ## 配置及只读检查
 
-模板为 `deploy/global/env.example`，全部密钥均为占位。填好的 env 文件放在 Git 工作区外，由部署人员控制权限；不将真实值写入命令行、Git、工单或校验输出。密码用于 URL 时采用独立的 URL-safe 随机值；字段和集成加密 key 分别生成 32 字节随机值并 Base64 编码。所有 `replace-with-...` 都必须替换，镜像标签必须为经过验收的完整提交 SHA。
+模板为 `deploy/global/env.example`，全部密钥均为占位。填好的 env 文件放在 Git 工作区外，由部署人员控制权限；不将真实值写入命令行、Git、工单或校验输出。密码用于 URL 时采用独立的 URL-safe 随机值；字段和集成加密 key 分别生成 32 字节随机值并 Base64 编码。所有 `replace-with-...` 都必须替换。`GLOBAL_IMAGE_TAG` 选择映射到已验收提交的不可变镜像标签，`GLOBAL_APP_REVISION` 必须是对应的完整 40 位源码 SHA，不能用标签文本冒充运行版本。
+
+五个国际容器均配置 CPU、内存、PID 和轮转日志上限，合计内存上限 1376 MiB；这只是防止挤占现有服务的运行门禁，不替代部署前的磁盘、内存和实际负载检查。默认保持维护只读、业务写暂停和临时注册关闭。仅在独立国际库与已审协议已就绪且联调获批时，才可在工作区外的私有 env 中显式设置 `GLOBAL_MAINTENANCE_READ_ONLY=false`、`GLOBAL_BUSINESS_WRITES_PAUSED=false`、`GLOBAL_UNVERIFIED_REGISTRATION_ENABLED=true`；Worker 出站、回调、真实短信、支付、推送和 AI 仍由 Compose 强制关闭。
 
 在仓库根执行：
 
