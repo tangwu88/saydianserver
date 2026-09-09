@@ -20,6 +20,7 @@ export class CommerceService {
 
   async publicGet(path: string) {
     const url = parsePath(path);
+    if (url.pathname === "/storefront/markets") return this.store.markets();
     if (url.pathname === "/storefront/bootstrap") {
       return this.store.bootstrap(url.searchParams.get("referralCode") ?? undefined);
     }

@@ -3,6 +3,8 @@ import { Gender, Prisma } from "@prisma/client";
 import { AuthService } from "../auth/auth.service";
 import { PrismaService } from "../common/prisma.service";
 import { safeObject } from "../common/crypto";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { globalLocale } from "../auth/global-identity";
 
 @Injectable()
 export class MembersService {
@@ -18,6 +20,7 @@ export class MembersService {
   async saveProfile(userId: string, input: unknown) {
     const body = safeObject(input);
     const data: Prisma.UserUpdateInput = {};
+    if (isGlobalRealm() && body.locale !== undefined) data.locale = globalLocale(body.locale);
     if (body.nickname !== undefined) {
       const nickname = String(body.nickname).trim();
       if (!nickname || nickname.length > 40) throw new BadRequestException("昵称不正确");

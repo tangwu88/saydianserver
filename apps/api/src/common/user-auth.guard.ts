@@ -11,6 +11,7 @@ import { PrismaService } from "./prisma.service";
 import type { RequestWithContext } from "./request-context";
 import { resolveLegacySession } from "./legacy-session-bridge";
 import { requiresVerifiedCommerceMobile } from "./commerce-mobile-policy";
+import { authAudience, authIssuer, isGlobalRealm } from "./deployment-realm";
 
 interface AccessClaims {
   sub: string;
@@ -42,8 +43,8 @@ export class UserAuthGuard implements CanActivate {
     try {
       const claims = verify(token, env("ACCESS_TOKEN_SECRET"), {
         algorithms: ["HS256"],
-        issuer: "saydianapp-server",
-        audience: "saydian-app",
+        issuer: authIssuer(),
+        audience: authAudience(),
       }) as AccessClaims;
       if (claims.typ !== "access" || !claims.sub || !claims.sid || !claims.jti) {
         throw new Error("invalid claims");
@@ -56,7 +57,9 @@ export class UserAuthGuard implements CanActivate {
           revokedAt: null,
           expiresAt: { gt: new Date() },
           user: { status: UserStatus.ACTIVE,
-            ...(requiresVerifiedCommerceMobile(path) ? { mobile: { not: null }, mobileVerifiedAt: { not: null } } : {}),
+            ...(requiresVerifiedCommerceMobile(path) ? (isGlobalRealm()
+              ? { OR: [{ mobile: { not: null }, mobileVerifiedAt: { not: null } }, { email: { not: null }, emailVerifiedAt: { not: null } }] }
+              : { mobile: { not: null }, mobileVerifiedAt: { not: null } }) : {}),
           },
         },
         select: { id: true },

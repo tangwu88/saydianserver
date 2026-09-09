@@ -24,7 +24,9 @@ describe("field-aware OpenAPI and examples", () => {
     expect(example.curl).not.toContain("@request.json");
     expect(example.请求体).toEqual(expect.objectContaining({ mobile: "<TEST_MOBILE>", code: "<SMS_CODE>", password: "<NEW_TEST_PASSWORD>" }));
     const operation = generateOpenApi([{ ...route }], "test").paths[route.path].post;
-    expect(operation.requestBody.content["application/json"].schema.required).toContain("mobile");
+    const alternatives = operation.requestBody.content["application/json"].schema.anyOf;
+    expect(alternatives[0].required).toContain("mobile");
+    expect(alternatives[1].required).toEqual(["challengeId", "code", "password"]);
     expect(operation.responses["201"].content["application/json"].schema.properties.data.required).toContain("refreshToken");
   });
   it("records multipart names, legacy token auth and HTTP-200 business errors", () => {

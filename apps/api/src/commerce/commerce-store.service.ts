@@ -17,6 +17,9 @@ import { PrismaService } from "../common/prisma.service";
 import { safeObject } from "../common/crypto";
 import { integerCents, requireCommerceOwner } from "./commerce-policy";
 import { publicSku } from "./commerce-public-sku";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { globalAddress, globalMarkets } from "./global-commerce-policy";
+import { globalError } from "../auth/global-identity";
 import { onCommerceOrderReceived, priceOrder, quoteAfterSale, afterSaleAvailability, financialSnapshot, cents, allocateLargestRemainder } from "./commerce-finance";
 
 type CreateOrderInput = {
@@ -32,6 +35,12 @@ type CreateOrderInput = {
 @Injectable()
 export class CommerceStoreService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async markets() {
+    if (!isGlobalRealm()) return { markets: [] };
+    const config = await this.prisma.commerceBusinessConfig.findUnique({ where: { key: "global.markets" } });
+    return { markets: config?.enabled ? globalMarkets(config.value) : [] };
+  }
 
   async bootstrap(referralCode?: string) {
     const [banners, categories, featured, configs, employee] = await Promise.all([
@@ -241,7 +250,11 @@ export class CommerceStoreService {
   async saveAddress(userId: string, input: unknown, forcedId?: string) {
     const body = safeObject(input);
     const id = forcedId || String(body.id ?? "").trim();
-    const data = {
+    const data = isGlobalRealm() ? {
+      ...globalAddress(body),
+      provinceCode: null, cityCode: null, districtCode: null,
+      isDefault: body.isDefault === true || String(body.is_default ?? "") === "1",
+    } : {
       name: required(body.name, "收货人"),
       mobile: required(body.mobile, "手机号"),
       province: required(body.province, "省份"),
@@ -305,6 +318,7 @@ export class CommerceStoreService {
   }
 
   private async readQuote(tx: Prisma.TransactionClient, userId: string, input: Omit<CreateOrderInput, "idempotencyKey">) {
+    if (isGlobalRealm()) throw globalError(503, "market_checkout_unavailable", "Purchases are not available in this market yet.");
     const normalized = normalizeItems(input.items);
     const [user, address, skus, shippingConfig, account, claim] = await Promise.all([
       tx.user.findUniqueOrThrow({ where: { id: userId }, include: { referralEmployee: true } }),
@@ -388,6 +402,7 @@ export class CommerceStoreService {
             payableCents: subtotalCents - discountCents - pointDiscountCents + shippingCents,
             recipientName: address.name,
             recipientMobile: address.mobile,
+            ...(isGlobalRealm() ? { countryCode: address.countryCode, postalCode: address.postalCode } : {}),
             province: address.province,
             city: address.city,
             district: address.district,

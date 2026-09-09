@@ -4,6 +4,7 @@ import {
   markWorkerIntegrationVerified,
   resolveWorkerSecrets,
 } from "./integration-secrets";
+import { globalPushAlert } from "./global-push-locale";
 
 export interface PushProvider {
   deliver(
@@ -40,13 +41,16 @@ export class JPushProvider implements PushProvider {
     installations: PushInstallation[],
     payload: SafePushPayloadContract,
   ): Promise<void> {
-    const registrationIds = installations
-      .filter((item) => item.provider === "jpush")
-      .map((item) => item.registrationId);
-    if (registrationIds.length === 0) return;
+    const groups = new Map<string, string[]>();
+    for (const item of installations.filter(item => item.provider === "jpush")) {
+      const alert = process.env.APP_REALM === "global" ? globalPushAlert(item.locale) : "Saydian赛电有一条新消息";
+      groups.set(alert, [...(groups.get(alert) ?? []), item.registrationId]);
+    }
+    if (groups.size === 0) return;
     const authorization = Buffer.from(
       `${this.appKey}:${this.masterSecret}`,
     ).toString("base64");
+    for (const [alert, registrationIds] of groups) {
     const response = await fetch("https://api.jpush.cn/v3/push", {
       method: "POST",
       headers: {
@@ -57,7 +61,7 @@ export class JPushProvider implements PushProvider {
         platform: "all",
         audience: { registration_id: registrationIds },
         notification: {
-          alert: "Saydian赛电有一条新消息",
+          alert,
           android: { extras: payload },
           ios: { extras: payload, sound: "default" },
         },
@@ -71,6 +75,7 @@ export class JPushProvider implements PushProvider {
     });
     if (!response.ok) {
       throw new Error(`JPush delivery failed with HTTP ${response.status}`);
+    }
     }
     if (this.prisma) await markWorkerIntegrationVerified(this.prisma, "push");
   }

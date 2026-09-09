@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { cutoverFlag } from "@saydian/app-contracts";
 import type { PrismaService } from "./prisma.service";
 import { requiresVerifiedCommerceMobile } from "./commerce-mobile-policy";
+import { isGlobalRealm } from "./deployment-realm";
 
 const legacyPaths = /^\/api\/(?:v1|rf-article|inv-shop\/v1)(?:\/|$)/;
 
@@ -19,7 +20,7 @@ export async function resolveLegacySession(
   environment: Record<string, string | undefined> = process.env,
   now = new Date(),
 ): Promise<{ id: string; sessionId: string } | null> {
-  if (!legacyPaths.test(requestPath) || !cutoverFlag(environment.LEGACY_SESSION_BRIDGE_ENABLED)) return null;
+  if (isGlobalRealm(environment) || !legacyPaths.test(requestPath) || !cutoverFlag(environment.LEGACY_SESSION_BRIDGE_ENABLED)) return null;
   const deadline = new Date(environment.LEGACY_SESSION_BRIDGE_DEADLINE ?? "");
   const key = environment.LEGACY_SESSION_HASH_KEY?.trim() ?? "";
   if (!Number.isFinite(deadline.valueOf()) || deadline <= now || key.length < 32 || token.length < 16 || token.length > 8192) return null;

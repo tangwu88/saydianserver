@@ -1,6 +1,7 @@
 import { NotFoundException, ServiceUnavailableException } from "@nestjs/common";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SupportService } from "./support.service";
+afterEach(() => vi.unstubAllEnvs());
 
 const validManifest = {
   schemaVersion: 1,
@@ -52,6 +53,24 @@ function serviceWith(setting: unknown): SupportService {
 }
 
 describe("public App download manifest", () => {
+  it("reads only the global manifest key and never exposes domestic direct package paths", async () => {
+    vi.stubEnv("APP_REALM", "global");
+    const globalManifest = { ...validManifest, realm: "global", releases: validManifest.releases.map(release => ({ ...release, packageId: release.platform === "harmonyos" ? "cn.saydian.app.global.hm" : "cn.saydian.app.global", ...(release.destination ? { destination: { ...release.destination, url: `/global${release.destination.url}` } } : {}) })) };
+    const findUnique = vi.fn(async ({ where }: any) => where.key === "global_app_update" ? { public: true, value: globalManifest } : null);
+    const service = new SupportService({ appSetting: { findUnique } } as any, {} as any);
+    const manifest = await service.appUpdateConfig();
+    expect(findUnique).toHaveBeenCalledWith({ where: { key: "global_app_update" } });
+    expect(manifest.releases[0]?.destination?.url).toBe(`/global/down/files/${manifest.releases[0]?.destination?.fileName}`);
+    expect(manifest.releases[1]?.destination).toBeUndefined();
+    expect(manifest).toMatchObject({ realm: "global", releases: [{ packageId: "cn.saydian.app.global" }, { packageId: "cn.saydian.app.global" }, { packageId: "cn.saydian.app.global.hm" }] });
+    expect(validManifest.releases[0]?.destination?.url.startsWith("/down/files/")).toBe(true);
+  });
+  it("rejects missing global identity, a domestic package ID, and domestic direct URLs", async () => {
+    vi.stubEnv("APP_REALM", "global");
+    for (const value of [validManifest, { ...validManifest, realm: "global" }, { ...validManifest, realm: "global", releases: validManifest.releases.map(release => ({ ...release, packageId: release.platform === "harmonyos" ? "cn.saydian.app.global.hm" : "cn.saydian.app.global" })) }]) {
+      await expect(serviceWith({ public: true, value }).appUpdateConfig()).rejects.toBeInstanceOf(ServiceUnavailableException);
+    }
+  });
   it("returns 404 until a public manifest is published", async () => {
     await expect(serviceWith(null).appUpdateConfig()).rejects.toBeInstanceOf(
       NotFoundException,

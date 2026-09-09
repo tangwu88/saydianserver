@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **302 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **306 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -142,16 +142,19 @@
 | `GET /api/saidian-mall/v1/storefront/coupon-gifts/:token` | 查看员工赠送的优惠券 | public | path:token；token=高熵一次性赠券令牌 | 优惠券、员工摘要和领取状态；不返回会员信息 | 主库商城 |
 | `POST /api/saidian-mall/v1/storefront/coupon-gifts/:token/claim` | 会员领取员工赠券 | member | path:token；token=赠券令牌；需会员登录 | 本人优惠券领取记录；并发领取只成功一次 | 主库商城 |
 
-## V2 App 接口（91）
+## V2 App 接口（95）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
+| `GET /api/saydian-app/v2/auth/capabilities` | 国际账号可用能力 | public | query:locale?；locale可选；仅APP_REALM=global | {realm,defaultLocale,supportedLocales,registration:{email,sms},smsCountries,verification,consentVersion,legal}；未配置渠道或已审协议不开放注册 | 国际独立数据库与已验收验证码渠道 |
+| `POST /api/saydian-app/v2/auth/verification-code` | 国际邮箱/手机号验证码 | public | {channel:email\|sms,identifier,purpose:register\|reset_password,locale?}；sms必须E.164 | {challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}；不返回验证码 | 独立email_otp/sms_global webhook |
+| `POST /api/saydian-app/v2/auth/register-with-code` | 国际已验证账号注册 | public | {challengeId,code,password,nickname?,consentVersion,locale?}；consentVersion必须来自当前已审协议 | Session；国际UUID账号，与国内账号不互通 | 已送达未消费的国际验证码与已发布协议 |
 | `POST /api/saydian-app/v2/auth/register` | 旧裸密码注册入口（已阻止） | public | 该入口不再签发会话；客户端应使用register-with-sms完成手机号验证 | HTTP 400；请使用手机验证码完成注册 | 核心服务 |
-| `POST /api/saydian-app/v2/auth/login` | 密码登录 | public | {mobile/username,password} | Session | 核心服务 |
+| `POST /api/saydian-app/v2/auth/login` | 密码登录 | public | 国内{mobile/username,password}；国际{channel:email\|sms,identifier,password} | Session；国际member含emailMasked/phoneMasked/locale可选字段 | 核心服务 |
 | `POST /api/saydian-app/v2/auth/wechat-login` | 原生微信授权登录 | public | {code,state,platform:android/ios/harmony,consentAccepted:true,consentVersion}；只提交一次性 code，密钥仅在服务端 | Session；手机号仍未验证时不得映射商城身份 | 微信开放平台移动应用 |
 | `POST /api/saydian-app/v2/auth/sms-code` | 发送验证码 | public | {mobile,usage:register/reset_password} | 发送状态；不返回验证码 | 短信供应商 |
 | `POST /api/saydian-app/v2/auth/register-with-sms` | 短信注册 | public | {mobile,code,password,nickname?,consentVersion} | Session | 短信供应商 |
-| `POST /api/saydian-app/v2/auth/reset-password` | 短信重置密码 | public | {mobile,code,password/newPassword} | Session；旧会话失效 | 短信供应商 |
+| `POST /api/saydian-app/v2/auth/reset-password` | 验证码重置密码 | public | 国内{mobile,code,password/newPassword}；国际{challengeId,code,password} | Session；旧会话失效 | 对应部署的验证码供应商 |
 | `POST /api/saydian-app/v2/auth/refresh` | 轮换刷新令牌 | public | {refreshToken}；客户端必须串行刷新并替换旧令牌 | Session | 核心服务 |
 | `POST /api/saydian-app/v2/auth/logout` | 退出当前会话 | member | 无请求体 | {loggedOut:true} | 核心服务 |
 | `POST /api/saydian-app/v2/auth/delete-account` | 提交账号注销申请 | member | 无请求体 | 注销任务；并非立即删除全部数据 | 核心服务 |
@@ -165,11 +168,12 @@
 | `POST /api/saydian-app/v2/billing/payments/wechat/notify` | 微信支付验签通知 | public | header:*；微信支付V3原始JSON及Wechatpay签名头 | 微信要求的SUCCESS响应；事件幂等 | 微信支付V3 |
 | `POST /api/saydian-app/v2/billing/payments/alipay/notify` | 支付宝验签通知 | public | 支付宝form通知字段 | 支付宝要求的success文本；事件幂等 | 支付宝开放平台 |
 | `GET /api/saydian-app/v2/care/relationships` | 关爱关系列表 | member | 无请求体 | CareRelationship[]，含 direction、双方昵称、授权指标 | 核心服务 |
-| `POST /api/saydian-app/v2/care/invitations` | 邀请查看对方健康数据 | member | {mobile}；不能自邀；已生效返回 409；待处理重复请求不重复发通知 | CareRelationship | 核心服务 |
+| `POST /api/saydian-app/v2/care/invitations` | 邀请查看对方健康数据 | member | 国内{mobile}；国际{identifier:email/E.164}；仅同部署账号域；不能自邀；已生效返回 409 | CareRelationship；UUID；逐指标授权不变 | 核心服务 |
 | `POST /api/saydian-app/v2/care/relationships/:id/respond` | 接受或拒绝邀请 | member | path:id；id=关系 UUID；{accepted:boolean}；仅收件人可操作 | CareRelationship；接受后仍需逐指标授权 | 核心服务 |
 | `POST /api/saydian-app/v2/care/relationships/:id/permissions` | 共享本人指标 | member | path:id；id=关系 UUID；{metrics:规范指标数组,expiresAt?:ISO8601}；仅数据所属人；[] 撤销全部指标 | CareRelationship | 核心服务 |
 | `DELETE /api/saydian-app/v2/care/relationships/:id` | 撤销关爱关系 | member | path:id；id=关系 UUID；任一参与方可撤销 | CareRelationship；撤销后不能查询 | 核心服务 |
 | `GET /api/saydian-app/v2/care/relationships/:id/health` | 按授权查看健康数据 | member | path:id，query:metric，query:from，query:to；id=关系 UUID；metric 必填；from/to=ISO8601；缺省近 7 天；左闭右开 | HealthRecord[]；逐指标授权并记录审计，拒绝 403 | 核心服务 |
+| `GET /api/saydian-app/v2/commerce/markets` | 国际市场可用状态 | public | 无请求体 | {markets:[{countryCode,currency,currencyExponent,commerceEnabled:false,paymentChannels:[]}]}；未配置空列表 | global.markets；国际价目表和支付尚未验收，不开放结算 |
 | `GET /api/saydian-app/v2/commerce/home` | 商城首页 | public | 无请求体 | 主库商城首页数据 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `GET /api/saydian-app/v2/commerce/products` | 商城商品列表 | public | query:*；page、pageSize、keyword、categoryId、sort | 主库商品分页 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `GET /api/saydian-app/v2/commerce/products/:id` | 商城商品详情 | public | path:id；id=商品UUID | 主库商品及SKU | 主库商城；支付操作还依赖已验收的支付渠道配置 |
@@ -195,12 +199,12 @@
 | `GET /api/saydian-app/v2/commerce/coupons` | 本人优惠券 | member | 无请求体 | 优惠券领取与使用状态 | 主库商城 |
 | `POST /api/saydian-app/v2/commerce/coupons/:id/claim` | 领取优惠券 | member | path:id；id=优惠券UUID | 领取记录；重复领取幂等 | 主库商城 |
 | `POST /api/saydian-app/v2/commerce/reviews` | 评价已收货商品 | member | {orderItemId,rating,content,images?} | 评价记录 | 主库商城 |
-| `GET /api/saydian-app/v2/content/categories` | 文章分类 | public | query:parentId?；parentId 可选 UUID；缺省顶级 | ArticleCategory[] | 核心服务 |
-| `GET /api/saydian-app/v2/content/articles` | 已发布文章 | public | query:categoryId?，query:page?，query:pageSize?；categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50 | {items,total,page,pageSize} | 核心服务 |
-| `GET /api/saydian-app/v2/content/articles/:id` | 文章详情 | public | path:id；id=UUID 或迁移的旧文章 ID | Article；未发布/未来发布 404 | 核心服务 |
-| `GET /api/saydian-app/v2/content/legal/:type` | 协议文档 | public | path:type，query:version?；type=文档类型；version 可选，不传取当前激活版本 | LegalDocument；未发布 404 | 核心服务 |
+| `GET /api/saydian-app/v2/content/categories` | 文章分类 | public | query:parentId?，query:locale?，header:accept-language?；parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en | ArticleCategory[]；未翻译不返回其他语言替代 | 核心服务 |
+| `GET /api/saydian-app/v2/content/articles` | 已发布文章 | public | query:categoryId?，query:page?，query:pageSize?，query:locale?，header:accept-language?；categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language | {items,total,page,pageSize}；国际仅已发布的对应语言 | 核心服务 |
+| `GET /api/saydian-app/v2/content/articles/:id` | 文章详情 | public | path:id，query:locale?，header:accept-language?；id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language | Article；未发布/未来发布/国际语言不匹配 404 | 核心服务 |
+| `GET /api/saydian-app/v2/content/legal/:type` | 协议文档 | public | path:type，query:version?，query:locale?；type=文档类型；version可选；国际locale必选当前capabilities法律文档locale | 国内LegalDocument；国际GlobalLegalDocument（reviewed+active+published）；未发布404 | 核心服务 |
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
-| `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?}；正文 1–4000 字符 | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503 |
+| `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503；语言指令不改变健康安全边界 |
 | `GET /api/saydian-app/v2/devices` | 已绑定设备 | member | 无请求体 | Device[]；只含未解绑设备 | 核心服务 |
 | `POST /api/saydian-app/v2/devices` | 绑定设备快照 | member | {deviceId/hardwareId,vendor,model,displayName/name,firmware?,capabilities?:string[],syncCursor?} | Device；不是服务端蓝牙连接 | 核心服务 |
 | `PATCH /api/saydian-app/v2/devices/:id/capabilities` | 更新设备能力及游标 | member | path:id；{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID | Device | 核心服务 |
@@ -222,8 +226,8 @@
 | `POST /api/saydian-app/v2/notifications/:id/read` | 标记消息已读 | member | path:id；id=消息 UUID/eventId | {read:true}；仅本人消息 | 核心服务 |
 | `POST /api/saydian-app/v2/notifications/push-installations` | 登记推送安装 | member | PushInstallation：installationId、platform、registrationId、appVersion、buildNumber；字段别名见调用手册 | 安装记录；登记不等于推送成功 | 推送供应商（登记可独立使用） |
 | `DELETE /api/saydian-app/v2/notifications/push-installations/:installationId` | 撤销本人推送安装 | member | path:installationId；installationId=安装标识 | 撤销结果 | 核心服务 |
-| `GET /api/saydian-app/v2/health/profile` | 会员健康档案 | member | 无请求体；默认汇总近30天有效记录 | 健康数据完整度、指标摘要、设备、预警数和分析同意状态 | 核心服务 |
-| `POST /api/saydian-app/v2/health/profile/analysis-consent` | 设置健康AI分析单独同意 | member | {granted:boolean,version:string}；撤回时granted=false | 同意或撤回状态；撤回后不能新生成AI报告 | 核心服务 |
+| `GET /api/saydian-app/v2/health/profile` | 会员健康档案 | member | 无请求体；默认汇总近30天有效记录 | 健康数据完整度、指标摘要、设备、预警数和分析同意状态；国际analysisConsent含availableVersion/document，均可为null | 核心服务 |
+| `POST /api/saydian-app/v2/health/profile/analysis-consent` | 设置健康AI分析单独同意 | member | {granted:boolean,version:string,locale?}；国际version必须匹配当前已审health_ai_analysis文档；撤回时granted=false | 同意或撤回状态；缺文档不授予，撤回后不能新生成AI报告 | 核心服务 |
 | `GET /api/saydian-app/v2/health/reports/eligibility` | 检查详细报告生成条件 | member | 无请求体；默认近30天 | 至少3个自然日的有效记录、缺失说明、可用次数和同意要求 | 核心服务 |
 | `GET /api/saydian-app/v2/health/reports` | 健康报告历史 | member | 无请求体 | 本人最多100份报告；已生成报告可重复查看 | 核心服务 |
 | `POST /api/saydian-app/v2/health/reports` | 创建健康报告请求 | member | 无请求体；数据不足时不创建支付单 | 报告预览及needsPayment；有次数时进入队列 | 核心服务 |
@@ -232,7 +236,7 @@
 | `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
 | `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID | 重新排队后的报告；生成失败时次数已返还 | AI供应商 |
 | `GET /api/saydian-app/v2/support/config` | 客服配置 | public | 无请求体 | 客服配置或未配置状态 | 核心服务 |
-| `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | 无请求体 | DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址 | 核心服务 |
+| `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | 无请求体 | DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际仅global_app_update，强制realm=global及逐项独立packageId，直包仅/global/down/files/；无配置404 | 核心服务 |
 | `POST /api/saydian-app/v2/support/feedback` | 提交反馈 | member | {content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项} | {id,status} | 核心服务 |
 | `POST /api/saydian-app/v2/files` | 上传图片 | member | file:file，query:purpose?；multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP | {id,url,...} | 私有对象存储 |
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |

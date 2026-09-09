@@ -9,6 +9,7 @@ import { safeObject } from "../common/crypto";
 const allowedPlatforms = new Set([
   "android",
   "ios",
+  "harmony",
   "mini_program",
   "migration",
 ]);

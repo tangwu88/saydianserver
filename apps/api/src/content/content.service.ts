@@ -10,6 +10,9 @@ import { env } from "../common/environment";
 import { isUuid, safeObject } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { globalLocale } from "../auth/global-identity";
+import { globalAiSystemPrompt } from "./global-content";
 
 @Injectable()
 export class ContentService {
@@ -18,14 +21,14 @@ export class ContentService {
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
 
-  async categories(parentId?: string) {
+  async categories(parentId?: string, locale?: string) {
     return this.prisma.articleCategory.findMany({
-      where: { enabled: true, parentId: parentId || null },
+      where: { enabled: true, parentId: parentId || null, ...(isGlobalRealm() ? { locale: globalLocale(locale) } : {}) },
       orderBy: [{ sort: "desc" }, { name: "asc" }],
     });
   }
 
-  async articles(categoryId?: string, pageInput = 1, pageSizeInput = 20) {
+  async articles(categoryId?: string, pageInput = 1, pageSizeInput = 20, locale?: string) {
     if (!Number.isSafeInteger(Number(pageInput)) || Number(pageInput) < 1
       || !Number.isSafeInteger(Number(pageSizeInput)) || Number(pageSizeInput) < 1) {
       throw new BadRequestException("分页参数必须为正整数");
@@ -39,6 +42,7 @@ export class ContentService {
       status: "PUBLISHED",
       publishedAt: { lte: new Date() },
       ...(categoryId ? { categoryId } : {}),
+      ...(isGlobalRealm() ? { locale: globalLocale(locale) } : {}),
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.article.findMany({
@@ -51,6 +55,7 @@ export class ContentService {
           legacyId: true,
           categoryId: true,
           title: true,
+          locale: true,
           summary: true,
           coverUrl: true,
           publishedAt: true,
@@ -61,11 +66,12 @@ export class ContentService {
     return { items, total, page, pageSize };
   }
 
-  async article(id: string) {
+  async article(id: string, locale?: string) {
     const article = await this.prisma.article.findFirst({
       where: {
         OR: [...(isUuid(id) ? [{ id }] : []), { legacyId: id }],
         status: "PUBLISHED",
+        ...(isGlobalRealm() ? { locale: globalLocale(locale) } : {}),
         publishedAt: { lte: new Date() },
       },
     });
@@ -73,7 +79,12 @@ export class ContentService {
     return article;
   }
 
-  async legalDocument(documentType: string, version?: string) {
+  async legalDocument(documentType: string, version?: string, locale?: string) {
+    if (isGlobalRealm()) {
+      const document = await this.prisma.globalLegalDocument.findFirst({ where: { documentType, locale: globalLocale(locale), reviewed: true, ...(version ? { version } : { active: true }), publishedAt: { lte: new Date() } }, orderBy: { publishedAt: "desc" } });
+      if (!document) throw new NotFoundException("The requested document is not available.");
+      return document;
+    }
     const document = await this.prisma.legalDocument.findFirst({
       where: {
         documentType,
@@ -107,6 +118,7 @@ export class ContentService {
           where: { userId, clientSessionId },
         })
       : null;
+    const locale = isGlobalRealm() ? globalLocale(body.locale ?? conversation?.locale ?? (await this.prisma.user.findUnique({ where: { id: userId }, select: { locale: true } }))?.locale) : undefined;
     const active =
       conversation ??
       (await this.prisma.aiConversation.create({
@@ -114,12 +126,14 @@ export class ContentService {
           userId,
           clientSessionId: clientSessionId || null,
           title: content.slice(0, 40),
+          ...(locale ? { locale } : {}),
         },
       }));
+    if (conversation && locale && conversation.locale !== locale) await this.prisma.aiConversation.update({ where: { id: conversation.id }, data: { locale } });
     await this.prisma.aiMessage.create({
       data: { conversationId: active.id, role: "user", content },
     });
-    const reply = await this.callAiProvider(content, aiSettings);
+    const reply = await this.callAiProvider(content, aiSettings, locale);
     await markIntegrationVerified(this.prisma, "ai");
     const saved = await this.prisma.aiMessage.create({
       data: {
@@ -141,6 +155,7 @@ export class ContentService {
   private async callAiProvider(
     content: string,
     settings: { provider: string; baseUrl: string; apiKey: string; model: string },
+    locale?: string,
   ): Promise<string> {
     const response = await fetch(`${settings.baseUrl}/chat/completions`, {
       method: "POST",
@@ -153,8 +168,8 @@ export class ContentService {
         messages: [
           {
             role: "system",
-            content:
-              "你是赛电健康管家。只提供一般健康信息和生活方式建议，不作诊断，不承诺治疗效果；遇到急症或明显不适应建议及时就医。",
+            content: isGlobalRealm() ? globalAiSystemPrompt(locale)
+              : "你是赛电健康管家。只提供一般健康信息和生活方式建议，不作诊断，不承诺治疗效果；遇到急症或明显不适应建议及时就医。",
           },
           { role: "user", content },
         ],

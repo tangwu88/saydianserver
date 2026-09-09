@@ -117,6 +117,9 @@ export interface MemberProfileContract {
   id: string;
   legacyMemberId?: string;
   mobileMasked?: string;
+  phoneMasked?: string;
+  emailMasked?: string;
+  locale?: string;
   nickname: string;
   avatarUrl?: string;
   gender?: "male" | "female" | "unspecified";
@@ -126,7 +129,7 @@ export interface MemberProfileContract {
 }
 
 export interface HealthRecordSourceContract {
-  platform: "android" | "ios" | "mini_program" | "migration";
+  platform: "android" | "ios" | "harmony" | "mini_program" | "migration";
   deviceId?: string;
   model?: string;
   firmware?: string;
@@ -185,6 +188,8 @@ export interface HealthProfileContract {
   activeWarningCount: number;
   analysisConsent: {
     granted: boolean;
+    availableVersion?: string | null;
+    document?: { path: string; locale: string; version: string } | null;
     version: string | null;
     grantedAt: string | null;
     withdrawnAt: string | null;
@@ -269,7 +274,7 @@ export interface PushInstallationContract {
   installationId: string;
   provider: "jpush" | "apns" | "disabled";
   registrationId: string;
-  platform: "android" | "ios";
+  platform: "android" | "ios" | "harmony";
   appVersion: string;
   buildNumber: string;
   locale?: string;

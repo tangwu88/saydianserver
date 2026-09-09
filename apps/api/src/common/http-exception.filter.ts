@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import type { RequestWithContext } from "./request-context";
+import { isGlobalRealm } from "./deployment-realm";
 
 function errorMessage(exception: unknown): {
   message: string;
@@ -49,10 +50,15 @@ export class SafeHttpExceptionFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
     const details = errorMessage(exception);
+    const raw = exception instanceof HttpException ? exception.getResponse() : null;
+    const errorKey = raw && typeof raw === "object" && "errorKey" in raw && typeof raw.errorKey === "string" ? raw.errorKey : undefined;
     const legacy = isLegacyPath(request.originalUrl || request.url || request.path);
     response.status(legacy ? HttpStatus.OK : status).json({
       code: status,
-      message: details.message,
+      message: isGlobalRealm() && !errorKey && /[\u3400-\u9fff]/.test(details.message)
+        ? (status === 401 ? "Please sign in again." : status === 503 ? "This service is temporarily unavailable. Please try again later." : "The request could not be completed. Please check and try again.")
+        : details.message,
+      ...(errorKey ? { errorKey } : {}),
       data: details.data,
       timestamp: Math.floor(Date.now() / 1000),
       ...(legacy ? {} : { requestId: request.requestId }),

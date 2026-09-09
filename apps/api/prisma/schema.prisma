@@ -261,6 +261,9 @@ model User {
   legacyMemberId           String?                           @unique
   mobile                   String?                           @unique
   mobileVerifiedAt         DateTime?
+  email                    String?                           @unique
+  emailVerifiedAt          DateTime?
+  locale                   String?
   wechatUnionId            String?                           @unique
   wechatOpenId             String?                           @unique
   wechatAppOpenId          String?                           @unique
@@ -384,6 +387,45 @@ model SmsCode {
   createdAt  DateTime  @default(now())
 
   @@index([mobile, usage, expiresAt])
+}
+
+// Only the separately deployed global service creates these challenges.
+model GlobalVerificationChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  channel    String
+  identifier String
+  purpose    String
+  locale     String    @default("en")
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  sentAt     DateTime?
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([identifier, channel, createdAt])
+}
+
+model GlobalVerificationThrottle {
+  key        String   @id
+  reservedAt DateTime
+}
+
+model GlobalLegalDocument {
+  id           String    @id @default(uuid()) @db.Uuid
+  documentType String
+  version      String
+  locale       String    @default("en")
+  title        String
+  contentHtml  String
+  reviewed     Boolean   @default(false)
+  active       Boolean   @default(false)
+  publishedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([documentType, version, locale])
+  @@index([locale, active, reviewed])
 }
 
 model ConsentRecord {
@@ -622,6 +664,7 @@ model ArticleCategory {
   id        String            @id @default(uuid()) @db.Uuid
   legacyId  String?           @unique
   name      String
+  locale    String?
   parentId  String?           @db.Uuid
   sort      Int               @default(0)
   enabled   Boolean           @default(true)
@@ -637,6 +680,7 @@ model Article {
   legacyId    String?          @unique
   categoryId  String?          @db.Uuid
   title       String
+  locale      String?
   summary     String?
   coverUrl    String?
   contentHtml String
@@ -654,6 +698,7 @@ model AiConversation {
   userId          String      @db.Uuid
   clientSessionId String?
   title           String?
+  locale          String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1163,6 +1208,7 @@ model CommerceAddress {
   legacyId     String?
   name         String
   mobile       String
+  countryCode  String?
   province     String
   provinceCode String?
   city         String
@@ -1302,6 +1348,8 @@ model CommerceOrder {
   currency             String                     @default("CNY")
   recipientName        String
   recipientMobile      String
+  countryCode          String?
+  postalCode           String?
   province             String
   city                 String
   district             String

@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
 import { isUuid, safeObject } from "../common/crypto";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { globalLocale } from "../auth/global-identity";
 
 @Injectable()
 export class NotificationsService {
@@ -67,7 +69,7 @@ export class NotificationsService {
     const registrationId = String(body.registrationId ?? body.registration_id ?? "").trim();
     const platform = String(body.platform ?? "").toLowerCase();
     const provider = String(body.provider ?? "jpush").toLowerCase();
-    if (!installationId || !registrationId || !["android", "ios"].includes(platform)) {
+    if (!installationId || !registrationId || !["android", "ios", "harmony"].includes(platform)) {
       throw new BadRequestException("通知设备信息不完整");
     }
     if (!new Set(["jpush", "apns", "disabled"]).has(provider)) {
@@ -85,7 +87,7 @@ export class NotificationsService {
         buildNumber: String(
           body.buildNumber ?? body.build_number ?? body.build ?? "unknown",
         ),
-        locale: body.locale ? String(body.locale) : null,
+        locale: isGlobalRealm() ? globalLocale(body.locale) : body.locale ? String(body.locale) : null,
       },
       update: {
         userId,
@@ -96,7 +98,7 @@ export class NotificationsService {
         buildNumber: String(
           body.buildNumber ?? body.build_number ?? body.build ?? "unknown",
         ),
-        locale: body.locale ? String(body.locale) : null,
+        locale: isGlobalRealm() ? globalLocale(body.locale) : body.locale ? String(body.locale) : null,
         enabled: true,
         lastSeenAt: new Date(),
       },

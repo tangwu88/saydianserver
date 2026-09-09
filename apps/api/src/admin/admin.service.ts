@@ -21,6 +21,8 @@ import { parseDownloadManifest } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
 import { maskMobile, safeObject } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { globalLocale } from "../auth/global-identity";
 import { randomUUID } from "node:crypto";
 import { afterSaleTransitions, assertAfterSaleTransition, expectedVersion, integerCents, requireCommerceOwner } from "../commerce/commerce-policy";
 import { parseLegacyAppUpdate } from "../legacy/legacy-update-contract";
@@ -242,6 +244,7 @@ export class AdminService {
     }
     const data = {
       name,
+      ...(isGlobalRealm() ? { locale: globalLocale(body.locale) } : {}),
       parentId: body.parentId ? String(body.parentId) : null,
       sort: Math.trunc(Number(body.sort ?? 0)) || 0,
       enabled: body.enabled !== false,
@@ -262,6 +265,7 @@ export class AdminService {
     const data = {
       title,
       contentHtml,
+      ...(isGlobalRealm() ? { locale: globalLocale(body.locale) } : {}),
       summary: body.summary ? String(body.summary) : null,
       coverUrl: body.coverUrl ? String(body.coverUrl) : null,
       categoryId: body.categoryId ? String(body.categoryId) : null,
@@ -411,6 +415,7 @@ export class AdminService {
   }
 
   legalDocuments() {
+    if (isGlobalRealm()) return this.prisma.globalLegalDocument.findMany({ orderBy: [{ locale: "asc" }, { documentType: "asc" }, { publishedAt: "desc" }] });
     return this.prisma.legalDocument.findMany({
       orderBy: [{ documentType: "asc" }, { publishedAt: "desc" }],
     });
@@ -433,6 +438,16 @@ export class AdminService {
     }
     if (Number.isNaN(data.publishedAt.valueOf())) {
       throw new BadRequestException("协议发布时间不正确");
+    }
+    if (isGlobalRealm()) {
+      const locale = globalLocale(body.locale);
+      const reviewed = body.reviewed === true;
+      if (data.active && !reviewed) throw new BadRequestException("Review the global document before publishing it.");
+      if (!["user_agreement", "privacy_policy", "health_ai_analysis"].includes(data.documentType)) throw new BadRequestException("Unsupported global legal document type.");
+      return this.prisma.$transaction(async tx => {
+        if (data.active) await tx.globalLegalDocument.updateMany({ where: { documentType: data.documentType, locale, ...(id ? { id: { not: id } } : {}) }, data: { active: false } });
+        return id ? tx.globalLegalDocument.update({ where: { id }, data: { ...data, locale, reviewed } }) : tx.globalLegalDocument.create({ data: { ...data, locale, reviewed } });
+      });
     }
     return this.prisma.$transaction(async (tx) => {
       if (data.active) {

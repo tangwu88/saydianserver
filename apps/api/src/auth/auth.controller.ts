@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Get,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
@@ -9,11 +11,25 @@ import { AuthService } from "./auth.service";
 import { CurrentUser, type AuthenticatedUser } from "../common/request-context";
 import { UserAuthGuard } from "../common/user-auth.guard";
 import { safeObject } from "../common/crypto";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { GlobalAuthService } from "./global-auth.service";
+import { Throttle } from "@nestjs/throttler";
 
 @ApiTags("auth")
 @Controller("api/saydian-app/v2/auth")
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly auth: AuthService, private readonly globalAuth: GlobalAuthService) {}
+
+  @Get("capabilities")
+  capabilities(@Query("locale") locale?: string) { return this.globalAuth.capabilities(locale); }
+
+  @Post("verification-code")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  verificationCode(@Body() input: unknown) { return this.globalAuth.requestCode(input); }
+
+  @Post("register-with-code")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  registerWithCode(@Body() input: unknown) { return this.globalAuth.register(input); }
 
   @Post("register")
   register(@Body() input: unknown) {
@@ -29,6 +45,7 @@ export class AuthController {
 
   @Post("login")
   login(@Body() input: unknown) {
+    if (isGlobalRealm()) return this.globalAuth.login(input);
     const body = safeObject(input);
     return this.auth.login(
       String(body.mobile ?? body.username ?? ""),
@@ -73,6 +90,7 @@ export class AuthController {
 
   @Post("reset-password")
   resetPassword(@Body() input: unknown) {
+    if (isGlobalRealm()) return this.globalAuth.resetPassword(input);
     const body = safeObject(input);
     return this.auth.resetPassword(
       String(body.mobile ?? ""),

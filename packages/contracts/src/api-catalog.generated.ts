@@ -3409,6 +3409,438 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AuthController.capabilities",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/auth/capabilities",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "locale",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/auth/auth.controller.ts",
+      "summary": "国际账号可用能力",
+      "request": "locale可选；仅APP_REALM=global",
+      "response": "{realm,defaultLocale,supportedLocales,registration:{email,sms},smsCountries,verification,consentVersion,legal}；未配置渠道或已审协议不开放注册",
+      "dependency": "国际独立数据库与已验收验证码渠道",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "realm": {
+              "const": "global"
+            },
+            "defaultLocale": {
+              "const": "en"
+            },
+            "supportedLocales": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "en",
+                  "zh-Hans",
+                  "zh-Hant",
+                  "de",
+                  "fr",
+                  "es",
+                  "ja",
+                  "ko"
+                ]
+              }
+            },
+            "registration": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "boolean"
+                },
+                "sms": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "email",
+                "sms"
+              ],
+              "additionalProperties": true
+            },
+            "smsCountries": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "verification": {
+              "type": "object",
+              "properties": {
+                "codeLength": {
+                  "type": "integer"
+                },
+                "expiresIn": {
+                  "type": "integer"
+                },
+                "retryAfter": {
+                  "type": "integer"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            },
+            "consentVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "legal": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "userAgreement": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "locale": {
+                          "enum": [
+                            "en",
+                            "zh-Hans",
+                            "zh-Hant",
+                            "de",
+                            "fr",
+                            "es",
+                            "ja",
+                            "ko"
+                          ]
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "locale",
+                        "version"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "privacyPolicy": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "locale": {
+                          "enum": [
+                            "en",
+                            "zh-Hans",
+                            "zh-Hant",
+                            "de",
+                            "fr",
+                            "es",
+                            "ja",
+                            "ko"
+                          ]
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "locale",
+                        "version"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "userAgreement",
+                    "privacyPolicy"
+                  ],
+                  "additionalProperties": true
+                }
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "realm": "global",
+          "defaultLocale": "en",
+          "supportedLocales": [
+            "en",
+            "zh-Hans",
+            "zh-Hant",
+            "de",
+            "fr",
+            "es",
+            "ja",
+            "ko"
+          ],
+          "registration": {
+            "email": false,
+            "sms": false
+          },
+          "smsCountries": [],
+          "verification": {
+            "codeLength": 6,
+            "expiresIn": 300,
+            "retryAfter": 60
+          },
+          "consentVersion": null,
+          "legal": null
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts; apps/api/src/auth/global-auth.service.ts; apps/api/src/auth/global-legal.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "AuthController.verificationCode",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/auth/verification-code",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/auth/auth.controller.ts",
+      "summary": "国际邮箱/手机号验证码",
+      "request": "{channel:email|sms,identifier,purpose:register|reset_password,locale?}；sms必须E.164",
+      "response": "{challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}；不返回验证码",
+      "dependency": "独立email_otp/sms_global webhook",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "channel": {
+              "enum": [
+                "email",
+                "sms"
+              ]
+            },
+            "identifier": {
+              "type": "string"
+            },
+            "purpose": {
+              "enum": [
+                "register",
+                "reset_password"
+              ]
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
+            }
+          },
+          "required": [
+            "channel",
+            "identifier",
+            "purpose"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "channel": "email",
+          "identifier": "user@example.com",
+          "purpose": "register",
+          "locale": "en"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "challengeId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "expiresIn": {
+              "type": "integer"
+            },
+            "retryAfter": {
+              "type": "integer"
+            },
+            "maskedIdentifier": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "challengeId",
+            "expiresIn",
+            "retryAfter",
+            "maskedIdentifier"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "challengeId": "00000000-0000-4000-8000-000000000001",
+          "expiresIn": 300,
+          "retryAfter": 60,
+          "maskedIdentifier": "u***@example.com"
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts; apps/api/src/auth/global-auth.service.ts; apps/api/src/auth/global-legal.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "AuthController.registerWithCode",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/auth/register-with-code",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/auth/auth.controller.ts",
+      "summary": "国际已验证账号注册",
+      "request": "{challengeId,code,password,nickname?,consentVersion,locale?}；consentVersion必须来自当前已审协议",
+      "response": "Session；国际UUID账号，与国内账号不互通",
+      "dependency": "已送达未消费的国际验证码与已发布协议",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "challengeId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "code": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            },
+            "password": {
+              "type": "string"
+            },
+            "nickname": {
+              "type": "string"
+            },
+            "consentVersion": {
+              "type": "string"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
+            }
+          },
+          "required": [
+            "challengeId",
+            "code",
+            "password",
+            "consentVersion"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "challengeId": "00000000-0000-4000-8000-000000000001",
+          "code": "000000",
+          "password": "<TEST_PASSWORD>",
+          "consentVersion": "<PUBLISHED_CONSENT_VERSION>",
+          "locale": "en"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "accessToken": {
+              "type": "string"
+            },
+            "refreshToken": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "member": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "nickname": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "nickname"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "accessToken",
+            "refreshToken",
+            "expiresAt",
+            "member"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "accessToken": "<ACCESS_TOKEN>",
+          "refreshToken": "<REFRESH_TOKEN>",
+          "expiresAt": "2026-09-08T10:00:00.000Z",
+          "member": {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "nickname": "Saydian user",
+            "emailMasked": "u***@example.com",
+            "locale": "en"
+          }
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts; apps/api/src/auth/global-auth.service.ts; apps/api/src/auth/global-legal.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
       "key": "AuthController.register",
       "method": "POST",
       "path": "/api/saydian-app/v2/auth/register",
@@ -3457,29 +3889,56 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "密码登录",
-      "request": "{mobile/username,password}",
-      "response": "Session",
+      "request": "国内{mobile/username,password}；国际{channel:email|sms,identifier,password}",
+      "response": "Session；国际member含emailMasked/phoneMasked/locale可选字段",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
         "requestSchema": {
-          "type": "object",
-          "properties": {
-            "mobile": {
-              "type": "string"
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mobile": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "password"
+              ],
+              "additionalProperties": true
             },
-            "username": {
-              "type": "string"
-            },
-            "password": {
-              "type": "string"
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "enum": [
+                    "email",
+                    "sms"
+                  ]
+                },
+                "identifier": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "identifier",
+                "password"
+              ],
+              "additionalProperties": true
             }
-          },
-          "required": [
-            "password"
-          ],
-          "additionalProperties": true
+          ]
         },
         "requestExample": {
           "mobile": "<TEST_MOBILE>",
@@ -3534,7 +3993,7 @@ export const apiCatalog = {
           }
         },
         "contentType": "application/json",
-        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts",
+        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts; apps/api/src/auth/global-auth.service.ts; apps/api/src/auth/global-legal.ts",
         "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
       }
     },
@@ -3836,34 +4295,59 @@ export const apiCatalog = {
       ],
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
-      "summary": "短信重置密码",
-      "request": "{mobile,code,password/newPassword}",
+      "summary": "验证码重置密码",
+      "request": "国内{mobile,code,password/newPassword}；国际{challengeId,code,password}",
       "response": "Session；旧会话失效",
-      "dependency": "短信供应商",
+      "dependency": "对应部署的验证码供应商",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
         "requestSchema": {
-          "type": "object",
-          "properties": {
-            "mobile": {
-              "type": "string"
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mobile": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                },
+                "newPassword": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "mobile",
+                "code"
+              ],
+              "additionalProperties": true
             },
-            "code": {
-              "type": "string"
-            },
-            "password": {
-              "type": "string"
-            },
-            "newPassword": {
-              "type": "string"
+            {
+              "type": "object",
+              "properties": {
+                "challengeId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "challengeId",
+                "code",
+                "password"
+              ],
+              "additionalProperties": true
             }
-          },
-          "required": [
-            "mobile",
-            "code"
-          ],
-          "additionalProperties": true
+          ]
         },
         "requestExample": {
           "mobile": "<TEST_MOBILE>",
@@ -3919,7 +4403,7 @@ export const apiCatalog = {
           }
         },
         "contentType": "application/json",
-        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts",
+        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts; apps/api/src/auth/global-auth.service.ts; apps/api/src/auth/global-legal.ts",
         "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
       }
     },
@@ -4697,8 +5181,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/care/care.controller.ts",
       "summary": "邀请查看对方健康数据",
-      "request": "{mobile}；不能自邀；已生效返回 409；待处理重复请求不重复发通知",
-      "response": "CareRelationship",
+      "request": "国内{mobile}；国际{identifier:email/E.164}；仅同部署账号域；不能自邀；已生效返回 409",
+      "response": "CareRelationship；UUID；逐指标授权不变",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
@@ -11737,6 +12221,69 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "CommerceController.markets",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/commerce/markets",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/commerce/commerce.controller.ts",
+      "summary": "国际市场可用状态",
+      "request": "无请求体",
+      "response": "{markets:[{countryCode,currency,currencyExponent,commerceEnabled:false,paymentChannels:[]}]}；未配置空列表",
+      "dependency": "global.markets；国际价目表和支付尚未验收，不开放结算",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "markets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "countryCode": {
+                    "type": "string"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "currencyExponent": {
+                    "type": "integer"
+                  },
+                  "commerceEnabled": {
+                    "const": false
+                  },
+                  "paymentChannels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "markets"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "markets": []
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/global-commerce-policy.ts; apps/api/src/commerce/commerce-store.service.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
       "key": "CommerceController.home",
       "method": "GET",
       "path": "/api/saydian-app/v2/commerce/home",
@@ -12582,13 +13129,25 @@ export const apiCatalog = {
           "name": "parentId",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "locale",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "文章分类",
-      "request": "parentId 可选 UUID；缺省顶级",
-      "response": "ArticleCategory[]",
+      "request": "parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en",
+      "response": "ArticleCategory[]；未翻译不返回其他语言替代",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -12626,13 +13185,25 @@ export const apiCatalog = {
           "name": "pageSize",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "locale",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "已发布文章",
-      "request": "categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50",
-      "response": "{items,total,page,pageSize}",
+      "request": "categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language",
+      "response": "{items,total,page,pageSize}；国际仅已发布的对应语言",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -12658,13 +13229,25 @@ export const apiCatalog = {
           "name": "id",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "locale",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "文章详情",
-      "request": "id=UUID 或迁移的旧文章 ID",
-      "response": "Article；未发布/未来发布 404",
+      "request": "id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language",
+      "response": "Article；未发布/未来发布/国际语言不匹配 404",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -12696,13 +13279,19 @@ export const apiCatalog = {
           "name": "version",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "locale",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "协议文档",
-      "request": "type=文档类型；version 可选，不传取当前激活版本",
-      "response": "LegalDocument；未发布 404",
+      "request": "type=文档类型；version可选；国际locale必选当前capabilities法律文档locale",
+      "response": "国内LegalDocument；国际GlobalLegalDocument（reviewed+active+published）；未发布404",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -12765,9 +13354,9 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "AI 提问",
-      "request": "{content/message,sessionId?}；正文 1–4000 字符",
+      "request": "{content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en",
       "response": "{id,conversationId,role,content,createdAt}",
-      "dependency": "AI 供应商；未配置返回 503",
+      "dependency": "AI 供应商；未配置返回 503；语言指令不改变健康安全边界",
       "successStatus": 201,
       "contract": {
         "status": "unreviewed",
@@ -16367,7 +16956,7 @@ export const apiCatalog = {
       "source": "apps/api/src/reports/health-reports.controller.ts",
       "summary": "会员健康档案",
       "request": "无请求体；默认汇总近30天有效记录",
-      "response": "健康数据完整度、指标摘要、设备、预警数和分析同意状态",
+      "response": "健康数据完整度、指标摘要、设备、预警数和分析同意状态；国际analysisConsent含availableVersion/document，均可为null",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -16398,8 +16987,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/reports/health-reports.controller.ts",
       "summary": "设置健康AI分析单独同意",
-      "request": "{granted:boolean,version:string}；撤回时granted=false",
-      "response": "同意或撤回状态；撤回后不能新生成AI报告",
+      "request": "{granted:boolean,version:string,locale?}；国际version必须匹配当前已审health_ai_analysis文档；撤回时granted=false",
+      "response": "同意或撤回状态；缺文档不授予，撤回后不能新生成AI报告",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
@@ -16702,7 +17291,7 @@ export const apiCatalog = {
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "App 下载与更新配置",
       "request": "无请求体",
-      "response": "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址",
+      "response": "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际仅global_app_update，强制realm=global及逐项独立packageId，直包仅/global/down/files/；无配置404",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {

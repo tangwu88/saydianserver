@@ -17,6 +17,8 @@ import { safeObject } from "../common/crypto";
 import QRCode from "qrcode";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { globalError } from "../auth/global-identity";
 
 type IntentForProvider = {
   id: string;
@@ -103,6 +105,7 @@ export class PaymentProviderService {
       appleProductId?: string | null;
     },
   ): Promise<Record<string, unknown>> {
+    if (isGlobalRealm() && intent.channel !== PaymentChannel.APPLE_IAP) throw globalError(503, "payment_unavailable", "This payment method is not available in this market yet.");
     if (intent.channel === PaymentChannel.APPLE_IAP) {
       return this.appleInvoke(intent, context.appleProductId);
     }
@@ -586,7 +589,7 @@ export function commercePaymentReturnUrl(orderId: string): string {
     const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
     if (url.username || url.password || (url.protocol !== "https:" &&
         !(process.env.NODE_ENV !== "production" && local && url.protocol === "http:"))) throw new Error("untrusted");
-    url.pathname = "/saidian-mall/";
+    url.pathname = isGlobalRealm() ? "/global/saidian-mall/" : "/saidian-mall/";
     url.search = "";
     url.hash = `/pages/order-detail/index?id=${encodeURIComponent(orderId)}`;
     return url.toString();

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { assertDeploymentRealm } from "./deployment-realm";
 
 const developmentDefaults = new Map<string, string>([
   ["ACCESS_TOKEN_SECRET", randomBytes(48).toString("base64url")],
@@ -23,6 +24,7 @@ export function envBoolean(name: string, fallback = false): boolean {
 }
 
 export function assertProductionEnvironment(): void {
+  assertDeploymentRealm();
   if (process.env.NODE_ENV !== "production") return;
   for (const key of [
     "DATABASE_URL",

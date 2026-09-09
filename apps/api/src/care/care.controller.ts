@@ -32,7 +32,8 @@ export class CareController {
 
   @Post("invitations")
   invite(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
-    return this.care.invite(user.id, String(safeObject(input).mobile ?? ""));
+    const body = safeObject(input);
+    return this.care.invite(user.id, String(body.identifier ?? body.mobile ?? ""));
   }
 
   @Post("relationships/:id/respond")

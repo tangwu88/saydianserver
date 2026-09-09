@@ -30,6 +30,7 @@ test("frozen Flutter consumers all have a matching method and normalized path", 
 function sampleMatches(value, schema) {
   if (!schema) return true;
   if (schema.oneOf) return schema.oneOf.filter(candidate => sampleMatches(value, candidate)).length === 1;
+  if (schema.anyOf) return schema.anyOf.some(candidate => sampleMatches(value, candidate));
   if (schema.enum && !schema.enum.includes(value)) return false;
   if ("const" in schema && schema.const !== value) return false;
   const types = schema.type ? [schema.type].flat() : [];

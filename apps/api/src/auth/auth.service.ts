@@ -29,6 +29,8 @@ import {
   WechatAppAuthService,
   type WechatAppIdentity,
 } from "./wechat-app-auth.service";
+import { authAudience, authIssuer, isGlobalRealm } from "../common/deployment-realm";
+import { globalError, globalLocale, maskedIdentifier, normalizedEmail } from "./global-identity";
 
 const accessLifetimeSeconds = 15 * 60;
 const refreshLifetimeMs = 30 * 24 * 60 * 60 * 1000;
@@ -51,6 +53,7 @@ export class AuthService {
   ) {}
 
   async register(input: RegisterInput, mobileVerified = false): Promise<SessionContract> {
+    if (isGlobalRealm()) throw globalError(400, "verification_required", "Use verified email or international phone registration.");
     if (!mobileVerified) throw new BadRequestException("请使用手机验证码完成注册");
     const mobile = normalizedMobile(input.mobile);
     this.assertPassword(input.password);
@@ -97,12 +100,14 @@ export class AuthService {
 
   private async passwordUser(mobileInput: string, password: string) {
     const mobile = normalizedMobile(mobileInput);
-    if (!mobile || !password) throw new UnauthorizedException("账号或密码错误");
-    const user = await this.prisma.user.findUnique({ where: { mobile } });
+    const email = isGlobalRealm() ? normalizedEmail(mobileInput) : "";
+    if ((!mobile && !email) || !password) throw new UnauthorizedException("账号或密码错误");
+    const user = await this.prisma.user.findUnique({ where: email ? { email } : { mobile } });
     if (
       !user?.passwordHash ||
       user.status !== UserStatus.ACTIVE ||
-      !(await compare(password, user.passwordHash))
+      !(await compare(password, user.passwordHash)) ||
+      (isGlobalRealm() && !(user.emailVerifiedAt || user.mobileVerifiedAt))
     ) {
       throw new UnauthorizedException("账号或密码错误");
     }
@@ -168,7 +173,7 @@ export class AuthService {
 
   async loginForMall(mobile: string, password: string, referralCode?: string) {
     const user = await this.passwordUser(mobile, password);
-    if (!user.mobileVerifiedAt) throw new UnauthorizedException("请先使用手机验证码验证后登录商城");
+    if (!(user.mobileVerifiedAt || (isGlobalRealm() && user.emailVerifiedAt))) throw new UnauthorizedException("请先使用手机验证码验证后登录商城");
     const session = await this.issueSession(user.id);
     if (referralCode) await this.bindReferral(user.id, referralCode);
     return this.mallSession(session, user.mobile);
@@ -176,7 +181,7 @@ export class AuthService {
 
   async issueMallSession(userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (user.status !== UserStatus.ACTIVE || !user.mobile || !user.mobileVerifiedAt) {
+    if (user.status !== UserStatus.ACTIVE || !(user.mobileVerifiedAt || (isGlobalRealm() && user.emailVerifiedAt))) {
       throw new UnauthorizedException("请先完成手机号验证");
     }
     return this.mallSession(await this.issueSession(userId), user.mobile);
@@ -197,6 +202,7 @@ export class AuthService {
     mobileInput: string,
     usageInput: string,
   ): Promise<{ expiresIn: number; devCode?: string }> {
+    if (isGlobalRealm()) throw globalError(400, "verification_required", "Use the verification-code endpoint to verify your account.");
     const mobile = normalizedMobile(mobileInput);
     const usage = usageInput.trim() || "register";
     if (!mobile) throw new BadRequestException("手机号格式不正确");
@@ -293,6 +299,7 @@ export class AuthService {
     consentSource: string;
     referralCode?: string;
   }) {
+    if (isGlobalRealm()) throw globalError(503, "social_login_unavailable", "Use email or international phone to sign in.");
     const code = input.code.trim();
     if (!code) throw new BadRequestException("微信登录凭证缺失");
     this.assertConsentVersion(input.consentVersion);
@@ -378,6 +385,7 @@ export class AuthService {
     consentVersion: string;
     consentSource: string;
   }): Promise<SessionContract> {
+    if (isGlobalRealm()) throw globalError(503, "social_login_unavailable", "Use email or international phone to sign in.");
     if (!input.consentAccepted) {
       throw new BadRequestException("请先阅读并同意用户协议与隐私政策");
     }
@@ -495,7 +503,7 @@ export class AuthService {
     return this.toProfile(user);
   }
 
-  private async issueSession(userId: string): Promise<SessionContract> {
+  async issueSession(userId: string): Promise<SessionContract> {
     const sessionId = randomUUID();
     const accessJti = randomUUID();
     const refreshToken = randomToken();
@@ -526,8 +534,8 @@ export class AuthService {
         algorithm: "HS256",
         expiresIn: accessLifetimeSeconds,
         jwtid: accessJti,
-        issuer: "saydianapp-server",
-        audience: "saydian-app",
+        issuer: authIssuer(),
+        audience: authAudience(),
       },
     );
     return {
@@ -548,12 +556,19 @@ export class AuthService {
     birthday: Date | null;
     heightCm: { toNumber(): number } | null;
     weightKg: { toNumber(): number } | null;
+    email?: string | null;
+    locale?: string | null;
   }): MemberProfileContract {
     const mobileMasked = maskMobile(user.mobile);
     return {
       id: user.id,
       ...(user.legacyMemberId ? { legacyMemberId: user.legacyMemberId } : {}),
       ...(mobileMasked ? { mobileMasked } : {}),
+      ...(isGlobalRealm() ? {
+        ...(user.mobile ? { phoneMasked: maskedIdentifier("sms", user.mobile) } : {}),
+        ...(user.email ? { emailMasked: maskedIdentifier("email", user.email) } : {}),
+        locale: globalLocale(user.locale),
+      } : {}),
       nickname: user.nickname,
       ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
       gender:
@@ -622,6 +637,7 @@ export class AuthService {
     code: string,
     usage: string,
   ): Promise<void> {
+    if (isGlobalRealm()) throw globalError(400, "verification_required", "Use the verification-code endpoint to verify your account.");
     const mobile = normalizedMobile(mobileInput);
     if (!mobile || !/^\d{6}$/.test(code)) {
       throw new BadRequestException("验证码不正确");

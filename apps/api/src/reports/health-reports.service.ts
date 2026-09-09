@@ -23,6 +23,9 @@ import { PrismaService } from "../common/prisma.service";
 import { safeObject, sha256 } from "../common/crypto";
 import { existsSync } from "node:fs";
 import PDFDocument from "pdfkit";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { globalError } from "../auth/global-identity";
+import { globalLegalReference } from "../auth/global-legal";
 import {
   buildHealthEvidence,
   type EvidenceRecord,
@@ -59,6 +62,7 @@ export class HealthReportsService {
       }),
     ]);
     const evidence = buildHealthEvidence(records);
+    const analysisDocument = isGlobalRealm() ? await this.analysisDocument(userId) : null;
     return {
       memberId: userId,
       period: isoPeriod(period),
@@ -84,8 +88,9 @@ export class HealthReportsService {
       })),
       activeWarningCount: warningCount,
       analysisConsent: {
+        ...(isGlobalRealm() ? { availableVersion: analysisDocument?.version ?? null, document: analysisDocument } : {}),
         granted: Boolean(
-          profile?.analysisConsentedAt && !profile.analysisConsentWithdrawn,
+          profile?.analysisConsentedAt && !profile.analysisConsentWithdrawn && (!isGlobalRealm() || (analysisDocument && analysisDocument.version === profile.analysisConsentVersion)),
         ),
         version: profile?.analysisConsentVersion ?? null,
         grantedAt: profile?.analysisConsentedAt?.toISOString() ?? null,
@@ -101,6 +106,11 @@ export class HealthReportsService {
     const version = String(body.version ?? "").trim();
     if (granted && (!version || version.length > 80)) {
       throw new BadRequestException("请先阅读并同意健康分析说明");
+    }
+    if (isGlobalRealm() && granted) {
+      const document = await this.analysisDocument(userId, body.locale);
+      if (!document) throw globalError(503, "analysis_consent_unavailable", "The health analysis notice is not available yet.");
+      if (document.version !== version) throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
     }
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
@@ -160,6 +170,11 @@ export class HealthReportsService {
     });
   }
 
+  private async analysisDocument(userId: string, localeInput?: unknown) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { locale: true } });
+    return globalLegalReference(this.prisma, ANALYSIS_CONSENT_TYPE, localeInput ?? user?.locale);
+  }
+
   async eligibility(userId: string): Promise<HealthReportEligibilityContract> {
     const period = reportPeriod();
     const [records, profile, credits] = await Promise.all([
@@ -175,8 +190,9 @@ export class HealthReportsService {
     if (evidence.validRecordIds.length === 0) {
       missing.push("暂未获取可用于分析的健康记录");
     }
+    const analysisDocument = isGlobalRealm() ? await this.analysisDocument(userId) : null;
     const consentRequired = !(
-      profile?.analysisConsentedAt && !profile.analysisConsentWithdrawn
+      profile?.analysisConsentedAt && !profile.analysisConsentWithdrawn && (!isGlobalRealm() || (analysisDocument && analysisDocument.version === profile.analysisConsentVersion))
     );
     return {
       eligible: missing.length === 0,
@@ -204,6 +220,10 @@ export class HealthReportsService {
     }
     if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
       throw new ForbiddenException("同意健康分析说明后才能生成详细报告");
+    }
+    if (isGlobalRealm()) {
+      const document = await this.analysisDocument(userId);
+      if (!document || document.version !== profile.analysisConsentVersion) throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
     }
     const inputDigest = evidenceDigest(userId, period, evidence);
     const reusable = await this.prisma.healthReport.findFirst({

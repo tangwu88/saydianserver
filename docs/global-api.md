@@ -1,0 +1,64 @@
+# Saydian international API foundation
+
+Status: implementation in an independent local branch, not a production deployment. Domestic source workspaces and accounts were not changed or imported.
+
+## Routing and account boundary
+
+The application host is `https://app.saydian.cn`. The international API base is `https://app.saydian.cn/global/api/saydian-app/v2`; a static gateway removes `/global` and forwards to a dedicated global service. A header, cookie, device name, UI language, or client-supplied realm cannot switch accounts.
+
+The process uses `APP_REALM=global`, independent database, Redis, queue, storage bucket and credentials. Access tokens use issuer `saydian-global-server` and audience `saydian-global-app`. The legacy imported-session bridge and domestic OTP/WeChat registration paths are disabled. Domestic deployments retain their previous routes, claims and China mobile handling. No domestic account migration is included.
+
+Success is the existing V2 envelope `{code:200,message:"OK",data:...,timestamp,requestId}`. A POST may return HTTP 201 while the envelope code remains 200. Global errors have an English message and, for new failures, an `errorKey`; clients translate the key rather than displaying implementation details. UUIDs must remain strings. Existing authenticated V1 business adapters operate only on the same global service/database; they do not grant access to domestic accounts.
+
+## Authentication contract
+
+Locales are `en`, `zh-Hans`, `zh-Hant`, `de`, `fr`, `es`, `ja`, `ko`; default is English. Language does not determine country, currency, identity or SMS availability.
+
+| Method / V2 path | Request | `data` |
+| --- | --- | --- |
+| GET `/auth/capabilities?locale=en` | Optional locale | `{realm:"global",defaultLocale:"en",supportedLocales,registration:{email,sms},smsCountries:string[],verification:{codeLength:6,expiresIn:300,retryAfter:60},consentVersion:string|null,legal:LegalLinks|null}` |
+| POST `/auth/verification-code` | `{channel:"email"\|"sms",identifier,purpose:"register"\|"reset_password",locale?}` | `{challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}`; never returns the code |
+| POST `/auth/register-with-code` | `{challengeId,code,password,nickname?,consentVersion,locale?}` | `Session` |
+| POST `/auth/login` | `{channel,identifier,password}` | `Session` |
+| POST `/auth/reset-password` | `{challengeId,code,password}` | Fresh `Session`; existing sessions revoked |
+| POST `/auth/refresh` | `{refreshToken}` | Rotated `Session`; serialize refresh calls |
+| POST `/auth/logout` | Existing authenticated route | `{loggedOut:true}` |
+
+`Session = {accessToken,refreshToken,expiresAt:ISO_UTC,member}`. Member is a UUID profile with nickname, optional avatar, gender, birthday, height/weight and masked email/phone plus locale. Raw identifiers, password hashes, OTPs and credentials are not returned. `mobile`/`username` remain compatibility aliases on password login; international callers should use the explicit new fields.
+
+Email is trimmed and normalized; the domain supports IDN, and canonical email is case-insensitive. SMS identities must be valid E.164 numbers (including `+` country calling code), verified using `libphonenumber-js/max`; local-only numbers or extensions are rejected. Account creation stores email or E.164 mobile in the independent database, with a verification timestamp. No device-name/model-specific identity rule exists.
+
+Passwords require at least 8 characters and at most 72 UTF-8 bytes (bcrypt limit). Nickname is at most 40 characters. Challenges expire after 5 minutes, allow at most 5 wrong attempts, are single-use and purpose-bound. Recipient cooldown is 60 seconds across purposes, with at most 10 requests per 24 hours; controller IP throttles also apply. Failed deliveries cannot be consumed. Tests use synthetic, mocked delivery only.
+
+`LegalLinks = {userAgreement:{path,locale,version},privacyPolicy:{path,locale,version}}`. Paths are API-relative, for example `/api/saydian-app/v2/content/legal/user_agreement?version=<published>&locale=en`; add the international gateway prefix exactly once. Public GET returns a reviewed document containing `contentHtml`. Only matching, published, reviewed terms/privacy versions enable registration; requested-language documents may explicitly fall back to English via their returned locale. With no documents, `consentVersion` and `legal` are null and registration stays false. Do not invent a version or skip displaying these documents. Paused business writes also keep registration false.
+
+## Other client contracts
+
+- GET/PUT `/members/me`: existing profile contract; PUT may update `locale`. GET/PUT `/members/me/goals`: `{steps:number|null,distanceMeters:number|null,caloriesKcal:number|null}`. Unknown goals remain null, never fabricated zero.
+- POST `/care/invitations`: `{identifier:email|E.164}` (`mobile` compatibility alias). Existing relationship UUIDs, ownership and per-metric authorization remain unchanged. It only finds accounts in the global database; this is an in-app invitation, not an email invitation delivery service.
+- Health upload and push installation contracts now accept `harmony` alongside Android/iOS. Existing evidence and health algorithms are unchanged.
+- GET `/health/profile` includes global `analysisConsent.availableVersion:string|null` and `analysisConsent.document:{path,locale,version}|null`, from a reviewed `health_ai_analysis` document. POST `/health/profile/analysis-consent` accepts `{granted:true,version,locale?}` only against the current published version. With no reviewed document, granting is unavailable; `{granted:false}` still withdraws consent. Existing reports/evidence remain owned by the user.
+- POST `/ai/messages` accepts `locale`; chosen language is stored on the conversation and applied to the provider system prompt. Existing wellness/no-diagnosis/no-invented-data instructions remain. Conversation language precedes account language if no new locale is supplied.
+- Article category/list/detail use query `locale`, then `Accept-Language`, then English. Global articles are filtered by exact stored locale. Missing translations yield empty lists or 404, not an invented translation. Admin article/category writes persist locale.
+- Push installations persist normalized locale. Global JPush notifications are batched by the recipient installation's language with a generic new-message alert. This does not translate stored health conclusions, report PDF content or existing notification bodies.
+- GET `/commerce/markets` exposes only explicitly enabled `global.markets` entries: `{markets:[{countryCode,currency,currencyExponent,commerceEnabled:false,paymentChannels:[]}]}`. USD=2, JPY=0, KWD=3 minor-unit exponents are respected. Region is not inferred from language.
+- Global addresses accept `{countryCode,name,mobile,province?/region?,city?,district?,detail/addressLine1,postalCode?,isDefault?}`; ISO country and valid international contact phone are required. A delivery phone can differ from the verified account identifier. Verified email accounts pass the same-user commerce guard without a domestic mobile.
+- International market SKU price books, tax, shipping, inventory policies and verified international payment rails are **not implemented**. Global checkout fails with `market_checkout_unavailable`, not CNY amounts relabeled as another currency. Existing CNY payment adapters are not exposed as international payment rails; StoreKit retains its separately configured verification boundary for digital services, and report sales remain disabled in the deployment template.
+- GET `/support/app-update` reads only public `AppSetting.global_app_update`, never domestic `app_update`. The stored manifest must explicitly have `realm:"global"` and every release's package ID: Android/iOS `cn.saydian.app.global`, HarmonyOS `cn.saydian.app.global.hm`. Available direct destinations must be `/global/down/files/<fileName>` and retain size/hash. iOS uses only real Apple App Store/TestFlight URLs; missing packages remain `coming_soon`. The server validates metadata, not the binary signature: publication must also independently verify actual bundle/package IDs and re-download hashes. Missing global manifest returns 404. `global_support` likewise never falls back to domestic support configuration.
+
+## Operator configuration (no supplied live credentials)
+
+See [global-deployment.md](global-deployment.md). Configuration keys below exist in source, but this branch contains no configured provider or published legal content.
+
+| Capability | Explicit global configuration required |
+| --- | --- |
+| Email OTP | `GLOBAL_EMAIL_PROVIDER=webhook`; IntegrationConfig key `email_otp`, state CONFIGURED; publicConfig `{provider:"webhook",deliveryVerified:true}`; secrets `webhookUrl` + `webhookToken` or corresponding `GLOBAL_EMAIL_WEBHOOK_URL/TOKEN` |
+| SMS OTP | `GLOBAL_SMS_PROVIDER=webhook`; IntegrationConfig key `sms_global`, state CONFIGURED; same verified public fields plus an explicit tested `countries:[ISO...]` allowlist; independent `GLOBAL_SMS_WEBHOOK_URL/TOKEN` |
+| Delivery contract | Authorized HTTPS POST with bearer token and JSON `{channel,recipient,code,purpose,locale,expiresIn:300,challengeId}`; return 2xx only after accepting the delivery. No redirect; 10-second timeout. Provider templates and destination countries require real independent acceptance tests. |
+| Legal | `GlobalLegalDocument` records with reviewed=true, active=true, publishedAt<=now, nonempty contentHtml; matching version for terms/privacy; separate health_ai_analysis |
+| Market discovery | Enabled CommerceBusinessConfig key `global.markets`, value `{markets:[{countryCode,currency,enabled:true}]}`; this alone never opens checkout |
+| Downloads / support | Explicit public `global_app_update` / `global_support` settings from international content; no domestic copied configuration |
+
+## Not yet accepted
+
+No production deployment, new database migration, live email/SMS request, cross-device account flow, real Apple signing/TestFlight, gateway runtime validation, global download publication or international payment occurred. Docker is unavailable on this machine; the deployment script's structural checks are not container/readiness acceptance. Database-backed tests need an isolated test database. Global health report generation/PDF and all stored notification/content translations still require localized templates/content and acceptance; this change does not claim full eight-language backend content or global commerce completion.

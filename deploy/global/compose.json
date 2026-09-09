@@ -1,0 +1,165 @@
+{
+  "name": "saydian-global",
+  "services": {
+    "global-postgres": {
+      "image": "postgres:16-alpine",
+      "environment": {
+        "POSTGRES_DB": "saydian_global",
+        "POSTGRES_USER": "global_owner",
+        "POSTGRES_PASSWORD": "${GLOBAL_POSTGRES_OWNER_PASSWORD:?Set an independent global database owner password}"
+      },
+      "volumes": ["global_postgres_data:/var/lib/postgresql/data"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U global_owner -d saydian_global"],
+        "interval": "10s", "timeout": "5s", "retries": 20
+      },
+      "restart": "unless-stopped",
+      "networks": ["global_private"]
+    },
+    "global-redis": {
+      "image": "redis:7-alpine",
+      "environment": {
+        "REDIS_PASSWORD": "${GLOBAL_REDIS_PASSWORD:?Set an independent URL-safe global Redis password}"
+      },
+      "command": ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""],
+      "volumes": ["global_redis_data:/data"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"],
+        "interval": "10s", "timeout": "5s", "retries": 20
+      },
+      "restart": "unless-stopped",
+      "networks": ["global_private"]
+    },
+    "global-minio": {
+      "image": "minio/minio:RELEASE.2024-08-17T01-24-54Z",
+      "environment": {
+        "MINIO_ROOT_USER": "${GLOBAL_MINIO_ROOT_USER:?Set a global storage administrator}",
+        "MINIO_ROOT_PASSWORD": "${GLOBAL_MINIO_ROOT_PASSWORD:?Set an independent global storage administrator password}"
+      },
+      "command": ["server", "/data", "--console-address", ":9001"],
+      "volumes": ["global_minio_data:/data"],
+      "healthcheck": {
+        "test": ["CMD", "mc", "ready", "local"],
+        "interval": "10s", "timeout": "5s", "retries": 20
+      },
+      "restart": "unless-stopped",
+      "security_opt": ["no-new-privileges:true"],
+      "networks": ["global_private"]
+    },
+    "global-api": {
+      "image": "ghcr.io/tangwu88/saydianserver-api:${GLOBAL_IMAGE_TAG:?Set a verified full commit SHA}",
+      "command": ["node", "dist/main.js"],
+      "environment": {
+        "NODE_ENV": "production",
+        "PORT": "8080",
+        "APP_REALM": "global",
+        "AUTH_ISSUER": "saydian-global-server",
+        "AUTH_AUDIENCE": "saydian-global-app",
+        "PUBLIC_BASE_URL": "https://app.saydian.cn/global",
+        "APP_REVISION": "${GLOBAL_IMAGE_TAG}",
+        "DATABASE_URL": "postgresql://global_app:${GLOBAL_DATABASE_PASSWORD:?Set an independent URL-safe global application database password}@global-postgres:5432/saydian_global?schema=public",
+        "REDIS_URL": "redis://:${GLOBAL_REDIS_PASSWORD}@global-redis:6379/0",
+        "ACCESS_TOKEN_SECRET": "${GLOBAL_ACCESS_TOKEN_SECRET:?Set an independent global access-token secret}",
+        "EMPLOYEE_TOKEN_SECRET": "${GLOBAL_EMPLOYEE_TOKEN_SECRET:?Set an independent global employee-token secret}",
+        "REFRESH_TOKEN_PEPPER": "${GLOBAL_REFRESH_TOKEN_PEPPER:?Set an independent global refresh-token pepper}",
+        "FIELD_ENCRYPTION_KEY": "${GLOBAL_FIELD_ENCRYPTION_KEY:?Set an independent global field encryption key}",
+        "INTEGRATION_MASTER_KEY": "${GLOBAL_INTEGRATION_MASTER_KEY:?Set an independent global integration encryption key}",
+        "OBJECT_STORAGE_ENDPOINT": "http://global-minio:9000",
+        "OBJECT_STORAGE_REGION": "us-east-1",
+        "OBJECT_STORAGE_BUCKET": "saydian-global-private",
+        "OBJECT_STORAGE_ACCESS_KEY": "${GLOBAL_OBJECT_STORAGE_ACCESS_KEY:?Set a dedicated global bucket user}",
+        "OBJECT_STORAGE_SECRET_KEY": "${GLOBAL_OBJECT_STORAGE_SECRET_KEY:?Set an independent global bucket secret}",
+        "OBJECT_STORAGE_FORCE_PATH_STYLE": "true",
+        "CORS_ORIGINS": "https://app.saydian.cn",
+        "COMMERCE_MODE": "integrated",
+        "COMMERCE_STOREFRONT_URL": "${GLOBAL_STOREFRONT_URL:-https://app.saydian.cn/global/saidian-mall/}",
+        "GLOBAL_DOWNLOAD_URL": "${GLOBAL_DOWNLOAD_URL:-https://app.saydian.cn/global/down}",
+        "MAINTENANCE_READ_ONLY": "true",
+        "MAINTENANCE_ALLOW_MEMBER_AUTH": "false",
+        "BUSINESS_WRITES_PAUSED": "true",
+        "WORKER_OUTBOUND_PAUSED": "true",
+        "CALLBACK_PROCESSING_PAUSED": "true",
+        "LEGACY_SESSION_BRIDGE_ENABLED": "false",
+        "LEGACY_TOKEN_EXCHANGE_ENABLED": "false",
+        "ALLOW_TEST_OTP": "false",
+        "SMS_PROVIDER": "disabled",
+        "GLOBAL_EMAIL_PROVIDER": "disabled",
+        "GLOBAL_SMS_PROVIDER": "disabled",
+        "PUSH_PROVIDER": "disabled",
+        "AI_PROVIDER": "disabled",
+        "ENABLE_HEALTH_REPORT_SALES": "false"
+      },
+      "depends_on": {
+        "global-postgres": {"condition": "service_healthy"},
+        "global-redis": {"condition": "service_healthy"},
+        "global-minio": {"condition": "service_healthy"}
+      },
+      "healthcheck": {
+        "test": ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health/ready"],
+        "interval": "15s", "timeout": "5s", "retries": 20
+      },
+      "restart": "unless-stopped",
+      "read_only": true,
+      "tmpfs": ["/tmp"],
+      "security_opt": ["no-new-privileges:true"],
+      "networks": {
+        "global_private": {},
+        "global_egress": {},
+        "gateway": {"aliases": ["global-api"]}
+      }
+    },
+    "global-worker": {
+      "image": "ghcr.io/tangwu88/saydianserver-worker:${GLOBAL_IMAGE_TAG:?Set a verified full commit SHA}",
+      "command": ["node", "dist/main.js"],
+      "environment": {
+        "NODE_ENV": "production",
+        "APP_REALM": "global",
+        "AUTH_ISSUER": "saydian-global-server",
+        "AUTH_AUDIENCE": "saydian-global-app",
+        "PUBLIC_BASE_URL": "https://app.saydian.cn/global",
+        "APP_REVISION": "${GLOBAL_IMAGE_TAG}",
+        "DATABASE_URL": "postgresql://global_app:${GLOBAL_DATABASE_PASSWORD:?Set an independent URL-safe global application database password}@global-postgres:5432/saydian_global?schema=public",
+        "REDIS_URL": "redis://:${GLOBAL_REDIS_PASSWORD}@global-redis:6379/0",
+        "INTEGRATION_MASTER_KEY": "${GLOBAL_INTEGRATION_MASTER_KEY:?Set an independent global integration encryption key}",
+        "FIELD_ENCRYPTION_KEY": "${GLOBAL_FIELD_ENCRYPTION_KEY:?Set an independent global field encryption key}",
+        "OBJECT_STORAGE_ENDPOINT": "http://global-minio:9000",
+        "OBJECT_STORAGE_REGION": "us-east-1",
+        "OBJECT_STORAGE_BUCKET": "saydian-global-private",
+        "OBJECT_STORAGE_ACCESS_KEY": "${GLOBAL_OBJECT_STORAGE_ACCESS_KEY:?Set a dedicated global bucket user}",
+        "OBJECT_STORAGE_SECRET_KEY": "${GLOBAL_OBJECT_STORAGE_SECRET_KEY:?Set an independent global bucket secret}",
+        "OBJECT_STORAGE_FORCE_PATH_STYLE": "true",
+        "REPORT_WORKER_CONCURRENCY": "1",
+        "MAINTENANCE_READ_ONLY": "true",
+        "MAINTENANCE_ALLOW_MEMBER_AUTH": "false",
+        "BUSINESS_WRITES_PAUSED": "true",
+        "WORKER_OUTBOUND_PAUSED": "true",
+        "CALLBACK_PROCESSING_PAUSED": "true",
+        "LEGACY_SESSION_BRIDGE_ENABLED": "false",
+        "LEGACY_TOKEN_EXCHANGE_ENABLED": "false",
+        "ALLOW_TEST_OTP": "false",
+        "SMS_PROVIDER": "disabled",
+        "GLOBAL_EMAIL_PROVIDER": "disabled",
+        "GLOBAL_SMS_PROVIDER": "disabled",
+        "PUSH_PROVIDER": "disabled",
+        "AI_PROVIDER": "disabled",
+        "ENABLE_HEALTH_REPORT_SALES": "false"
+      },
+      "depends_on": {"global-api": {"condition": "service_healthy"}},
+      "restart": "unless-stopped",
+      "read_only": true,
+      "tmpfs": ["/tmp"],
+      "security_opt": ["no-new-privileges:true"],
+      "networks": ["global_private", "global_egress"]
+    }
+  },
+  "networks": {
+    "global_private": {"internal": true},
+    "global_egress": {},
+    "gateway": {"external": true, "name": "${GLOBAL_GATEWAY_NETWORK:?Set the approved existing gateway network}"}
+  },
+  "volumes": {
+    "global_postgres_data": {},
+    "global_redis_data": {},
+    "global_minio_data": {}
+  }
+}

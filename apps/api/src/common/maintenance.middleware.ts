@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, NestMiddleware } from "@nestjs/common";
 import type { NextFunction, Response } from "express";
 import { businessWritesPaused, cutoverFlag, verifiedCallbackPaths } from "@saydian/app-contracts";
 import type { RequestWithContext } from "./request-context";
+import { isGlobalRealm } from "./deployment-realm";
 
 @Injectable()
 export class MaintenanceMiddleware implements NestMiddleware {
@@ -28,7 +29,8 @@ export class MaintenanceMiddleware implements NestMiddleware {
     if ((writeMethod || legacyReadMutation) && !exempt && businessWritesPaused(process.env)) {
       response.status(HttpStatus.SERVICE_UNAVAILABLE).json({
         code: HttpStatus.SERVICE_UNAVAILABLE,
-        message: "系统维护中，请稍后再试",
+        message: isGlobalRealm() ? "The service is under maintenance. Please try again later." : "系统维护中，请稍后再试",
+        ...(isGlobalRealm() ? { errorKey: "service_maintenance" } : {}),
         data: null,
         timestamp: Math.floor(Date.now() / 1000),
         requestId: request.requestId,

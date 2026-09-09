@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { isGlobalRealm } from "./deployment-realm";
+import { internationalPhone } from "../auth/global-identity";
 
 export function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
@@ -18,6 +20,7 @@ export function secureEqual(left: string, right: string): boolean {
 }
 
 export function normalizedMobile(value: unknown): string {
+  if (isGlobalRealm()) return internationalPhone(value)?.identifier ?? "";
   const mobile = String(value ?? "").replace(/\s+/g, "");
   if (!/^1\d{10}$/.test(mobile)) return "";
   return mobile;

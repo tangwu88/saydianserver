@@ -14,6 +14,8 @@ import { env } from "../common/environment";
 import { safeObject, sha256 } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { parseGlobalDownloadManifest } from "./global-download-manifest";
 
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -57,22 +59,22 @@ export class SupportService {
   async supportConfig() {
     // Read only the explicitly published support record; do not load private JSON.
     const setting = await this.prisma.appSetting.findFirst({
-      where: { key: "support", public: true },
+      where: { key: isGlobalRealm() ? "global_support" : "support", public: true },
       select: { value: true },
     });
     return (
       setting?.value ?? {
         configured: false,
-        message: "客服渠道暂时无法使用，请稍后再试",
+        message: isGlobalRealm() ? "Support is temporarily unavailable. Please try again later." : "客服渠道暂时无法使用，请稍后再试",
       }
     );
   }
 
   async appUpdateConfig() {
-    const setting = await this.prisma.appSetting.findUnique({ where: { key: "app_update" } });
+    const setting = await this.prisma.appSetting.findUnique({ where: { key: isGlobalRealm() ? "global_app_update" : "app_update" } });
     if (!setting?.public) throw new NotFoundException("暂未发布更新信息");
     try {
-      return parseDownloadManifest(setting.value);
+      return isGlobalRealm() ? parseGlobalDownloadManifest(setting.value) : parseDownloadManifest(setting.value);
     } catch {
       throw new ServiceUnavailableException("下载信息暂时不可用");
     }

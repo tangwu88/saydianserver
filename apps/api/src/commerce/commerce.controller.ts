@@ -21,6 +21,9 @@ import { CommerceService } from "./commerce.service";
 export class CommerceController {
   constructor(private readonly commerce: CommerceService) {}
 
+  @Get("markets")
+  markets() { return this.commerce.publicGet("/storefront/markets"); }
+
   @Get("home")
   home() {
     return this.commerce.publicGet("/storefront/bootstrap");

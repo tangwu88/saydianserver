@@ -7,6 +7,7 @@ import { env, envBoolean } from "../common/environment";
 import { safeObject } from "../common/crypto";
 import { PrismaService } from "../common/prisma.service";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { isGlobalRealm } from "../common/deployment-realm";
 
 type Capability = { enabled: boolean; reason?: string };
 type PaymentCapability = Capability & { channel: string; environments: string[] };
@@ -22,6 +23,11 @@ export class CommerceCapabilitiesService {
   // Configuration readiness is not a provider verification or a payer identity
   // assertion. Creating a payment still validates the actual User.
   async publicCapabilities() {
+    if (isGlobalRealm()) return {
+      login: { password: { enabled: !businessWritesPaused(process.env) }, sms: { enabled: false }, wechatH5: { enabled: false } },
+      payments: [], checkout: { enabled: false, points: { supported: false, requiresVerifiedAccount: true } },
+      maintenance: { readOnly: businessWritesPaused(process.env) }, demo: false,
+    };
     const readOnly = businessWritesPaused(process.env);
     const outboundPaused = shouldPauseWorkers(process.env);
     const demo = process.env.NODE_ENV !== "production" && envBoolean("H5_DEMO_ENABLED");

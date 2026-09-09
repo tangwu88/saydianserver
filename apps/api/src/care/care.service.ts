@@ -15,6 +15,8 @@ import { randomUUID } from "node:crypto";
 import type { HealthMetric } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
 import { normalizedMobile, safeObject } from "../common/crypto";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { normalizedEmail } from "../auth/global-identity";
 
 const metricMap: Record<HealthMetric, PrismaHealthMetric> = {
   sleep: PrismaHealthMetric.SLEEP,
@@ -42,8 +44,9 @@ export class CareService {
 
   async invite(inviterId: string, mobileInput: string) {
     const mobile = normalizedMobile(mobileInput);
-    if (!mobile) throw new BadRequestException("手机号格式不正确");
-    const recipient = await this.prisma.user.findUnique({ where: { mobile } });
+    const email = isGlobalRealm() ? normalizedEmail(mobileInput) : "";
+    if (!mobile && !email) throw new BadRequestException("手机号格式不正确");
+    const recipient = await this.prisma.user.findUnique({ where: email ? { email } : { mobile } });
     if (!recipient) throw new NotFoundException("未找到该用户");
     if (recipient.id === inviterId) throw new BadRequestException("不能关爱自己");
     const invitationId = `care_${randomUUID()}`;
