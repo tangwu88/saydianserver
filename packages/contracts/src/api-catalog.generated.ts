@@ -3426,7 +3426,7 @@ export const apiCatalog = {
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "国际账号可用能力",
       "request": "locale可选；仅APP_REALM=global",
-      "response": "{realm,defaultLocale,supportedLocales,registration:{email,sms},smsCountries,verification,consentVersion,legal}；未配置渠道或已审协议不开放注册",
+      "response": "{realm,defaultLocale,supportedLocales,registration:{email,sms},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；recovery不依赖新注册协议，仍要求渠道可用且不在写入维护期",
       "dependency": "国际独立数据库与已验收验证码渠道",
       "successStatus": 200,
       "contract": {
@@ -3458,6 +3458,22 @@ export const apiCatalog = {
               }
             },
             "registration": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "boolean"
+                },
+                "sms": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "email",
+                "sms"
+              ],
+              "additionalProperties": true
+            },
+            "recovery": {
               "type": "object",
               "properties": {
                 "email": {
@@ -3594,6 +3610,10 @@ export const apiCatalog = {
             "ko"
           ],
           "registration": {
+            "email": false,
+            "sms": false
+          },
+          "recovery": {
             "email": false,
             "sms": false
           },

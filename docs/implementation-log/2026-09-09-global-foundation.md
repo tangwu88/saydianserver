@@ -65,3 +65,11 @@
 - `pnpm build`在相同业务源码上已通过；远端仅文档与HTTP/tooling测试文件变化，没有改应用构建源码。更新后的API目录继续由工具检查验证。
 
 所有结果均为独立本地源码/合成测试证据；没有生产部署或供应商真实发送。下次修改先fetch核对分支与记录，再继续对应缺口，不把当前基础建设完成等同于整个国际版已上线。
+
+## 客户端联审修复：密码恢复不依赖新注册协议
+
+- 修改前：工作区干净，HEAD=2621ead；重新fetch确认origin/main仍5bf5ec6并已包含，无覆盖操作。
+- 原因：客户端把registration字段复用于reset_password，新注册法律文档暂缺时连已有账号恢复也被关闭；服务端本来允许reset独立核验渠道。
+- 增加 `capabilities.recovery:{email,sms}`，使用同一真实渠道状态和SMS国别名单，不依赖注册法律文档；业务写维护仍关闭发码。密码登录不受新注册capabilities控制，登录本身不代表允许push。
+- 影响仅global auth能力、对应契约/测试/记录。新增无协议可发reset、无渠道仍关闭测试，维护期同时关闭recovery。
+- 验证：`pnpm api:docs`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm api:docs:check`、`pnpm tools:test` 均通过。全工作区488项通过、4个数据库测试跳过；工具8项通过；部署结构111项通过，Docker Compose/Nginx运行仍未验收。`git diff --check`通过。原有Sass弃用/admin大chunk构建警告不属于此次修改。

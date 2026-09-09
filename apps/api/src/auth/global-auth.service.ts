@@ -20,8 +20,9 @@ export class GlobalAuthService {
     this.requireGlobal();
     const ready = await this.delivery.capabilities();
     const legal = await globalLegalBundle(this.prisma, locale);
-    const registrationOpen = Boolean(legal) && !businessWritesPaused(process.env);
-    return { realm: "global", defaultLocale: "en", supportedLocales: [...globalLocales], registration: { email: ready.email && registrationOpen, sms: ready.sms && registrationOpen }, smsCountries: ready.smsCountries, verification: { codeLength: 6, expiresIn: 300, retryAfter: 60 }, consentVersion: legal?.consentVersion ?? null, legal: legal?.documents ?? null };
+    const deliveryOpen = !businessWritesPaused(process.env);
+    const registrationOpen = Boolean(legal) && deliveryOpen;
+    return { realm: "global", defaultLocale: "en", supportedLocales: [...globalLocales], registration: { email: ready.email && registrationOpen, sms: ready.sms && registrationOpen }, recovery: { email: ready.email && deliveryOpen, sms: ready.sms && deliveryOpen }, smsCountries: ready.smsCountries, verification: { codeLength: 6, expiresIn: 300, retryAfter: 60 }, consentVersion: legal?.consentVersion ?? null, legal: legal?.documents ?? null };
   }
 
   async requestCode(input: unknown) {

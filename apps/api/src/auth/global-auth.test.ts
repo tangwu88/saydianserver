@@ -59,17 +59,27 @@ describe("global international identity", () => {
 describe("global registration challenges", () => {
   it("does not advertise registration while business writes are paused", async () => {
     vi.stubEnv("BUSINESS_WRITES_PAUSED", "true");
-    expect((await harness().service.capabilities("en")).registration).toEqual({ email: false, sms: false });
+    const value = await harness().service.capabilities("en");
+    expect(value.registration).toEqual({ email: false, sms: false });
+    expect(value.recovery).toEqual({ email: false, sms: false });
   });
   it("keeps registration closed without reviewed legal documents and rejects an outdated version", async () => {
     const h = harness(); h.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
     const capabilities = await h.service.capabilities("en");
     expect(capabilities.registration).toEqual({ email: false, sms: false }); expect(capabilities.consentVersion).toBeNull(); expect(capabilities.legal).toBeNull();
+    expect(capabilities.recovery).toEqual({ email: true, sms: true });
     h.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
     await expect(h.service.requestCode({ channel: "email", identifier: "legal@example.com" })).rejects.toThrow("not available yet");
     expect(h.delivery.send).not.toHaveBeenCalled();
     await expect(h.service.register({ challengeId: randomUUID(), code: "123456", password: "Synthetic-password", consentVersion: "old" })).rejects.toThrow("terms have changed");
     expect(h.users().size).toBe(0);
+  });
+  it("allows reset delivery without registration legal documents, but never without a verified channel", async () => {
+    const h = harness(); h.tx.globalLegalDocument.findMany.mockResolvedValue([]);
+    const challenge = await h.service.requestCode({ channel: "email", identifier: "recovery@example.com", purpose: "reset_password" });
+    expect(challenge.challengeId).toBeTruthy(); expect(h.tx.globalLegalDocument.findMany).not.toHaveBeenCalled();
+    h.delivery.capabilities.mockResolvedValue({ email: false, sms: false, smsCountries: [] });
+    expect((await h.service.capabilities("en")).recovery).toEqual({ email: false, sms: false });
   });
   it("does not touch persistence or delivery when a channel is unavailable", async () => {
     const h = harness(); h.delivery.assertAvailable.mockRejectedValue(new Error("unavailable"));

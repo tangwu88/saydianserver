@@ -16,7 +16,7 @@ Locales are `en`, `zh-Hans`, `zh-Hant`, `de`, `fr`, `es`, `ja`, `ko`; default is
 
 | Method / V2 path | Request | `data` |
 | --- | --- | --- |
-| GET `/auth/capabilities?locale=en` | Optional locale | `{realm:"global",defaultLocale:"en",supportedLocales,registration:{email,sms},smsCountries:string[],verification:{codeLength:6,expiresIn:300,retryAfter:60},consentVersion:string|null,legal:LegalLinks|null}` |
+| GET `/auth/capabilities?locale=en` | Optional locale | `{realm:"global",defaultLocale:"en",supportedLocales,registration:{email,sms},recovery:{email,sms},smsCountries:string[],verification:{codeLength:6,expiresIn:300,retryAfter:60},consentVersion:string|null,legal:LegalLinks|null}` |
 | POST `/auth/verification-code` | `{channel:"email"\|"sms",identifier,purpose:"register"\|"reset_password",locale?}` | `{challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}`; never returns the code |
 | POST `/auth/register-with-code` | `{challengeId,code,password,nickname?,consentVersion,locale?}` | `Session` |
 | POST `/auth/login` | `{channel,identifier,password}` | `Session` |
@@ -25,6 +25,8 @@ Locales are `en`, `zh-Hans`, `zh-Hant`, `de`, `fr`, `es`, `ja`, `ko`; default is
 | POST `/auth/logout` | Existing authenticated route | `{loggedOut:true}` |
 
 `Session = {accessToken,refreshToken,expiresAt:ISO_UTC,member}`. Member is a UUID profile with nickname, optional avatar, gender, birthday, height/weight and masked email/phone plus locale. Raw identifiers, password hashes, OTPs and credentials are not returned. `mobile`/`username` remain compatibility aliases on password login; international callers should use the explicit new fields.
+
+Use `registration` only for new accounts and `recovery` for password-reset verification. Recovery depends on the independently verified delivery channel and write-maintenance state, not on new registration legal documents; both use the actual `smsCountries` allowlist. Existing password login does not require new registration capabilities or a newly published consent version. Signing in alone does not authorize push/privacy-dependent features.
 
 Email is trimmed and normalized; the domain supports IDN, and canonical email is case-insensitive. SMS identities must be valid E.164 numbers (including `+` country calling code), verified using `libphonenumber-js/max`; local-only numbers or extensions are rejected. Account creation stores email or E.164 mobile in the independent database, with a verification timestamp. No device-name/model-specific identity rule exists.
 

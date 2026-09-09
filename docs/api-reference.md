@@ -146,7 +146,7 @@
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
-| `GET /api/saydian-app/v2/auth/capabilities` | 国际账号可用能力 | public | query:locale?；locale可选；仅APP_REALM=global | {realm,defaultLocale,supportedLocales,registration:{email,sms},smsCountries,verification,consentVersion,legal}；未配置渠道或已审协议不开放注册 | 国际独立数据库与已验收验证码渠道 |
+| `GET /api/saydian-app/v2/auth/capabilities` | 国际账号可用能力 | public | query:locale?；locale可选；仅APP_REALM=global | {realm,defaultLocale,supportedLocales,registration:{email,sms},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；recovery不依赖新注册协议，仍要求渠道可用且不在写入维护期 | 国际独立数据库与已验收验证码渠道 |
 | `POST /api/saydian-app/v2/auth/verification-code` | 国际邮箱/手机号验证码 | public | {channel:email\|sms,identifier,purpose:register\|reset_password,locale?}；sms必须E.164 | {challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}；不返回验证码 | 独立email_otp/sms_global webhook |
 | `POST /api/saydian-app/v2/auth/register-with-code` | 国际已验证账号注册 | public | {challengeId,code,password,nickname?,consentVersion,locale?}；consentVersion必须来自当前已审协议 | Session；国际UUID账号，与国内账号不互通 | 已送达未消费的国际验证码与已发布协议 |
 | `POST /api/saydian-app/v2/auth/register` | 旧裸密码注册入口（已阻止） | public | 该入口不再签发会话；客户端应使用register-with-sms完成手机号验证 | HTTP 400；请使用手机验证码完成注册 | 核心服务 |
