@@ -58,7 +58,7 @@ try {
   const byNumber = await request(adminBase + "/members?search=" + profile.memberNo, adminToken);
   check(byNumber.items.some(row => row.id === registeredId), "Numeric member search must find the same UUID");
   const page = await request(adminBase + "/members?page=2&pageSize=1", adminToken);
-  check(page.page === 2 && page.pageSize === 1 && page.items.length === 1 && page.total === before.total + 1, "Server pagination must retain the complete count");
+  check(page.page === 2 && page.pageSize === 1 && page.items.length === 1 && page.total >= before.total + 1, "Server pagination must retain the complete count, including concurrent registrations");
   await request(adminBase + "/members/" + registeredId + "/health-summary", adminToken);
   await request(appBase + "/auth/logout", session.accessToken, {});
   evidence.memberNumber = profile.memberNo;

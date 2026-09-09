@@ -5,7 +5,31 @@ import { readFileSync, writeFileSync, copyFileSync, chmodSync } from "node:fs";
 
 const path = process.argv[2];
 assert(path === "/target/auto-deploy.sh", "Mount only the global deployment bin directory at /target");
-const source = readFileSync(path, "utf8");
+let source = readFileSync(path, "utf8");
+const readOnlyCheck = 'docker run --rm -v "$release:/src:ro"';
+if (source.includes(readOnlyCheck)) {
+  assert(source.split(readOnlyCheck).length === 2, "Unexpected source inspection command");
+  copyFileSync(path, `${path}.before-source-reader`);
+  chmodSync(`${path}.before-source-reader`, 0o750);
+  // Release directories intentionally stay root-only; this container only inspects a read-only mount.
+  source = source.replace(readOnlyCheck, 'docker run --rm --user 0 -v "$release:/src:ro"');
+  writeFileSync(path, source);
+  chmodSync(path, 0o750);
+}
+// Exported shell values override Compose --env-file. Reload both the new selection
+// and the restored selection so a local build is not mistaken for an old registry tag.
+for (const [anchor, reload] of [
+  ['chmod 600 "$env_file"\n', 'set -a\n. "$env_file"\nset +a\n'],
+  ['  cp -a "$env_backup" "$env_file"\n', '  set -a\n  . "$env_file"\n  set +a\n'],
+]) {
+  if (source.includes(anchor + reload)) continue;
+  assert(source.split(anchor).length === 2, "Unexpected environment-selection command");
+  copyFileSync(path, `${path}.before-version-reload`);
+  chmodSync(`${path}.before-version-reload`, 0o750);
+  source = source.replace(anchor, anchor + reload);
+  writeFileSync(path, source);
+  chmodSync(path, 0o750);
+}
 if (source.includes("# global-admin deployment v1")) {
   console.log("International admin deployment support is already installed.");
   process.exit(0);
