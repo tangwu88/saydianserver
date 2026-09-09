@@ -1,6 +1,6 @@
 # Saydian international API foundation
 
-Status: implementation in an independent local branch, not a production deployment. Domestic source workspaces and accounts were not changed or imported.
+Status: international API deployed on the independent global instance for pre-release QA. The `/admin/` frontend is international-only and uses the global database and independent administrator sessions. Domestic consumer accounts and data are not imported. Real email/SMS delivery and other disabled providers remain unverified; see the dated implementation logs for deployment evidence.
 
 ## Routing and account boundary
 
@@ -36,6 +36,9 @@ Passwords require at least 8 characters and at most 72 UTF-8 bytes (bcrypt limit
 `LegalLinks = {userAgreement:{path,locale,version},privacyPolicy:{path,locale,version}}`. Paths are API-relative, for example `/api/saydian-app/v2/content/legal/user_agreement?version=<published>&locale=en`; add the international gateway prefix exactly once. Public GET returns a reviewed document containing `contentHtml`. Only matching, published, reviewed terms/privacy versions enable registration, including the temporary unverified route; requested-language documents may explicitly fall back to English via their returned locale. With no documents, `consentVersion` and `legal` are null and registration stays false. Do not invent a version or skip displaying these documents. Paused business writes also keep registration false.
 
 ## Other client contracts
+
+- Display numbers: international sessions and `/members/me` return `memberNo`, a positive decimal string backed by the existing unique `User.compatibilityId`. `promo_code` is a same-value display alias for released international App “My” screens, not a promotion attribution code. Existing users already have this number; no ID migration or re-registration is required. `id` and token subject remain UUIDs and continue to identify private data and account caches.
+- The `/admin/` frontend serves the international system exclusively: its management requests use `/global/api/saydian-app/admin/v1` and the global database, administrator accounts and sessions. There is no domestic/international data selector. Lists include numeric `memberNo` and masked email, with server-side email/number search and pagination.
 
 - GET/PUT `/members/me`: existing profile contract; PUT may update `locale`. GET/PUT `/members/me/goals`: `{steps:number|null,distanceMeters:number|null,caloriesKcal:number|null}`. Unknown goals remain null, never fabricated zero.
 - POST `/care/invitations`: `{identifier:email|E.164}` (`mobile` compatibility alias). Existing relationship UUIDs, ownership and per-metric authorization remain unchanged. It only finds accounts in the global database; this is an in-app invitation, not an email invitation delivery service.

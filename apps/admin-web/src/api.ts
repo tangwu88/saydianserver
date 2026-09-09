@@ -1,10 +1,10 @@
 import axios from "axios";
 
-const tokenKey = "saydian-admin-token";
-const rolesKey = "saydian-admin-roles";
+const tokenKey = "saydian-global-admin-token";
+const rolesKey = "saydian-global-admin-roles";
 
 export const api = axios.create({
-  baseURL: "/api/saydian-app/admin/v1",
+  baseURL: "/global/api/saydian-app/admin/v1",
   timeout: 20_000,
 });
 

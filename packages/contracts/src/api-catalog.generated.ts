@@ -138,8 +138,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "会员查询",
-      "request": "search 查昵称/手机号/旧会员ID；page 默认1；pageSize 默认30 最大100",
-      "response": "{items,total,page,pageSize}；手机号遮蔽",
+      "request": "search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库",
+      "response": "{items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -3832,6 +3832,23 @@ export const apiCatalog = {
                 },
                 "nickname": {
                   "type": "string"
+                },
+                "memberNo": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "promo_code": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "emailMasked": {
+                  "type": "string"
+                },
+                "phoneMasked": {
+                  "type": "string"
+                },
+                "locale": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -3855,6 +3872,8 @@ export const apiCatalog = {
           "expiresAt": "2026-09-08T10:00:00.000Z",
           "member": {
             "id": "00000000-0000-4000-8000-000000000001",
+            "memberNo": "27",
+            "promo_code": "27",
             "nickname": "Saydian user",
             "emailMasked": "u***@example.com",
             "locale": "en"
@@ -3959,6 +3978,23 @@ export const apiCatalog = {
                 },
                 "nickname": {
                   "type": "string"
+                },
+                "memberNo": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "promo_code": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "emailMasked": {
+                  "type": "string"
+                },
+                "phoneMasked": {
+                  "type": "string"
+                },
+                "locale": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -3982,6 +4018,8 @@ export const apiCatalog = {
           "expiresAt": "2026-09-08T10:00:00.000Z",
           "member": {
             "id": "00000000-0000-4000-8000-000000000001",
+            "memberNo": "27",
+            "promo_code": "27",
             "nickname": "Saydian user",
             "emailMasked": "u***@example.com",
             "locale": "en"
@@ -4085,6 +4123,23 @@ export const apiCatalog = {
                   "format": "uuid"
                 },
                 "nickname": {
+                  "type": "string"
+                },
+                "memberNo": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "promo_code": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "emailMasked": {
+                  "type": "string"
+                },
+                "phoneMasked": {
+                  "type": "string"
+                },
+                "locale": {
                   "type": "string"
                 }
               },
@@ -4200,6 +4255,23 @@ export const apiCatalog = {
                   "format": "uuid"
                 },
                 "nickname": {
+                  "type": "string"
+                },
+                "memberNo": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "promo_code": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "emailMasked": {
+                  "type": "string"
+                },
+                "phoneMasked": {
+                  "type": "string"
+                },
+                "locale": {
                   "type": "string"
                 }
               },
@@ -4368,6 +4440,23 @@ export const apiCatalog = {
                 },
                 "nickname": {
                   "type": "string"
+                },
+                "memberNo": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "promo_code": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "emailMasked": {
+                  "type": "string"
+                },
+                "phoneMasked": {
+                  "type": "string"
+                },
+                "locale": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -4496,6 +4585,23 @@ export const apiCatalog = {
                 },
                 "nickname": {
                   "type": "string"
+                },
+                "memberNo": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "promo_code": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "emailMasked": {
+                  "type": "string"
+                },
+                "phoneMasked": {
+                  "type": "string"
+                },
+                "locale": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -4586,6 +4692,23 @@ export const apiCatalog = {
                   "format": "uuid"
                 },
                 "nickname": {
+                  "type": "string"
+                },
+                "memberNo": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "promo_code": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "emailMasked": {
+                  "type": "string"
+                },
+                "phoneMasked": {
+                  "type": "string"
+                },
+                "locale": {
                   "type": "string"
                 }
               },
@@ -16681,18 +16804,58 @@ export const apiCatalog = {
       "source": "apps/api/src/members/members.controller.ts",
       "summary": "本人资料",
       "request": "无请求体",
-      "response": "Profile；V2 id 为 UUID，不是 V1 数字会员 ID",
+      "response": "Profile；id仍为UUID；国际版memberNo为稳定数字展示编号，promo_code是现有App我的页面的同值展示别名，不用于鉴权或推广归属",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
-        "status": "unreviewed",
+        "status": "request-reviewed",
         "requestSchema": null,
         "requestExample": null,
-        "responseSchema": null,
-        "responseExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "nickname": {
+              "type": "string"
+            },
+            "memberNo": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "promo_code": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "emailMasked": {
+              "type": "string"
+            },
+            "phoneMasked": {
+              "type": "string"
+            },
+            "locale": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "nickname"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "memberNo": "27",
+          "promo_code": "27",
+          "nickname": "Saydian user",
+          "emailMasked": "u***@example.com",
+          "locale": "en"
+        },
         "contentType": "application/json",
-        "source": "apps/api/src/members/members.controller.ts",
-        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
       }
     },
     {

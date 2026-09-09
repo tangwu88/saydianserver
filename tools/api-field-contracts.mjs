@@ -11,7 +11,9 @@ const positive = { type: "integer", minimum: 1 };
 const numericForm = { oneOf: [positive, { type: "string", pattern: "^[1-9][0-9]*$" }] };
 const id = { type: "string", format: "uuid" };
 const sampleId = "00000000-0000-4000-8000-000000000001";
-const session = object({ accessToken: string, refreshToken: string, expiresAt: { type: "string", format: "date-time" }, member: object({ id, nickname: string }, ["id", "nickname"]) }, ["accessToken", "refreshToken", "expiresAt", "member"]);
+const memberNumber = { type: "string", pattern: "^[1-9][0-9]*$" };
+const memberProfile = object({ id, nickname: string, memberNo: memberNumber, promo_code: memberNumber, emailMasked: string, phoneMasked: string, locale: string }, ["id", "nickname"]);
+const session = object({ accessToken: string, refreshToken: string, expiresAt: { type: "string", format: "date-time" }, member: memberProfile }, ["accessToken", "refreshToken", "expiresAt", "member"]);
 const sessionExample = { accessToken: "<ACCESS_TOKEN>", refreshToken: "<REFRESH_TOKEN>", expiresAt: "2026-09-08T10:00:00.000Z", member: { id: sampleId, nickname: "契约测试会员" } };
 const record = (requestSchema, requestExample, responseSchema, responseExample, source, contentType = "application/json") => ({
   status: "request-reviewed", requestSchema, requestExample, responseSchema, responseExample, contentType, source,
@@ -22,9 +24,10 @@ const globalAuthSource = `${authSource}; apps/api/src/auth/global-auth.service.t
 const globalLocale = { enum: ["en", "zh-Hans", "zh-Hant", "de", "fr", "es", "ja", "ko"] };
 const verificationChannel = { enum: ["email", "sms"] };
 const globalLogin = object({ channel: verificationChannel, identifier: string, password: string }, ["channel", "identifier", "password"]);
-const globalSessionExample = { ...sessionExample, member: { id: sampleId, nickname: "Saydian user", emailMasked: "u***@example.com", locale: "en" } };
+const globalSessionExample = { ...sessionExample, member: { id: sampleId, memberNo: "27", promo_code: "27", nickname: "Saydian user", emailMasked: "u***@example.com", locale: "en" } };
 const legalReference = object({ path: string, locale: globalLocale, version: string }, ["path", "locale", "version"]);
 export const fieldContracts = {
+  "MembersController.profile": record(null, null, memberProfile, globalSessionExample.member, authSource),
   "AuthController.capabilities": record(null, null, object({ realm: { const: "global" }, defaultLocale: { const: "en" }, supportedLocales: array(globalLocale), registration: object({ email: boolean, sms: boolean, verificationRequired: boolean }, ["email", "sms", "verificationRequired"]), recovery: object({ email: boolean, sms: boolean }, ["email", "sms"]), smsCountries: array(string), verification: object({ codeLength: integer, expiresIn: integer, retryAfter: integer }), consentVersion: { type: ["string", "null"] }, legal: { oneOf: [{ type: "null" }, object({ userAgreement: legalReference, privacyPolicy: legalReference }, ["userAgreement", "privacyPolicy"])] } }), { realm: "global", defaultLocale: "en", supportedLocales: globalLocale.enum, registration: { email: false, sms: false, verificationRequired: true }, recovery: { email: false, sms: false }, smsCountries: [], verification: { codeLength: 6, expiresIn: 300, retryAfter: 60 }, consentVersion: null, legal: null }, globalAuthSource),
   "AuthController.register": record(object({ channel: verificationChannel, identifier: string, password: string, nickname: string, consentVersion: string, locale: globalLocale }, ["channel", "identifier", "password", "consentVersion"]), { channel: "email", identifier: "user@example.com", password: "<TEST_PASSWORD>", consentVersion: "<PUBLISHED_CONSENT_VERSION>", locale: "en" }, session, globalSessionExample, globalAuthSource),
   "AuthController.verificationCode": record(object({ channel: verificationChannel, identifier: string, purpose: { enum: ["register", "reset_password"] }, locale: globalLocale }, ["channel", "identifier", "purpose"]), { channel: "email", identifier: "user@example.com", purpose: "register", locale: "en" }, object({ challengeId: id, expiresIn: integer, retryAfter: integer, maskedIdentifier: string }, ["challengeId", "expiresIn", "retryAfter", "maskedIdentifier"]), { challengeId: sampleId, expiresIn: 300, retryAfter: 60, maskedIdentifier: "u***@example.com" }, globalAuthSource),

@@ -10,7 +10,7 @@ import {
 export interface DownloadReleaseEditor {
   platform: DownloadPlatform;
   versionName: string;
-  buildNumber: number;
+  buildNumber: number | undefined;
   status: DownloadReleaseStatus;
   destinationKind: DownloadDestinationKind;
   url: string;

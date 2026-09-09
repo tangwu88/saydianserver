@@ -11,6 +11,8 @@ assert(args.every((arg) => arg === "--require-docker"), "Only --require-docker i
 const composeText = readFileSync(resolve(directory, "compose.json"), "utf8");
 const compose = JSON.parse(composeText);
 const nginx = readFileSync(resolve(directory, "nginx.locations.conf"), "utf8");
+const adminNginx = readFileSync(resolve(directory, "admin-nginx.conf"), "utf8");
+const adminDockerfile = readFileSync(resolve(directory, "admin.Dockerfile"), "utf8");
 const example = readFileSync(resolve(directory, "env.example"), "utf8");
 const keys = new Set(example.split(/\r?\n/).filter((line) => /^[A-Z_]+=/.test(line)).map((line) => line.split("=", 1)[0]));
 let checks = 0;
@@ -18,7 +20,7 @@ const check = (value, message) => { assert(value, message); checks += 1; };
 
 check(compose.name === "saydian-global", "Independent Compose project name is required");
 const names = Object.keys(compose.services).sort();
-check(JSON.stringify(names) === JSON.stringify(["global-api", "global-minio", "global-postgres", "global-redis", "global-worker"]), "Only the five global services are permitted");
+check(JSON.stringify(names) === JSON.stringify(["global-admin", "global-api", "global-minio", "global-postgres", "global-redis", "global-worker"]), "Only the six global services are permitted");
 for (const name of names) {
   const service = compose.services[name];
   check(!service.ports && !service.network_mode && !service.container_name, `${name}: no host port/network or cross-project container name`);
@@ -34,6 +36,14 @@ check(compose.networks.global_private.internal === true, "Data network must be i
 check(compose.networks.gateway.external === true, "Gateway must use an explicitly selected existing network");
 check(compose.services["global-api"].networks.gateway.aliases.includes("global-api"), "Gateway upstream alias must be global-api");
 check(!compose.services["global-worker"].networks.includes("gateway"), "Worker must not join gateway network");
+const admin = compose.services["global-admin"];
+check(admin.image === "ghcr.io/tangwu88/saydianserver-global-admin:${GLOBAL_IMAGE_TAG:?Set a verified full commit SHA}", "Admin must use its independent immutable release image");
+check(JSON.stringify(admin.networks) === '{"gateway":{"aliases":["global-admin"]}}', "Admin must only join the gateway network with its own alias");
+check(JSON.stringify(admin.expose) === '["8080"]', "Admin only exposes its unprivileged HTTP port to Docker peers");
+check(!admin.environment && !admin.secrets && !admin.configs && !admin.volumes, "Static admin must not receive secrets, runtime configuration or data mounts");
+check(admin.read_only === true && JSON.stringify(admin.tmpfs) === '["/tmp"]', "Static admin filesystem must be read-only except temporary Nginx state");
+check(admin.security_opt?.includes("no-new-privileges:true"), "Static admin must forbid privilege escalation");
+check(JSON.stringify(admin.healthcheck?.test) === '["CMD","wget","-qO-","http://127.0.0.1:8080/admin/index.html"]', "Admin health check must verify the built frontend is present");
 check(Object.values(compose.volumes).every((volume) => !volume.external && !volume.name), "Volumes must remain scoped to the global Compose project");
 
 const fixed = {
@@ -55,6 +65,7 @@ const resourceLimits = {
   "global-redis": { mem_limit: "96m", cpus: 0.25, pids_limit: 100 },
   "global-minio": { mem_limit: "256m", cpus: 0.5, pids_limit: 150 },
   "global-api": { mem_limit: "384m", cpus: 0.75, pids_limit: 200 },
+  "global-admin": { mem_limit: "64m", cpus: 0.25, pids_limit: 50 },
   "global-worker": { mem_limit: "256m", cpus: 0.5, pids_limit: 150 },
 };
 for (const name of ["global-api", "global-worker"]) {
@@ -93,6 +104,15 @@ check(!/proxy_pass[^;]*\$/.test(nginx), "No client-controlled upstream selection
 check(/proxy_set_header X-App-Realm "";/.test(nginx) && /proxy_set_header X-Realm "";/.test(nginx), "Untrusted realm headers must be removed");
 check(/location \^~ \/global\/\s*\{\s*return 404;\s*\}/.test(nginx), "Unpublished global pages must not fall through to domestic routes");
 check(!/saydianapp-api|saydianapp-admin/.test(nginx), "Global routes must not target domestic services");
+check(adminDockerfile.includes("--filter @saydian/app-contracts build && pnpm --filter @saydian/app-admin-web build"), "Admin image must build contracts and the admin frontend");
+check(!/apps\/(?:shop|download-web|api|worker)|COPY\s+\.\s+\./.test(adminDockerfile), "Admin image must not copy unrelated applications or the entire repository");
+check(adminDockerfile.includes("FROM nginxinc/nginx-unprivileged:") && adminDockerfile.includes("ENV VITE_BASE_PATH=/admin/"), "Admin runtime must be unprivileged and use the existing /admin/ public path");
+check(adminDockerfile.includes("COPY --from=build /workspace/apps/admin-web/dist /usr/share/nginx/html/admin"), "Admin runtime must contain the compiled frontend only");
+check(adminNginx.includes("listen 8080;") && adminNginx.includes("location /admin/ {") && adminNginx.includes("try_files $uri $uri/ /admin/index.html;"), "Admin must serve SPA navigation under /admin/");
+check(/location = \/admin\/index\.html\s*\{[^}]*try_files \$uri =404;[^}]*Cache-Control "no-store"/s.test(adminNginx), "Admin HTML must exist and disable caching");
+check(/location \^~ \/admin\/assets\/\s*\{[^}]*try_files \$uri =404;/s.test(adminNginx), "Missing static assets must return 404 rather than SPA HTML");
+check(!/proxy_pass|fastcgi_pass|uwsgi_pass|scgi_pass/.test(adminNginx), "Static admin must not proxy API requests or receive service credentials");
+check(/location \/\s*\{\s*return 404;\s*\}/.test(adminNginx), "Static admin must not serve other application paths");
 console.log(`Global deployment structural checks passed (${checks}). No runtime operations performed.`);
 
 const docker = spawnSync("docker", ["compose", "version", "--short"], { encoding: "utf8", timeout: 10_000 });

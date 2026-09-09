@@ -33,7 +33,7 @@ async function submit(): Promise<void> {
   <main class="login-page">
     <el-card class="login-card">
       <h1>Saydian赛电</h1>
-      <p class="muted">App 管理后台</p>
+      <p class="muted">国际版 App 管理后台</p>
       <el-form label-position="top" @submit.prevent="submit">
         <el-form-item label="账号"><el-input v-model="form.username" /></el-form-item>
         <el-form-item label="密码">

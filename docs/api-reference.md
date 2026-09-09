@@ -214,7 +214,7 @@
 | `GET /api/saydian-app/v2/health/warning-rules` | 读取阈值提醒 | member | 无请求体 | 规则数组；未获取阈值为 null | 核心服务 |
 | `GET /api/saydian-app/v2/health/warnings` | 读取提醒事件 | member | query:limit?；limit 默认 50 | 提醒数组；仅阈值提醒，不是诊断 | 核心服务 |
 | `POST /api/saydian-app/v2/health/warning-rules` | 保存阈值提醒 | member | {rules:[{metric,enabled,lowThreshold?,highThreshold?,secondaryHighThreshold?,shareWithCare?}]}；目前仅本人的提醒闭环 | 保存后的规则数组 | 核心服务 |
-| `GET /api/saydian-app/v2/members/me` | 本人资料 | member | 无请求体 | Profile；V2 id 为 UUID，不是 V1 数字会员 ID | 核心服务 |
+| `GET /api/saydian-app/v2/members/me` | 本人资料 | member | 无请求体 | Profile；id仍为UUID；国际版memberNo为稳定数字展示编号，promo_code是现有App我的页面的同值展示别名，不用于鉴权或推广归属 | 核心服务 |
 | `PUT /api/saydian-app/v2/members/me` | 修改本人资料 | member | Profile：nickname、head_portrait/avatarUrl、sex/gender、birthday、height/heightCm、weight/weightKg；仅提交需修改字段 | Profile | 核心服务 |
 | `GET /api/saydian-app/v2/members/me/goals` | 活动目标 | member | 无请求体 | {steps,distanceMeters,caloriesKcal}；未知为 null | 核心服务 |
 | `PUT /api/saydian-app/v2/members/me/goals` | 保存活动目标 | member | {steps,distanceMeters,caloriesKcal}；缺省字段置 null，客户端应提交完整目标 | 活动目标 | 核心服务 |
@@ -250,7 +250,7 @@
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/members` | 会员查询 | admin | query:search?，query:page?，query:pageSize?；search 查昵称/手机号/旧会员ID；page 默认1；pageSize 默认30 最大100 | {items,total,page,pageSize}；手机号遮蔽 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/members` | 会员查询 | admin | query:search?，query:page?，query:pageSize?；search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库 | {items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-summary` | 会员健康数量摘要 | admin | path:id；id=会员 UUID | 按指标数量与首末采集时间 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/care` | 后台关爱关系 | admin | 无请求体 | 最多500条，双方昵称和指标权限；尚无分页 | 核心服务 |

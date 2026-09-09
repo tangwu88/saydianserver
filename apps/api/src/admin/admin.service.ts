@@ -22,7 +22,7 @@ import { PrismaService } from "../common/prisma.service";
 import { maskMobile, safeObject } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { isGlobalRealm } from "../common/deployment-realm";
-import { globalLocale } from "../auth/global-identity";
+import { globalLocale, maskedIdentifier } from "../auth/global-identity";
 import { randomUUID } from "node:crypto";
 import { afterSaleTransitions, assertAfterSaleTransition, expectedVersion, integerCents, requireCommerceOwner } from "../commerce/commerce-policy";
 import { parseLegacyAppUpdate } from "../legacy/legacy-update-contract";
@@ -30,6 +30,7 @@ import { shippingRefundCapacity } from "../commerce/commerce-finance";
 import { orderFulfillmentState } from "../commerce/commerce-finance";
 import { createLocalShipment, localFulfillmentPreview } from "./local-fulfillment";
 import { protectLastSuperAdmin } from "./admin-account-policy";
+import { parseGlobalDownloadManifest } from "../support/global-download-manifest";
 
 @Injectable()
 export class AdminService {
@@ -84,21 +85,25 @@ export class AdminService {
   }
 
   async members(search = "", pageInput = 1, pageSizeInput = 30) {
-    const page = Math.max(Number(pageInput) || 1, 1);
-    const pageSize = Math.min(Math.max(Number(pageSizeInput) || 30, 1), 100);
+    search = search.trim();
+    const page = Math.min(Math.max(Math.trunc(Number(pageInput)) || 1, 1), 1_000_000);
+    const pageSize = Math.min(Math.max(Math.trunc(Number(pageSizeInput)) || 30, 1), 100);
+    const memberNo = /^[1-9]\d{0,9}$/.test(search) && Number(search) <= 2_147_483_647 ? Number(search) : null;
     const where = search
       ? {
           OR: [
             { nickname: { contains: search, mode: "insensitive" as const } },
             { mobile: { contains: search } },
             { legacyMemberId: { contains: search } },
+            ...(isGlobalRealm() ? [{ email: { contains: search, mode: "insensitive" as const } }] : []),
+            ...(memberNo !== null ? [{ compatibilityId: memberNo }] : []),
           ],
         }
       : {};
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: { _count: { select: { healthRecords: true, devices: true } } },
@@ -108,8 +113,10 @@ export class AdminService {
     return {
       items: items.map((item) => ({
         id: item.id,
+        memberNo: String(item.compatibilityId),
         legacyMemberId: item.legacyMemberId,
-        mobileMasked: maskMobile(item.mobile),
+        mobileMasked: isGlobalRealm() && item.mobile ? maskedIdentifier("sms", item.mobile) : maskMobile(item.mobile),
+        ...(isGlobalRealm() ? { emailMasked: item.email ? maskedIdentifier("email", item.email) : null } : {}),
         nickname: item.nickname,
         avatarUrl: item.avatarUrl,
         status: item.status,
@@ -560,13 +567,14 @@ export class AdminService {
 
   settings() {
     return this.prisma.appSetting.findMany({
-      where: { key: { in: ["support", "app_update", "legacy_app_update"] } },
+      where: { key: { in: isGlobalRealm() ? ["global_support", "global_app_update"] : ["support", "app_update", "legacy_app_update"] } },
       orderBy: { key: "asc" },
     });
   }
 
   updateSetting(key: string, input: unknown) {
-    if (!["support", "app_update", "legacy_app_update"].includes(key)) {
+    const allowedKeys = isGlobalRealm() ? ["global_support", "global_app_update"] : ["support", "app_update", "legacy_app_update"];
+    if (!allowedKeys.includes(key)) {
       throw new NotFoundException("设置项不存在");
     }
     const body = safeObject(input);
@@ -574,9 +582,9 @@ export class AdminService {
     if (!Object.keys(value).length) {
       throw new BadRequestException("设置内容不能为空");
     }
-    if (key === "app_update") {
+    if (key === "app_update" || key === "global_app_update") {
       try {
-        value = parseDownloadManifest(value) as unknown as Record<string, unknown>;
+        value = (key === "global_app_update" ? parseGlobalDownloadManifest(value) : parseDownloadManifest(value)) as unknown as Record<string, unknown>;
       } catch (error) {
         throw new BadRequestException(error instanceof Error ? error.message : "App 下载配置无效");
       }

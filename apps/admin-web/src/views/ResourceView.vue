@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, getAdminRoles, readableError, responseData } from "../api";
@@ -7,15 +7,18 @@ import { canAdminResource } from "@saydian/app-contracts";
 import CommerceWorkspace from "../components/CommerceWorkspace.vue";
 import RichTextEditor from "../components/RichTextEditor.vue";
 import {
-  downloadEditorToManifest,
-  downloadManifestFromPublicData,
-  downloadManifestToEditor,
+  globalDownloadEditorToManifest as downloadEditorToManifest,
+  globalDownloadManifestToEditor as downloadManifestToEditor,
+  createGlobalDownloadDraft,
   type DownloadManifestEditor,
-} from "../download-setting";
+} from "../global-download-setting";
 
 type Row = Record<string, any>;
+const memberColumns = ["memberNo", "emailMasked", "mobileMasked", "nickname", "status", "healthRecordCount", "deviceCount", "createdAt"];
+const memberPageSize = 30;
 const route = useRoute();
 const loading = ref(false);
+const loadError = ref("");
 const saving = ref(false);
 const rows = ref<Row[]>([]);
 const resourceMeta = ref<Row>({});
@@ -50,7 +53,7 @@ const titles: Record<string, string> = {
   "notification-campaigns": "通知群发",
 };
 const fieldLabels: Record<string, string> = {
-  id: "编号", legacyMemberId: "旧会员编号", mobileMasked: "手机号", nickname: "昵称",
+  id: "编号", memberNo: "会员编号", legacyMemberId: "旧会员编号", emailMasked: "邮箱", mobileMasked: "手机号", nickname: "昵称",
   status: "状态", healthRecordCount: "健康记录数", deviceCount: "设备数", createdAt: "创建时间",
   updatedAt: "更新时间", invitationId: "邀请编号", metric: "指标", observedAt: "记录时间",
   title: "标题", summary: "摘要", version: "版本", documentType: "协议类型", active: "启用",
@@ -64,6 +67,7 @@ const fieldLabels: Record<string, string> = {
   verificationStatus: "真实检测", hasSecret: "密钥已保存",
   lastError: "失败原因", attempt: "重试次数", firmware: "固件版本",
   imageUrl: "图片地址", targetUrl: "跳转地址", enabled: "启用", published: "前台展示",
+  configuration: "配置状态", public: "公开",
 };
 const resource = computed(() => String(route.params.resource || ""));
 const title = computed(() => titles[resource.value] || resource.value);
@@ -87,9 +91,11 @@ const createable = computed(() => [
   "commerce-products",
 ].includes(resource.value) && canAdminResource(getAdminRoles(), resource.value, "write"));
 const searchable = computed(() => ["members", "commerce-products", "commerce-orders"].includes(resource.value));
-const paginatedResources = ["commerce-products", "commerce-orders", "payments"];
+const paginatedResources = ["members", "commerce-products", "commerce-orders", "payments"];
 const serverStatusResources = ["commerce-products", "commerce-orders", "commerce-after-sales", "commerce-jobs", "payments"];
 const columns = computed(() => {
+  if (resource.value === "members") return memberColumns;
+  if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
   const first = rows.value[0];
   return first ? Object.keys(first)
     .filter((key) => !["passwordHash", "secretRef", "contentHtml", "valueSnapshot", "ruleSnapshot"].includes(key))
@@ -97,16 +103,19 @@ const columns = computed(() => {
 });
 
 let loadRequestId = 0;
+let healthRequestId = 0;
 
 async function load(): Promise<void> {
   const requestedResource = resource.value;
   if (requestedResource === "commerce") return;
   const requestId = ++loadRequestId;
   loading.value = true;
+  loadError.value = "";
   try {
     const params: Row = {
       ...(searchable.value && search.value ? { search: search.value } : {}),
       ...(paginatedResources.includes(requestedResource) ? { page: currentPage.value } : {}),
+      ...(requestedResource === "members" ? { pageSize: memberPageSize } : {}),
       ...(serverStatusResources.includes(requestedResource) && commerceStatus.value
         ? { status: commerceStatus.value }
         : {}),
@@ -116,6 +125,9 @@ async function load(): Promise<void> {
     });
     const data = responseData<unknown>(response);
     const dataObject = !Array.isArray(data) && data && typeof data === "object" ? data as Row : {};
+    if (requestedResource === "members" && (!Array.isArray(dataObject.items) || !Number.isSafeInteger(dataObject.total) || dataObject.total < 0)) {
+      throw new Error("会员列表响应不完整，请刷新重试");
+    }
     const loadedRows = Array.isArray(data) ? data as Row[] : (dataObject.items ?? []);
     const finalRows = requestedResource === "settings"
       ? await withDownloadSetting(loadedRows)
@@ -126,11 +138,22 @@ async function load(): Promise<void> {
     if (requestedResource === "commerce-categories") categoryOptions.value = loadedRows;
   } catch (error) {
     if (requestId === loadRequestId && requestedResource === resource.value) {
-      ElMessage.error(readableError(error));
+      const message = error instanceof Error && error.message === "会员列表响应不完整，请刷新重试" ? error.message : readableError(error);
+      if (requestedResource === "members") {
+        rows.value = [];
+        resourceMeta.value = {};
+        loadError.value = `会员加载失败：${message}`;
+      }
+      ElMessage.error(message);
     }
   } finally {
     if (requestId === loadRequestId) loading.value = false;
   }
+}
+
+async function searchMembers(): Promise<void> {
+  currentPage.value = 1;
+  await load();
 }
 
 async function refreshCommerce(): Promise<void> {
@@ -150,27 +173,17 @@ async function changeCommerceStatus(status: string): Promise<void> {
 }
 
 async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
-  if (!loadedRows.some((row) => row.key === "legacy_app_update")) loadedRows = [...loadedRows, {
-    key: "legacy_app_update", public: true, value: { schemaVersion: 1, audience: "production", releases: [] },
-  }];
-  if (loadedRows.some((row) => row.key === "app_update")) return loadedRows;
-  try {
-    const response = await fetch("/api/saydian-app/v2/support/app-update", {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-    if (!response.ok) return loadedRows;
-    const envelope = await response.json() as { data?: unknown };
-    const manifest = downloadManifestFromPublicData(envelope.data);
-    return [{
-      key: "app_update",
-      value: manifest,
-      public: true,
-      updatedAt: manifest.publishedAt,
-    }, ...loadedRows];
-  } catch {
-    return loadedRows;
-  }
+  const definitions = [
+    { key: "global_support", name: "国际版客服" },
+    { key: "global_app_update", name: "国际版 App 更新" },
+  ];
+  return definitions.map(definition => {
+    const row = loadedRows.find(item => item.key === definition.key);
+    return row
+      ? { ...row, name: definition.name, configuration: row.value?.configured === false ? "未配置" : row.public ? "已公开" : "未公开" }
+      : { ...definition, configuration: "未配置", public: false, updatedAt: null, _unconfigured: true,
+        ...(definition.key === "global_support" ? { value: { configured: false } } : {}) };
+  });
 }
 
 function render(value: unknown): string {
@@ -217,9 +230,9 @@ async function openEdit(row: Row): Promise<void> {
     audienceAllActive: row.audience?.allActive === true,
     audienceUserIds: Array.isArray(row.audience?.userIds) ? row.audience.userIds.join("\n") : "",
   };
-  if (row.key === "app_update") {
+  if (row.key === "global_app_update") {
     try {
-      nextForm.downloadEditor = downloadManifestToEditor(row.value);
+      nextForm.downloadEditor = row._unconfigured ? createGlobalDownloadDraft() : downloadManifestToEditor(row.value);
     } catch (error) {
       ElMessage.error(error instanceof Error ? error.message : "App 下载配置无法读取");
       return;
@@ -254,7 +267,7 @@ async function save(): Promise<void> {
       };
       await api.patch(`/integrations/${encodeURIComponent(String(form.value.key))}`, payload);
     } else if (resource.value === "settings") {
-      const settingValue = form.value.key === "app_update"
+      const settingValue = form.value.key === "global_app_update"
         ? downloadEditorToManifest(form.value.downloadEditor as DownloadManifestEditor)
         : JSON.parse(String(form.value.valueText || "{}"));
       payload = {
@@ -296,7 +309,7 @@ function fillDownloadUrl(platform: "android" | "ios" | "harmonyos"): void {
   if (platform === "ios") return;
   const editor = form.value.downloadEditor as DownloadManifestEditor | undefined;
   const release = editor?.releases[platform];
-  if (release?.fileName) release.url = `/down/files/${release.fileName.trim()}`;
+  if (release?.fileName) release.url = `/global/down/files/${release.fileName.trim()}`;
 }
 
 function payloadForResource(current: string, source: Row): Row {
@@ -346,6 +359,11 @@ async function updateFeedback(row: Row, status: string): Promise<void> {
 }
 
 async function viewHealth(row: Row, raw: boolean): Promise<void> {
+  if (resource.value !== "members" || (raw && !canReadRawHealth.value)) return;
+  const requestId = ++healthRequestId;
+  const isCurrentRequest = () => requestId === healthRequestId && resource.value === "members";
+  detailRows.value = [];
+  dialogVisible.value = false;
   let reason: string | undefined;
   if (raw) {
     try {
@@ -361,16 +379,18 @@ async function viewHealth(row: Row, raw: boolean): Promise<void> {
       reason = response.value.trim();
     } catch { return; }
   }
+  if (!isCurrentRequest()) return;
   try {
     const suffix = raw ? "health-records" : "health-summary";
     const data = responseData<unknown>(await api.get(`/members/${encodeURIComponent(String(row.id))}/${suffix}`, {
       params: raw ? { reason } : {},
     }));
+    if (!isCurrentRequest()) return;
     detailRows.value = Array.isArray(data) ? data as Row[] : [];
     dialogMode.value = "health";
-    dialogTitle.value = raw ? "原始健康记录（已审计）" : "健康数据摘要";
+    dialogTitle.value = `${row.memberNo ?? "会员"} · ${raw ? "原始健康记录（已审计）" : "健康数据摘要"}`;
     dialogVisible.value = true;
-  } catch (error) { ElMessage.error(readableError(error)); }
+  } catch (error) { if (isCurrentRequest()) ElMessage.error(readableError(error)); }
 }
 
 async function runAction(path: string, success: string): Promise<void> {
@@ -473,14 +493,27 @@ async function requestShippingRefund(row: Row): Promise<void> {
   }
 }
 
-watch(resource, async () => {
+function resetResourceView(): void {
+  ++loadRequestId;
+  ++healthRequestId;
+  loading.value = false;
+  loadError.value = "";
   rows.value = [];
   resourceMeta.value = {};
   search.value = "";
   commerceStatus.value = "";
   currentPage.value = 1;
+  dialogVisible.value = false;
+  detailRows.value = [];
+  form.value = {};
+}
+
+watch(resource, async () => {
+  resetResourceView();
   await load();
 }, { immediate: true });
+
+onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; });
 </script>
 
 <template>
@@ -508,12 +541,14 @@ watch(resource, async () => {
       />
       <template v-else>
         <div class="toolbar">
-          <el-input v-if="searchable" v-model="search" placeholder="昵称、旧会员编号或手机号" clearable style="width: 300px" @keyup.enter="load" />
+          <el-input v-if="searchable" v-model="search" placeholder="邮箱、会员编号、手机号或昵称" clearable style="width: 300px" @keyup.enter="searchMembers" @clear="searchMembers" />
+          <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
           <el-button v-if="createable" @click="openCreate">新增</el-button>
           <span class="muted">敏感字段已在服务端脱敏；无权限时不会返回原始健康数据。</span>
         </div>
-        <el-table v-loading="loading" :data="rows" border stripe empty-text="暂无记录">
+        <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
+        <el-table v-if="!loadError" v-loading="loading" :data="rows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
           <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" min-width="145" show-overflow-tooltip>
             <template #default="scope">{{ render(scope.row[column]) }}</template>
           </el-table-column>
@@ -539,6 +574,16 @@ watch(resource, async () => {
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-if="resource === 'members' && !loadError"
+          :current-page="currentPage"
+          :page-size="memberPageSize"
+          :total="Number(resourceMeta.total ?? 0)"
+          :disabled="loading"
+          layout="total, prev, pager, next"
+          style="margin-top: 16px"
+          @current-change="changeCommercePage"
+        />
       </template>
     </div>
 
@@ -560,7 +605,7 @@ watch(resource, async () => {
       </el-form>
       <template #footer><el-button :disabled="shipmentBusy" @click="shipmentVisible = false">关闭</el-button><el-button type="primary" :loading="shipmentBusy" :disabled="!!shipmentPreview.unavailableReason" @click="saveShipment">登记包裹</el-button></template>
     </el-dialog>
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="resource === 'settings' && form.key === 'app_update' ? '980px' : '720px'" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="resource === 'settings' && form.key === 'global_app_update' ? '980px' : '720px'" destroy-on-close>
       <el-table v-if="dialogMode === 'health'" :data="detailRows" border max-height="520" empty-text="暂无记录">
         <el-table-column v-for="column in Object.keys(detailRows[0] || {}).slice(0, 9)" :key="column" :label="fieldLabels[column] || column" min-width="145">
           <template #default="scope">{{ render(scope.row[column]) }}</template>
@@ -710,11 +755,11 @@ watch(resource, async () => {
           <el-alert title="密钥使用主机外置主密钥加密，只能覆盖写入，不会在后台或接口中回显。修改配置会清除原检测时间；只有供应商真实调用成功后才显示已通过。" type="info" :closable="false" />
         </template>
         <template v-else-if="resource === 'settings'">
+          <el-alert v-if="form._unconfigured" title="此项尚未配置。当前内容仅为本次编辑草稿，尚未保存或公开；请填写真实配置后保存。" type="info" :closable="false" show-icon />
           <el-form-item label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
           <el-form-item label="公开"><el-switch v-model="form.public" /></el-form-item>
-          <el-alert v-if="form.key === 'legacy_app_update'" title="正式客户端升级配置。每个平台仅发布一个已核验版本；Android 安装包需校验 SHA-256，iPhone 使用 App Store 链接。空 releases 表示暂不发布升级。" type="info" :closable="false" />
-          <template v-if="form.key === 'app_update' && form.downloadEditor">
-            <el-alert title="保存后下载页会读取新配置。此处不上传安装包；Android/HarmonyOS 文件需先放入服务器 /down/files/ 目录。" type="warning" :closable="false" show-icon />
+          <template v-if="form.key === 'global_app_update' && form.downloadEditor">
+            <el-alert title="保存后国际版 App 会读取新配置。此处不上传安装包；Android/HarmonyOS 文件需先放入服务器国际版下载目录。" type="warning" :closable="false" show-icon />
             <el-form-item label="发布时间" class="download-published-at">
               <el-input v-model="form.downloadEditor.publishedAt" placeholder="ISO 8601，如 2026-09-06T00:00:00+08:00">
                 <template #append><el-button @click="setDownloadPublishedNow">设为现在</el-button></template>
@@ -756,7 +801,7 @@ watch(resource, async () => {
                     <el-input v-model="form.downloadEditor.releases[platform.key].fileName" :placeholder="platform.packageLabel + ' 版本化文件名'" />
                   </el-form-item>
                   <el-form-item label="下载链接">
-                    <el-input v-model="form.downloadEditor.releases[platform.key].url" placeholder="/down/files/文件名" />
+                    <el-input v-model="form.downloadEditor.releases[platform.key].url" placeholder="/global/down/files/文件名" />
                   </el-form-item>
                   <el-button class="download-url-button" plain @click="fillDownloadUrl(platform.key)">按文件名生成链接</el-button>
                   <el-form-item label="字节数">
@@ -769,7 +814,7 @@ watch(resource, async () => {
                 <p v-else class="download-coming-note">待开放状态不会保存下载链接，前台按钮自动禁用。</p>
               </section>
             </div>
-            <el-alert title="Android/HarmonyOS 只允许 /down/files/ 同源地址；iPhone 只允许官方 TestFlight 或 App Store HTTPS 链接。" type="info" :closable="false" />
+            <el-alert title="Android/HarmonyOS 只允许 /global/down/files/ 同源地址；iPhone 只允许官方 TestFlight 或 App Store HTTPS 链接。" type="info" :closable="false" />
           </template>
           <el-form-item v-else label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="12" /></el-form-item>
         </template>

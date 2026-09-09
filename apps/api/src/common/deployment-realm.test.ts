@@ -38,7 +38,7 @@ describe("fixed account deployment isolation", () => {
   });
   it("issues and refreshes global claims with masked profile fields and no private identity data", async () => {
     vi.stubEnv("APP_REALM", "global"); vi.stubEnv("ACCESS_TOKEN_SECRET", "synthetic-global-session-key-not-production"); vi.stubEnv("REFRESH_TOKEN_PEPPER", "synthetic-global-refresh-key-not-production");
-    const user = { id: "00000000-0000-4000-8000-000000000001", status: "ACTIVE", nickname: "Saydian user", email: "session@example.com", emailVerifiedAt: new Date(), mobile: null, legacyMemberId: null, passwordHash: "must-not-leak", avatarUrl: null, gender: "UNSPECIFIED", birthday: null, heightCm: null, weightKg: null, locale: "de" };
+    const user = { id: "00000000-0000-4000-8000-000000000001", compatibilityId: 1, status: "ACTIVE", nickname: "Saydian user", email: "session@example.com", emailVerifiedAt: new Date(), mobile: null, legacyMemberId: null, passwordHash: "must-not-leak", avatarUrl: null, gender: "UNSPECIFIED", birthday: null, heightCm: null, weightKg: null, locale: "de" };
     const create = vi.fn(async () => undefined);
     const prisma = { user: { findUniqueOrThrow: async () => user }, userSession: { create, findUnique: async () => ({ id: "session", user, expiresAt: new Date(Date.now() + 900000), revokedAt: null }), updateMany: async () => ({ count: 1 }) } };
     const auth = new AuthService(prisma as any, {} as any, {} as any, {} as any);

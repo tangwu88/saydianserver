@@ -72,7 +72,7 @@ async function logout(): Promise<void> {
       </el-menu>
     </el-aside>
     <el-container>
-      <el-header class="header"><span>App 运营与数据管理</span><el-button text @click="logout">退出</el-button></el-header>
+      <el-header class="header"><span>国际版 App 运营与数据管理</span><el-button text @click="logout">退出</el-button></el-header>
       <el-main><router-view :key="route.fullPath" /></el-main>
     </el-container>
   </el-container>

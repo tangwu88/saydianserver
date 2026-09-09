@@ -10,7 +10,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": process.env.VITE_API_PROXY_TARGET || "http://localhost:8080",
+      "/global/api": {
+        target: process.env.VITE_API_PROXY_TARGET || "http://localhost:8082",
+        rewrite: (path) => path.replace(/^\/global(?=\/api(?:\/|$))/, ""),
+      },
     },
   },
   build: {

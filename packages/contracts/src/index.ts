@@ -115,6 +115,10 @@ export interface SessionContract {
 
 export interface MemberProfileContract {
   id: string;
+  /** Stable numeric display number; id remains the opaque account identity. */
+  memberNo?: string;
+  /** Display-only alias read by existing international App releases. */
+  promo_code?: string;
   legacyMemberId?: string;
   mobileMasked?: string;
   phoneMasked?: string;

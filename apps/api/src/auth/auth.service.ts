@@ -555,6 +555,7 @@ export class AuthService {
 
   private toProfile(user: {
     id: string;
+    compatibilityId: number;
     legacyMemberId: string | null;
     mobile: string | null;
     nickname: string;
@@ -572,6 +573,9 @@ export class AuthService {
       ...(user.legacyMemberId ? { legacyMemberId: user.legacyMemberId } : {}),
       ...(mobileMasked ? { mobileMasked } : {}),
       ...(isGlobalRealm() ? {
+        memberNo: String(user.compatibilityId),
+        // Existing international App releases read this display-only field on “My”.
+        promo_code: String(user.compatibilityId),
         ...(user.mobile ? { phoneMasked: maskedIdentifier("sms", user.mobile) } : {}),
         ...(user.email ? { emailMasked: maskedIdentifier("email", user.email) } : {}),
         locale: globalLocale(user.locale),
