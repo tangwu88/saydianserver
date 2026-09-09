@@ -355,6 +355,16 @@ export class HealthReportsService {
     if (report.status !== PrismaReportStatus.FAILED) {
       throw new ConflictException("当前报告不需要重试");
     }
+    if (isGlobalRealm()) {
+      const profile = await this.prisma.healthProfile.findUnique({ where: { userId } });
+      if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
+        throw globalError(403, "analysis_consent_required", "Agree to health analysis before retrying this report.");
+      }
+      const document = await this.analysisDocument(userId);
+      if (!document || document.version !== profile.analysisConsentVersion) {
+        throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
+      }
+    }
     await this.prisma.healthReport.update({
       where: { id: reportId },
       data: { status: PrismaReportStatus.QUEUED, failureReason: null },

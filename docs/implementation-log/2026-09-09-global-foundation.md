@@ -83,3 +83,11 @@
 - 验证：Prisma format/generate通过；`pnpm api:docs`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm api:docs:check`、`pnpm tools:test`依次通过。全工作区492项通过（API380）、4个数据库测试跳过；工具8项通过，部署结构111项通过；`git diff --check`通过。原有Sass/adminchunk警告保留。首次apply_patch因文档锚点不匹配未写任何文件，确认status干净后使用真实锚点重试；无业务测试失败。
 - App对应新增`global_health_api.dart`和专项测试：14/14通过、定向Dart analyze零问题；首轮3个格式提示已修复并重跑。App全量/构建由主任务串行验收，此记录不把它们代验。来源字段仅依据真实record，未知不升级，remote_member不能上传到本人历史，ECG缺采样率保留队列。
 - `prisma validate`首轮因没有DATABASE_URL报P1012；随后仅在独立命令进程设置合成不可用本地URL作schema解析验证通过。此命令不连接数据库，未读取生产配置、未迁移，数据库E2E仍未验收。
+
+## 报告失败重试的授权复核
+
+- 修改前HEAD=4d6f768，工作区干净；fetch后origin/main仍5bf5ec6。
+- 联审发现create已核验当前已审分析授权，但retry仅检查本人FAILED报告，用户撤回或文档升级后仍可能入队。经主任务确认仅补global retry同等授权/version门禁与回归测试；国内行为、价格和支付协议不改。
+- 预期：授权缺失/撤回、文档未发布或版本过期时，在任何report更新与Outbox入队前拒绝；当前授权可重试。验证提交前补录。
+- 首轮typecheck与全量test失败：新增it.each把数组fixture当位置参数展开，空数组变undefined、单元素数组变对象，导致2个测试出现rows.find错误；改为`{documents:...}`对象fixture，不修改服务端门禁来迁就测试。其余497通过、4DB跳过；修复后重跑完整门禁。
+- 修复后`pnpm api:docs`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm api:docs:check`、`pnpm tools:test`均通过；全工作区499项通过（API387）、4DB跳过；工具8项、部署结构111项通过。`git diff --check`通过。最终fetch确认origin/main仍5bf5ec6。仅本地国际分支提交，不push、不部署、不发码。

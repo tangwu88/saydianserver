@@ -64,7 +64,7 @@ export const notes = {
   "HealthReportsController.get": entry("健康报告状态与免费概览", "id=报告UUID", "报告状态、数据区间和免费概览；不含付费正文"),
   "HealthReportsController.full": entry("查看已解锁详细健康报告", "id=报告UUID", "AI标识、证据索引、局限及详细内容；非诊断"),
   "HealthReportsController.export": entry("按需导出详细健康报告", "id=已解锁且生成完成的报告UUID", "application/pdf文件流；不长期重复保存PDF", "报告字体服务"),
-  "HealthReportsController.retry": entry("重试失败的报告", "id=报告UUID", "重新排队后的报告；生成失败时次数已返还", "AI供应商"),
+  "HealthReportsController.retry": entry("重试失败的报告", "id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本", "重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还", "AI供应商"),
   "DevicesController.list": entry("已绑定设备", undefined, "Device[]；只含未解绑设备"),
   "DevicesController.bind": entry("绑定设备快照", "{deviceId/hardwareId,vendor,model,displayName/name,firmware?,capabilities?:string[],syncCursor?}", "Device；不是服务端蓝牙连接"),
   "DevicesController.updateCapabilities": entry("更新设备能力及游标", "{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID", "Device"),

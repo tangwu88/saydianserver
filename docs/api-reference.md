@@ -234,7 +234,7 @@
 | `GET /api/saydian-app/v2/health/reports/:id` | 健康报告状态与免费概览 | member | path:id；id=报告UUID | 报告状态、数据区间和免费概览；不含付费正文 | 核心服务 |
 | `GET /api/saydian-app/v2/health/reports/:id/full` | 查看已解锁详细健康报告 | member | path:id；id=报告UUID | AI标识、证据索引、局限及详细内容；非诊断 | 核心服务 |
 | `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
-| `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID | 重新排队后的报告；生成失败时次数已返还 | AI供应商 |
+| `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本 | 重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还 | AI供应商 |
 | `GET /api/saydian-app/v2/support/config` | 客服配置 | public | 无请求体 | 客服配置或未配置状态 | 核心服务 |
 | `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | 无请求体 | DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际仅global_app_update，强制realm=global及逐项独立packageId，直包仅/global/down/files/；无配置404 | 核心服务 |
 | `POST /api/saydian-app/v2/support/feedback` | 提交反馈 | member | {content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项} | {id,status} | 核心服务 |

@@ -17209,8 +17209,8 @@
       "envelope": "v2",
       "source": "apps/api/src/reports/health-reports.controller.ts",
       "summary": "重试失败的报告",
-      "request": "id=报告UUID",
-      "response": "重新排队后的报告；生成失败时次数已返还",
+      "request": "id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本",
+      "response": "重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还",
       "dependency": "AI供应商",
       "successStatus": 201,
       "contract": {
