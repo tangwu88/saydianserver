@@ -30,7 +30,7 @@ import {
   type WechatAppIdentity,
 } from "./wechat-app-auth.service";
 import { authAudience, authIssuer, isGlobalRealm } from "../common/deployment-realm";
-import { globalError, globalLocale, maskedIdentifier, normalizedEmail } from "./global-identity";
+import { globalError, globalLocale, internationalPhone, maskedIdentifier, normalizedEmail } from "./global-identity";
 
 const accessLifetimeSeconds = 15 * 60;
 const refreshLifetimeMs = 30 * 24 * 60 * 60 * 1000;
@@ -99,7 +99,9 @@ export class AuthService {
   }
 
   private async passwordUser(mobileInput: string, password: string) {
-    const mobile = normalizedMobile(mobileInput);
+    const mobile = isGlobalRealm()
+      ? internationalPhone(mobileInput)?.identifier ?? ""
+      : normalizedMobile(mobileInput);
     const email = isGlobalRealm() ? normalizedEmail(mobileInput) : "";
     if ((!mobile && !email) || !password) throw new UnauthorizedException("账号或密码错误");
     const user = await this.prisma.user.findUnique({ where: email ? { email } : { mobile } });
@@ -107,7 +109,9 @@ export class AuthService {
       !user?.passwordHash ||
       user.status !== UserStatus.ACTIVE ||
       !(await compare(password, user.passwordHash)) ||
-      (isGlobalRealm() && !(user.emailVerifiedAt || user.mobileVerifiedAt))
+      (isGlobalRealm() &&
+        !(user.emailVerifiedAt || user.mobileVerifiedAt) &&
+        !envBoolean("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED"))
     ) {
       throw new UnauthorizedException("账号或密码错误");
     }
@@ -137,7 +141,10 @@ export class AuthService {
       !session ||
       session.revokedAt ||
       session.expiresAt <= new Date() ||
-      session.user.status !== UserStatus.ACTIVE
+      session.user.status !== UserStatus.ACTIVE ||
+      (isGlobalRealm() &&
+        !(session.user.emailVerifiedAt || session.user.mobileVerifiedAt) &&
+        !envBoolean("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED"))
     ) {
       throw new UnauthorizedException("登录已失效，请重新登录");
     }

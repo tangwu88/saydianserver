@@ -3,8 +3,14 @@ import { randomUUID } from "node:crypto";
 import { GlobalAuthService } from "./global-auth.service";
 import { GlobalVerificationDeliveryService } from "./global-verification-delivery.service";
 import { globalIdentity, globalLocale, globalLocales, internationalPhone, normalizedEmail } from "./global-identity";
+import { AuthService } from "./auth.service";
+import { hash } from "bcryptjs";
 
-beforeEach(() => { vi.stubEnv("APP_REALM", "global"); vi.stubEnv("REFRESH_TOKEN_PEPPER", "synthetic-global-test-pepper-not-a-live-secret"); });
+beforeEach(() => {
+  vi.stubEnv("APP_REALM", "global");
+  vi.stubEnv("REFRESH_TOKEN_PEPPER", "synthetic-global-test-pepper-not-a-live-secret");
+  vi.stubEnv("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED", "false");
+});
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 function harness() {
@@ -60,13 +66,13 @@ describe("global registration challenges", () => {
   it("does not advertise registration while business writes are paused", async () => {
     vi.stubEnv("BUSINESS_WRITES_PAUSED", "true");
     const value = await harness().service.capabilities("en");
-    expect(value.registration).toEqual({ email: false, sms: false });
+    expect(value.registration).toEqual({ email: false, sms: false, verificationRequired: true });
     expect(value.recovery).toEqual({ email: false, sms: false });
   });
   it("keeps registration closed without reviewed legal documents and rejects an outdated version", async () => {
     const h = harness(); h.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
     const capabilities = await h.service.capabilities("en");
-    expect(capabilities.registration).toEqual({ email: false, sms: false }); expect(capabilities.consentVersion).toBeNull(); expect(capabilities.legal).toBeNull();
+    expect(capabilities.registration).toEqual({ email: false, sms: false, verificationRequired: true }); expect(capabilities.consentVersion).toBeNull(); expect(capabilities.legal).toBeNull();
     expect(capabilities.recovery).toEqual({ email: true, sms: true });
     h.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
     await expect(h.service.requestCode({ channel: "email", identifier: "legal@example.com" })).rejects.toThrow("not available yet");
@@ -104,6 +110,51 @@ describe("global registration challenges", () => {
     const session = await h.service.register({ challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-only-password!", consentVersion: "v1" });
     const stored = h.users().get(session.member.id);
     expect(stored.mobile).toBe("+12025550123"); expect(stored.mobileVerifiedAt).toBeInstanceOf(Date); expect(stored.email).toBeUndefined();
+  });
+  it("temporarily registers email or international phone without sending or marking a code as verified", async () => {
+    vi.stubEnv("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED", "true");
+    const email = harness();
+    expect((await email.service.capabilities("en")).registration).toEqual({
+      email: true,
+      sms: true,
+      verificationRequired: false,
+    });
+    const emailSession = await email.service.registerWithoutVerification({
+      channel: "email",
+      identifier: " New@Example.com ",
+      password: "Synthetic-only-password!",
+      consentVersion: "v1",
+      locale: "de-DE",
+    });
+    const storedEmail = email.users().get(emailSession.member.id);
+    expect(storedEmail.email).toBe("new@example.com");
+    expect(storedEmail.emailVerifiedAt).toBeUndefined();
+    expect(storedEmail.mobileVerifiedAt).toBeUndefined();
+    expect(email.delivery.send).not.toHaveBeenCalled();
+    expect(email.tx.consentRecord.create).toHaveBeenCalledTimes(2);
+
+    const phone = harness();
+    const phoneSession = await phone.service.registerWithoutVerification({
+      channel: "sms",
+      identifier: "+49 1512 3456789",
+      password: "Synthetic-only-password!",
+      consentVersion: "v1",
+    });
+    const storedPhone = phone.users().get(phoneSession.member.id);
+    expect(storedPhone.mobile).toBe("+4915123456789");
+    expect(storedPhone.mobileVerifiedAt).toBeUndefined();
+    expect(phone.delivery.send).not.toHaveBeenCalled();
+  });
+  it("keeps no-code registration closed unless the explicit temporary switch is enabled", async () => {
+    const h = harness();
+    await expect(h.service.registerWithoutVerification({
+      channel: "email",
+      identifier: "closed@example.com",
+      password: "Synthetic-only-password!",
+      consentVersion: "v1",
+    })).rejects.toThrow("temporarily unavailable");
+    expect(h.users().size).toBe(0);
+    expect(h.sessions).toHaveLength(0);
   });
   it("enforces cooldown across verification purposes", async () => {
     const h = harness(); await h.service.requestCode({ channel: "email", identifier: "rate@example.com" });
@@ -152,8 +203,31 @@ describe("global registration challenges", () => {
     await expect(h.service.resetPassword({ challengeId: ch.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-new-password!" })).rejects.toThrow("cannot be reset"); expect(h.sessions).toHaveLength(0);
   });
   it("normalizes login aliases and is unavailable on the domestic deployment", async () => {
-    const h = harness(); await h.service.login({ identifier: "Test@Example.com", password: "Synthetic-only-password!" }); expect(h.auth.login).toHaveBeenCalledWith("test@example.com", "Synthetic-only-password!");
+    const h = harness();
+    await h.service.login({ identifier: "Test@Example.com", password: "Synthetic-only-password!" });
+    await h.service.login({ channel: "sms", identifier: "+1 202 555 0123", password: "Synthetic-only-password!" });
+    expect(h.auth.login).toHaveBeenNthCalledWith(1, "test@example.com", "Synthetic-only-password!");
+    expect(h.auth.login).toHaveBeenNthCalledWith(2, "+12025550123", "Synthetic-only-password!");
     vi.stubEnv("APP_REALM", "domestic"); await expect(h.service.capabilities()).rejects.toThrow("unavailable");
+  });
+  it("allows an unverified global password login only while the temporary switch is enabled", async () => {
+    const password = "Synthetic-only-password!";
+    const findUnique = vi.fn(async ({ where }: any) => ({
+      id: "unverified-global-user",
+      status: "ACTIVE",
+      email: null,
+      mobile: "+12025550123",
+      emailVerifiedAt: null,
+      mobileVerifiedAt: null,
+      passwordHash: await hash(password, 12),
+      ...where,
+    }));
+    const auth = new AuthService({ user: { findUnique } } as any, {} as any, {} as any, {} as any);
+    vi.spyOn(auth, "issueSession").mockResolvedValue({} as any);
+    await expect(auth.login("+1 202 555 0123", password)).rejects.toThrow("账号或密码错误");
+    vi.stubEnv("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED", "true");
+    await expect(auth.login("+1 202 555 0123", password)).resolves.toEqual({});
+    expect(findUnique).toHaveBeenLastCalledWith({ where: { mobile: "+12025550123" } });
   });
 });
 

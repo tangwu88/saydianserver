@@ -85,6 +85,7 @@
         "SMS_PROVIDER": "disabled",
         "GLOBAL_EMAIL_PROVIDER": "disabled",
         "GLOBAL_SMS_PROVIDER": "disabled",
+        "GLOBAL_UNVERIFIED_REGISTRATION_ENABLED": "false",
         "PUSH_PROVIDER": "disabled",
         "AI_PROVIDER": "disabled",
         "ENABLE_HEALTH_REPORT_SALES": "false"
@@ -140,6 +141,7 @@
         "SMS_PROVIDER": "disabled",
         "GLOBAL_EMAIL_PROVIDER": "disabled",
         "GLOBAL_SMS_PROVIDER": "disabled",
+        "GLOBAL_UNVERIFIED_REGISTRATION_ENABLED": "false",
         "PUSH_PROVIDER": "disabled",
         "AI_PROVIDER": "disabled",
         "ENABLE_HEALTH_REPORT_SALES": "false"

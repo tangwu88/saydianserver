@@ -3425,8 +3425,8 @@
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "国际账号可用能力",
       "request": "locale可选；仅APP_REALM=global",
-      "response": "{realm,defaultLocale,supportedLocales,registration:{email,sms},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；recovery不依赖新注册协议，仍要求渠道可用且不在写入维护期",
-      "dependency": "国际独立数据库与已验收验证码渠道",
+      "response": "{realm,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；verificationRequired=false只表示当前注册暂免验证码；recovery仍要求已验收渠道且不在写入维护期",
+      "dependency": "国际独立数据库、已审协议及显式注册开关",
       "successStatus": 200,
       "contract": {
         "status": "request-reviewed",
@@ -3464,11 +3464,15 @@
                 },
                 "sms": {
                   "type": "boolean"
+                },
+                "verificationRequired": {
+                  "type": "boolean"
                 }
               },
               "required": [
                 "email",
-                "sms"
+                "sms",
+                "verificationRequired"
               ],
               "additionalProperties": true
             },
@@ -3610,7 +3614,8 @@
           ],
           "registration": {
             "email": false,
-            "sms": false
+            "sms": false,
+            "verificationRequired": true
           },
           "recovery": {
             "email": false,
@@ -3875,20 +3880,115 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
-      "summary": "旧裸密码注册入口（已阻止）",
-      "request": "该入口不再签发会话；客户端应使用register-with-sms完成手机号验证",
-      "response": "HTTP 400；请使用手机验证码完成注册",
-      "dependency": "核心服务",
+      "summary": "账号注册",
+      "request": "国内环境仍阻止裸密码注册；国际环境仅在GLOBAL_UNVERIFIED_REGISTRATION_ENABLED=true时接受{channel,identifier,password,nickname?,consentVersion,locale?}",
+      "response": "国际环境签发Session，但联系方式保持未验证；关闭临时开关后未验证会话不可续期",
+      "dependency": "国际独立数据库、已审协议与显式临时开关；需验证联系方式的商城能力仍阻断",
       "successStatus": 201,
       "contract": {
-        "status": "unreviewed",
-        "requestSchema": null,
-        "requestExample": null,
-        "responseSchema": null,
-        "responseExample": null,
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "channel": {
+              "enum": [
+                "email",
+                "sms"
+              ]
+            },
+            "identifier": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            },
+            "nickname": {
+              "type": "string"
+            },
+            "consentVersion": {
+              "type": "string"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
+            }
+          },
+          "required": [
+            "channel",
+            "identifier",
+            "password",
+            "consentVersion"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "channel": "email",
+          "identifier": "user@example.com",
+          "password": "<TEST_PASSWORD>",
+          "consentVersion": "<PUBLISHED_CONSENT_VERSION>",
+          "locale": "en"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "accessToken": {
+              "type": "string"
+            },
+            "refreshToken": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "member": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "nickname": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "nickname"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "accessToken",
+            "refreshToken",
+            "expiresAt",
+            "member"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "accessToken": "<ACCESS_TOKEN>",
+          "refreshToken": "<REFRESH_TOKEN>",
+          "expiresAt": "2026-09-08T10:00:00.000Z",
+          "member": {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "nickname": "Saydian user",
+            "emailMasked": "u***@example.com",
+            "locale": "en"
+          }
+        },
         "contentType": "application/json",
-        "source": "apps/api/src/auth/auth.controller.ts",
-        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts; apps/api/src/auth/global-auth.service.ts; apps/api/src/auth/global-legal.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
       }
     },
     {

@@ -43,6 +43,7 @@ const fixed = {
   BUSINESS_WRITES_PAUSED: "true", WORKER_OUTBOUND_PAUSED: "true", CALLBACK_PROCESSING_PAUSED: "true",
   LEGACY_SESSION_BRIDGE_ENABLED: "false", LEGACY_TOKEN_EXCHANGE_ENABLED: "false", ALLOW_TEST_OTP: "false",
   SMS_PROVIDER: "disabled", GLOBAL_EMAIL_PROVIDER: "disabled", GLOBAL_SMS_PROVIDER: "disabled",
+  GLOBAL_UNVERIFIED_REGISTRATION_ENABLED: "false",
   PUSH_PROVIDER: "disabled", AI_PROVIDER: "disabled", ENABLE_HEALTH_REPORT_SALES: "false",
 };
 for (const name of ["global-api", "global-worker"]) {

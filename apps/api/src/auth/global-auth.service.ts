@@ -3,7 +3,7 @@ import { Prisma, UserStatus } from "@prisma/client";
 import { hash } from "bcryptjs";
 import { randomInt, randomUUID } from "node:crypto";
 import { PrismaService } from "../common/prisma.service";
-import { env } from "../common/environment";
+import { env, envBoolean } from "../common/environment";
 import { isUuid, safeObject, secureEqual, sha256 } from "../common/crypto";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { AuthService } from "./auth.service";
@@ -21,8 +21,23 @@ export class GlobalAuthService {
     const ready = await this.delivery.capabilities();
     const legal = await globalLegalBundle(this.prisma, locale);
     const deliveryOpen = !businessWritesPaused(process.env);
+    const unverifiedRegistration = this.unverifiedRegistrationEnabled();
     const registrationOpen = Boolean(legal) && deliveryOpen;
-    return { realm: "global", defaultLocale: "en", supportedLocales: [...globalLocales], registration: { email: ready.email && registrationOpen, sms: ready.sms && registrationOpen }, recovery: { email: ready.email && deliveryOpen, sms: ready.sms && deliveryOpen }, smsCountries: ready.smsCountries, verification: { codeLength: 6, expiresIn: 300, retryAfter: 60 }, consentVersion: legal?.consentVersion ?? null, legal: legal?.documents ?? null };
+    return {
+      realm: "global",
+      defaultLocale: "en",
+      supportedLocales: [...globalLocales],
+      registration: {
+        email: registrationOpen && (unverifiedRegistration || ready.email),
+        sms: registrationOpen && (unverifiedRegistration || ready.sms),
+        verificationRequired: !unverifiedRegistration,
+      },
+      recovery: { email: ready.email && deliveryOpen, sms: ready.sms && deliveryOpen },
+      smsCountries: ready.smsCountries,
+      verification: { codeLength: 6, expiresIn: 300, retryAfter: 60 },
+      consentVersion: legal?.consentVersion ?? null,
+      legal: legal?.documents ?? null,
+    };
   }
 
   async requestCode(input: unknown) {
@@ -89,6 +104,65 @@ export class GlobalAuthService {
     return this.auth.issueSession(userId);
   }
 
+  async registerWithoutVerification(input: unknown) {
+    this.requireGlobal();
+    if (!this.unverifiedRegistrationEnabled() || businessWritesPaused(process.env)) {
+      throw globalError(503, "registration_unavailable", "Registration is temporarily unavailable. Please try again later.");
+    }
+    const body = safeObject(input);
+    const identifier = body.identifier ?? body.email ?? body.mobile ?? body.username;
+    const identity = globalIdentity(body.channel ?? (String(identifier ?? "").includes("@") ? "email" : "sms"), identifier);
+    const password = this.password(body.password);
+    const consentVersion = String(body.consentVersion ?? "").trim();
+    if (!consentVersion || consentVersion.length > 80) {
+      throw globalError(400, "consent_required", "Read and agree to the terms and privacy policy.");
+    }
+    const legal = await globalLegalBundle(this.prisma, body.locale);
+    if (!legal) {
+      throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
+    }
+    if (legal.consentVersion !== consentVersion) {
+      throw globalError(409, "consent_outdated", "The terms have changed. Please read and agree to the latest version.");
+    }
+    const nickname = String(body.nickname ?? "").trim();
+    if (nickname.length > 40) {
+      throw globalError(400, "invalid_nickname", "Your name must be no longer than 40 characters.");
+    }
+    const passwordHash = await hash(password, 12);
+    let userId: string;
+    try {
+      userId = await this.prisma.$transaction(async tx => {
+        const where = identity.channel === "email" ? { email: identity.identifier } : { mobile: identity.identifier };
+        if (await tx.user.findUnique({ where })) {
+          throw globalError(409, "account_exists", "This account already exists. Please sign in.");
+        }
+        const user = await tx.user.create({ data: {
+          ...(identity.channel === "email" ? { email: identity.identifier } : { mobile: identity.identifier }),
+          passwordHash,
+          nickname: nickname || "Saydian user",
+          locale: globalLocale(body.locale),
+        } });
+        for (const documentType of ["user_agreement", "privacy_policy"]) {
+          await tx.consentRecord.create({
+            data: {
+              userId: user.id,
+              documentType,
+              version: consentVersion,
+              source: `global_app_v2_unverified:${legal.locale}`,
+            },
+          });
+        }
+        return user.id;
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw globalError(409, "account_exists", "This account already exists. Please sign in.");
+      }
+      throw error;
+    }
+    return this.auth.issueSession(userId);
+  }
+
   async login(input: unknown) {
     this.requireGlobal();
     const body = safeObject(input);
@@ -131,6 +205,7 @@ export class GlobalAuthService {
   }
 
   private codeHash(id: string, code: string) { return sha256(`global:${id}:${code}:${env("REFRESH_TOKEN_PEPPER")}`); }
+  private unverifiedRegistrationEnabled() { return envBoolean("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED"); }
   private invalidCode() { return globalError(400, "verification_invalid", "The verification code is incorrect or has expired."); }
   private password(value: unknown) {
     const result = String(value ?? "");

@@ -39,6 +39,7 @@ node deploy/global/check.mjs --require-docker
 ## 暂未开放的入口和渠道
 
 - `GLOBAL_EMAIL_PROVIDER`、`GLOBAL_SMS_PROVIDER` 和旧 `SMS_PROVIDER` 固定 `disabled`。国际验证码配置使用独立集成键 `email_otp`/`sms_global`，真实密钥仅存国际集成配置；新库默认未配置。不启用测试验证码，不因适配器存在将渠道标记为已接通。
+- `GLOBAL_UNVERIFIED_REGISTRATION_ENABLED` 固定默认 `false`。临时联调只有在国际独立数据库、已审协议和隔离 QA 环境均已确认后才能显式打开；它不发送验证码、不写入验证时间，关闭后未验证账号不能继续登录或刷新。不得在国内进程或共享数据库打开。
 - 商城预留 `GLOBAL_STOREFRONT_URL=https://app.saydian.cn/global/saidian-mall/`，下载预留 `GLOBAL_DOWNLOAD_URL=https://app.saydian.cn/global/down`。这些值仅用于后续构建/部署，不构成页面可用性声明；路径必须保持 `/global/`，不得回退国内地址。
 - 模板没有国际 Admin、商城、下载页容器和 OAuth/支付配置。网关对其余 `/global/` 路径返回 404，避免使用国内页面/安装包。上述前端需完成基础路径、多语言、API 前缀和跳转检查后再增加明确路由；原商城支付回跳的硬编码国内路径也必须独立修复验收。
 - 本模板不修改国内 CI 自动发布，也不新增自动迁移、自动供应商启用或生产发布工作流。正式国际备份、镜像/配置回滚、运行资源限制、外部短信/邮件和真机联调仍待部署阶段验收。

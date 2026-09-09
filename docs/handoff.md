@@ -10,6 +10,7 @@
 - 当前源码接口目录共 302 条，详见 [接口调用指南](api-guide.md)、[路由目录](api-reference.md) 和机器可读 [接口目录 JSON](api-catalog.json)。其中只有已标记的字段契约完成请求复核，不能把路由数量等同于完整兼容。
 - 2026-09-08 H5 本地交付见 [隔离演示说明](h5-demo.md) 与 [实施记录](implementation-log/2026-09-08-h5-storefront.md)。只使用 saydian_h5_demo、8081/5174/5175，不把本地适配器验收写成真实支付/企微上线。
 - 2026-09-09 新增三会员、十后台角色与保留模拟场景，修复注册/失效账号、跨标签身份、LOCAL分包、健康幂等/分页/预警和公开配置边界；复现方式和未验收项见 [全系统模拟验收](system-qa.md)。生产接管、换货再次换出、细粒度数据范围及真实渠道仍有门槛。
+- 国际版临时免验证码注册只在独立功能分支实现，详见[实施与验证记录](implementation-log/2026-09-09-temporary-unverified-registration.md)。部署模板固定关闭，未合入或部署生产；未验证账号、正式协议、找回渠道和国际账号隔离边界必须按记录执行。
 - 最新交接前 Git HEAD 必须以 `git rev-parse HEAD origin/main` 为准；不要复制本文件中的旧提交号代替现场核对。
 - 新仓库 CI、GHCR 和受限 SSH receiver 已接通，仓库变量 `AUTO_DEPLOY_ENABLED=true`；四个生产 Secret 已配置，但值不进入 Git 或交接文档。
 - [生产部署 34006385576](https://github.com/tangwu88/saydianserver/actions/runs/34006385576) 已成功发布基线 `36ad693917da957f423135bbe8c3e065aeed3290`。后续文档提交也会触发新 CI，因此接手时必须重新核对 Actions 与 `/health/ready`，不能把该 SHA 当作永久当前值。

@@ -32,7 +32,9 @@ export class AuthController {
   registerWithCode(@Body() input: unknown) { return this.globalAuth.register(input); }
 
   @Post("register")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   register(@Body() input: unknown) {
+    if (isGlobalRealm()) return this.globalAuth.registerWithoutVerification(input);
     const body = safeObject(input);
     return this.auth.register({
       mobile: String(body.mobile ?? ""),
