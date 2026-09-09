@@ -160,6 +160,9 @@ export class HealthService {
           platform: record.sourcePlatform,
           model: record.sourceModel,
           firmware: record.sourceFirmware,
+          ...(record.sourceOrigin != null ? { origin: record.sourceOrigin } : {}),
+          ...(record.sourceMeasurementSource != null ? { measurementSource: record.sourceMeasurementSource } : {}),
+          ...(record.sourceRawVersion != null ? { rawVersion: record.sourceRawVersion } : {}),
         },
         ecgArtifact: record.ecgArtifact
           ? {
@@ -312,6 +315,9 @@ export class HealthService {
       sourcePlatform: record.source.platform,
       sourceModel: record.source.model ?? null,
       sourceFirmware: record.source.firmware ?? null,
+      sourceOrigin: record.source.origin ?? null,
+      sourceMeasurementSource: record.source.measurementSource ?? null,
+      sourceRawVersion: record.source.rawVersion ?? null,
       deviceBindingId: deviceBinding?.id ?? null,
       sourceDeviceKey: record.source.deviceId ? sha256(`${userId}:${record.source.deviceId}`) : null,
     };

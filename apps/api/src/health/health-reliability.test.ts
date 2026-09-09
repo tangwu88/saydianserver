@@ -113,6 +113,28 @@ describe("health ingestion durable idempotency", () => {
     await expect(h.service.ingestBatch(userId, "first-request-key", { records: [inputRecord()] })).rejects.toEqual({ code: "P2002" });
     expect(h.idem()).toHaveLength(0);
   });
+
+  it("persists and returns capture metadata and rejects changing it for an existing record", async () => {
+    const h = harness(), record = inputRecord();
+    const source = { ...record.source, origin: "unknown", measurementSource: "imported", rawVersion: 2 };
+    const original = { ...record, source };
+    expect((await h.service.ingestBatch(userId, "metadata-first-key", { records: [original] })).acceptedIds).toEqual([record.id]);
+    expect(h.rows()[0]).toMatchObject({ sourceOrigin: "unknown", sourceMeasurementSource: "imported", sourceRawVersion: 2 });
+    expect((await h.service.list(userId)).items[0]?.source).toMatchObject(source);
+    const changed = { ...record, source: { ...source, origin: "watch_history" } };
+    expect((await h.service.ingestBatch(userId, "metadata-changed-key", { records: [changed] })).rejected[0]?.code).toBe("record_conflict");
+    expect((await h.service.ingestBatch(userId, "metadata-retry-key", { records: [original] })).acceptedIds).toEqual([record.id]);
+    expect(h.rows()[0].values).toEqual(record.values);
+  });
+
+  it("does not invent capture metadata on older records", async () => {
+    const h = harness();
+    await h.service.ingestBatch(userId, "metadata-legacy-key", { records: [inputRecord()] });
+    const source = (await h.service.list(userId)).items[0]?.source;
+    expect(source).not.toHaveProperty("origin");
+    expect(source).not.toHaveProperty("measurementSource");
+    expect(source).not.toHaveProperty("rawVersion");
+  });
 });
 describe("health stable timestamp/id pagination", () => {
   const observedAt = new Date("2026-01-01T00:00:00.000Z");

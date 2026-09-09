@@ -10,7 +10,7 @@ const mall = "主库商城；支付操作还依赖已验收的支付渠道配置
 const category = "{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID";
 const article = "{title,contentHtml,summary?,coverUrl?,categoryId?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID";
 const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；同类型仅一个激活版本";
-const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；详细记录结构见调用手册";
+const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
   "AdminController.commerceFulfillmentPreview": entry("本地订单可发货数量", "订单UUID路径参数；限超级管理员/商城运营", "{orderId,version,status,items:[{orderItemId,name,quantity,shippedQuantity,refundedQuantity,afterSaleReservedQuantity,remainingQuantity}],shipments,unavailableReason?}；旧包裹或售后归属不明时阻断", mall),

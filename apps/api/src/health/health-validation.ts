@@ -63,6 +63,14 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
   if (!allowedPlatforms.has(platform)) {
     return rejected(id, "invalid_source", "健康记录来源不正确");
   }
+  const origin = sourceRaw.origin;
+  const measurementSource = sourceRaw.measurementSource;
+  const rawVersion = sourceRaw.rawVersion;
+  if ((origin != null && (typeof origin !== "string" || !["watch_history", "app_measurement", "remote_member", "manual_entry", "imported", "unknown"].includes(origin)))
+    || (measurementSource != null && (typeof measurementSource !== "string" || !["wearable", "manual", "imported"].includes(measurementSource)))
+    || (rawVersion != null && (typeof rawVersion !== "number" || !Number.isSafeInteger(rawVersion) || rawVersion < 1 || rawVersion > 2147483647))) {
+    return rejected(id, "invalid_source", "健康记录来源信息不正确");
+  }
   const quality = String(raw.quality ?? "unknown");
   if (!["unknown", "valid", "suspect", "invalid"].includes(quality)) {
     return rejected(id, "invalid_quality", "数据质量标识不正确");
@@ -72,6 +80,9 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
     ...(sourceRaw.deviceId ? { deviceId: String(sourceRaw.deviceId) } : {}),
     ...(sourceRaw.model ? { model: String(sourceRaw.model) } : {}),
     ...(sourceRaw.firmware ? { firmware: String(sourceRaw.firmware) } : {}),
+    ...(origin != null ? { origin: origin as NonNullable<HealthRecordInputContract["source"]["origin"]> } : {}),
+    ...(measurementSource != null ? { measurementSource: measurementSource as NonNullable<HealthRecordInputContract["source"]["measurementSource"]> } : {}),
+    ...(rawVersion != null ? { rawVersion: rawVersion as number } : {}),
   };
   const ecgRaw = safeObject(raw.ecgArtifact);
   const ecgArtifact =

@@ -37,4 +37,23 @@ describe("health record validation", () => {
     });
     expect(result.valid).toBe(false);
   });
+
+  it("preserves explicit capture metadata without changing metric values", () => {
+    const source = { ...validRecord.source, origin: "unknown", measurementSource: "imported", rawVersion: 2 };
+    const result = validateHealthRecord({ ...validRecord, source });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.record.source).toEqual(source);
+      expect(result.record.values).toEqual(validRecord.values);
+    }
+    const legacy = validateHealthRecord(validRecord);
+    if (legacy.valid) expect(legacy.record.source).toEqual(validRecord.source);
+  });
+
+  it("rejects malformed capture metadata instead of coercing it", () => {
+    for (const metadata of [{ origin: "guessed_model" }, { origin: ["unknown"] }, { measurementSource: "simulator" },
+      { rawVersion: "2" }, { rawVersion: -1 }, { rawVersion: 1.5 }, { rawVersion: Infinity }]) {
+      expect(validateHealthRecord({ ...validRecord, source: { ...validRecord.source, ...metadata } }).valid).toBe(false);
+    }
+  });
 });

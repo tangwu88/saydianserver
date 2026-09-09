@@ -133,6 +133,9 @@ export interface HealthRecordSourceContract {
   deviceId?: string;
   model?: string;
   firmware?: string;
+  origin?: "watch_history" | "app_measurement" | "remote_member" | "manual_entry" | "imported" | "unknown";
+  measurementSource?: "wearable" | "manual" | "imported";
+  rawVersion?: number;
 }
 
 export interface HealthRecordInputContract {

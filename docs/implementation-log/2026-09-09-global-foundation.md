@@ -73,3 +73,13 @@
 - 增加 `capabilities.recovery:{email,sms}`，使用同一真实渠道状态和SMS国别名单，不依赖注册法律文档；业务写维护仍关闭发码。密码登录不受新注册capabilities控制，登录本身不代表允许push。
 - 影响仅global auth能力、对应契约/测试/记录。新增无协议可发reset、无渠道仍关闭测试，维护期同时关闭recovery。
 - 验证：`pnpm api:docs`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm api:docs:check`、`pnpm tools:test` 均通过。全工作区488项通过、4个数据库测试跳过；工具8项通过；部署结构111项通过，Docker Compose/Nginx运行仍未验收。`git diff --check`通过。原有Sass弃用/admin大chunk构建警告不属于此次修改。
+
+## V2健康数据来源保真补丁
+
+- 修改前：HEAD=1c6928c，工作区干净；再次fetch origin/main仍5bf5ec6。客户端联审确认V1按分钟聚合不适合国际逐条同步，已由App独立mixin改V2。
+- 服务端现有source仅platform/device/model/firmware，遗漏采集origin、measurementSource、rawVersion；这些信息不得塞入健康metrics values或按名称推断。
+- 本轮新增source三个可选字段及HealthRecord可空持久化列、独立增量migration和回读，旧请求未提供仍兼容，旧数据不认领为手表记录；既有record内容冲突仍拒绝。
+- 不修改健康数值、阈值算法或真实数据。ECG缺少真实采样率与已验证artifact时客户端留本地队列，不上传缺波形摘要并假标已同步。验证结果提交前补录；迁移不执行到任何数据库。
+- 验证：Prisma format/generate通过；`pnpm api:docs`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm api:docs:check`、`pnpm tools:test`依次通过。全工作区492项通过（API380）、4个数据库测试跳过；工具8项通过，部署结构111项通过；`git diff --check`通过。原有Sass/adminchunk警告保留。首次apply_patch因文档锚点不匹配未写任何文件，确认status干净后使用真实锚点重试；无业务测试失败。
+- App对应新增`global_health_api.dart`和专项测试：14/14通过、定向Dart analyze零问题；首轮3个格式提示已修复并重跑。App全量/构建由主任务串行验收，此记录不把它们代验。来源字段仅依据真实record，未知不升级，remote_member不能上传到本人历史，ECG缺采样率保留队列。
+- `prisma validate`首轮因没有DATABASE_URL报P1012；随后仅在独立命令进程设置合成不可用本地URL作schema解析验证通过。此命令不连接数据库，未读取生产配置、未迁移，数据库E2E仍未验收。
