@@ -256,62 +256,62 @@ enum MigrationRunStatus {
 }
 
 model User {
-  id                     String                            @id @default(uuid()) @db.Uuid
-  compatibilityId        Int                               @unique @default(autoincrement())
-  legacyMemberId         String?                           @unique
-  mobile                 String?                           @unique
-  mobileVerifiedAt       DateTime?
-  wechatUnionId          String?                           @unique
-  wechatOpenId           String?                           @unique
-  wechatAppOpenId        String?                           @unique
-  passwordHash           String?
-  status                 UserStatus                        @default(ACTIVE)
-  nickname               String
-  avatarUrl              String?
-  gender                 Gender                            @default(UNSPECIFIED)
-  birthday               DateTime?                         @db.Date
-  heightCm               Decimal?                          @db.Decimal(5, 2)
-  weightKg               Decimal?                          @db.Decimal(6, 2)
-  createdAt              DateTime                          @default(now())
-  updatedAt              DateTime                          @updatedAt
-  sessions               UserSession[]
-  consents               ConsentRecord[]
-  activityGoal           ActivityGoal?
-  devices                DeviceBinding[]
-  healthRecords          HealthRecord[]
-  warningRules           HealthWarningRule[]
-  warningEvents          HealthWarningEvent[]
-  careInvitationsSent    CareRelationship[]                @relation("CareInviter")
-  careInvitationsRecv    CareRelationship[]                @relation("CareRecipient")
-  notifications          Notification[]
-  pushInstallations      PushInstallation[]
-  notificationPreference UserNotificationPreference?
-  feedback               Feedback[]
-  aiConversations        AiConversation[]
-  files                  FileObject[]
-  legacyOrders           LegacyOrderProjection[]
-  commerceIdentity       CommerceIdentityMap?
-  idempotencyRecords     IdempotencyRecord[]
-  deletionRequests       AccountDeletionRequest[]
-  healthProfile          HealthProfile?
-  healthReports          HealthReport[]
-  reportCredits          ReportCreditLedger[]
-  memberships            HealthMembership[]
-  paymentIntents         PaymentIntent[]
-  legacyFinance          LegacyMemberFinanceProjection[]
-  legacyCommerceArchive  LegacyCommerceFinanceProjection[]
-  commerceCart           CommerceCart?
-  commerceAddresses      CommerceAddress[]
-  commerceFavorites      CommerceFavorite[]
-  commerceReviews        CommerceReview[]
-  commerceOrders         CommerceOrder[]
-  couponClaims           CommerceCouponClaim[]
-  redeemedCouponGifts    CommerceCouponGift[]              @relation("CouponGiftRedeemer")
-  referralEmployeeId     String?                           @db.Uuid
-  referralEmployee       CommerceEmployee?                 @relation("LockedReferral", fields: [referralEmployeeId], references: [id], onDelete: SetNull)
-  pointAccount           CommercePointAccount?
-  pointLedger            CommercePointLedger[]
-  legacySessions         LegacySessionCredential[]
+  id                       String                            @id @default(uuid()) @db.Uuid
+  compatibilityId          Int                               @unique @default(autoincrement())
+  legacyMemberId           String?                           @unique
+  mobile                   String?                           @unique
+  mobileVerifiedAt         DateTime?
+  wechatUnionId            String?                           @unique
+  wechatOpenId             String?                           @unique
+  wechatAppOpenId          String?                           @unique
+  passwordHash             String?
+  status                   UserStatus                        @default(ACTIVE)
+  nickname                 String
+  avatarUrl                String?
+  gender                   Gender                            @default(UNSPECIFIED)
+  birthday                 DateTime?                         @db.Date
+  heightCm                 Decimal?                          @db.Decimal(5, 2)
+  weightKg                 Decimal?                          @db.Decimal(6, 2)
+  createdAt                DateTime                          @default(now())
+  updatedAt                DateTime                          @updatedAt
+  sessions                 UserSession[]
+  consents                 ConsentRecord[]
+  activityGoal             ActivityGoal?
+  devices                  DeviceBinding[]
+  healthRecords            HealthRecord[]
+  warningRules             HealthWarningRule[]
+  warningEvents            HealthWarningEvent[]
+  careInvitationsSent      CareRelationship[]                @relation("CareInviter")
+  careInvitationsRecv      CareRelationship[]                @relation("CareRecipient")
+  notifications            Notification[]
+  pushInstallations        PushInstallation[]
+  notificationPreference   UserNotificationPreference?
+  feedback                 Feedback[]
+  aiConversations          AiConversation[]
+  files                    FileObject[]
+  legacyOrders             LegacyOrderProjection[]
+  commerceIdentity         CommerceIdentityMap?
+  idempotencyRecords       IdempotencyRecord[]
+  deletionRequests         AccountDeletionRequest[]
+  healthProfile            HealthProfile?
+  healthReports            HealthReport[]
+  reportCredits            ReportCreditLedger[]
+  memberships              HealthMembership[]
+  paymentIntents           PaymentIntent[]
+  legacyFinance            LegacyMemberFinanceProjection[]
+  legacyCommerceArchive    LegacyCommerceFinanceProjection[]
+  commerceCart             CommerceCart?
+  commerceAddresses        CommerceAddress[]
+  commerceFavorites        CommerceFavorite[]
+  commerceReviews          CommerceReview[]
+  commerceOrders           CommerceOrder[]
+  couponClaims             CommerceCouponClaim[]
+  redeemedCouponGifts      CommerceCouponGift[]              @relation("CouponGiftRedeemer")
+  referralEmployeeId       String?                           @db.Uuid
+  referralEmployee         CommerceEmployee?                 @relation("LockedReferral", fields: [referralEmployeeId], references: [id], onDelete: SetNull)
+  pointAccount             CommercePointAccount?
+  pointLedger              CommercePointLedger[]
+  legacySessions           LegacySessionCredential[]
   wechatOfficialIdentities WechatOfficialIdentity[]
 
   @@index([status, createdAt])
@@ -333,20 +333,20 @@ model WechatOfficialIdentity {
 }
 
 model CommerceOAuthState {
-  stateHash    String   @id
+  stateHash     String    @id
   codeChallenge String
-  appId        String
-  returnTo     String
-  referralCode String?
-  expiresAt    DateTime
-  consumedAt   DateTime?
-  createdAt    DateTime @default(now())
+  appId         String
+  returnTo      String
+  referralCode  String?
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime  @default(now())
 
   @@index([expiresAt])
 }
 
 model CommerceWechatBindTicket {
-  tokenHash    String   @id
+  tokenHash    String    @id
   appId        String
   openId       String
   unionId      String?
@@ -354,7 +354,7 @@ model CommerceWechatBindTicket {
   referralCode String?
   expiresAt    DateTime
   consumedAt   DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   @@index([expiresAt])
 }
@@ -723,15 +723,15 @@ model FileObject {
 }
 
 model LegacyIdMap {
-  id          String   @id @default(uuid()) @db.Uuid
-  sourceSystem String  @default("legacy_app")
-  entityType  String
-  legacyId    String
-  targetId    String
-  sourceTable String
-  migratedAt  DateTime @default(now())
-  runId       String?  @db.Uuid
-  sourceHash  String?
+  id              String    @id @default(uuid()) @db.Uuid
+  sourceSystem    String    @default("legacy_app")
+  entityType      String
+  legacyId        String
+  targetId        String
+  sourceTable     String
+  migratedAt      DateTime  @default(now())
+  runId           String?   @db.Uuid
+  sourceHash      String?
   sourceUpdatedAt DateTime?
   sourceDeletedAt DateTime?
 
@@ -742,18 +742,18 @@ model LegacyIdMap {
 // Only imported, independently verified source sessions are eligible. Raw tokens
 // are never stored; the bridge is disabled unless its explicit deadline is set.
 model LegacySessionCredential {
-  id             String   @id @default(uuid()) @db.Uuid
-  sourceSystem   String
-  tokenDigest    String
-  userId         String   @db.Uuid
-  sourceSessionId String
-  sourceVerifiedAt DateTime
+  id                   String    @id @default(uuid()) @db.Uuid
+  sourceSystem         String
+  tokenDigest          String
+  userId               String    @db.Uuid
+  sourceSessionId      String
+  sourceVerifiedAt     DateTime
   verificationEvidence String
-  expiresAt      DateTime
-  revokedAt      DateTime?
-  sessionId      String?  @unique @db.Uuid
-  createdAt      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt            DateTime
+  revokedAt            DateTime?
+  sessionId            String?   @unique @db.Uuid
+  createdAt            DateTime  @default(now())
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([sourceSystem, tokenDigest])
   @@index([userId, expiresAt])
@@ -823,7 +823,7 @@ model AdminUser {
   displayName  String
   passwordHash String
   role         AdminRole
-  roles        AdminRole[] @default([])
+  roles        AdminRole[]    @default([])
   active       Boolean        @default(true)
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
@@ -896,26 +896,26 @@ model AppSetting {
 }
 
 model MigrationRun {
-  id           String              @id @default(uuid()) @db.Uuid
+  id           String                @id @default(uuid()) @db.Uuid
   sourceLabel  String
   sourceDigest String?
-  status       MigrationRunStatus  @default(PLANNED)
+  status       MigrationRunStatus    @default(PLANNED)
   startedAt    DateTime?
   completedAt  DateTime?
   report       Json?
-  createdAt    DateTime            @default(now())
+  createdAt    DateTime              @default(now())
   conflicts    MigrationConflict[]
   checkpoints  MigrationCheckpoint[]
 }
 
 model MigrationCheckpoint {
-  id           String   @id @default(uuid()) @db.Uuid
-  runId        String   @db.Uuid
+  id           String       @id @default(uuid()) @db.Uuid
+  runId        String       @db.Uuid
   sourceSystem String
   sourceTable  String
   cursor       String
-  rowCount     Int      @default(0)
-  updatedAt    DateTime @updatedAt
+  rowCount     Int          @default(0)
+  updatedAt    DateTime     @updatedAt
   run          MigrationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   @@unique([runId, sourceTable])
@@ -1090,42 +1090,42 @@ model PaymentIntent {
 }
 
 model PaymentRefund {
-  id               String             @id @default(uuid()) @db.Uuid
-  refundNo         String             @unique
-  sourceSystem     String             @default("canonical")
-  executionOwner   String             @default("NEW_SYSTEM")
-  paymentIntentId  String             @db.Uuid
-  afterSaleId      String?            @db.Uuid
-  status           RefundStatus       @default(CREATED)
-  amountCents      Int
+  id                     String             @id @default(uuid()) @db.Uuid
+  refundNo               String             @unique
+  sourceSystem           String             @default("canonical")
+  executionOwner         String             @default("NEW_SYSTEM")
+  paymentIntentId        String             @db.Uuid
+  afterSaleId            String?            @db.Uuid
+  status                 RefundStatus       @default(CREATED)
+  amountCents            Int
   merchandiseRefundCents Int?
-  shippingRefundCents Int?
-  reason           String
-  idempotencyKey   String             @unique
-  providerRefundId String?            @unique
-  providerPayload  Json?
-  completedAt      DateTime?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  paymentIntent    PaymentIntent      @relation(fields: [paymentIntentId], references: [id])
-  afterSale        CommerceAfterSale? @relation(fields: [afterSaleId], references: [id], onDelete: SetNull)
+  shippingRefundCents    Int?
+  reason                 String
+  idempotencyKey         String             @unique
+  providerRefundId       String?            @unique
+  providerPayload        Json?
+  completedAt            DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  paymentIntent          PaymentIntent      @relation(fields: [paymentIntentId], references: [id])
+  afterSale              CommerceAfterSale? @relation(fields: [afterSaleId], references: [id], onDelete: SetNull)
 
   @@index([paymentIntentId, status])
 }
 
 model ProviderEvent {
-  id           String    @id @default(uuid()) @db.Uuid
-  provider     String
-  eventKey     String
-  eventType    String
-  headers      Json?
-  payload      Json
-  sourceSystem String    @default("canonical")
-  verifiedAt   DateTime?
-  processingState String @default("RECEIVED")
-  processedAt  DateTime?
-  processError String?
-  createdAt    DateTime  @default(now())
+  id              String    @id @default(uuid()) @db.Uuid
+  provider        String
+  eventKey        String
+  eventType       String
+  headers         Json?
+  payload         Json
+  sourceSystem    String    @default("canonical")
+  verifiedAt      DateTime?
+  processingState String    @default("RECEIVED")
+  processedAt     DateTime?
+  processError    String?
+  createdAt       DateTime  @default(now())
 
   @@unique([provider, eventKey])
   @@index([provider, eventType, createdAt])
@@ -1338,53 +1338,53 @@ model CommerceOrder {
 }
 
 model CommerceOrderItem {
-  id                    String          @id @default(uuid()) @db.Uuid
-  orderId               String          @db.Uuid
-  productId             String          @db.Uuid
-  skuId                 String          @db.Uuid
-  erpSkuIdSnapshot      String
-  nameSnapshot          String
-  specificationSnapshot String?
-  imageSnapshot         String?
-  unitPriceCents        Int
-  quantity              Int
-  totalCents            Int
+  id                          String                  @id @default(uuid()) @db.Uuid
+  orderId                     String                  @db.Uuid
+  productId                   String                  @db.Uuid
+  skuId                       String                  @db.Uuid
+  erpSkuIdSnapshot            String
+  nameSnapshot                String
+  specificationSnapshot       String?
+  imageSnapshot               String?
+  unitPriceCents              Int
+  quantity                    Int
+  totalCents                  Int
   couponDiscountCentsSnapshot Int?
-  pointDiscountCentsSnapshot Int?
-  cashPaidCentsSnapshot Int?
-  order                 CommerceOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product               CommerceProduct @relation(fields: [productId], references: [id])
-  sku                   CommerceSku     @relation(fields: [skuId], references: [id])
-  review                CommerceReview?
-  afterSaleItems        CommerceAfterSaleItem[]
-  shipmentItems         CommerceShipmentItem[]
+  pointDiscountCentsSnapshot  Int?
+  cashPaidCentsSnapshot       Int?
+  order                       CommerceOrder           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product                     CommerceProduct         @relation(fields: [productId], references: [id])
+  sku                         CommerceSku             @relation(fields: [skuId], references: [id])
+  review                      CommerceReview?
+  afterSaleItems              CommerceAfterSaleItem[]
+  shipmentItems               CommerceShipmentItem[]
 
   @@index([orderId])
 }
 
 model CommerceShipment {
-  id               String        @id @default(uuid()) @db.Uuid
-  orderId          String        @db.Uuid
+  id               String                 @id @default(uuid()) @db.Uuid
+  orderId          String                 @db.Uuid
   logisticsCompany String
   logisticsCode    String?
   trackingNo       String
   traceJson        Json?
   shippedAt        DateTime?
   deliveredAt      DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  order            CommerceOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  order            CommerceOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   items            CommerceShipmentItem[]
 
   @@unique([orderId, trackingNo])
 }
 
 model CommerceShipmentItem {
-  id          String @id @default(uuid()) @db.Uuid
-  shipmentId  String @db.Uuid
-  orderItemId String @db.Uuid
+  id          String            @id @default(uuid()) @db.Uuid
+  shipmentId  String            @db.Uuid
+  orderItemId String            @db.Uuid
   quantity    Int
-  shipment    CommerceShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipment    CommerceShipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   orderItem   CommerceOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
 
   @@unique([shipmentId, orderItemId])
@@ -1392,19 +1392,19 @@ model CommerceShipmentItem {
 }
 
 model CommerceAfterSale {
-  requestKey            String? @unique
-  requestedByAdminId    String? @db.Uuid
-  reviewedByAdminId     String? @db.Uuid
-  reviewedAt           DateTime?
-  id                     String          @id @default(uuid()) @db.Uuid
-  legacyId               String?         @unique
-  sourceSystem           String          @default("canonical")
-  executionOwner         String          @default("NEW_SYSTEM")
-  version                Int             @default(0)
-  afterSaleNo            String          @unique
-  orderId                String          @db.Uuid
+  requestKey             String?                 @unique
+  requestedByAdminId     String?                 @db.Uuid
+  reviewedByAdminId      String?                 @db.Uuid
+  reviewedAt             DateTime?
+  id                     String                  @id @default(uuid()) @db.Uuid
+  legacyId               String?                 @unique
+  sourceSystem           String                  @default("canonical")
+  executionOwner         String                  @default("NEW_SYSTEM")
+  version                Int                     @default(0)
+  afterSaleNo            String                  @unique
+  orderId                String                  @db.Uuid
   type                   AfterSaleType
-  status                 AfterSaleStatus @default(APPLIED)
+  status                 AfterSaleStatus         @default(APPLIED)
   reason                 String
   description            String?
   evidenceImages         String[]
@@ -1417,9 +1417,9 @@ model CommerceAfterSale {
   erpStatus              String?
   returnLogisticsCompany String?
   returnTrackingNo       String?
-  createdAt              DateTime        @default(now())
-  updatedAt              DateTime        @updatedAt
-  order                  CommerceOrder   @relation(fields: [orderId], references: [id])
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  order                  CommerceOrder           @relation(fields: [orderId], references: [id])
   refunds                PaymentRefund[]
   items                  CommerceAfterSaleItem[]
 
@@ -1427,37 +1427,37 @@ model CommerceAfterSale {
 }
 
 model CommerceAfterSaleItem {
-  id          String @id @default(uuid()) @db.Uuid
-  afterSaleId String @db.Uuid
-  orderItemId String @db.Uuid
-  quantity    Int
-  amountCents Int
+  id               String            @id @default(uuid()) @db.Uuid
+  afterSaleId      String            @db.Uuid
+  orderItemId      String            @db.Uuid
+  quantity         Int
+  amountCents      Int
   pointReturnCents Int?
-  afterSale   CommerceAfterSale @relation(fields: [afterSaleId], references: [id], onDelete: Cascade)
-  orderItem   CommerceOrderItem @relation(fields: [orderItemId], references: [id])
+  afterSale        CommerceAfterSale @relation(fields: [afterSaleId], references: [id], onDelete: Cascade)
+  orderItem        CommerceOrderItem @relation(fields: [orderItemId], references: [id])
 
   @@unique([afterSaleId, orderItemId])
 }
 
 model CommercePointAccount {
-  userId       String @id @db.Uuid
-  balanceCents Int    @default(0)
-  version      Int    @default(0)
+  userId       String   @id @db.Uuid
+  balanceCents Int      @default(0)
+  version      Int      @default(0)
   updatedAt    DateTime @updatedAt
-  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model CommercePointLedger {
-  id             String @id @default(uuid()) @db.Uuid
-  userId         String @db.Uuid
-  orderId        String? @db.Uuid
+  id             String         @id @default(uuid()) @db.Uuid
+  userId         String         @db.Uuid
+  orderId        String?        @db.Uuid
   deltaCents     Int
-  afterSaleId    String? @db.Uuid
-  refundId       String? @db.Uuid
+  afterSaleId    String?        @db.Uuid
+  refundId       String?        @db.Uuid
   type           String
-  idempotencyKey String @unique
-  createdAt      DateTime @default(now())
-  user           User @relation(fields: [userId], references: [id])
+  idempotencyKey String         @unique
+  createdAt      DateTime       @default(now())
+  user           User           @relation(fields: [userId], references: [id])
   order          CommerceOrder? @relation(fields: [orderId], references: [id])
 
   @@index([userId, createdAt])
@@ -1572,36 +1572,36 @@ model CommerceCouponGift {
 }
 
 model CommerceCommissionPlan {
-  id             String    @id @default("default")
-  enabled        Boolean   @default(false)
-  rateBps        Int       @default(0)
-  settlementDays Int       @default(7)
-  enabledAt      DateTime?
-  withdrawalEnabled Boolean @default(false)
-  minimumWithdrawCents Int?
+  id                      String    @id @default("default")
+  enabled                 Boolean   @default(false)
+  rateBps                 Int       @default(0)
+  settlementDays          Int       @default(7)
+  enabledAt               DateTime?
+  withdrawalEnabled       Boolean   @default(false)
+  minimumWithdrawCents    Int?
   dailyWithdrawLimitCents Int?
-  reviewRequired Boolean @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  reviewRequired          Boolean   @default(true)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 }
 
 model CommerceCommissionAccrual {
-  id                 String           @id @default(uuid()) @db.Uuid
-  employeeId         String           @db.Uuid
-  orderId            String           @unique @db.Uuid
-  baseCents          Int
-  refundedBaseCents  Int              @default(0)
-  rateBps            Int
+  id                     String           @id @default(uuid()) @db.Uuid
+  employeeId             String           @db.Uuid
+  orderId                String           @unique @db.Uuid
+  baseCents              Int
+  refundedBaseCents      Int              @default(0)
+  rateBps                Int
   settlementDaysSnapshot Int?
-  grossBonusCents    Int
-  reversedBonusCents Int              @default(0)
-  status             String           @default("FROZEN")
-  availableAt        DateTime?
-  settledAt          DateTime?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  employee           CommerceEmployee @relation(fields: [employeeId], references: [id])
-  order              CommerceOrder    @relation(fields: [orderId], references: [id])
+  grossBonusCents        Int
+  reversedBonusCents     Int              @default(0)
+  status                 String           @default("FROZEN")
+  availableAt            DateTime?
+  settledAt              DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  employee               CommerceEmployee @relation(fields: [employeeId], references: [id])
+  order                  CommerceOrder    @relation(fields: [orderId], references: [id])
 
   @@index([employeeId, status, availableAt])
 }
@@ -1619,69 +1619,69 @@ model CommerceEmployeeWallet {
 }
 
 model CommerceCommissionLedger {
-  id                  String           @id @default(uuid()) @db.Uuid
-  employeeId          String           @db.Uuid
-  orderId             String?          @db.Uuid
-  refundId            String?          @db.Uuid
-  type                String
-  frozenDeltaCents    Int              @default(0)
-  availableDeltaCents Int              @default(0)
-  debtDeltaCents      Int              @default(0)
-  withdrawingDeltaCents Int           @default(0)
-  paidDeltaCents      Int              @default(0)
-  withdrawalId       String?          @db.Uuid
-  idempotencyKey      String           @unique
-  memo                String?
-  createdAt           DateTime         @default(now())
-  employee            CommerceEmployee @relation(fields: [employeeId], references: [id])
-  order               CommerceOrder?   @relation(fields: [orderId], references: [id])
-  withdrawal          CommerceWithdrawal? @relation(fields: [withdrawalId], references: [id])
+  id                    String              @id @default(uuid()) @db.Uuid
+  employeeId            String              @db.Uuid
+  orderId               String?             @db.Uuid
+  refundId              String?             @db.Uuid
+  type                  String
+  frozenDeltaCents      Int                 @default(0)
+  availableDeltaCents   Int                 @default(0)
+  debtDeltaCents        Int                 @default(0)
+  withdrawingDeltaCents Int                 @default(0)
+  paidDeltaCents        Int                 @default(0)
+  withdrawalId          String?             @db.Uuid
+  idempotencyKey        String              @unique
+  memo                  String?
+  createdAt             DateTime            @default(now())
+  employee              CommerceEmployee    @relation(fields: [employeeId], references: [id])
+  order                 CommerceOrder?      @relation(fields: [orderId], references: [id])
+  withdrawal            CommerceWithdrawal? @relation(fields: [withdrawalId], references: [id])
 
   @@index([employeeId, createdAt])
   @@index([orderId, createdAt])
 }
 
 model CommerceEmployeePayoutIdentity {
-  employeeId          String @id @db.Uuid
-  openId              String @unique
-  authorizationId     String?
-  outAuthorizationNo  String?
-  authorizationStatus String @default("NONE")
-  authorizedAt        DateTime?
-  revokedAt           DateTime?
-  verifiedAt          DateTime?
+  employeeId           String           @id @db.Uuid
+  openId               String           @unique
+  authorizationId      String?
+  outAuthorizationNo   String?
+  authorizationStatus  String           @default("NONE")
+  authorizedAt         DateTime?
+  revokedAt            DateTime?
+  verifiedAt           DateTime?
   verificationEvidence String?
-  employee            CommerceEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee             CommerceEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 }
 
 model CommerceWithdrawal {
-  id                 String @id @default(uuid()) @db.Uuid
-  legacyId           String? @unique
-  withdrawalNo       String @unique @default(cuid())
-  sourceSystem       String @default("canonical")
-  executionOwner     String @default("NEW_SYSTEM")
-  employeeId         String @db.Uuid
-  amountCents        Int
-  status             String @default("SUBMITTED")
-  providerTransferId String? @unique
-  idempotencyKey     String @unique
-  requestHash        String
-  version            Int @default(0)
+  id                     String                     @id @default(uuid()) @db.Uuid
+  legacyId               String?                    @unique
+  withdrawalNo           String                     @unique @default(cuid())
+  sourceSystem           String                     @default("canonical")
+  executionOwner         String                     @default("NEW_SYSTEM")
+  employeeId             String                     @db.Uuid
+  amountCents            Int
+  status                 String                     @default("SUBMITTED")
+  providerTransferId     String?                    @unique
+  idempotencyKey         String                     @unique
+  requestHash            String
+  version                Int                        @default(0)
   payoutIdentitySnapshot Json?
-  providerPayload    Json?
-  failureReason      String?
-  packageInfo        String?
-  verificationEvidence String?
-  reviewedById       String? @db.Uuid
-  reviewNote         String?
-  receiptReference   String?
-  reviewedAt         DateTime?
-  paidAt             DateTime?
-  completedAt        DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  employee           CommerceEmployee @relation(fields: [employeeId], references: [id])
-  ledger             CommerceCommissionLedger[]
+  providerPayload        Json?
+  failureReason          String?
+  packageInfo            String?
+  verificationEvidence   String?
+  reviewedById           String?                    @db.Uuid
+  reviewNote             String?
+  receiptReference       String?
+  reviewedAt             DateTime?
+  paidAt                 DateTime?
+  completedAt            DateTime?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+  employee               CommerceEmployee           @relation(fields: [employeeId], references: [id])
+  ledger                 CommerceCommissionLedger[]
 
   @@index([employeeId, status, createdAt])
 }
