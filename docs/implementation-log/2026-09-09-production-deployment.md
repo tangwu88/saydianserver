@@ -36,6 +36,13 @@
 - 线上 `/health/live`、`/health/ready` 完整 revision，Admin、下载页、H5 页面与关键公开 API。
 - 腾讯云容器运行状态、维护只读值、备份与迁移状态。真实第三方集成另行验收，不因本次发布标记为已接通。
 
+## 首次生产切换与 Redis 修复
+
+- 提交 `5bf5ec6e3fc624587536a2a8e76d28a2a24b6c75` 的 CI 验证、三镜像构建、七个隔离数据库迁移、种子和 HTTP 兼容冒烟均通过。自动部署先创建并校验生产备份，再按设计停在七个待迁移项，旧容器未切换。
+- 使用同一已验证 API 镜像执行 `prisma migrate deploy`，七个迁移全部成功；复检为 `Database schema is up to date!`。重新执行失败的部署作业后，API、Worker 和 Admin 均切换到 `5bf5ec6e3fc624587536a2a8e76d28a2a24b6c75`，线上健康端点返回该完整 revision，维护只读仍为 `true`。
+- 发布后运行日志发现 Worker 对 Redis 持续返回 `WRONGPASS`。无密钥输出的比对确认 Worker、Redis 容器的环境密码一致且 DNS 指向正确 Redis；使用字面量 `$REDIS_PASSWORD` 能认证，证明 Compose 中单引号阻止了容器 shell 展开变量。
+- 最小修复将 Redis 启动命令和健康检查中的密码改为双引号包裹，继续通过 `$$` 延迟到容器 shell 展开；新增工具测试，禁止重新引入单引号字面量密码。发布保持 `MAINTENANCE_READ_ONLY=true`。
+
 - 2026-09-09T07:14:44.9754245Z：pnpm.cmd api:docs:check，退出码 0。
 
 - 2026-09-09T07:14:55.1278183Z：pnpm.cmd tools:test，退出码 0。
@@ -55,3 +62,13 @@
 - 2026-09-09T07:23:33.8961157Z：pnpm.cmd test，退出码 0。
 
 - 2026-09-09T07:24:05.1067343Z：pnpm.cmd build，退出码 0。
+
+- 2026-09-09T09:12:43.9186174Z：pnpm.cmd api:docs:check，退出码 0。
+
+- 2026-09-09T09:12:54.4656989Z：pnpm.cmd tools:test，退出码 0。
+
+- 2026-09-09T09:13:13.5100447Z：pnpm.cmd typecheck，退出码 0。
+
+- 2026-09-09T09:13:40.0737030Z：pnpm.cmd test，退出码 0。
+
+- 2026-09-09T09:14:27.3788809Z：pnpm.cmd build，退出码 0。
