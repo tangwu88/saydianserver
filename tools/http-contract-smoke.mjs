@@ -22,9 +22,21 @@ async function request(route, { method = "GET", body, token, headers = {} } = {}
 const v1 = "/api/v1/member";
 const v2 = "/api/saydian-app/v2";
 const password = "local-fixture-password-only";
+async function registerVerified(mobile, nickname) {
+  const rejected = await request(v2 + "/auth/register", { method: "POST", body: { mobile, password, nickname, consentVersion: "fixture-only" } });
+  check(rejected.json.code, 400);
+  const otp = (await request(v2 + "/auth/sms-code", { method: "POST", body: { mobile, usage: "register" } })).json;
+  check(otp.code, 200);
+  assert.match(otp.data.devCode ?? "", /^\d{6}$/);
+  assertions++;
+  return (await request(v2 + "/auth/register-with-sms", {
+    method: "POST",
+    body: { mobile, code: otp.data.devCode, password, nickname, consentVersion: "fixture-only" },
+  })).json;
+}
 try {
-  const a = (await request(v2 + "/auth/register", { method: "POST", body: { mobile: "19900000001", password, nickname: "fixture-A", consentVersion: "fixture-only" } })).json;
-  const b = (await request(v2 + "/auth/register", { method: "POST", body: { mobile: "19900000002", password, nickname: "fixture-B", consentVersion: "fixture-only" } })).json;
+  const a = await registerVerified("19900000001", "fixture-A");
+  const b = await registerVerified("19900000002", "fixture-B");
   check(a.code, 200); check(b.code, 200);
   const tokenA = a.data.accessToken; const tokenB = b.data.accessToken;
   const form = new FormData(); form.set("username", "19900000001"); form.set("password", password);

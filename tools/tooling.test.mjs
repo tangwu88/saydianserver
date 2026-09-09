@@ -50,6 +50,13 @@ test("all authored request and response samples satisfy the emitted schema vocab
     if (contract.responseExample !== null) assert.ok(sampleMatches(contract.responseExample, contract.responseSchema), `${key}: response sample differs from schema`);
   }
 });
+test("HTTP fixture registers members only after test OTP verification", () => {
+  const fixture = fs.readFileSync(path.join(root, "tools/http-contract-smoke.mjs"), "utf8");
+  assert.match(fixture, /\/auth\/sms-code/);
+  assert.match(fixture, /\/auth\/register-with-sms/);
+  assert.match(fixture, /check\(rejected\.json\.code, 400\)/);
+  assert.doesNotMatch(fixture, /const a = \(await request\(v2 \+ "\/auth\/register"/);
+});
 test("deployment shell syntax and receiver rejection", () => {
   for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh"]) {
     const result = run(bash, ["-n", `deploy/scripts/${script}`]);

@@ -23,6 +23,13 @@
 - 再次格式化前后 SHA-256 均为 `763DEA9742D5E91A1F38AF5FE545B9403DBCFC106CA309E3C8011AF0AC35FD06`，确认幂等；`prisma validate` 通过。
 - 本机 `pnpm db:generate` 因当前本地 API 进程占用 `query_engine-windows.dll.node` 而在 Windows rename 返回 `EPERM`。没有停止用户正在调试的 5173/8080 环境；这不是 schema 校验失败，修复提交仍由干净的 Linux CI 完成 `prisma generate`、数据库和容器门禁。
 
+## CI 第二次失败与修复
+
+- GitHub Actions `CI` 运行 `34322988269` 已通过 Prisma 格式、生成、完整类型检查、测试、构建、七个迁移、种子和 API 启动，随后在 HTTP 兼容冒烟中停止；`auto-deploy` 未运行，生产未变化。
+- 根因是 `tools/http-contract-smoke.mjs` 仍用旧裸密码注册入口创建两个测试会员，而正式注册策略已经正确阻止未验证手机号并返回 400。
+- 测试固件改为先断言裸注册被拒绝，再通过仅限本地测试环境的短信验证码和 `register-with-sms` 创建会员；没有放宽生产注册策略，也没有引入生产可用的模拟成功入口。
+- 工具测试新增结构性回归检查，确保 HTTP 冒烟继续覆盖“拒绝裸注册 + 验证码注册”。
+
 ## 待完成验收
 
 - 修复提交的 CI、镜像构建、生产迁移门禁与实际部署。
@@ -38,3 +45,13 @@
 - 2026-09-09T07:15:26.3826141Z：pnpm.cmd test，退出码 0。
 
 - 2026-09-09T07:15:57.4027234Z：pnpm.cmd build，退出码 0。
+
+- 2026-09-09T07:22:46.4228544Z：pnpm.cmd api:docs:check，退出码 0。
+
+- 2026-09-09T07:22:56.7984767Z：pnpm.cmd tools:test，退出码 0。
+
+- 2026-09-09T07:23:13.7388321Z：pnpm.cmd typecheck，退出码 0。
+
+- 2026-09-09T07:23:33.8961157Z：pnpm.cmd test，退出码 0。
+
+- 2026-09-09T07:24:05.1067343Z：pnpm.cmd build，退出码 0。
