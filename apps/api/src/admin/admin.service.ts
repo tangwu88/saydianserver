@@ -31,6 +31,7 @@ import { orderFulfillmentState } from "../commerce/commerce-finance";
 import { createLocalShipment, localFulfillmentPreview } from "./local-fulfillment";
 import { protectLastSuperAdmin } from "./admin-account-policy";
 import { parseGlobalDownloadManifest } from "../support/global-download-manifest";
+import { withCategoryNumbers } from "./article-category-number";
 
 @Injectable()
 export class AdminService {
@@ -237,10 +238,11 @@ export class AdminService {
     });
   }
 
-  articleCategories() {
-    return this.prisma.articleCategory.findMany({
+  async articleCategories() {
+    const categories = await this.prisma.articleCategory.findMany({
       orderBy: [{ sort: "desc" }, { name: "asc" }],
     });
+    return isGlobalRealm() ? withCategoryNumbers(this.prisma, categories) : categories;
   }
 
   async saveArticleCategory(id: string | undefined, input: unknown) {
@@ -258,6 +260,14 @@ export class AdminService {
     };
     if (id && data.parentId === id) {
       throw new BadRequestException("分类不能作为自己的上级");
+    }
+    if (isGlobalRealm()) {
+      return this.prisma.$transaction(async tx => {
+        const category = id
+          ? await tx.articleCategory.update({ where: { id }, data })
+          : await tx.articleCategory.create({ data });
+        return (await withCategoryNumbers(tx, [category]))[0]!;
+      });
     }
     return id
       ? this.prisma.articleCategory.update({ where: { id }, data })

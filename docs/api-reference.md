@@ -258,9 +258,9 @@
 | `GET /api/saydian-app/admin/v1/feedback` | 反馈工单 | admin | query:status?；status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选 | 最多500条 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/feedback/:id` | 更新反馈处理状态 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；{status,assignedTo?} | 反馈记录 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/articles` | 后台文章含草稿 | admin | 无请求体 | 最多500条，含分类 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/article-categories` | 后台文章分类 | admin | 无请求体 | 分类数组 | 核心服务 |
-| `POST /api/saydian-app/admin/v1/article-categories` | 新增分类 | admin: SUPER_ADMIN, CONTENT_EDITOR | {name,parentId?,sort?,enabled?}；parentId 使用分类 UUID | 分类记录 | 核心服务 |
-| `PATCH /api/saydian-app/admin/v1/article-categories/:id` | 编辑分类 | admin: SUPER_ADMIN, CONTENT_EDITOR | path:id；{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID | 分类记录；当前为完整字段保存 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/article-categories` | 后台文章分类 | admin | 无请求体 | 分类数组；国际版含固定数字字符串categoryNo（如12），id/parentId仍为UUID，编号不随排序变化 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/article-categories` | 新增分类 | admin: SUPER_ADMIN, CONTENT_EDITOR | {name,parentId?,sort?,enabled?}；parentId 使用分类 UUID | 分类记录；国际版含只读categoryNo，数据库自动分配，不接收客户端自选号 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/article-categories/:id` | 编辑分类 | admin: SUPER_ADMIN, CONTENT_EDITOR | path:id；{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID | 分类记录；当前为完整字段保存；国际版categoryNo保持不变，URL id与关联parentId仍为UUID | 核心服务 |
 | `POST /api/saydian-app/admin/v1/articles` | 新增文章 | admin: SUPER_ADMIN, CONTENT_EDITOR | {title,contentHtml,summary?,coverUrl?,categoryId?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID | Article | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/articles/:id` | 编辑文章 | admin: SUPER_ADMIN, CONTENT_EDITOR | path:id；{title,contentHtml,summary?,coverUrl?,categoryId?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID | Article；当前为完整字段保存 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/integrations` | 集成登记状态 | admin | 无请求体 | 公开配置、是否已安全保存密钥、登记状态和检查时间；密钥永不回显，登记不等同实时连通 | 核心服务 |

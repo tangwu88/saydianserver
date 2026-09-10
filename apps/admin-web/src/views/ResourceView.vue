@@ -23,6 +23,10 @@ const saving = ref(false);
 const rows = ref<Row[]>([]);
 const resourceMeta = ref<Row>({});
 const categoryOptions = ref<Row[]>([]);
+const articleCategoryOptions = ref<Row[]>([]);
+const articleCategoriesReady = ref(false);
+const articleCategoryEditorResource = ref("");
+const originalArticleCategoryId = ref<string | null>(null);
 const search = ref("");
 const commerceStatus = ref("");
 const currentPage = ref(1);
@@ -68,8 +72,26 @@ const fieldLabels: Record<string, string> = {
   lastError: "失败原因", attempt: "重试次数", firmware: "固件版本",
   imageUrl: "图片地址", targetUrl: "跳转地址", enabled: "启用", published: "前台展示",
   configuration: "配置状态", public: "公开",
+  categoryNo: "分类编号", locale: "语言", sort: "排序",
 };
 const resource = computed(() => String(route.params.resource || ""));
+const needsArticleCategories = computed(() => ["articles", "article-categories"].includes(resource.value));
+const selectableArticleCategories = computed(() => {
+  const forbidden = new Set<string>();
+  if (resource.value === "article-categories" && form.value.id) {
+    forbidden.add(String(form.value.id));
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const item of articleCategoryOptions.value) {
+        if (item.parentId && forbidden.has(String(item.parentId)) && !forbidden.has(String(item.id))) {
+          forbidden.add(String(item.id)); changed = true;
+        }
+      }
+    }
+  }
+  return articleCategoryOptions.value.filter(item => !forbidden.has(String(item.id)));
+});
 const title = computed(() => titles[resource.value] || resource.value);
 const commerceResources = [
   "commerce-products", "commerce-categories", "commerce-banners", "commerce-business-configs",
@@ -95,6 +117,7 @@ const paginatedResources = ["members", "commerce-products", "commerce-orders", "
 const serverStatusResources = ["commerce-products", "commerce-orders", "commerce-after-sales", "commerce-jobs", "payments"];
 const columns = computed(() => {
   if (resource.value === "members") return memberColumns;
+  if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
   if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
   const first = rows.value[0];
   return first ? Object.keys(first)
@@ -104,6 +127,7 @@ const columns = computed(() => {
 
 let loadRequestId = 0;
 let healthRequestId = 0;
+let editorRequestId = 0;
 
 async function load(): Promise<void> {
   const requestedResource = resource.value;
@@ -194,10 +218,17 @@ function render(value: unknown): string {
 }
 
 async function openCreate(): Promise<void> {
+  const requestedResource = resource.value;
+  const requestId = ++editorRequestId;
+  if (needsArticleCategories.value && !await loadArticleCategories(requestedResource, requestId)) return;
   if (["commerce-products", "commerce-categories"].includes(resource.value)) await ensureCommerceCategories();
+  if (requestId !== editorRequestId || requestedResource !== resource.value) return;
+  originalArticleCategoryId.value = null;
   dialogMode.value = "edit";
   dialogTitle.value = `新增${title.value}`;
   const defaults: Record<string, Row> = {
+    "articles": { status: "DRAFT", categoryId: null },
+    "article-categories": { enabled: true, sort: 0, parentId: null },
     "admin-users": { role: "READ_ONLY", roles: ["READ_ONLY"], active: true },
     "commerce-products": { source: "LOCAL", status: "DRAFT", gallery: [], tags: [], featured: false, sort: 0, skus: [{ specification: "默认规格", salePriceCents: 1, stock: 0, enabled: true }] },
     "commerce-categories": { _isNew: true, enabled: true, sort: 0 },
@@ -212,7 +243,12 @@ async function openCreate(): Promise<void> {
 }
 
 async function openEdit(row: Row): Promise<void> {
+  const requestedResource = resource.value;
+  const requestId = ++editorRequestId;
+  if (needsArticleCategories.value && !await loadArticleCategories(requestedResource, requestId)) return;
   if (["commerce-products", "commerce-categories"].includes(resource.value)) await ensureCommerceCategories();
+  if (requestId !== editorRequestId || requestedResource !== resource.value) return;
+  originalArticleCategoryId.value = String(row[requestedResource === "articles" ? "categoryId" : "parentId"] ?? "") || null;
   dialogMode.value = "edit";
   dialogTitle.value = `编辑${title.value}`;
   const nextForm: Row = {
@@ -242,6 +278,41 @@ async function openEdit(row: Row): Promise<void> {
   dialogVisible.value = true;
 }
 
+async function loadArticleCategories(requestedResource: string, requestId: number): Promise<boolean> {
+  articleCategoriesReady.value = false;
+  articleCategoryEditorResource.value = "";
+  articleCategoryOptions.value = [];
+  dialogVisible.value = false;
+  form.value = {};
+  const isCurrent = () => requestId === editorRequestId && requestedResource === resource.value;
+  try {
+    const data = responseData<unknown>(await api.get("/article-categories"));
+    if (!Array.isArray(data) || data.some(item => !item || typeof item.id !== "string" || typeof item.name !== "string")) {
+      throw new Error("分类数据不完整");
+    }
+    if (!isCurrent()) return false;
+    articleCategoryOptions.value = data;
+    articleCategoriesReady.value = true;
+    articleCategoryEditorResource.value = requestedResource;
+    return true;
+  } catch (error) {
+    if (isCurrent()) ElMessage.error(`分类加载失败，请重试后再编辑：${error instanceof Error && error.message === "分类数据不完整" ? error.message : readableError(error)}`);
+    return false;
+  }
+}
+
+function articleCategoryLabel(item: Row): string {
+  return `${item.name}（编号 ${item.categoryNo ?? "未获取"}）${item.enabled === false ? " · 已停用" : ""}`;
+}
+
+function articleCategorySelectionValid(): boolean {
+  const selectedId = form.value[resource.value === "articles" ? "categoryId" : "parentId"];
+  if (!selectedId) return true;
+  const selected = selectableArticleCategories.value.find(item => item.id === selectedId);
+  if (selected) return selected.enabled !== false || selectedId === originalArticleCategoryId.value;
+  return selectedId === originalArticleCategoryId.value && !articleCategoryOptions.value.some(item => item.id === selectedId);
+}
+
 async function ensureCommerceCategories(): Promise<void> {
   if (categoryOptions.value.length) return;
   try {
@@ -253,6 +324,14 @@ async function ensureCommerceCategories(): Promise<void> {
 }
 
 async function save(): Promise<void> {
+  if (needsArticleCategories.value && (!articleCategoriesReady.value || articleCategoryEditorResource.value !== resource.value)) {
+    ElMessage.error("请重新打开编辑窗口，等待分类加载成功后保存");
+    return;
+  }
+  if (needsArticleCategories.value && !articleCategorySelectionValid()) {
+    ElMessage.error("请选择可用分类；上级分类不能是自身或下级分类");
+    return;
+  }
   saving.value = true;
   try {
     const id = String(form.value.id ?? "");
@@ -314,6 +393,8 @@ function fillDownloadUrl(platform: "android" | "ios" | "harmonyos"): void {
 
 function payloadForResource(current: string, source: Row): Row {
   const fields: Record<string, string[]> = {
+    "articles": ["title", "summary", "categoryId", "coverUrl", "contentHtml", "status", "locale", "publishedAt"],
+    "article-categories": ["name", "parentId", "locale", "sort", "enabled"],
     "commerce-products": ["displayName", "subtitle", "brand", "categoryId", "coverImage", "detailHtml", "status", "featured", "sort", "localArchived"],
     "commerce-categories": ["name", "parentId", "iconUrl", "sort", "enabled"],
     "commerce-banners": ["title", "imageUrl", "targetUrl", "sort", "enabled"],
@@ -324,6 +405,10 @@ function payloadForResource(current: string, source: Row): Row {
     "health-report-offers": ["offerKey", "title", "description", "entitlement", "priceCents", "currency", "creditCount", "durationDays", "platforms", "appleProductId", "active", "effectiveFrom", "effectiveUntil"],
     "notification-campaigns": ["name", "type", "title", "body", "deepLink", "scheduledAt"],
   };
+  if (current === "articles" || current === "article-categories") {
+    const relation = current === "articles" ? "categoryId" : "parentId";
+    return { ...pick(source, fields[current]!), [relation]: source[relation] || null };
+  }
   if (current === "commerce-products") {
     return {
       ...pick(source, fields["commerce-products"]!),
@@ -496,6 +581,11 @@ async function requestShippingRefund(row: Row): Promise<void> {
 function resetResourceView(): void {
   ++loadRequestId;
   ++healthRequestId;
+  ++editorRequestId;
+  articleCategoriesReady.value = false;
+  articleCategoryEditorResource.value = "";
+  articleCategoryOptions.value = [];
+  originalArticleCategoryId.value = null;
   loading.value = false;
   loadError.value = "";
   rows.value = [];
@@ -513,7 +603,7 @@ watch(resource, async () => {
   await load();
 }, { immediate: true });
 
-onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; });
+onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; ++editorRequestId; });
 </script>
 
 <template>
@@ -625,14 +715,25 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; });
         <template v-else-if="resource === 'articles'">
           <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
           <el-form-item label="摘要"><el-input v-model="form.summary" type="textarea" /></el-form-item>
-          <el-form-item label="分类编号"><el-input v-model="form.categoryId" /></el-form-item>
+          <el-form-item label="内容分类">
+            <el-select v-model="form.categoryId" clearable filterable placeholder="请选择分类；可留空">
+              <el-option v-if="form.categoryId && !articleCategoryOptions.some(item => item.id === form.categoryId)" :value="form.categoryId" label="原分类（当前不可用，可清除或重新选择）" disabled />
+              <el-option v-for="item in selectableArticleCategories" :key="item.id" :value="item.id" :label="articleCategoryLabel(item)" :disabled="item.enabled === false && item.id !== originalArticleCategoryId" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="封面地址"><el-input v-model="form.coverUrl" /></el-form-item>
           <el-form-item label="正文"><RichTextEditor v-model="form.contentHtml" /></el-form-item>
           <el-form-item label="状态"><el-select v-model="form.status"><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select></el-form-item>
         </template>
         <template v-else-if="resource === 'article-categories'">
+          <el-form-item v-if="form.id" label="分类编号"><el-input :model-value="render(form.categoryNo)" readonly /></el-form-item>
           <el-form-item label="分类名称"><el-input v-model="form.name" /></el-form-item>
-          <el-form-item label="上级编号"><el-input v-model="form.parentId" /></el-form-item>
+          <el-form-item label="上级分类">
+            <el-select v-model="form.parentId" clearable filterable placeholder="不选则为一级分类">
+              <el-option v-if="form.parentId && !articleCategoryOptions.some(item => item.id === form.parentId)" :value="form.parentId" label="原上级分类（当前不可用，可清除或重新选择）" disabled />
+              <el-option v-for="item in selectableArticleCategories" :key="item.id" :value="item.id" :label="articleCategoryLabel(item)" :disabled="item.enabled === false && item.id !== originalArticleCategoryId" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="排序"><el-input-number v-model="form.sort" /></el-form-item>
           <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
         </template>
@@ -826,7 +927,7 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; });
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
       </el-form>
-      <template #footer><el-button @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit'" type="primary" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><el-button @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit'" type="primary" :loading="saving" :disabled="needsArticleCategories && !articleCategoriesReady" @click="save">保存</el-button></template>
     </el-dialog>
   </section>
 </template>

@@ -391,7 +391,7 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "后台文章分类",
       "request": "无请求体",
-      "response": "分类数组",
+      "response": "分类数组；国际版含固定数字字符串categoryNo（如12），id/parentId仍为UUID，编号不随排序变化",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -426,7 +426,7 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "新增分类",
       "request": "{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID",
-      "response": "分类记录",
+      "response": "分类记录；国际版含只读categoryNo，数据库自动分配，不接收客户端自选号",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
@@ -467,7 +467,7 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "编辑分类",
       "request": "{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID",
-      "response": "分类记录；当前为完整字段保存",
+      "response": "分类记录；当前为完整字段保存；国际版categoryNo保持不变，URL id与关联parentId仍为UUID",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
