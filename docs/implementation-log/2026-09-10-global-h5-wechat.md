@@ -24,7 +24,11 @@
 - 前端15项测试通过；修正实际退出端点默认HTTP201与V2成功包裹的识别。国际/国内H5分别构建成功，核对资源和routerBase分别为`/global/saidian-mall/`、`/saidian-mall/`，国内购物车仍在。
 - 根级串行 `pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm api:docs:check`通过：805项测试通过，4项原有数据库集成测试因无测试数据库跳过，不能冒充已运行。312条路由契约重新生成并一致。构建仅既有Sass弃用与后台大chunk警告。
 - `pnpm tools:test`9/9、部署结构检查173项、部署补丁测试4/4和`git diff --check`通过。再次fetch后远端仍为基线，没有覆盖或合并其他修改。
-- 上线前复核、合成HTTP/浏览器验证、提交与线上版本：待完成，不能将本记录视为已发布或真实微信登录已通过。
+- 独立安全复核无新增阻断。提交并推送`c93f790b7aa037439a328f1ca896af11ca42d088`；既有自动发布成功，公开`/global/health`返回该revision且database=ok。13项已有迁移无待执行，未改schema。
+- 初次辅助容器引用省略了既有镜像标签`sha-`前缀，命令在执行脚本前失败、未改配置；通过docker inspect确认实际标签后改为`sha-c93f790...`且`--pull never`，预检/应用成功。网关恢复副本为`gateway-nginx.conf.before-global-h5-cab17a51fc3004a4`；Nginx校验成功后热加载，保留国内/API路由和继承HSTS。
+- 私有配置只开启`GLOBAL_WECHAT_H5_ENABLED`并保存0600恢复副本，Compose仅重建global-api。后台保留整组加密凭证，保存固定国际回调并启用；重新读取卡片显示“已启用 · 待验证 / 尚无真实验证记录”。公开capabilities的wechatH5.enabled=true，邮箱/短信OTP=false，checkout=false。
+- 回调公网200、no-store、HSTS仍在；既有网关和静态上游均返回相同no-referrer，HTTP客户端合并为逗号列表。将smoke头部检查改为要求每一项均为no-referrer，避免将同值重复误判；不弱化安全头或改其他路由。
+- 合成HTTP/浏览器最终验证：待完成；配置/代码发布不是一次真实微信登录回执。
 
 ## 明确未验收
 

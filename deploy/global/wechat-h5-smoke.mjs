@@ -81,7 +81,8 @@ async function staticPage(path) {
   check(html.includes('<div id="app"'), `H5 application mount missing: ${path}`);
   if (path.includes("/oauth/callback")) {
     check(response.headers.get("cache-control")?.includes("no-store"), "OAuth callback must not be cached");
-    check(response.headers.get("referrer-policy") === "no-referrer", "OAuth callback must not forward code/state through Referer");
+    const referrerPolicies = (response.headers.get("referrer-policy") ?? "").split(",").map(value => value.trim());
+    check(referrerPolicies.length > 0 && referrerPolicies.every(value => value === "no-referrer"), "OAuth callback must not forward code/state through Referer");
   }
   return html;
 }
