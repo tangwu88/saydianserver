@@ -28,7 +28,10 @@
 - 初次辅助容器引用省略了既有镜像标签`sha-`前缀，命令在执行脚本前失败、未改配置；通过docker inspect确认实际标签后改为`sha-c93f790...`且`--pull never`，预检/应用成功。网关恢复副本为`gateway-nginx.conf.before-global-h5-cab17a51fc3004a4`；Nginx校验成功后热加载，保留国内/API路由和继承HSTS。
 - 私有配置只开启`GLOBAL_WECHAT_H5_ENABLED`并保存0600恢复副本，Compose仅重建global-api。后台保留整组加密凭证，保存固定国际回调并启用；重新读取卡片显示“已启用 · 待验证 / 尚无真实验证记录”。公开capabilities的wechatH5.enabled=true，邮箱/短信OTP=false，checkout=false。
 - 回调公网200、no-store、HSTS仍在；既有网关和静态上游均返回相同no-referrer，HTTP客户端合并为逗号列表。将smoke头部检查改为要求每一项均为no-referrer，避免将同值重复误判；不弱化安全头或改其他路由。
-- 合成HTTP/浏览器最终验证：待完成；配置/代码发布不是一次真实微信登录回执。
+- 补充提交推送时本机GCM因多账号选择挂起；仅终止本轮确定的凭据/推送进程。GitHub CLI当前账号无仓库权限，403未写入远端；指定既有GCM仓库账号`credential.username=tangwu88`且禁止交互后成功推送，ls-remote确认`83a587f40a2b256ca090f7212a485d5ea6344e48`。未变更全局Git配置、未输出或重新传输密钥。
+- 自动发布`83a587f...`完成后，在国际API容器stdin执行已审核的`wechat-h5-smoke.mjs --synthetic-wechat-h5`：49项全部通过，syntheticRemoved=true、realWechatExchange=false、realOtpDelivery=false、wechatH5Enabled=true、maintenanceReadOnly=false。覆盖静态入口/资源404、原始商城会话结构、国际App与H5会员同一归属、邮箱/E.164登录、刷新轮转、旧token失效、未验证登录/刷新403且不旋转原App会话、跨realm/冻结/撤销令牌401、无效回调/票据及跨站returnTo拒绝。只创建/清理本轮3个合成会员；未改真实会员、微信身份或发送验证码。
+- 内部浏览器打开公网国际H5：登录页正常渲染，读取当前已发布测试条款；协议可阅读/返回，非法账号格式被前端拒绝；无效回调即时清理code/state并返回登录页提示重试，刷新可恢复，返回首页显示实际“暂无上架商品”。控制台无error，只有既有vue-router导入弃用warning。后台公众号卡片保持“已启用 · 待验证”。
+- 公开`/global/health`、`/global/saidian-mall/`、`/admin/`、原`/saidian-mall/`均200；国际交易关闭。仅已核验账号可绑定，当前短信/邮件未接通，因此新用户/未验证账号还不能完成绑定。当前条款为预发布测试版本，正式条款需另行审核。
 
 ## 明确未验收
 
