@@ -19,3 +19,12 @@
 - 最终串行门禁：`pnpm typecheck`通过；`pnpm test`合计645通过（API453、后台92、Worker43、contracts10、commerce28、migrator9、download10），4个既有commerce数据库测试因无独立测试数据库跳过；`pnpm build`通过，只有原有Sass废弃和前端大包提示。
 - `pnpm api:docs:check`309路由全覆盖；`pnpm tools:test`9/9通过；`node deploy/global/check.mjs`164条结构检查通过（本机无Docker，真实容器验收另记）；`node --check deploy/global/raw-health-reason-smoke.mjs`和`git diff --check`通过。
 - 评审发现并修复：旧报告读取期间发起新报告会丢失轮询，增加读取互斥和回归测试；生成后重读实际额度；未知NaN/Infinity字符串和非法/极值日期不再被当作测量值；事务内取凭据可能耗尽连接池，改为事务前解析、事务内核对配置更新时间防止旧配置混用。所有AI单测均使用合成适配器，未产生外部调用。
+
+## 线上验收
+
+- 源码提交 `c9cb75001473428db8b90ce3fc15742f88861c96` 已推送国际分支并由现有自动部署器成功发布；状态文件与 `/global/health` 同 SHA、database=ok；国际 API/admin/PostgreSQL/Redis/MinIO 健康，Worker进程运行但出站暂停继续保留。迁移器报告 no pending migrations。
+- 国内 `/health/ready` 仍为 `795e66bd69c64295a00c2b3e42c52a290c8f56eb`，未改国内接口或数据库。构建中根盘仍余6.0GB，没有执行清理操作。
+- 在线容器执行 `raw-health-reason-smoke.mjs --synthetic-roles`：35条断言全部通过，输出 `syntheticRemoved=true,auditRetained=true`。包含超管免填/审核员必填/伪造角色无效/多角色/只读禁止/账号停用，及生成条件全部真实阻断、POST409、不创建报告或额度流水。临时账号、其会话和空会员已精确删除，审计保留，无AI出站。
+- 内部浏览器1138px宽实际打开会员摘要：中文血压/心电名称、记录次数和UTC起止时间显示完整；AI按钮及重新检查入口可见，真实缺少会员同意、报告次数、AI配置和Worker暂停原因均显示。原始记录直接打开（无原因弹窗），中文高压/低压、原单位、记录时区与来源清楚，技术字段默认折叠。未在实施日志保存真实测量数值或完整健康对象。
+- 浏览器控制台 error 数0，最终停留新版摘要页面。线上HTML引用服务器构建的 `index-5YGd3R_Y.js` / `index-COqfSW-E.css`；本地Windows JS产物为`index-By9qWSZu.js`，未声称跨环境哈希一致，验收以上线版本、实际DOM/截图和权限接口结果为准。
+- 尚未验收：真实国际AI供应商调用与生成回执（运行配置仍禁用）；会员本人当前版本单独同意、可用报告权益及独立Worker出站启用需先具备并另行验收。没有把合成适配器测试或按钮上线等同真实健康报告已生成。
