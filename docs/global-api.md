@@ -39,6 +39,7 @@ Passwords require at least 8 characters and at most 72 UTF-8 bytes (bcrypt limit
 
 - Display numbers: international sessions and `/members/me` return `memberNo`, a positive decimal string backed by the existing unique `User.compatibilityId`. `promo_code` is a same-value display alias for released international App “My” screens, not a promotion attribution code. Existing users already have this number; no ID migration or re-registration is required. `id` and token subject remain UUIDs and continue to identify private data and account caches.
 - The `/admin/` frontend serves the international system exclusively: its management requests use `/global/api/saydian-app/admin/v1` and the global database, administrator accounts and sessions. There is no domestic/international data selector. Lists include numeric `memberNo` and masked email, with server-side email/number search and pagination.
+- For admin `/members/:id/health-records`, international SUPER_ADMIN may omit `reason`; HEALTH_AUDITOR still supplies 5–300 characters, and other roles remain forbidden. The effective roles come from the authenticated database session, never query claims. Every successful raw read still requires a persisted `HEALTH_RAW_READ` audit with actor, target, timestamp, request ID and record count; an omitted super-admin reason is explicitly system-labelled with `reasonSource: "SUPER_ADMIN_EXEMPTION"`, not fabricated as a user-provided purpose. Audit write failure prevents returning the records. Domestic reason policy is unchanged.
 - Admin category lists and create/update responses include read-only `categoryNo`, a stable positive decimal string (for example `"12"`). The existing technical sequence table uses the isolated `global_article_category` namespace; missing numbers are assigned once, without changing the schema or legacy IDs. Concurrent allocation is deduplicated; numbers may have gaps and do not change with name/order/status. `id`, `parentId`, article `categoryId` and update URLs remain UUIDs. The admin displays category names/numbers in selectors and submits their UUIDs; client-supplied `categoryNo` cannot change the number. App content responses and domestic endpoints are unchanged.
 
 - GET/PUT `/members/me`: existing profile contract; PUT may update `locale`. GET/PUT `/members/me/goals`: `{steps:number|null,distanceMeters:number|null,caloriesKcal:number|null}`. Unknown goals remain null, never fabricated zero.
@@ -56,6 +57,42 @@ Passwords require at least 8 characters and at most 72 UTF-8 bytes (bcrypt limit
 - GET `/support/app-update` reads only public `AppSetting.global_app_update`, never domestic `app_update`. The stored manifest must explicitly have `realm:"global"` and every release's package ID: Android/iOS `cn.saydian.app.global`, HarmonyOS `cn.saydian.app.global.hm`. Available direct destinations must be `/global/down/files/<fileName>` and retain size/hash. iOS uses only real Apple App Store/TestFlight URLs; missing packages remain `coming_soon`. The server validates metadata, not the binary signature: publication must also independently verify actual bundle/package IDs and re-download hashes. Missing global manifest returns 404. `global_support` likewise never falls back to domestic support configuration.
 
 ## Operator configuration (no supplied live credentials)
+
+### International admin health display and AI report actions
+
+The admin health dialog displays Chinese metric names, record counts, explicit UTC summary times and original measurement units. Raw measurement time uses the stored `timezoneOffsetMinutes`; missing offsets are explicitly marked and displayed in UTC. Unknown values remain unknown, never zero. Technical UUIDs and the complete original object are retained in expandable details. These labels do not classify readings as medically normal/abnormal or turn an ECG summary score into a diagnosis.
+
+The following routes use the **admin** base `/global/api/saydian-app/admin/v1`, not the member V2 base. Only authenticated effective SUPER_ADMIN/HEALTH_AUDITOR roles may access them:
+
+| Method / path | Request | Result |
+| --- | --- | --- |
+| GET `/health-reports/availability` | `?memberId=<member UUID>` | `canGenerate`, `reasons[{code,message}]`, `period`, valid record count, distinct days/minimum days, `consentRequired`, `availableCredits`, and latest report identity/status |
+| POST `/health-reports` | `{"memberId":"<member UUID>","idempotencyKey":"<unique request UUID>"}` | `{report,reused}`; report uses the existing lower-case status contract |
+| GET `/health-reports/<report UUID>` | No body | Report status and `memberId`; only READY returns `content` and `limitations`. Each read requires a persisted `HEALTH_REPORT_READ` audit before returning even the preview. |
+
+Illustrative blocked availability (synthetic structure, not a claim of successful AI execution):
+
+```json
+{
+  "canGenerate": false,
+  "reasons": [{"code":"ai_unconfigured","message":"AI 服务尚未配置"}],
+  "period": {"from":"2026-08-11T00:00:00.000Z","to":"2026-09-10T00:00:00.000Z"},
+  "validRecordCount": 20,
+  "distinctDays": 5,
+  "minimumDistinctDays": 3,
+  "consentRequired": false,
+  "availableCredits": 1,
+  "latestReport": null
+}
+```
+
+Read all returned reasons: inactive member, insufficient data, missing/currently withdrawn or outdated member consent, no report credits, disabled AI, unreadable credentials, paused Worker or demo restrictions each block creation. A configuration check does not prove the Worker is alive or the provider will succeed. The create endpoint repeats server-side validation and returns 409 with `errorKey=health_report_unavailable` plus a safe explanation when blocked. A member must personally accept the current reviewed `health_ai_analysis` notice in the App; the administrator cannot grant it.
+
+One generated report consumes **one report entitlement**, not shopping points or an automatic payment. The UI explicitly confirms this. All create entry points share a member-level transaction lock; creation, credit consumption and the Outbox event commit together. A repeated request key is scoped to the same member and reuses its report; equivalent evidence can also reuse a report across keys. On an uncertain HTTP response, retain the request key and retry. Closing a dialog stops polling, not the server job. Reopening reads the latest saved report. The new panel does not invoke the old retry route.
+
+In the global Worker, consent/account/document validity is rechecked before sending de-identified statistics to AI and again before publishing READY content and notifications. A revoked or changed authorization discards an in-flight result; the existing permanent-failure path restores consumed report credits once. This does not erase the fact that data may already have been sent before a subsequent withdrawal. AI content is text-rendered, not executed as HTML, and remains a wellness reference requiring human review.
+
+This release does not enable AI providers, release Worker outbound pauses, publish consent documents, grant credits, or claim a real provider response. Those are separate environment/consent/operational acceptance steps. Opt-in synthetic permission/gate smoke: run `deploy/global/raw-health-reason-smoke.mjs --synthetic-roles` inside the verified global API container. It only creates its own empty test member and temporary roles, deletes those exact principals afterward and retains access audit history; it must never read an existing member's raw health records or send AI requests.
 
 See [global-deployment.md](global-deployment.md). Configuration keys below exist in source, but this branch contains no configured provider or published legal content.
 

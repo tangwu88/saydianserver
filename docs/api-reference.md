@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **306 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **309 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -242,17 +242,20 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（88）
+## 管理后台接口（91）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
+| `GET /api/saydian-app/admin/v1/health-reports/availability` | 检查会员AI健康报告生成条件 | admin: SUPER_ADMIN, HEALTH_AUDITOR | query:memberId；memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR | {canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,availableCredits,latestReport}；未知条件不伪装可用；不返回密钥，不探测外部服务 | 国际会员本人最新健康分析同意、有效数据、报告次数、已配置AI和未暂停Worker |
+| `POST /api/saydian-app/admin/v1/health-reports` | 后台申请生成或复用AI健康报告 | admin: SUPER_ADMIN, HEALTH_AUDITOR | {memberId:UUID,idempotencyKey:8–160字符}；不替会员同意，不创建付款；每次请求服务端复核条件 | {report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable | 已满足availability条件；第三方真实运行需独立验收 |
+| `GET /api/saydian-app/admin/v1/health-reports/:id` | 后台查看健康报告进度和结果 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id；id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR | 报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文 | 报告队列与读取审计；AI结果仅供健康管理参考 |
 | `POST /api/saydian-app/admin/v1/auth/login` | 后台登录 | public | JSON {username,password} | AdminSession；不能与 App Token 混用 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members` | 会员查询 | admin | query:search?，query:page?，query:pageSize?；search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库 | {items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-summary` | 会员健康数量摘要 | admin | path:id；id=会员 UUID | 按指标数量与首末采集时间 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/care` | 后台关爱关系 | admin | 无请求体 | 最多500条，双方昵称和指标权限；尚无分页 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/devices` | 后台设备快照 | admin | 无请求体 | 最多500条；尚无分页 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/feedback` | 反馈工单 | admin | query:status?；status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选 | 最多500条 | 核心服务 |

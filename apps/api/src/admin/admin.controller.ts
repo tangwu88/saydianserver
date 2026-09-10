@@ -80,14 +80,14 @@ export class AdminController {
   @Get("members/:id/health-records")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.HEALTH_AUDITOR)
   rawHealth(
-    @CurrentAdmin() current: { id: string },
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
     @Param("id") id: string,
     @Req() request: RequestWithContext,
     @Query("limit") limit?: string,
     @Query("reason") reason?: string,
   ) {
     return this.admin.rawHealth(
-      current.id,
+      current,
       id,
       request.requestId,
       String(reason ?? ""),

@@ -13,6 +13,9 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+  "AdminHealthReportsController.availability": entry("检查会员AI健康报告生成条件", "memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR", "{canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,availableCredits,latestReport}；未知条件不伪装可用；不返回密钥，不探测外部服务", "国际会员本人最新健康分析同意、有效数据、报告次数、已配置AI和未暂停Worker"),
+  "AdminHealthReportsController.create": entry("后台申请生成或复用AI健康报告", "{memberId:UUID,idempotencyKey:8–160字符}；不替会员同意，不创建付款；每次请求服务端复核条件", "{report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable", "已满足availability条件；第三方真实运行需独立验收"),
+  "AdminHealthReportsController.detail": entry("后台查看健康报告进度和结果", "id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR", "报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文", "报告队列与读取审计；AI结果仅供健康管理参考"),
   "AdminController.commerceFulfillmentPreview": entry("本地订单可发货数量", "订单UUID路径参数；限超级管理员/商城运营", "{orderId,version,status,items:[{orderItemId,name,quantity,shippedQuantity,refundedQuantity,afterSaleReservedQuantity,remainingQuantity}],shipments,unavailableReason?}；旧包裹或售后归属不明时阻断", mall),
   "AdminController.createCommerceShipment": entry("登记本地商品分包发货", "{version,logisticsCompany,trackingNo,items:[{orderItemId,quantity}]}；仅已接管的新LOCAL已付款订单；运单号3–100位字母数字._-", "发货预览结构及shipmentId/replayed；同订单同运单同内容重试幂等，异参/超量/过期版本409；不生成承运轨迹", mall),
   "AdminController.currentAdmin": entry("当前后台身份和多角色", undefined, "{id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示"),
@@ -199,7 +202,7 @@ export const notes = {
   "AdminController.dashboard": entry("运营概览", undefined, "会员/健康/关爱/预警/反馈/积压数量"),
   "AdminController.members": entry("会员查询", "search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库", "{items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限"),
   "AdminController.healthSummary": entry("会员健康数量摘要", "id=会员 UUID", "按指标数量与首末采集时间"),
-  "AdminController.rawHealth": entry("授权查看原始健康记录", "id=会员 UUID；reason=5–300字业务原因必填；limit 默认100 最大500", "HealthRecord[]；原因、操作者和请求编号进入专门读取审计"),
+  "AdminController.rawHealth": entry("授权查看原始健康记录", "id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500", "HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计"),
   "AdminController.care": entry("后台关爱关系", undefined, "最多500条，双方昵称和指标权限；尚无分页"),
   "AdminController.devices": entry("后台设备快照", undefined, "最多500条；尚无分页"),
   "AdminController.feedback": entry("反馈工单", "status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选", "最多500条"),

@@ -148,14 +148,20 @@ export class AdminService {
   }
 
   async rawHealth(
-    adminId: string,
+    current: { id: string; role: string; roles?: string[] },
     userId: string,
     requestId: string,
     reason: string,
     limitInput = 100,
   ) {
+    // Roles come from AdminAuthGuard's current database session, never query params.
+    const roles = current.roles?.length ? current.roles : [current.role];
+    if (!roles.some(role => role === AdminRole.SUPER_ADMIN || role === AdminRole.HEALTH_AUDITOR)) {
+      throw new ForbiddenException("当前账号无权查看原始健康记录");
+    }
     const normalizedReason = reason.trim();
-    if (normalizedReason.length < 5 || normalizedReason.length > 300) {
+    const reasonExempt = isGlobalRealm() && roles.includes(AdminRole.SUPER_ADMIN) && !normalizedReason;
+    if (!reasonExempt && (normalizedReason.length < 5 || normalizedReason.length > 300)) {
       throw new BadRequestException("查看原始健康记录前请填写5至300字的业务原因");
     }
     const limit = Math.min(Math.max(Number(limitInput) || 100, 1), 500);
@@ -167,12 +173,16 @@ export class AdminService {
     await this.prisma.auditLog.create({
       data: {
         actorType: "ADMIN",
-        actorId: adminId,
+        actorId: current.id,
         action: "HEALTH_RAW_READ",
         entityType: "USER",
         entityId: userId,
         requestId,
-        afterJson: { recordCount: records.length, reason: normalizedReason },
+        afterJson: {
+          recordCount: records.length,
+          reason: reasonExempt ? "超级管理员直接查看（免填原因）" : normalizedReason,
+          ...(isGlobalRealm() ? { reasonSource: reasonExempt ? "SUPER_ADMIN_EXEMPTION" : "PROVIDED" } : {}),
+        },
       },
     });
     return records;

@@ -36,6 +36,12 @@ const REPORT_WINDOW_DAYS = 30;
 const MINIMUM_DISTINCT_DAYS = 3;
 const REPORT_TEMPLATE_VERSION = "wellness-report-v1";
 const ANALYSIS_CONSENT_TYPE = "health_ai_analysis";
+type AdminReportOptions = {
+  idempotencyKey: string;
+  actorId: string;
+  requestId?: string;
+  validate: (tx: Prisma.TransactionClient, alreadyCovered: boolean) => Promise<void>;
+};
 
 @Injectable()
 export class HealthReportsService {
@@ -170,17 +176,17 @@ export class HealthReportsService {
     });
   }
 
-  private async analysisDocument(userId: string, localeInput?: unknown) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { locale: true } });
-    return globalLegalReference(this.prisma, ANALYSIS_CONSENT_TYPE, localeInput ?? user?.locale);
+  private async analysisDocument(userId: string, localeInput?: unknown, db: Prisma.TransactionClient = this.prisma) {
+    const user = await db.user.findUnique({ where: { id: userId }, select: { locale: true } });
+    return globalLegalReference(db, ANALYSIS_CONSENT_TYPE, localeInput ?? user?.locale);
   }
 
-  async eligibility(userId: string): Promise<HealthReportEligibilityContract> {
+  async eligibility(userId: string, db: Prisma.TransactionClient = this.prisma): Promise<HealthReportEligibilityContract> {
     const period = reportPeriod();
     const [records, profile, credits] = await Promise.all([
-      this.loadEvidenceRecords(userId, period.from, period.to),
-      this.prisma.healthProfile.findUnique({ where: { userId } }),
-      this.availableCredits(userId),
+      this.loadEvidenceRecords(userId, period.from, period.to, db),
+      db.healthProfile.findUnique({ where: { userId } }),
+      this.availableCredits(userId, db),
     ]);
     const evidence = buildHealthEvidence(records);
     const missing: string[] = [];
@@ -190,7 +196,7 @@ export class HealthReportsService {
     if (evidence.validRecordIds.length === 0) {
       missing.push("暂未获取可用于分析的健康记录");
     }
-    const analysisDocument = isGlobalRealm() ? await this.analysisDocument(userId) : null;
+    const analysisDocument = isGlobalRealm() ? await this.analysisDocument(userId, undefined, db) : null;
     const consentRequired = !(
       profile?.analysisConsentedAt && !profile.analysisConsentWithdrawn && (!isGlobalRealm() || (analysisDocument && analysisDocument.version === profile.analysisConsentVersion))
     );
@@ -207,72 +213,104 @@ export class HealthReportsService {
   }
 
   async create(userId: string): Promise<HealthReportContract & { needsPayment: boolean }> {
-    const period = reportPeriod();
-    const [records, profile] = await Promise.all([
-      this.loadEvidenceRecords(userId, period.from, period.to),
-      this.prisma.healthProfile.findUnique({ where: { userId } }),
-    ]);
-    const evidence = buildHealthEvidence(records);
-    if (evidence.distinctDays < MINIMUM_DISTINCT_DAYS || !evidence.validRecordIds.length) {
-      throw new BadRequestException(
-        `需要至少${MINIMUM_DISTINCT_DAYS}个不同日期的有效记录，暂不创建支付订单`,
-      );
-    }
-    if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
-      throw new ForbiddenException("同意健康分析说明后才能生成详细报告");
-    }
-    if (isGlobalRealm()) {
-      const document = await this.analysisDocument(userId);
-      if (!document || document.version !== profile.analysisConsentVersion) throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
-    }
-    const inputDigest = evidenceDigest(userId, period, evidence);
-    const reusable = await this.prisma.healthReport.findFirst({
-      where: {
-        userId,
-        inputDigest,
-        status: {
-          in: [
-            PrismaReportStatus.AWAITING_PAYMENT,
-            PrismaReportStatus.QUEUED,
-            PrismaReportStatus.GENERATING,
-            PrismaReportStatus.READY,
-          ],
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    if (reusable) {
-      return {
-        ...serializeReport(reusable),
-        needsPayment: reusable.status === PrismaReportStatus.AWAITING_PAYMENT,
-      };
-    }
+    const { reused: _reused, ...report } = await this.createLocked(userId);
+    return report;
+  }
 
-    const report = await this.prisma.healthReport.create({
-      data: {
-        userId,
-        windowStart: period.from,
-        windowEnd: period.to,
-        distinctDays: evidence.distinctDays,
-        validRecordCount: evidence.validRecordIds.length,
-        metricSummary: evidence.metrics.map(({ recordIds: _recordIds, ...metric }) => metric) as unknown as Prisma.InputJsonValue,
-        evidenceIndex: {
-          byMetric: evidence.metrics.map((metric) => ({
-            metric: metric.metric,
-            recordIds: metric.recordIds,
-          })),
-          excludedRecordCount: evidence.invalidRecordIds.length,
+  async createForAdmin(userId: string, options: AdminReportOptions) {
+    const { reused, ...report } = await this.createLocked(userId, options);
+    return { report, reused };
+  }
+
+  private async createLocked(userId: string, options?: AdminReportOptions) {
+    // Every entry point shares this lock. Report, entitlement consumption and
+    // outbox must commit together, including different keys for the same input.
+    return this.prisma.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${"health-report-create:" + userId}, 0))`;
+      if (options) await options.validate(tx, true);
+      const scope = "admin_health_report_v1";
+      const requestHash = sha256(JSON.stringify({ userId }));
+      if (options) {
+        const previous = await tx.idempotencyRecord.findUnique({ where: { userId_scope_key: { userId, scope, key: options.idempotencyKey } } });
+        if (previous) {
+          if (previous.requestHash !== requestHash) throw new ConflictException("同一幂等键不能用于不同的报告请求");
+          const saved = await tx.healthReport.findFirst({ where: { id: String(safeObject(previous.responseBody).reportId ?? ""), userId } });
+          if (!saved) throw new ConflictException("原报告已不可用，请刷新后重新操作");
+          await options.validate(tx, saved.status !== PrismaReportStatus.AWAITING_PAYMENT);
+          await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: saved.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: true } } });
+          return { ...serializeReport(saved), needsPayment: saved.status === PrismaReportStatus.AWAITING_PAYMENT, reused: true };
+        }
+      }
+      const period = reportPeriod();
+      const [records, profile] = await Promise.all([
+        this.loadEvidenceRecords(userId, period.from, period.to, tx),
+        tx.healthProfile.findUnique({ where: { userId } }),
+      ]);
+      const evidence = buildHealthEvidence(records);
+      if (evidence.distinctDays < MINIMUM_DISTINCT_DAYS || !evidence.validRecordIds.length) {
+        throw new BadRequestException(
+          `需要至少${MINIMUM_DISTINCT_DAYS}个不同日期的有效记录，暂不创建支付订单`,
+        );
+      }
+      if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
+        throw new ForbiddenException("同意健康分析说明后才能生成详细报告");
+      }
+      if (isGlobalRealm()) {
+        const document = await this.analysisDocument(userId, undefined, tx);
+        if (!document || document.version !== profile.analysisConsentVersion) throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
+      }
+      const inputDigest = evidenceDigest(userId, period, evidence);
+      const reusable = await tx.healthReport.findFirst({
+        where: {
+          userId,
+          inputDigest,
+          status: {
+            in: [
+              PrismaReportStatus.AWAITING_PAYMENT,
+              PrismaReportStatus.QUEUED,
+              PrismaReportStatus.GENERATING,
+              PrismaReportStatus.READY,
+            ],
+          },
         },
-        inputDigest,
-        freePreview: buildFreePreview(evidence),
-        templateVersion: REPORT_TEMPLATE_VERSION,
-      },
-    });
-    const queued = await this.consumeCreditAndQueue(userId, report.id);
-    const current = queued
-      ? await this.prisma.healthReport.findUniqueOrThrow({ where: { id: report.id } })
-      : report;
-    return { ...serializeReport(current), needsPayment: !queued };
+        orderBy: { createdAt: "desc" },
+      });
+      if (options) await options.validate(tx, Boolean(reusable && reusable.status !== PrismaReportStatus.AWAITING_PAYMENT));
+      const report = reusable ?? await tx.healthReport.create({
+        data: {
+          userId,
+          windowStart: period.from,
+          windowEnd: period.to,
+          distinctDays: evidence.distinctDays,
+          validRecordCount: evidence.validRecordIds.length,
+          metricSummary: evidence.metrics.map(({ recordIds: _recordIds, ...metric }) => metric) as unknown as Prisma.InputJsonValue,
+          evidenceIndex: {
+            byMetric: evidence.metrics.map((metric) => ({
+              metric: metric.metric,
+              recordIds: metric.recordIds,
+            })),
+            excludedRecordCount: evidence.invalidRecordIds.length,
+          },
+          inputDigest,
+          freePreview: buildFreePreview(evidence),
+          templateVersion: REPORT_TEMPLATE_VERSION,
+        },
+      });
+      // Consumer reuse retains the original payment flow. Admins may only queue
+      // an unpaid report with an existing credit; never create a payment here.
+      const queued = reusable && (!options || reusable.status !== PrismaReportStatus.AWAITING_PAYMENT)
+        ? reusable.status !== PrismaReportStatus.AWAITING_PAYMENT
+        : await this.consumeCreditAndQueue(tx, userId, report.id);
+      if (options && !queued) throw new ConflictException({ errorKey: "health_report_unavailable", message: "报告次数不足，请先取得有效报告权益" });
+      const current = queued
+        ? await tx.healthReport.findUniqueOrThrow({ where: { id: report.id } })
+        : report;
+      if (options) {
+        await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: report.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: Boolean(reusable) } } });
+        await tx.idempotencyRecord.create({ data: { userId, scope, key: options.idempotencyKey, requestHash, responseCode: 201, responseBody: { reportId: report.id }, expiresAt: new Date(Date.now() + 30 * 86_400_000) } });
+      }
+      return { ...serializeReport(current), needsPayment: !queued, reused: Boolean(reusable) };
+    }, { maxWait: 10_000, timeout: 30_000 });
   }
 
   async list(userId: string) {
@@ -381,8 +419,8 @@ export class HealthReportsService {
     return report;
   }
 
-  private async loadEvidenceRecords(userId: string, from: Date, to: Date) {
-    const records = await this.prisma.healthRecord.findMany({
+  private async loadEvidenceRecords(userId: string, from: Date, to: Date, db: Prisma.TransactionClient = this.prisma) {
+    const records = await db.healthRecord.findMany({
       where: {
         userId,
         observedAt: { gte: from, lte: to },
@@ -406,10 +444,10 @@ export class HealthReportsService {
     );
   }
 
-  private async availableCredits(userId: string) {
+  private async availableCredits(userId: string, db: Prisma.TransactionClient = this.prisma) {
     const now = new Date();
     const [memberships, standalone] = await Promise.all([
-      this.prisma.healthMembership.findMany({
+      db.healthMembership.findMany({
         where: {
           userId,
           status: MembershipStatus.ACTIVE,
@@ -419,7 +457,7 @@ export class HealthReportsService {
         },
         orderBy: { expiresAt: "asc" },
       }),
-      this.prisma.reportCreditLedger.aggregate({
+      db.reportCreditLedger.aggregate({
         where: { userId, membershipId: null },
         _sum: { delta: true },
       }),
@@ -437,8 +475,7 @@ export class HealthReportsService {
     };
   }
 
-  private async consumeCreditAndQueue(userId: string, reportId: string) {
-    const consumed = await this.prisma.$transaction(async (tx) => {
+  private async consumeCreditAndQueue(tx: Prisma.TransactionClient, userId: string, reportId: string) {
       const existing = await tx.reportCreditLedger.findUnique({
         where: { idempotencyKey: `report-consume:${reportId}` },
       });
@@ -527,8 +564,6 @@ export class HealthReportsService {
         },
       });
       return true;
-    });
-    return consumed;
   }
 
   private async enqueue(reportId: string, userId: string): Promise<void> {
@@ -713,7 +748,7 @@ function buildFreePreview(evidence: HealthEvidence): Prisma.InputJsonObject {
   };
 }
 
-function serializeReport(report: {
+export function serializeReport(report: {
   id: string;
   status: PrismaReportStatus;
   windowStart: Date;

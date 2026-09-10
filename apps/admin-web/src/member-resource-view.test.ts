@@ -99,22 +99,30 @@ describe("international member admin list", () => {
   });
 
   it("invalidates a pending raw-health confirmation on navigation", async () => {
-    const h = harness(); const reason = deferred<any>(); h.prompt.mockImplementationOnce(() => reason.promise);
+    const h = harness(["HEALTH_AUDITOR"]); const reason = deferred<any>(); h.prompt.mockImplementationOnce(() => reason.promise);
     const pending = h.viewHealth(member, true); h.route.params.resource = "articles"; h.resetResourceView();
     reason.resolve({ value: "合成会员反馈核对" }); await pending;
     expect(h.api.get).not.toHaveBeenCalled(); expect(h.dialogVisible.value).toBe(false);
   });
 
   it("keeps raw-health permission checks and audit reasons", async () => {
-    const h = harness(); h.api.get.mockResolvedValueOnce({ data: { data: [] } }); await h.viewHealth(member, true);
+    const h = harness(["HEALTH_AUDITOR"]); h.api.get.mockResolvedValueOnce({ data: { data: [] } }); await h.viewHealth(member, true);
     expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/health-records", { params: { reason: "合成会员反馈核对" } });
     const readonly = harness(["READ_ONLY"]); await readonly.viewHealth(member, true);
     expect(readonly.api.get).not.toHaveBeenCalled(); expect(readonly.prompt).not.toHaveBeenCalled();
   });
 
-  it("invalidates pending health reads on unmount", async () => {
+  it.each([["SUPER_ADMIN"], ["HEALTH_AUDITOR", "SUPER_ADMIN"]])("lets a super administrator read raw health without a reason prompt (%j)", async (...roles) => {
+    const h = harness(roles); h.api.get.mockResolvedValueOnce({ data: { data: [{ metric: "sleep" }] } });
+    await h.viewHealth(member, true);
+    expect(h.prompt).not.toHaveBeenCalled();
+    expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/health-records", { params: {} });
+    expect(h.dialogVisible.value).toBe(true); expect(h.detailRows.value).toEqual([{ metric: "sleep" }]);
+  });
+
+  it.each([false, true])("invalidates pending health reads on unmount (raw=%s)", async (raw) => {
     const h = harness(); const health = deferred<any>(); h.api.get.mockImplementationOnce(() => health.promise);
-    const pending = h.viewHealth(member, false); h.onBeforeUnmount.mock.calls[0][0]();
+    const pending = h.viewHealth(member, raw); h.onBeforeUnmount.mock.calls[0][0]();
     health.resolve({ data: { data: [{ metric: "sleep" }] } }); await pending;
     expect(h.dialogVisible.value).toBe(false); expect(h.detailRows.value).toEqual([]);
   });

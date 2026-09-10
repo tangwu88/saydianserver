@@ -7,6 +7,7 @@ import {
   Prisma,
   PrismaClient,
   ReportStatus,
+  UserStatus,
 } from "@prisma/client";
 import {
   markWorkerIntegrationVerified,
@@ -24,6 +25,7 @@ export class HealthReportWorker {
     });
     if (!report || report.status === ReportStatus.REVOKED) return;
     if (report.status === ReportStatus.READY && report.fullContent) return;
+    if (isGlobalRealm() && report.status !== ReportStatus.QUEUED && report.status !== ReportStatus.GENERATING) return;
     const integration = await this.prisma.integrationConfig.findUnique({
       where: { key: "ai" },
     });
@@ -47,14 +49,24 @@ export class HealthReportWorker {
     if (!providerSettings.baseUrl || !providerSettings.apiKey) {
       throw new PermanentTaskError("AI report provider is unconfigured");
     }
-    await this.prisma.healthReport.update({
-      where: { id: report.id },
-      data: {
-        status: ReportStatus.GENERATING,
-        generationAttempts: { increment: 1 },
-        failureReason: null,
-      },
-    });
+    // A queued task is not permission to keep using data after consent changes.
+    const consent = isGlobalRealm() ? await assertGlobalAnalysisAllowed(this.prisma, report.userId) : null;
+    const startData = {
+      status: ReportStatus.GENERATING,
+      generationAttempts: { increment: 1 },
+      failureReason: null,
+    };
+    if (isGlobalRealm()) {
+      const started = await this.prisma.healthReport.updateMany({
+        where: { id: report.id, status: { in: [ReportStatus.QUEUED, ReportStatus.GENERATING] } }, data: startData,
+      });
+      if (started.count !== 1) return;
+      if (await assertGlobalAnalysisAllowed(this.prisma, report.userId) !== consent) {
+        throw new PermanentTaskError("Health AI analysis consent changed before generation");
+      }
+    } else {
+      await this.prisma.healthReport.update({ where: { id: report.id }, data: startData });
+    }
     const content = await callAiProvider(
       report.metricSummary,
       report.evidenceIndex,
@@ -69,6 +81,15 @@ export class HealthReportWorker {
     await markWorkerIntegrationVerified(this.prisma, "ai");
     const eventId = `health-report-ready:${report.id}`;
     await this.prisma.$transaction(async (tx) => {
+      if (isGlobalRealm()) {
+        await lockGlobalReport(tx, report.userId, report.id);
+        const current = await tx.healthReport.findUnique({ where: { id: report.id } });
+        if (!current || current.status !== ReportStatus.GENERATING) return;
+        // Keep the consent row locked until READY and its notification commit.
+        if (await assertGlobalAnalysisAllowed(tx, report.userId) !== consent) {
+          throw new PermanentTaskError("Health AI analysis consent changed during generation");
+        }
+      }
       await tx.healthReport.update({
         where: { id: report.id },
         data: {
@@ -122,6 +143,11 @@ export class HealthReportWorker {
       return;
     }
     await this.prisma.$transaction(async (tx) => {
+      if (isGlobalRealm()) {
+        await lockGlobalReport(tx, report.userId, report.id);
+        const current = await tx.healthReport.findUnique({ where: { id: report.id } });
+        if (!current || current.status === ReportStatus.READY || current.status === ReportStatus.REVOKED) return;
+      }
       const restoreKey = `report-restore:${report.id}`;
       const restored = await tx.reportCreditLedger.findUnique({
         where: { idempotencyKey: restoreKey },
@@ -181,6 +207,48 @@ export class HealthReportWorker {
       });
     });
   }
+}
+
+function isGlobalRealm(): boolean {
+  return process.env.APP_REALM === "global";
+}
+
+async function lockGlobalReport(tx: Prisma.TransactionClient, userId: string, reportId: string): Promise<void> {
+  // Always acquire member before profile and report. No lock spans AI I/O.
+  await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId}::uuid FOR UPDATE`;
+  await tx.$queryRaw`SELECT "id" FROM "HealthProfile" WHERE "userId" = ${userId}::uuid FOR UPDATE`;
+  await tx.$queryRaw`SELECT "id" FROM "HealthReport" WHERE "id" = ${reportId}::uuid FOR UPDATE`;
+}
+
+async function assertGlobalAnalysisAllowed(
+  prisma: Pick<Prisma.TransactionClient, "user" | "healthProfile" | "globalLegalDocument">,
+  userId: string,
+): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { status: true, locale: true } });
+  if (!user || user.status !== UserStatus.ACTIVE) {
+    throw new PermanentTaskError("Health report member is inactive");
+  }
+  const profile = await prisma.healthProfile.findUnique({ where: { userId } });
+  if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
+    throw new PermanentTaskError("Health AI analysis consent is missing or withdrawn");
+  }
+  // Same language normalization and English fallback as the API's globalLegalReference.
+  const raw = String(user.locale ?? "en").split(",")[0]!.split(";")[0]!.trim().replace(/_/g, "-");
+  const supported = ["en", "zh-Hans", "zh-Hant", "de", "fr", "es", "ja", "ko"];
+  const preferred = /^zh-(TW|HK|MO|Hant)(-|$)/i.test(raw) ? "zh-Hant"
+    : /^zh(-|$)/i.test(raw) ? "zh-Hans"
+      : supported.find(locale => locale.toLowerCase() === raw.toLowerCase())
+        ?? supported.find(locale => locale === raw.split("-")[0]?.toLowerCase()) ?? "en";
+  const locales = preferred === "en" ? ["en"] : [preferred, "en"];
+  const documents = await prisma.globalLegalDocument.findMany({
+    where: { documentType: "health_ai_analysis", locale: { in: locales }, active: true, reviewed: true, publishedAt: { lte: new Date() } },
+    orderBy: { publishedAt: "desc" },
+  });
+  const current = locales.map(locale => documents.find(document => document.locale === locale && document.contentHtml.trim())).find(Boolean);
+  if (!current || current.version !== profile.analysisConsentVersion) {
+    throw new PermanentTaskError("Health AI analysis consent is outdated or notice is unavailable");
+  }
+  return `${current.version}:${profile.analysisConsentedAt.toISOString()}`;
 }
 
 async function callAiProvider(

@@ -3,6 +3,111 @@ export const apiCatalog = {
   "schemaVersion": 3,
   "routes": [
     {
+      "key": "AdminHealthReportsController.availability",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/health-reports/availability",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-reports.controller.ts",
+      "summary": "检查会员AI健康报告生成条件",
+      "request": "memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR",
+      "response": "{canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,availableCredits,latestReport}；未知条件不伪装可用；不返回密钥，不探测外部服务",
+      "dependency": "国际会员本人最新健康分析同意、有效数据、报告次数、已配置AI和未暂停Worker",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-health-reports.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminHealthReportsController.create",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/health-reports",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-reports.controller.ts",
+      "summary": "后台申请生成或复用AI健康报告",
+      "request": "{memberId:UUID,idempotencyKey:8–160字符}；不替会员同意，不创建付款；每次请求服务端复核条件",
+      "response": "{report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable",
+      "dependency": "已满足availability条件；第三方真实运行需独立验收",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-health-reports.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminHealthReportsController.detail",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/health-reports/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-reports.controller.ts",
+      "summary": "后台查看健康报告进度和结果",
+      "request": "id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR",
+      "response": "报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文",
+      "dependency": "报告队列与读取审计；AI结果仅供健康管理参考",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-health-reports.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminLoginController.login",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/auth/login",
@@ -217,8 +322,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "授权查看原始健康记录",
-      "request": "id=会员 UUID；reason=5–300字业务原因必填；limit 默认100 最大500",
-      "response": "HealthRecord[]；原因、操作者和请求编号进入专门读取审计",
+      "request": "id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500",
+      "response": "HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {

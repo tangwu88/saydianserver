@@ -6,6 +6,8 @@ import { api, getAdminRoles, readableError, responseData } from "../api";
 import { canAdminResource } from "@saydian/app-contracts";
 import CommerceWorkspace from "../components/CommerceWorkspace.vue";
 import RichTextEditor from "../components/RichTextEditor.vue";
+import MemberHealthData from "../components/MemberHealthData.vue";
+import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
 import {
   globalDownloadEditorToManifest as downloadEditorToManifest,
   globalDownloadManifestToEditor as downloadManifestToEditor,
@@ -35,6 +37,8 @@ const dialogTitle = ref("");
 const dialogMode = ref<"edit" | "health">("edit");
 const form = ref<Row>({});
 const detailRows = ref<Row[]>([]);
+const healthMode = ref<"summary" | "raw">("summary");
+const healthMember = ref<Row>({});
 const shipmentVisible = ref(false);
 const shipmentBusy = ref(false);
 const shipmentPreview = ref<Row>({});
@@ -450,7 +454,7 @@ async function viewHealth(row: Row, raw: boolean): Promise<void> {
   detailRows.value = [];
   dialogVisible.value = false;
   let reason: string | undefined;
-  if (raw) {
+  if (raw && !getAdminRoles().includes("SUPER_ADMIN")) {
     try {
       const response = await ElMessageBox.prompt(
         "原始健康记录属于敏感信息。请填写本次查看的具体业务原因，系统将记录操作者、原因和时间。",
@@ -468,10 +472,12 @@ async function viewHealth(row: Row, raw: boolean): Promise<void> {
   try {
     const suffix = raw ? "health-records" : "health-summary";
     const data = responseData<unknown>(await api.get(`/members/${encodeURIComponent(String(row.id))}/${suffix}`, {
-      params: raw ? { reason } : {},
+      params: reason === undefined ? {} : { reason },
     }));
     if (!isCurrentRequest()) return;
     detailRows.value = Array.isArray(data) ? data as Row[] : [];
+    healthMode.value = raw ? "raw" : "summary";
+    healthMember.value = { id: String(row.id), memberNo: row.memberNo };
     dialogMode.value = "health";
     dialogTitle.value = `${row.memberNo ?? "会员"} · ${raw ? "原始健康记录（已审计）" : "健康数据摘要"}`;
     dialogVisible.value = true;
@@ -595,6 +601,7 @@ function resetResourceView(): void {
   currentPage.value = 1;
   dialogVisible.value = false;
   detailRows.value = [];
+  healthMember.value = {};
   form.value = {};
 }
 
@@ -695,12 +702,11 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; ++editorRequestId; }
       </el-form>
       <template #footer><el-button :disabled="shipmentBusy" @click="shipmentVisible = false">关闭</el-button><el-button type="primary" :loading="shipmentBusy" :disabled="!!shipmentPreview.unavailableReason" @click="saveShipment">登记包裹</el-button></template>
     </el-dialog>
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="resource === 'settings' && form.key === 'global_app_update' ? '980px' : '720px'" destroy-on-close>
-      <el-table v-if="dialogMode === 'health'" :data="detailRows" border max-height="520" empty-text="暂无记录">
-        <el-table-column v-for="column in Object.keys(detailRows[0] || {}).slice(0, 9)" :key="column" :label="fieldLabels[column] || column" min-width="145">
-          <template #default="scope">{{ render(scope.row[column]) }}</template>
-        </el-table-column>
-      </el-table>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="dialogMode === 'health' ? 'min(960px, 94vw)' : resource === 'settings' && form.key === 'global_app_update' ? '980px' : '720px'" destroy-on-close>
+      <div v-if="dialogMode === 'health'">
+        <MemberHealthData :mode="healthMode" :rows="detailRows" :member-no="healthMember.memberNo" />
+        <MemberHealthReportPanel v-if="dialogVisible && healthMode === 'summary' && canReadRawHealth" :key="healthMember.id" :member-id="healthMember.id" />
+      </div>
       <el-form v-else label-width="110px">
         <template v-if="resource === 'commerce-commissions'">
           <el-alert title="奖金规则只影响新支付订单；已有奖金使用原快照。提现仅可使用可用余额，仍需财务人工审核。" type="info" :closable="false" />
