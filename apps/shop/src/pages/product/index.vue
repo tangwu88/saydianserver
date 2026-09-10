@@ -42,14 +42,14 @@
             ><b>{{ quantity }}</b
             ><text @click="quantity = Math.min(selectedSku?.stock || 1, quantity + 1)">＋</text></view
           ></view
-        ><view class="actions"
+        ><view v-if="!isGlobalMall" class="actions"
           ><view class="outline-btn" @click="toggleFavorite">{{
             product.favorite ? "已收藏" : "收藏"
           }}</view
           ><view class="outline-btn" @click="addCart">加入购物车</view
           ><view class="primary-btn" @click="buyNow">立即购买</view></view
         ><view class="service-line"
-          >赛电商城 · 帮助与售后 · 订单进度可查</view
+          >{{ isGlobalMall ? globalCommerceNotice : '赛电商城 · 帮助与售后 · 订单进度可查' }}</view
         ></view
       ></view
     ><view class="container detail card"
@@ -72,6 +72,7 @@
   ><view v-else class="empty">{{ error || '正在加载商品…' }}<button v-if="error" @click="load">重新加载</button></view>
 </template>
 <script setup lang="ts">
+import { mallStorage, isGlobalMall, globalCommerceNotice } from "../../realm";
 defineOptions({ inheritAttrs: false });
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
@@ -103,7 +104,7 @@ async function load() {
     quantity.value = Math.max(1, Math.min(quantity.value, selectedSku.value?.stock || 1));
     currentImage.value = images.value[0] || "";
     product.value.favorite = false;
-    if (isLoggedIn()) { const favorites:any = await api('/storefront/favorites', {auth:true}); product.value.favorite = favorites.some((x:any)=>(x.productId || x.product?.id || x.id) === id.value); }
+    if (!isGlobalMall && isLoggedIn()) { const favorites:any = await api('/storefront/favorites', {auth:true}); product.value.favorite = favorites.some((x:any)=>(x.productId || x.product?.id || x.id) === id.value); }
   } catch (e) {
     product.value = null;
     error.value = e instanceof Error ? e.message : String(e);
@@ -115,6 +116,7 @@ function selectSku(sku: any) {
   if (sku.image) currentImage.value = sku.image;
 }
 function ensure(checkStock = true) {
+  if (isGlobalMall) { toast(globalCommerceNotice); return false; }
   if (!isLoggedIn()) {
     requireLogin('/pages/product/index?id=' + encodeURIComponent(id.value));
     return false;
@@ -142,11 +144,11 @@ async function addCart() {
   }
 }
 function buyNow() {
-  if (uni.getStorageSync('checkout-draft')?.uncertain) { toast('先恢复上次下单结果，不会创建新的结算请求');uni.navigateTo({url:'/pages/checkout/index'});return; }
+  if (mallStorage.get('checkout-draft')?.uncertain) { toast('先恢复上次下单结果，不会创建新的结算请求');uni.navigateTo({url:'/pages/checkout/index'});return; }
   if (!ensure()) return;
   clearCheckoutState();
-  uni.setStorageSync('checkout-owner', uni.getStorageSync('saidian-user')?.id);
-  uni.setStorageSync("checkout-items", [
+  mallStorage.set('checkout-owner', mallStorage.get('saidian-user')?.id);
+  mallStorage.set("checkout-items", [
     {
       skuId: selectedSku.value.id,
       quantity: quantity.value,

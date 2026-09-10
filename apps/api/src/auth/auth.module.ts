@@ -7,6 +7,7 @@ import { WechatAppAuthService } from "./wechat-app-auth.service";
 import { WechatH5AuthService } from "./wechat-h5-auth.service";
 import { GlobalAuthService } from "./global-auth.service";
 import { GlobalVerificationDeliveryService } from "./global-verification-delivery.service";
+import { GlobalWechatBindingService } from "./global-wechat-binding.service";
 
 @Module({
   controllers: [AuthController],
@@ -14,6 +15,7 @@ import { GlobalVerificationDeliveryService } from "./global-verification-deliver
     AuthService,
     GlobalAuthService,
     GlobalVerificationDeliveryService,
+    GlobalWechatBindingService,
     UserAuthGuard,
     SmsAdapterService,
     WechatAppAuthService,

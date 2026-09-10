@@ -2,8 +2,11 @@
 import { onLaunch } from "@dcloudio/uni-app";
 import { ensureMiniProgramSession, startMallSessionSync } from "./api";
 import { bindReferral, captureReferral, isLoggedIn } from "./session";
+import { isGlobalMall } from "./realm";
+import { installGlobalNavigation } from "./global-navigation";
 onLaunch((options) => {
   startMallSessionSync();
+  if (isGlobalMall) { installGlobalNavigation(); return; }
   const query = (options as any)?.query ?? {};
   const referral =
     query.ref ||

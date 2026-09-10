@@ -1,4 +1,5 @@
 <template>
+  <GlobalHelp v-if="isGlobalMall" :key="active" :initial-section="active"/><template v-else>
   <DesktopHeader /><view class="page"
     ><view class="container help-layout"
       ><view class="card nav"
@@ -39,12 +40,14 @@
       ></view
     ></view
   >
-</template>
+</template></template>
 <script setup lang="ts">
 import { onLoad } from "@dcloudio/uni-app";
 import { reactive, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import { api, toast } from "../../api";
+import { isGlobalMall } from "../../realm";
+import GlobalHelp from "../../components/GlobalHelp.vue";
 const active = ref("service"),
   service = reactive<any>({}),
   policies = reactive<any>({});
@@ -58,6 +61,7 @@ const sections = [
 onLoad(async (o) => {
   const section = o?.section === 'terms' ? 'agreement' : o?.section;
   active.value = sections.some(x=>x.key===section) ? String(section) : 'service';
+  if (isGlobalMall) return;
   try {
     const r: any = await api("/storefront/bootstrap");
     Object.assign(service, r.configs?.["customer.service"]?.enabled ? r.configs['customer.service'].value : {});

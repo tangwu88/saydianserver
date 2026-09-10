@@ -12,6 +12,7 @@
 <button class="text-button" :disabled="quoting" @click="refreshQuote">重新获取报价</button>
 </view></view></view></template>
 <script setup lang="ts">
+import { mallStorage } from "../../realm";
 import { onShow } from "@dcloudio/uni-app";import { computed,ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";import { api,money,requireLogin,toast,withMallCheckoutLock,mallSessionStamp } from "../../api";import { checkoutFingerprint,parseMoneyCents } from "../../commerce-model";
 const items=ref<any[]>([]),addresses=ref<any[]>([]),address=ref<any>(),coupons=ref<any[]>([]),selectedCoupon=ref<any>(),quote=ref<any>(),capabilities=ref<any>(),remark=ref(""),invoiceTitle=ref(""),pointAmount=ref("0.00"),submitting=ref(false),quoting=ref(false),error=ref("");
@@ -20,13 +21,13 @@ const uncertain=ref(false);
 const priceChanged=computed(()=>quote.value?.lines?.some((line:any)=>{const cached=items.value.find(item=>item.skuId===line.skuId)?.sku?.salePriceCents;return cached!=null && cached!==line.unitPriceCents;}));
 const availableCoupons=computed(()=>coupons.value.filter(x=>!x.usedAt));const couponLabels=computed(()=>["不使用优惠券",...availableCoupons.value.map(x=>x.coupon.name)]);const hasPayment=computed(()=>capabilities.value?.payments?.some((x:any)=>x.enabled));
 onShow(async()=>{if(!requireLogin("/pages/checkout/index"))return;error.value="";
-  const user=uni.getStorageSync("saidian-user");const pending=uni.getStorageSync("checkout-pending");
-  const draft=uni.getStorageSync('checkout-draft');uncertain.value=!!(draft?.uncertain && draft.userId===user?.id);
-  if (uni.getStorageSync('checkout-owner') !== user?.id) { error.value='结算账号已改变，请重新选择商品'; return; }
+  const user=mallStorage.get("saidian-user");const pending=mallStorage.get("checkout-pending");
+  const draft=mallStorage.get('checkout-draft');uncertain.value=!!(draft?.uncertain && draft.userId===user?.id);
+  if (mallStorage.get('checkout-owner') !== user?.id) { error.value='结算账号已改变，请重新选择商品'; return; }
   if(pending?.userId===user?.id && pending.orderId){uni.redirectTo({url:"/pages/order-detail/index?id="+pending.orderId});return;}
-  items.value=uni.getStorageSync("checkout-items")||[];if(!items.value.length){error.value="结算商品为空，请从购物车或商品页选择";return;}
+  items.value=mallStorage.get("checkout-items")||[];if(!items.value.length){error.value="结算商品为空，请从购物车或商品页选择";return;}
   try{const [rows,claims,caps]=await Promise.all([api<any[]>("/storefront/addresses",{auth:true}),api<any[]>("/storefront/coupons",{auth:true}),api("/storefront/capabilities")]);
-    addresses.value=rows;coupons.value=claims;capabilities.value=caps;const chosen=uni.getStorageSync("checkout-address");address.value=rows.find(x=>x.id===chosen?.id)||rows.find(x=>x.id===address.value?.id)||rows.find(x=>x.isDefault)||rows[0];uni.removeStorageSync("checkout-address");await refreshQuote();
+    addresses.value=rows;coupons.value=claims;capabilities.value=caps;const chosen=mallStorage.get("checkout-address");address.value=rows.find(x=>x.id===chosen?.id)||rows.find(x=>x.id===address.value?.id)||rows.find(x=>x.isDefault)||rows[0];mallStorage.remove("checkout-address");await refreshQuote();
   }catch(e){error.value=e instanceof Error?e.message:"加载失败";}
 });
 function input(){return {addressId:address.value?.id||"",items:items.value.map(x=>({skuId:x.skuId,quantity:Number(x.quantity)})),...(selectedCoupon.value?{couponClaimId:selectedCoupon.value.id}:{}),pointCents:parseMoneyCents(pointAmount.value||"0"),buyerRemark:remark.value,...(invoiceTitle.value?{invoice:{title:invoiceTitle.value}}:{})};}
@@ -35,16 +36,16 @@ function selectCoupon(event:any){selectedCoupon.value=availableCoupons.value[Num
 function maxPoints(){pointAmount.value=((quote.value?.maxPointCents||0)/100).toFixed(2);void refreshQuote();}
 function chooseAddress(){uni.navigateTo({url:addresses.value.length?"/pages/addresses/index?select=1":"/pages/address-edit/index"});}
 async function submit(){if(submitting.value||quoting.value||(!uncertain.value&&!address.value))return;submitting.value=true;error.value="";let submittedKey='',submittedUserId='',submittedSession='';
-  try{await withMallCheckoutLock(async()=>{try{const checkoutSession=mallSessionStamp();const user=uni.getStorageSync('saidian-user');let draft=uni.getStorageSync('checkout-draft');
-    if (!user?.id || uni.getStorageSync('checkout-owner')!==user.id) throw new Error('结算账号已改变，请重新选择商品');
-    const completed=uni.getStorageSync('checkout-pending');if(completed?.userId===user.id && completed.orderId){uni.redirectTo({url:'/pages/order-detail/index?id='+encodeURIComponent(completed.orderId)});return;}
+  try{await withMallCheckoutLock(async()=>{try{const checkoutSession=mallSessionStamp();const user=mallStorage.get('saidian-user');let draft=mallStorage.get('checkout-draft');
+    if (!user?.id || mallStorage.get('checkout-owner')!==user.id) throw new Error('结算账号已改变，请重新选择商品');
+    const completed=mallStorage.get('checkout-pending');if(completed?.userId===user.id && completed.orderId){uni.redirectTo({url:'/pages/order-detail/index?id='+encodeURIComponent(completed.orderId)});return;}
     if (draft?.userId && draft.userId!==user.id) throw new Error('结算账号已改变，请重新选择商品');
     if (!draft?.uncertain) { await refreshQuote();
-      if(mallSessionStamp()!==checkoutSession || uni.getStorageSync('saidian-user')?.id!==user.id || uni.getStorageSync('checkout-owner')!==user.id)throw new Error('账号已切换，请重新打开结算页');
-      const recovered=uni.getStorageSync('checkout-pending');if(recovered?.userId===user.id && recovered.orderId){uni.redirectTo({url:'/pages/order-detail/index?id='+encodeURIComponent(recovered.orderId)});return;}
+      if(mallSessionStamp()!==checkoutSession || mallStorage.get('saidian-user')?.id!==user.id || mallStorage.get('checkout-owner')!==user.id)throw new Error('账号已切换，请重新打开结算页');
+      const recovered=mallStorage.get('checkout-pending');if(recovered?.userId===user.id && recovered.orderId){uni.redirectTo({url:'/pages/order-detail/index?id='+encodeURIComponent(recovered.orderId)});return;}
       // Another checkout may have submitted while this quote was in flight.
       // Re-read its frozen key/payload before constructing a new request.
-      const latest=uni.getStorageSync('checkout-draft');
+      const latest=mallStorage.get('checkout-draft');
       if(latest?.userId && latest.userId!==user.id)throw new Error('结算账号已改变，请重新选择商品');
       if(latest?.uncertain)draft=latest;
       else {if(!quote.value)throw new Error(error.value||'请重新获取报价');const payload=input();const fingerprint=checkoutFingerprint(user.id,payload);
@@ -53,14 +54,14 @@ async function submit(){if(submitting.value||quoting.value||(!uncertain.value&&!
     }
     // An uncertain request may already have consumed stock/coupon/points. Recover
     // its exact payload and key before attempting any new quote or new order.
-    if(mallSessionStamp()!==checkoutSession || uni.getStorageSync('saidian-user')?.id!==user.id || uni.getStorageSync('checkout-owner')!==user.id)throw new Error('账号已切换，请重新打开结算页');
-    draft.uncertain=true;uni.setStorageSync("checkout-draft",draft);
+    if(mallSessionStamp()!==checkoutSession || mallStorage.get('saidian-user')?.id!==user.id || mallStorage.get('checkout-owner')!==user.id)throw new Error('账号已切换，请重新打开结算页');
+    draft.uncertain=true;mallStorage.set("checkout-draft",draft);
     submittedKey=draft.key;submittedUserId=user.id;submittedSession=checkoutSession;
     const order:any=await api("/storefront/orders",{method:"POST",auth:true,headers:{"idempotency-key":draft.key},data:draft.payload,sessionStamp:checkoutSession});
-    if(mallSessionStamp()!==checkoutSession || uni.getStorageSync('saidian-user')?.id!==user.id || uni.getStorageSync('checkout-owner')!==user.id)throw new Error('账号已切换，请从原账号订单页核对下单结果');
-    uni.setStorageSync("checkout-pending",{userId:user.id,orderId:order.id});uni.removeStorageSync("checkout-draft");uni.removeStorageSync("checkout-items");
+    if(mallSessionStamp()!==checkoutSession || mallStorage.get('saidian-user')?.id!==user.id || mallStorage.get('checkout-owner')!==user.id)throw new Error('账号已切换，请从原账号订单页核对下单结果');
+    mallStorage.set("checkout-pending",{userId:user.id,orderId:order.id});mallStorage.remove("checkout-draft");mallStorage.remove("checkout-items");
     uni.redirectTo({url:"/pages/order-detail/index?id="+order.id});
-  }catch(e){const status=(e as any)?.status;if(submittedKey && mallSessionStamp()===submittedSession && [400,409,422].includes(status) && uni.getStorageSync('saidian-user')?.id===submittedUserId && uni.getStorageSync('checkout-owner')===submittedUserId){const draft=uni.getStorageSync("checkout-draft");if(draft?.key===submittedKey && draft.userId===submittedUserId){draft.uncertain=false;uni.setStorageSync("checkout-draft",draft);}}uncertain.value=!!uni.getStorageSync('checkout-draft')?.uncertain;
+  }catch(e){const status=(e as any)?.status;if(submittedKey && mallSessionStamp()===submittedSession && [400,409,422].includes(status) && mallStorage.get('saidian-user')?.id===submittedUserId && mallStorage.get('checkout-owner')===submittedUserId){const draft=mallStorage.get("checkout-draft");if(draft?.key===submittedKey && draft.userId===submittedUserId){draft.uncertain=false;mallStorage.set("checkout-draft",draft);}}uncertain.value=!!mallStorage.get('checkout-draft')?.uncertain;
     throw e;
   }});}catch(e){error.value=e instanceof Error?e.message:"下单结果待确认，请使用相同内容重试";toast(e);
   }finally{submitting.value=false;}

@@ -33,6 +33,7 @@
   <StoreFooter />
 </template>
 <script setup lang="ts">
+import { mallStorage } from "../../realm";
 import { onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
@@ -52,11 +53,11 @@ onShow(async () => {
   try {
     const boot: any = await api("/storefront/bootstrap");
     categories.value = boot.categories;
-    const stored = String(uni.getStorageSync("saidian-category-selected") || "");
+    const stored = String(mallStorage.get("saidian-category-selected") || "");
     if (uni.getStorageInfoSync().keys.includes("saidian-category-selected") && !stored) selected.value = "";
     if (stored && categories.value.some((item) => item.id === stored))
       selected.value = stored;
-    uni.removeStorageSync("saidian-category-selected");
+    mallStorage.remove("saidian-category-selected");
     await load();
   } catch (e) {
     toast(e);

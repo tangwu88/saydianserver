@@ -5725,25 +5725,56 @@
       "contract": {
         "status": "request-reviewed",
         "requestSchema": {
-          "type": "object",
-          "properties": {
-            "mobile": {
-              "type": "string",
-              "pattern": "^1[3-9][0-9]{9}$"
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mobile": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^1[3-9][0-9]{9}$"
+                    },
+                    {
+                      "type": "string",
+                      "description": "国际账号邮箱或带+国家码的E.164手机号；不会自动合并账号。"
+                    }
+                  ]
+                },
+                "password": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "referralCode": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "mobile",
+                "password"
+              ],
+              "additionalProperties": true
             },
-            "password": {
-              "type": "string",
-              "minLength": 1
-            },
-            "referralCode": {
-              "type": "string"
+            {
+              "type": "object",
+              "properties": {
+                "identifier": {
+                  "type": "string",
+                  "description": "国际账号邮箱或带+国家码的E.164手机号；不会自动合并账号。"
+                },
+                "password": {
+                  "type": "string",
+                  "minLength": 8,
+                  "description": "至少8字符、最多72 UTF-8字节；已有账号输入原密码，新账号用于设置密码。"
+                }
+              },
+              "required": [
+                "identifier",
+                "password"
+              ],
+              "additionalProperties": true
             }
-          },
-          "required": [
-            "mobile",
-            "password"
-          ],
-          "additionalProperties": true
+          ]
         },
         "requestExample": {
           "mobile": "19900000001",
@@ -5825,8 +5856,8 @@
           }
         },
         "contentType": "application/json",
-        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts",
-        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 商城成功响应为 raw：直接读取 token/user，不套 data。与 App 共享 User.id；Employee 会话的 typ/aud 和权限独立。手机号显示形态可能为掩码，不据此判断账号身份。复用现有手机号密码核验；演示种子会员没有预设密码，错误凭据不会自动注册。"
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 商城成功响应为 raw：直接读取 token/user，不套 data。与 App 共享 User.id；Employee 会话的 typ/aud 和权限独立。手机号显示形态可能为掩码，不据此判断账号身份。国内传mobile；国际版支持mobile或identifier字段中的邮箱/E.164手机号，须有真实联系方式验证记录。错误凭据不会自动注册。"
       }
     },
     {
@@ -5846,9 +5877,9 @@
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "公众号网页授权地址",
-      "request": "{returnTo,codeChallenge:SHA256十六进制,referralCode?}",
+      "request": "{returnTo,codeChallenge:SHA256十六进制,referralCode?,consentVersion?,locale?}；国际版校验当前协议",
       "response": "{authorizeUrl,state,expiresIn}；一次状态与固定同源回调",
-      "dependency": "独立公众号配置；不复用小程序身份",
+      "dependency": "独立公众号配置；国际H5开关；不复用小程序身份",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -5867,6 +5898,24 @@
             },
             "referralCode": {
               "type": "string"
+            },
+            "consentVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "description": "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
             }
           },
           "required": [
@@ -5909,8 +5958,8 @@
           "expiresIn": 300
         },
         "contentType": "application/json",
-        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts",
-        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 公众号未配置返回503；redirect_uri只用服务端已校验配置。state一次性、5分钟，不接受客户端传入appId/openId。示例授权地址不可用于实际授权。"
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 公众号未配置返回503；redirect_uri只用服务端配置。国际版另校验开关/维护/当前协议，回调固定 /global/saidian-mall/oauth/callback，须传当前consentVersion。state一次性、5分钟，不接受客户端appId/openId。示例授权地址不可实际授权。"
       }
     },
     {
@@ -5930,9 +5979,9 @@
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "兑换公众号授权码",
-      "request": "{code,state,codeVerifier,consentVersion}",
-      "response": "已验证手机返回raw会话；否则返回一次bindTicket而非顾客会话",
-      "dependency": "微信公众号；身份冲突不合并资产",
+      "request": "{code,state,codeVerifier,consentVersion,locale?}",
+      "response": "已验证手机号（国际版亦接受已验证邮箱）返回raw会话；否则返回一次bindTicket而非顾客会话",
+      "dependency": "微信公众号；国际版当前已审核协议；身份冲突不合并资产",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -5956,7 +6005,19 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 80,
-              "description": "客户端展示并获同意的商城协议版本；当前客户端 commerce-legal-v1。"
+              "description": "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
             }
           },
           "required": [
@@ -5979,6 +6040,9 @@
               "type": "object",
               "properties": {
                 "requiresMobileBinding": {
+                  "const": true
+                },
+                "requiresAccountBinding": {
                   "const": true
                 },
                 "bindTicket": {
@@ -6061,6 +6125,9 @@
                 "requiresMobileBinding": {
                   "const": false
                 },
+                "requiresAccountBinding": {
+                  "const": false
+                },
                 "returnTo": {
                   "type": "string",
                   "maxLength": 1024,
@@ -6086,8 +6153,8 @@
           "returnTo": "/pages/checkout/index"
         },
         "contentType": "application/json",
-        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts",
-        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 从回跳URL的search读取code/state，不从hash误读。未绑定手机号分支不含token/user，必须进入绑定；已有已核验手机号返回raw用户会话。state已消费或换码失败需重新授权。"
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 从回跳URL的search读取code/state。未绑定分支不含token/user；国际版返回requiresAccountBinding=true并接受已核验邮箱或国际手机号。协议过时409先重新阅读授权；state消费或换码失败需重新授权。回调URL和日志不得泄露code/state。"
       }
     },
     {
@@ -6133,7 +6200,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 80,
-              "description": "客户端展示并获同意的商城协议版本；当前客户端 commerce-legal-v1。"
+              "description": "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。"
             }
           },
           "required": [
@@ -6208,6 +6275,9 @@
             "requiresMobileBinding": {
               "const": false
             },
+            "requiresAccountBinding": {
+              "const": false
+            },
             "returnTo": {
               "type": "string",
               "maxLength": 1024,
@@ -6238,8 +6308,464 @@
           "returnTo": "/pages/checkout/index"
         },
         "contentType": "application/json",
-        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
         "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 先以usage=bind_mobile请求独立验证码。bindTicket一次性且5分钟。appId+openId作用域身份与已核验手机号绑定；冲突409，不自动合并两个账号，不借用小程序openId。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.bindWechatH5Account",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/auth/wechat/h5/bind-account",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "国际H5绑定已验证账号",
+      "request": "{bindTicket,identifier,password,consentVersion,locale?}；邮箱或E.164手机号",
+      "response": "raw会员会话和站内returnTo；不合并资产或修改账号密码",
+      "dependency": "仅global；已验证会员原密码；公众号独立配置和当前协议",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "bindTicket": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "identifier": {
+              "type": "string",
+              "description": "国际账号邮箱或带+国家码的E.164手机号；不会自动合并账号。"
+            },
+            "password": {
+              "type": "string",
+              "minLength": 8,
+              "description": "至少8字符、最多72 UTF-8字节；已有账号输入原密码，新账号用于设置密码。"
+            },
+            "consentVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "description": "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
+            }
+          },
+          "required": [
+            "bindTicket",
+            "identifier",
+            "password",
+            "consentVersion"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "bindTicket": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "identifier": "h5-contract@example.invalid",
+          "password": "H5-CONTRACT-Test-Password-Only",
+          "consentVersion": "global-contract-reviewed-v1",
+          "locale": "en"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "description": "用户访问令牌；Authorization: Bearer，不是员工令牌。禁止记录或发布实际值。"
+            },
+            "refreshToken": {
+              "type": "string",
+              "description": "单次轮换令牌；客户端单飞刷新，不并发重用。"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "user": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                },
+                "nickname": {
+                  "type": "string"
+                },
+                "mobile": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "avatarUrl": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "nickname",
+                "mobile",
+                "avatarUrl"
+              ],
+              "additionalProperties": true
+            },
+            "requiresMobileBinding": {
+              "const": false
+            },
+            "requiresAccountBinding": {
+              "const": false
+            },
+            "returnTo": {
+              "type": "string",
+              "maxLength": 1024,
+              "description": "受限站内相对路径，如 /pages/checkout/index；拒绝外站、协议相对URL、hash及敏感令牌查询参数。不是任意OAuth redirect_uri。"
+            }
+          },
+          "required": [
+            "token",
+            "refreshToken",
+            "expiresAt",
+            "user",
+            "requiresMobileBinding",
+            "returnTo"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "token": "H5-CONTRACT-SYNTHETIC-NOT-A-VALID-TOKEN",
+          "refreshToken": "H5-CONTRACT-SYNTHETIC-NOT-A-VALID-REFRESH",
+          "expiresAt": "2026-09-08T03:00:00.000Z",
+          "user": {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "nickname": "H5-CONTRACT合成会员",
+            "mobile": null,
+            "avatarUrl": null
+          },
+          "requiresMobileBinding": false,
+          "requiresAccountBinding": false,
+          "returnTo": "/pages/profile/index"
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global。必须证明既有账号原密码且该账号有真实emailVerifiedAt/mobileVerifiedAt；临时免验证账号403，不自动标为已验证。票据与appId/OpenID匹配、一次性消费。未配置503、身份冲突409、过期401，不改密码或合并资产。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.requestWechatH5BindingCode",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/auth/wechat/h5/binding-code",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "国际H5申请身份绑定验证码",
+      "request": "{bindTicket,channel:email/sms,identifier,locale?}",
+      "response": "{challengeId,expiresIn,retryAfter,maskedIdentifier}；无验证码回显",
+      "dependency": "仅global；独立wechat_bind用途；邮件/短信真实渠道，未配置拒绝发送",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "bindTicket": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "channel": {
+              "enum": [
+                "email",
+                "sms"
+              ]
+            },
+            "identifier": {
+              "type": "string",
+              "description": "国际账号邮箱或带+国家码的E.164手机号；不会自动合并账号。"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
+            }
+          },
+          "required": [
+            "bindTicket",
+            "channel",
+            "identifier"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "bindTicket": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "channel": "email",
+          "identifier": "h5-contract@example.invalid",
+          "locale": "en"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "challengeId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "当前统一系统 UUID，不是旧商城数字ID。"
+            },
+            "expiresIn": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maskedIdentifier": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "challengeId",
+            "expiresIn",
+            "retryAfter",
+            "maskedIdentifier"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "challengeId": "00000000-0000-4000-8000-000000000080",
+          "expiresIn": 300,
+          "retryAfter": 60,
+          "maskedIdentifier": "h***@example.invalid"
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global且必须已有有效公众号绑定票据；用途固定wechat_bind，OTP散列绑定ticket。与注册/重置共享联系人限频另加票据限频，60秒/日10次，供应商缺失503，无devCode。仅真实发送成功才可消费。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.bindWechatH5Code",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/auth/wechat/h5/bind-code",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "国际H5核验并绑定公众号",
+      "request": "{bindTicket,challengeId,code,password,consentVersion,locale?,nickname?}",
+      "response": "raw会员会话和站内returnTo；票据与验证码同事务一次消费",
+      "dependency": "仅global；账号冲突不合并；已有未验证账号需原密码与OTP双证明",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "bindTicket": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "challengeId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "当前统一系统 UUID，不是旧商城数字ID。"
+            },
+            "code": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$",
+              "description": "一次性验证码；login 与 bind_mobile 用途隔离。"
+            },
+            "password": {
+              "type": "string",
+              "minLength": 8,
+              "description": "至少8字符、最多72 UTF-8字节；已有账号输入原密码，新账号用于设置密码。"
+            },
+            "consentVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "description": "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
+            },
+            "nickname": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          "required": [
+            "bindTicket",
+            "challengeId",
+            "code",
+            "password",
+            "consentVersion"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "bindTicket": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "challengeId": "00000000-0000-4000-8000-000000000080",
+          "code": "000000",
+          "password": "H5-CONTRACT-Test-Password-Only",
+          "consentVersion": "global-contract-reviewed-v1",
+          "locale": "en",
+          "nickname": "H5合成会员"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "description": "用户访问令牌；Authorization: Bearer，不是员工令牌。禁止记录或发布实际值。"
+            },
+            "refreshToken": {
+              "type": "string",
+              "description": "单次轮换令牌；客户端单飞刷新，不并发重用。"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "user": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                },
+                "nickname": {
+                  "type": "string"
+                },
+                "mobile": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "avatarUrl": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "nickname",
+                "mobile",
+                "avatarUrl"
+              ],
+              "additionalProperties": true
+            },
+            "requiresMobileBinding": {
+              "const": false
+            },
+            "requiresAccountBinding": {
+              "const": false
+            },
+            "returnTo": {
+              "type": "string",
+              "maxLength": 1024,
+              "description": "受限站内相对路径，如 /pages/checkout/index；拒绝外站、协议相对URL、hash及敏感令牌查询参数。不是任意OAuth redirect_uri。"
+            }
+          },
+          "required": [
+            "token",
+            "refreshToken",
+            "expiresAt",
+            "user",
+            "requiresMobileBinding",
+            "returnTo"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "token": "H5-CONTRACT-SYNTHETIC-NOT-A-VALID-TOKEN",
+          "refreshToken": "H5-CONTRACT-SYNTHETIC-NOT-A-VALID-REFRESH",
+          "expiresAt": "2026-09-08T03:00:00.000Z",
+          "user": {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "nickname": "H5-CONTRACT合成会员",
+            "mobile": null,
+            "avatarUrl": null
+          },
+          "requiresMobileBinding": false,
+          "requiresAccountBinding": false,
+          "returnTo": "/pages/profile/index"
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global。新账号设置密码；已有账号需原密码+OTP双证明，不重设密码。首次核验会撤销旧会话防预占账号提权；只标记本次真实验证的联系方式。票据与OTP/用户/身份/同意同事务消费，错误码最多5次；过期/重放400或401、冲突409、服务关闭503。"
       }
     },
     {
@@ -6248,7 +6774,14 @@
       "path": "/api/saidian-mall/v1/storefront/capabilities",
       "auth": "public",
       "roles": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "locale",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "商城公开能力与维护状态",
@@ -6261,160 +6794,460 @@
         "requestSchema": null,
         "requestExample": null,
         "responseSchema": {
-          "type": "object",
-          "properties": {
-            "login": {
+          "oneOf": [
+            {
               "type": "object",
               "properties": {
-                "password": {
+                "login": {
                   "type": "object",
                   "properties": {
-                    "enabled": {
-                      "type": "boolean"
+                    "password": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ],
+                      "additionalProperties": true
                     },
-                    "reason": {
-                      "type": "string"
+                    "sms": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "wechatH5": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ],
+                      "additionalProperties": true
                     }
                   },
                   "required": [
-                    "enabled"
+                    "password",
+                    "sms",
+                    "wechatH5"
                   ],
                   "additionalProperties": true
                 },
-                "sms": {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {
-                      "type": "boolean"
+                "payments": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "channel": {
+                        "enum": [
+                          "wechat_jsapi",
+                          "wechat_mini",
+                          "wechat_h5",
+                          "wechat_native",
+                          "alipay_wap",
+                          "alipay_page"
+                        ]
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "environments": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "wechat",
+                            "mini",
+                            "browser"
+                          ]
+                        }
+                      }
                     },
-                    "reason": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "enabled"
-                  ],
-                  "additionalProperties": true
-                },
-                "wechatH5": {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "reason": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "enabled"
-                  ],
-                  "additionalProperties": true
-                }
-              },
-              "required": [
-                "password",
-                "sms",
-                "wechatH5"
-              ],
-              "additionalProperties": true
-            },
-            "payments": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "channel": {
-                    "enum": [
-                      "wechat_jsapi",
-                      "wechat_mini",
-                      "wechat_h5",
-                      "wechat_native",
-                      "alipay_wap",
-                      "alipay_page"
-                    ]
-                  },
-                  "enabled": {
-                    "type": "boolean"
-                  },
-                  "reason": {
-                    "type": "string"
-                  },
-                  "environments": {
-                    "type": "array",
-                    "items": {
-                      "enum": [
-                        "wechat",
-                        "mini",
-                        "browser"
-                      ]
-                    }
+                    "required": [
+                      "channel",
+                      "enabled",
+                      "environments"
+                    ],
+                    "additionalProperties": true
                   }
                 },
-                "required": [
-                  "channel",
-                  "enabled",
-                  "environments"
-                ],
-                "additionalProperties": true
-              }
-            },
-            "checkout": {
-              "type": "object",
-              "properties": {
-                "minimumCashCents": {
-                  "const": 1
-                },
-                "points": {
+                "checkout": {
                   "type": "object",
                   "properties": {
-                    "supported": {
-                      "const": true
+                    "minimumCashCents": {
+                      "const": 1
                     },
-                    "requiresVerifiedAccount": {
-                      "const": true
+                    "points": {
+                      "type": "object",
+                      "properties": {
+                        "supported": {
+                          "const": true
+                        },
+                        "requiresVerifiedAccount": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "supported",
+                        "requiresVerifiedAccount"
+                      ],
+                      "additionalProperties": true
                     }
                   },
                   "required": [
-                    "supported",
-                    "requiresVerifiedAccount"
+                    "minimumCashCents",
+                    "points"
                   ],
                   "additionalProperties": true
+                },
+                "maintenance": {
+                  "type": "object",
+                  "properties": {
+                    "readOnly": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "readOnly"
+                  ],
+                  "additionalProperties": true
+                },
+                "demo": {
+                  "type": "boolean"
                 }
               },
               "required": [
-                "minimumCashCents",
-                "points"
+                "login",
+                "payments",
+                "checkout",
+                "maintenance",
+                "demo"
               ],
               "additionalProperties": true
             },
-            "maintenance": {
+            {
               "type": "object",
               "properties": {
-                "readOnly": {
-                  "type": "boolean"
+                "realm": {
+                  "const": "global"
                 },
-                "reason": {
-                  "type": "string"
+                "consentVersion": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "description": "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "legal": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "userAgreement": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string"
+                            },
+                            "locale": {
+                              "enum": [
+                                "en",
+                                "zh-Hans",
+                                "zh-Hant",
+                                "de",
+                                "fr",
+                                "es",
+                                "ja",
+                                "ko"
+                              ]
+                            },
+                            "version": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "locale",
+                            "version"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "privacyPolicy": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string"
+                            },
+                            "locale": {
+                              "enum": [
+                                "en",
+                                "zh-Hans",
+                                "zh-Hant",
+                                "de",
+                                "fr",
+                                "es",
+                                "ja",
+                                "ko"
+                              ]
+                            },
+                            "version": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "locale",
+                            "version"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "userAgreement",
+                        "privacyPolicy"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "login": {
+                  "type": "object",
+                  "properties": {
+                    "password": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "sms": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "wechatH5": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "wechatBinding": {
+                      "type": "object",
+                      "properties": {
+                        "bindExistingAvailable": {
+                          "type": "boolean"
+                        },
+                        "emailOtpAvailable": {
+                          "type": "boolean"
+                        },
+                        "smsOtpAvailable": {
+                          "type": "boolean"
+                        },
+                        "password": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "email": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "sms": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "smsCountries": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "verifiedAccountRequired": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "bindExistingAvailable",
+                        "emailOtpAvailable",
+                        "smsOtpAvailable",
+                        "password",
+                        "email",
+                        "sms",
+                        "smsCountries",
+                        "verifiedAccountRequired"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "password",
+                    "sms",
+                    "wechatH5",
+                    "wechatBinding"
+                  ],
+                  "additionalProperties": true
+                },
+                "payments": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": true
+                  }
+                },
+                "checkout": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "const": false
+                    },
+                    "points": {
+                      "type": "object",
+                      "properties": {
+                        "supported": {
+                          "const": false
+                        },
+                        "requiresVerifiedAccount": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "supported",
+                        "requiresVerifiedAccount"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "points"
+                  ],
+                  "additionalProperties": true
+                },
+                "maintenance": {
+                  "type": "object",
+                  "properties": {
+                    "readOnly": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "readOnly"
+                  ],
+                  "additionalProperties": true
+                },
+                "demo": {
+                  "const": false
                 }
               },
               "required": [
-                "readOnly"
+                "realm",
+                "consentVersion",
+                "legal",
+                "login",
+                "payments",
+                "checkout",
+                "maintenance",
+                "demo"
               ],
               "additionalProperties": true
-            },
-            "demo": {
-              "type": "boolean"
             }
-          },
-          "required": [
-            "login",
-            "payments",
-            "checkout",
-            "maintenance",
-            "demo"
-          ],
-          "additionalProperties": true
+          ]
         },
         "responseExample": {
           "login": {
@@ -6821,7 +7654,7 @@
           "devCode": "123456"
         },
         "contentType": "application/json",
-        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
         "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 devCode 仅非生产且 ALLOW_TEST_OTP=true 返回；此示例仅隔离演示。真实短信未配置返回503；不会假装发送。先请求再验证，5分钟过期。"
       }
     },
@@ -6864,7 +7697,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 80,
-              "description": "客户端展示并获同意的商城协议版本；当前客户端 commerce-legal-v1。"
+              "description": "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。"
             },
             "referralCode": {
               "type": "string"
@@ -6959,7 +7792,7 @@
           }
         },
         "contentType": "application/json",
-        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
         "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 商城成功响应为 raw：直接读取 token/user，不套 data。与 App 共享 User.id；Employee 会话的 typ/aud 和权限独立。手机号显示形态可能为掩码，不据此判断账号身份。核验 login 用途验证码后复用手机号账号；新手机号可以创建统一会员。"
       }
     },
@@ -7109,7 +7942,7 @@
           }
         },
         "contentType": "application/json",
-        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
         "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 商城成功响应为 raw：直接读取 token/user，不套 data。与 App 共享 User.id；Employee 会话的 typ/aud 和权限独立。手机号显示形态可能为掩码，不据此判断账号身份。同一 refreshToken 并发只有一次可成功。过期保留带 checkout-owner 的草稿；同一用户重新登录可恢复，换用户清除旧草稿，禁止旧响应覆盖新会话。"
       }
     },
@@ -7484,160 +8317,460 @@
               ]
             },
             "capabilities": {
-              "type": "object",
-              "properties": {
-                "login": {
+              "oneOf": [
+                {
                   "type": "object",
                   "properties": {
-                    "password": {
+                    "login": {
                       "type": "object",
                       "properties": {
-                        "enabled": {
-                          "type": "boolean"
+                        "password": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": true
                         },
-                        "reason": {
-                          "type": "string"
+                        "sms": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "wechatH5": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": true
                         }
                       },
                       "required": [
-                        "enabled"
+                        "password",
+                        "sms",
+                        "wechatH5"
                       ],
                       "additionalProperties": true
                     },
-                    "sms": {
-                      "type": "object",
-                      "properties": {
-                        "enabled": {
-                          "type": "boolean"
+                    "payments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "channel": {
+                            "enum": [
+                              "wechat_jsapi",
+                              "wechat_mini",
+                              "wechat_h5",
+                              "wechat_native",
+                              "alipay_wap",
+                              "alipay_page"
+                            ]
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "environments": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "wechat",
+                                "mini",
+                                "browser"
+                              ]
+                            }
+                          }
                         },
-                        "reason": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "enabled"
-                      ],
-                      "additionalProperties": true
-                    },
-                    "wechatH5": {
-                      "type": "object",
-                      "properties": {
-                        "enabled": {
-                          "type": "boolean"
-                        },
-                        "reason": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "enabled"
-                      ],
-                      "additionalProperties": true
-                    }
-                  },
-                  "required": [
-                    "password",
-                    "sms",
-                    "wechatH5"
-                  ],
-                  "additionalProperties": true
-                },
-                "payments": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "channel": {
-                        "enum": [
-                          "wechat_jsapi",
-                          "wechat_mini",
-                          "wechat_h5",
-                          "wechat_native",
-                          "alipay_wap",
-                          "alipay_page"
-                        ]
-                      },
-                      "enabled": {
-                        "type": "boolean"
-                      },
-                      "reason": {
-                        "type": "string"
-                      },
-                      "environments": {
-                        "type": "array",
-                        "items": {
-                          "enum": [
-                            "wechat",
-                            "mini",
-                            "browser"
-                          ]
-                        }
+                        "required": [
+                          "channel",
+                          "enabled",
+                          "environments"
+                        ],
+                        "additionalProperties": true
                       }
                     },
-                    "required": [
-                      "channel",
-                      "enabled",
-                      "environments"
-                    ],
-                    "additionalProperties": true
-                  }
-                },
-                "checkout": {
-                  "type": "object",
-                  "properties": {
-                    "minimumCashCents": {
-                      "const": 1
-                    },
-                    "points": {
+                    "checkout": {
                       "type": "object",
                       "properties": {
-                        "supported": {
-                          "const": true
+                        "minimumCashCents": {
+                          "const": 1
                         },
-                        "requiresVerifiedAccount": {
-                          "const": true
+                        "points": {
+                          "type": "object",
+                          "properties": {
+                            "supported": {
+                              "const": true
+                            },
+                            "requiresVerifiedAccount": {
+                              "const": true
+                            }
+                          },
+                          "required": [
+                            "supported",
+                            "requiresVerifiedAccount"
+                          ],
+                          "additionalProperties": true
                         }
                       },
                       "required": [
-                        "supported",
-                        "requiresVerifiedAccount"
+                        "minimumCashCents",
+                        "points"
                       ],
                       "additionalProperties": true
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "readOnly": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "readOnly"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "demo": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "minimumCashCents",
-                    "points"
+                    "login",
+                    "payments",
+                    "checkout",
+                    "maintenance",
+                    "demo"
                   ],
                   "additionalProperties": true
                 },
-                "maintenance": {
+                {
                   "type": "object",
                   "properties": {
-                    "readOnly": {
-                      "type": "boolean"
+                    "realm": {
+                      "const": "global"
                     },
-                    "reason": {
-                      "type": "string"
+                    "consentVersion": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80,
+                          "description": "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "legal": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "userAgreement": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "locale": {
+                                  "enum": [
+                                    "en",
+                                    "zh-Hans",
+                                    "zh-Hant",
+                                    "de",
+                                    "fr",
+                                    "es",
+                                    "ja",
+                                    "ko"
+                                  ]
+                                },
+                                "version": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "path",
+                                "locale",
+                                "version"
+                              ],
+                              "additionalProperties": true
+                            },
+                            "privacyPolicy": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "locale": {
+                                  "enum": [
+                                    "en",
+                                    "zh-Hans",
+                                    "zh-Hant",
+                                    "de",
+                                    "fr",
+                                    "es",
+                                    "ja",
+                                    "ko"
+                                  ]
+                                },
+                                "version": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "path",
+                                "locale",
+                                "version"
+                              ],
+                              "additionalProperties": true
+                            }
+                          },
+                          "required": [
+                            "userAgreement",
+                            "privacyPolicy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "login": {
+                      "type": "object",
+                      "properties": {
+                        "password": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "sms": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "wechatH5": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "wechatBinding": {
+                          "type": "object",
+                          "properties": {
+                            "bindExistingAvailable": {
+                              "type": "boolean"
+                            },
+                            "emailOtpAvailable": {
+                              "type": "boolean"
+                            },
+                            "smsOtpAvailable": {
+                              "type": "boolean"
+                            },
+                            "password": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "enabled"
+                              ],
+                              "additionalProperties": true
+                            },
+                            "email": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "enabled"
+                              ],
+                              "additionalProperties": true
+                            },
+                            "sms": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "enabled"
+                              ],
+                              "additionalProperties": true
+                            },
+                            "smsCountries": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "verifiedAccountRequired": {
+                              "const": true
+                            }
+                          },
+                          "required": [
+                            "bindExistingAvailable",
+                            "emailOtpAvailable",
+                            "smsOtpAvailable",
+                            "password",
+                            "email",
+                            "sms",
+                            "smsCountries",
+                            "verifiedAccountRequired"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "password",
+                        "sms",
+                        "wechatH5",
+                        "wechatBinding"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "payments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                        "additionalProperties": true
+                      }
+                    },
+                    "checkout": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "const": false
+                        },
+                        "points": {
+                          "type": "object",
+                          "properties": {
+                            "supported": {
+                              "const": false
+                            },
+                            "requiresVerifiedAccount": {
+                              "const": true
+                            }
+                          },
+                          "required": [
+                            "supported",
+                            "requiresVerifiedAccount"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "points"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "readOnly": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "readOnly"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "demo": {
+                      "const": false
                     }
                   },
                   "required": [
-                    "readOnly"
+                    "realm",
+                    "consentVersion",
+                    "legal",
+                    "login",
+                    "payments",
+                    "checkout",
+                    "maintenance",
+                    "demo"
                   ],
                   "additionalProperties": true
-                },
-                "demo": {
-                  "type": "boolean"
                 }
-              },
-              "required": [
-                "login",
-                "payments",
-                "checkout",
-                "maintenance",
-                "demo"
-              ],
-              "additionalProperties": true
+              ]
             }
           },
           "required": [

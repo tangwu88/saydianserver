@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Optional, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
 import { IntegrationState, Prisma, UserStatus } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { AuthService } from "./auth.service";
@@ -7,6 +7,11 @@ import { IntegrationSecretsService } from "../common/integration-secrets.service
 import { normalizedMobile, safeObject, secureEqual, sha256 } from "../common/crypto";
 import { env } from "../common/environment";
 import { markIntegrationVerified } from "../common/integration-health";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { GlobalWechatBindingService } from "./global-wechat-binding.service";
+import { globalLegalBundle } from "./global-legal";
+import { globalError } from "./global-identity";
+import { GLOBAL_WECHAT_CALLBACK_PATH, globalWechatH5Reason, requireGlobalWechatH5 } from "./global-wechat-policy";
 
 const lifetimeSeconds = 5 * 60;
 type OfficialConfig = { appId: string; appSecret: string; redirectUri: string };
@@ -18,9 +23,11 @@ export class WechatH5AuthService {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     private readonly secrets: IntegrationSecretsService,
+    @Optional() private readonly globalBinding?: GlobalWechatBindingService,
   ) {}
 
   async configured(): Promise<OfficialConfig> {
+    if (isGlobalRealm()) requireGlobalWechatH5();
     const config = await this.prisma.integrationConfig.findUnique({ where: { key: "wechat_official" } });
     if (config?.state !== IntegrationState.CONFIGURED) throw unavailable();
     const secret = await this.secrets.resolve("wechat_official", {
@@ -37,9 +44,33 @@ export class WechatH5AuthService {
     return { appId, appSecret, redirectUri };
   }
 
-  async authorize(input: { returnTo: string; codeChallenge: string; referralCode?: string }) {
+  async globalCapabilities(locale?: string) {
+    const legal = await globalLegalBundle(this.prisma, locale);
+    let reason = globalWechatH5Reason();
+    if (!reason && !legal) reason = "The terms and privacy policy are not available yet.";
+    if (!reason) { try { await this.configured(); } catch { reason = "WeChat official-account sign-in is not configured."; } }
+    const enabled = !reason;
+    const channels = this.globalBinding ? await this.globalBinding.capabilities() : { email: false, sms: false, smsCountries: [] };
+    const capability = (ready: boolean, unavailable: string) => ready ? { enabled: true } : { enabled: false, reason: reason ?? unavailable };
+    return {
+      consentVersion: legal?.consentVersion ?? null, legal: legal?.documents ?? null,
+      wechatH5: capability(enabled, "WeChat sign-in is unavailable."),
+      wechatBinding: {
+        bindExistingAvailable: enabled, emailOtpAvailable: enabled && channels.email, smsOtpAvailable: enabled && channels.sms,
+        password: capability(enabled, "Account binding is unavailable."),
+        email: capability(enabled && channels.email, "Email verification is not configured."),
+        sms: capability(enabled && channels.sms, "International SMS verification is not configured."),
+        smsCountries: channels.smsCountries,
+        verifiedAccountRequired: true,
+      },
+    };
+  }
+
+  async authorize(input: { returnTo: string; codeChallenge: string; referralCode?: string; consentVersion?: string; locale?: unknown }) {
+    if (isGlobalRealm()) requireGlobalWechatH5();
     const returnTo = safeH5ReturnTo(input.returnTo);
     if (!/^[a-f0-9]{64}$/.test(input.codeChallenge)) throw new BadRequestException("授权校验参数不正确");
+    if (isGlobalRealm()) await this.binding().legal(input.consentVersion, input.locale);
     const config = await this.configured();
     const state = randomBytes(32).toString("hex");
     await this.prisma.commerceOAuthState.create({ data: {
@@ -56,13 +87,14 @@ export class WechatH5AuthService {
     return { authorizeUrl: url.toString(), state, expiresIn: lifetimeSeconds };
   }
 
-  async login(input: { code: string; state: string; codeVerifier: string; consentVersion: string }) {
-    assertConsent(input.consentVersion);
+  async login(input: { code: string; state: string; codeVerifier: string; consentVersion: string; locale?: unknown }) {
+    if (isGlobalRealm()) requireGlobalWechatH5(); else assertConsent(input.consentVersion);
     if (!/^[a-f0-9]{64}$/.test(input.state) || !/^[A-Za-z0-9._~-]{43,128}$/.test(input.codeVerifier) ||
         !input.code || input.code.length > 1024 || /\s/.test(input.code)) throw expired();
     const state = await this.prisma.commerceOAuthState.findUnique({ where: { stateHash: sha256(input.state) } });
     if (!state || state.consumedAt || state.expiresAt <= new Date() ||
         !secureEqual(state.codeChallenge, sha256(input.codeVerifier))) throw expired();
+    if (isGlobalRealm()) await this.binding().legal(input.consentVersion, input.locale);
     const config = await this.configured();
     if (state.appId !== config.appId) throw expired();
     // Claim before outbound: a network timeout requires a fresh authorization.
@@ -72,7 +104,11 @@ export class WechatH5AuthService {
     });
     if (claimed.count !== 1) throw expired();
     const identity = await this.exchange(config, input.code);
-    const linked = await this.prisma.wechatOfficialIdentity.findUnique({
+    if (isGlobalRealm()) {
+      const userId = await this.binding().linkedUser(config.appId, identity.openId, input.consentVersion, input.locale);
+      if (userId) return { ...await this.auth.issueMallSession(userId), requiresMobileBinding: false as const, requiresAccountBinding: false as const, returnTo: state.returnTo };
+    }
+    const linked = isGlobalRealm() ? null : await this.prisma.wechatOfficialIdentity.findUnique({
       where: { appId_openId: { appId: config.appId, openId: identity.openId } }, include: { user: true },
     });
     if (linked && linked.user.status !== UserStatus.ACTIVE) {
@@ -90,10 +126,11 @@ export class WechatH5AuthService {
       returnTo: state.returnTo, referralCode: state.referralCode,
       expiresAt: new Date(Date.now() + lifetimeSeconds * 1000),
     } });
-    return { requiresMobileBinding: true as const, bindTicket, expiresIn: lifetimeSeconds, returnTo: state.returnTo };
+    return { requiresMobileBinding: true as const, ...(isGlobalRealm() ? { requiresAccountBinding: true as const } : {}), bindTicket, expiresIn: lifetimeSeconds, returnTo: state.returnTo };
   }
 
   async bindMobile(input: { bindTicket: string; mobile: string; code: string; consentVersion: string }) {
+    if (isGlobalRealm()) throw globalError(400, "verification_required", "Use international account binding or its dedicated verification-code endpoint.");
     assertConsent(input.consentVersion);
     const mobile = normalizedMobile(input.mobile);
     if (!mobile || !/^[a-f0-9]{64}$/.test(input.bindTicket)) throw new BadRequestException("绑定参数不正确");
@@ -151,6 +188,11 @@ export class WechatH5AuthService {
     return { ...(await this.auth.issueMallSession(user.id)), requiresMobileBinding: false as const, returnTo: ticket.returnTo };
   }
 
+  async bindGlobalAccount(input: unknown) { requireGlobalWechatH5(); return this.binding().bindAccount((await this.configured()).appId, input); }
+  async requestGlobalBindingCode(input: unknown) { requireGlobalWechatH5(); return this.binding().requestCode((await this.configured()).appId, input); }
+  async bindGlobalCode(input: unknown) { requireGlobalWechatH5(); return this.binding().bindCode((await this.configured()).appId, input); }
+  private binding() { if (!this.globalBinding) throw unavailable(); return this.globalBinding; }
+
   private async exchange(config: OfficialConfig, code: string) {
     const url = new URL("https://api.weixin.qq.com/sns/oauth2/access_token");
     url.search = new URLSearchParams({ appid: config.appId, secret: config.appSecret, code, grant_type: "authorization_code" }).toString();
@@ -192,8 +234,8 @@ function boundedReferral(value?: string) {
 function providerIdentifier(value: unknown): string | null {
   return typeof value === "string" && /^[A-Za-z0-9_-]{6,128}$/.test(value) ? value : null;
 }
-function expired() { return new UnauthorizedException("微信授权已失效，请重新授权"); }
-function unavailable() { return new ServiceUnavailableException("微信公众号登录未配置或暂时不可用"); }
+function expired() { return isGlobalRealm() ? globalError(401, "wechat_authorization_expired", "WeChat authorization has expired. Authorize again.") : new UnauthorizedException("微信授权已失效，请重新授权"); }
+function unavailable() { return isGlobalRealm() ? globalError(503, "wechat_h5_unavailable", "WeChat official-account sign-in is not configured or unavailable.") : new ServiceUnavailableException("微信公众号登录未配置或暂时不可用"); }
 
 export function safeH5ReturnTo(value: string): string {
   const path = value.trim() || "/";
@@ -214,6 +256,7 @@ export function officialRedirectUri(value: string, storefront: string): string {
     const expected = new URL(storefront);
     const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
     if (url.origin !== expected.origin || url.username || url.password || url.hash || url.search ||
+        (isGlobalRealm() && (url.pathname !== GLOBAL_WECHAT_CALLBACK_PATH || url.protocol !== "https:")) ||
         (url.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && local && url.protocol === "http:"))) throw unavailable();
     return url.toString();
   } catch { throw unavailable(); }

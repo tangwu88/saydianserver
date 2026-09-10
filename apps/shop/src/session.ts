@@ -1,5 +1,7 @@
+import { mallStorage, isGlobalMall } from "./realm";
 import { api } from "./api";
 export function captureReferral(explicitReferral?: string): void {
+  if (isGlobalMall) return;
   const pages = getCurrentPages?.() ?? [];
   const route = pages[pages.length - 1] as any;
   const locationSearch =
@@ -16,14 +18,15 @@ export function captureReferral(explicitReferral?: string): void {
       typeof location !== "undefined" ? location.hash.split("?")[1] || "" : "",
     ).get("ref") ||
     locationSearch;
-  if (ref && !uni.getStorageSync("saidian-ref"))
-    uni.setStorageSync("saidian-ref", ref);
+  if (ref && !mallStorage.get("saidian-ref"))
+    mallStorage.set("saidian-ref", ref);
 }
 export function isLoggedIn(): boolean {
-  return Boolean(uni.getStorageSync("saidian-token"));
+  return Boolean(mallStorage.get("saidian-token"));
 }
 export async function bindReferral(): Promise<void> {
-  const ref = String(uni.getStorageSync("saidian-ref") || "");
+  if (isGlobalMall) return;
+  const ref = String(mallStorage.get("saidian-ref") || "");
   if (ref && isLoggedIn())
     await api("/auth/referral", {
       method: "POST",

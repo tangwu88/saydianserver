@@ -95,12 +95,13 @@
   >
 </template>
 <script setup lang="ts">
+import { mallStorage, isGlobalMall, globalCommerceNotice } from "../../realm";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import EmployeeWithdrawalPanel from "../../components/EmployeeWithdrawalPanel.vue";
-import { api, money, toast } from "../../api";
-const token = ref(String(uni.getStorageSync("employee-token") || "")),
+import { api, money, toast, API_BASE } from "../../api";
+const token = ref(String(mallStorage.get("employee-token") || "")),
   data = ref<any>(),
   coupons = ref<any[]>([]),
   loginMessage = ref("正在识别企业微信员工身份…");
@@ -108,6 +109,7 @@ const demo=ref(false),demoToken=ref(''),busy=ref(false),page=ref(1),rangeIndex=r
 const ranges=[{key:'today',label:'今天'},{key:'7d',label:'近7天'},{key:'30d',label:'近30天'},{key:'month',label:'本月'},{key:'custom',label:'自定义'}];
 onShow(()=>{if(data.value)void load();});
 onLoad(async () => {
+  if (isGlobalMall) { loginMessage.value = globalCommerceNotice; return; }
   try{const caps:any=await api('/storefront/capabilities');demo.value=!!caps.demo;}catch{/* Login still reports its own failure. */}
   const oauthCode = queryValue("code");
   if (oauthCode && !token.value) {
@@ -120,7 +122,7 @@ onLoad(async () => {
         data: { code: oauthCode },
       });
       token.value = r.token;
-      uni.setStorageSync("employee-token", r.token);
+      mallStorage.set("employee-token", r.token);
       cleanOAuthQuery();
     } catch (e) {
       loginMessage.value = errorMessage(e);
@@ -156,15 +158,16 @@ async function load() {
   }
 }
 function employeeApi(path: string, method = "GET", body?: any, headers?: Record<string,string>) {
+  if (isGlobalMall) return Promise.reject(new Error(globalCommerceNotice));
   return new Promise<any>((resolve, reject) =>
     uni.request({
-      url: `${import.meta.env.VITE_API_BASE || "/api/saidian-mall/v1"}${path}`,
+      url: `${API_BASE}${path}`,
       method: method as any,
       data: body,
       header: { authorization: `Bearer ${token.value}`, ...(headers || {}) },
       timeout:15000,
       success: (r) => {
-        if(r.statusCode===401){token.value='';data.value=null;coupons.value=[];uni.removeStorageSync('employee-token');loginMessage.value='员工会话已过期，请重新从企业微信进入。';}
+        if(r.statusCode===401){token.value='';data.value=null;coupons.value=[];mallStorage.remove('employee-token');loginMessage.value='员工会话已过期，请重新从企业微信进入。';}
         r.statusCode < 300 ? resolve(r.data) : reject(new Error((r.data as any)?.message || '员工请求失败'));
       },
       fail: reject,
@@ -180,8 +183,8 @@ async function claimCoupon(id: string) {
     uni.showToast({ title: "券码已领取，链接已复制", icon: "none" });
   } catch (e) { toast(e); }
 }
-async function useDemoSession(){if(!demo.value||!demoToken.value.trim())return;token.value=demoToken.value.trim();demoToken.value='';uni.setStorageSync('employee-token',token.value);await load();}
-function logout(){token.value='';data.value=null;coupons.value=[];products.value=[];uni.removeStorageSync('employee-token');loginMessage.value='员工账号已退出，顾客账号不受影响。';}
+async function useDemoSession(){if(!demo.value||!demoToken.value.trim())return;token.value=demoToken.value.trim();demoToken.value='';mallStorage.set('employee-token',token.value);await load();}
+function logout(){token.value='';data.value=null;coupons.value=[];products.value=[];mallStorage.remove('employee-token');loginMessage.value='员工账号已退出，顾客账号不受影响。';}
 async function productPromotion(){try{const selected=products.value[productIndex.value-1];data.value.promotion=await employeeApi('/wecom/me/promotion'+(selected?'?productId='+encodeURIComponent(selected.id):''));}catch(e){toast(e);}}
 async function authorize() {
   try {

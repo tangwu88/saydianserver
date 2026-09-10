@@ -1,4 +1,5 @@
 <template>
+  <GlobalAccount v-if="isGlobalMall" :user="user" @logout="logout" /><template v-else>
   <DesktopHeader /><view class="page"
     ><view class="container profile-layout"
       ><view
@@ -45,13 +46,15 @@
     ></view
   >
   <StoreFooter />
-</template>
+</template></template>
 <script setup lang="ts">
+import { mallStorage, isGlobalMall } from "../../realm";
+import GlobalAccount from "../../components/GlobalAccount.vue";
 import { onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import StoreFooter from "../../components/StoreFooter.vue";
-import { clearMallSession, toast } from "../../api";
+import { clearMallSession, logoutGlobalMall, toast } from "../../api";
 const user = ref<any>();
 const menus = [
   { icon: "地", label: "收货地址", url: "/pages/addresses/index" },
@@ -63,16 +66,21 @@ const menus = [
   { icon: "推", label: "员工推广中心", url: "/pages/employee/index" },
 ];
 onShow(() => {
-  user.value = uni.getStorageSync("saidian-user") || null;
+  user.value = mallStorage.get("saidian-user") || null;
 });
 function go(url: string) {
   uni.navigateTo({ url });
 }
 async function logout() {
-  const answer = await uni.showModal({title:'退出顾客账号',content:'本地购物与个人缓存将清理，订单和积分保留在服务端。员工身份不受影响。'});
+  const answer = await uni.showModal({title: isGlobalMall ? '退出国际账号' : '退出顾客账号',content: isGlobalMall ? '仅清理此浏览器的国际版登录与个人缓存，不影响国内账号。' : '本地购物与个人缓存将清理，订单和积分保留在服务端。员工身份不受影响。'});
   if (!answer.confirm) return;
   try {
-    await clearMallSession(); user.value = null;
+    if (isGlobalMall) {
+      const result = await logoutGlobalMall();
+      if (result === "changed") { toast("账号已切换，未清理新账号登录状态"); return; }
+      if (result === "local") toast("仅本机退出，服务端会话撤销未确认");
+    } else await clearMallSession();
+    user.value = null;
     uni.reLaunch({url:'/pages/profile/index'});
   } catch (error) { toast(error); }
 }

@@ -1,3 +1,5 @@
+import { mallStorage, mallStorageKey, mallConfig, isGlobalMall, globalCommerceNotice } from "./realm";
+import { globalApiAllowed } from "./realm-config";
 import { safeMallRoute } from "./commerce-model";
 let sessionGeneration = 0;
 let loginRedirecting = false;
@@ -5,7 +7,7 @@ let defaultApiBase = "/api/saidian-mall/v1";
 /* #ifdef MP-WEIXIN */
 defaultApiBase = "https://stest.saydian.cn/api/saidian-mall/v1";
 /* #endif */
-const API_BASE = (import.meta.env.VITE_API_BASE || defaultApiBase).replace(
+export const API_BASE = (isGlobalMall ? mallConfig.apiBase : import.meta.env.VITE_API_BASE || defaultApiBase).replace(
   /\/$/,
   "",
 );
@@ -29,27 +31,29 @@ function withSessionLock<T>(operation: () => T | Promise<T>): T | Promise<T> {
   if (!h5Document()) return operation();
   const locks = lockManager();
   if (!locks?.request) throw new Error("当前浏览器不支持安全的跨标签登录，请使用 HTTPS 或 localhost 的新版浏览器");
-  return Promise.resolve(locks.request("saidian-mall:session:v1", { mode: "exclusive" }, operation));
+  return Promise.resolve(locks.request(mallStorageKey("saidian-mall:session:v1"), { mode: "exclusive" }, operation));
 }
 /** Lock the entire read/recover/create transaction, never just key generation. */
 export async function withMallCheckoutLock<T>(operation: () => Promise<T>): Promise<T> {
   if (!h5Document()) return operation();
   const locks = lockManager();
   if (!locks?.request) throw new Error("当前浏览器不支持安全下单；请使用 HTTPS 或 localhost 的新版浏览器，原下单草稿已保留");
-  return locks.request("saidian-mall:checkout:v1", { mode: "exclusive", ifAvailable: true }, lock => {
+  return locks.request(mallStorageKey("saidian-mall:checkout:v1"), { mode: "exclusive", ifAvailable: true }, lock => {
     if (!lock) throw new Error("另一个商城标签正在下单，请等待完成后重试；请勿重新选择商品");
     return operation();
   });
 }
 function stableSession(): boolean {
-  return String(uni.getStorageSync(SESSION_REVISION) || "") === String(uni.getStorageSync(SESSION_COMMIT) || "");
+  return String(mallStorage.get(SESSION_REVISION) || "") === String(mallStorage.get(SESSION_COMMIT) || "");
 }
 function identityStamp(): string {
-  return JSON.stringify([uni.getStorageSync(SESSION_COMMIT) || "", uni.getStorageSync("saidian-user")?.id || "", !!uni.getStorageSync("saidian-token")]);
+  return JSON.stringify([mallStorage.get(SESSION_COMMIT) || "", mallStorage.get("saidian-user")?.id || "", !!mallStorage.get("saidian-token")]);
 }
 export function mallSessionStamp(): string {
-  return JSON.stringify([sessionGeneration, uni.getStorageSync(SESSION_REVISION) || "", identityStamp()]);
+  return JSON.stringify([sessionGeneration, mallStorage.get(SESSION_REVISION) || "", identityStamp()]);
 }
+/** Persisted identity only: an OAuth full-page round trip resets in-memory generation. */
+export function mallOAuthSessionStamp(): string { return JSON.stringify([mallStorage.get(SESSION_REVISION) || "", identityStamp()]); }
 function currentSession(stamp: string): boolean {
   return stableSession() && stamp === mallSessionStamp();
 }
@@ -59,9 +63,9 @@ function commitSession(operation: () => void): void {
   sessionGeneration++;
   refreshPromise = null;
   // Mark writes in progress before touching credentials; readers reject mixed snapshots.
-  uni.setStorageSync(SESSION_REVISION, revision);
+  mallStorage.set(SESSION_REVISION, revision);
   operation();
-  uni.setStorageSync(SESSION_COMMIT, revision);
+  mallStorage.set(SESSION_COMMIT, revision);
   observedSession = identityStamp();
 }
 /** Only reset this document. Never remove the other tab's newly committed storage. */
@@ -81,7 +85,7 @@ export function startMallSessionSync(): void {
   };
   window.addEventListener("storage", event => {
     if (event.storageArea && event.storageArea !== window.localStorage) return;
-    if (event.key === null || [SESSION_COMMIT, "saidian-user", "saidian-token"].includes(event.key)) synchronize();
+    if (event.key === null || [SESSION_COMMIT, "saidian-user", "saidian-token"].map(mallStorageKey).includes(event.key)) synchronize();
   });
   window.addEventListener("pageshow", synchronize);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") synchronize(); });
@@ -96,9 +100,10 @@ function isWeixinMiniProgram(): boolean {
 }
 
 export async function ensureMiniProgramSession(force = false): Promise<any> {
+  if (isGlobalMall) throw new Error("国际版尚未启用小程序登录");
   if (!isWeixinMiniProgram()) throw new Error("当前环境不是微信小程序");
-  if (!force && uni.getStorageSync("saidian-token"))
-    return uni.getStorageSync("saidian-user");
+  if (!force && mallStorage.get("saidian-token"))
+    return mallStorage.get("saidian-user");
   if (miniLoginPromise) return miniLoginPromise;
   const login = (async () => {
     const result: any = await new Promise((resolve, reject) =>
@@ -110,7 +115,7 @@ export async function ensureMiniProgramSession(force = false): Promise<any> {
       data: {
         code: result.code,
         consentVersion: COMMERCE_CONSENT_VERSION,
-        referralCode: String(uni.getStorageSync("saidian-ref") || ""),
+        referralCode: String(mallStorage.get("saidian-ref") || ""),
       },
     });
     await saveMallSession(response);
@@ -134,13 +139,14 @@ export async function api<T = any>(
     sessionStamp?: string;
   } = {},
 ): Promise<T> {
+  if (isGlobalMall && !globalApiAllowed(path, options.method || "GET")) throw new Error(globalCommerceNotice);
   let expectedStamp = options.sessionStamp ?? mallSessionStamp();
   if (options.auth && sessionSyncStarted && identityStamp() !== observedSession) throw changedSession();
-  let token = String(uni.getStorageSync("saidian-token") || "");
+  let token = String(mallStorage.get("saidian-token") || "");
   if (options.auth && !token && isWeixinMiniProgram()) {
     await ensureMiniProgramSession();
     if (options.sessionStamp === undefined) expectedStamp = mallSessionStamp();
-    token = String(uni.getStorageSync("saidian-token") || "");
+    token = String(mallStorage.get("saidian-token") || "");
   }
   if (options.auth && !token) { requireLogin(); throw new Error("请先登录"); }
   if ((options.auth || path.startsWith("/auth/")) && !currentSession(expectedStamp)) throw changedSession();
@@ -180,7 +186,7 @@ function request<T>(
           resolve(response.data as T);
         }
         else {
-          const message = (response.data as any)?.message ?? "请求失败";
+          const message = (response.data as any)?.message ?? (response.data as any)?.error?.message ?? "请求失败";
           if (response.statusCode === 401 && options.auth && allowRefresh) {
             try {
               const session = await refreshMallSession(token, requestStamp);
@@ -191,15 +197,15 @@ function request<T>(
               if ([401, 403].includes((error as any)?.status) && currentSession(requestStamp)) {
                 try {
                   await clearMallSession(true, requestStamp);
-                  if (!uni.getStorageSync("saidian-token")) requireLogin();
+                  if (!mallStorage.get("saidian-token")) requireLogin();
                 } catch (clearError) { reject(clearError); return; }
               }
-              if (!currentSession(requestStamp) && uni.getStorageSync("saidian-token")) { reject(changedSession()); return; }
+              if (!currentSession(requestStamp) && mallStorage.get("saidian-token")) { reject(changedSession()); return; }
               // A lock/network failure does not prove that the shared session expired.
               if (![401, 403].includes((error as any)?.status)) { reject(error); return; }
             }
           }
-          reject(Object.assign(new Error(Array.isArray(message) ? message.join("；") : message), { status: response.statusCode }));
+          reject(Object.assign(new Error(Array.isArray(message) ? message.join("；") : message), { status: response.statusCode, errorKey: (response.data as any)?.errorKey ?? (response.data as any)?.error?.errorKey }));
         }
       },
       fail(error) {
@@ -220,9 +226,9 @@ async function refreshMallSession(failedToken: string, requestStamp: string): Pr
   if (refreshPromise) return refreshPromise;
   const pending = Promise.resolve(withSessionLock(() => {
     if (!currentSession(requestStamp)) throw changedSession();
-    const token = String(uni.getStorageSync("saidian-token") || "");
-    const refreshToken = String(uni.getStorageSync("saidian-refresh-token") || "");
-    const user = uni.getStorageSync("saidian-user");
+    const token = String(mallStorage.get("saidian-token") || "");
+    const refreshToken = String(mallStorage.get("saidian-refresh-token") || "");
+    const user = mallStorage.get("saidian-user");
     // A previous lock holder already rotated the token: reuse its result.
     if (token && token !== failedToken) return { token, refreshToken, user };
     if (!refreshToken) throw Object.assign(new Error("登录已失效"), { status: 401 });
@@ -236,9 +242,9 @@ async function refreshMallSession(failedToken: string, requestStamp: string): Pr
           if (!session?.token || !session?.refreshToken || !session?.user?.id || session.user.id !== user?.id) {
             reject(new Error("刷新登录响应不完整或账号不匹配")); return;
           }
-          uni.setStorageSync("saidian-token", session.token);
-          uni.setStorageSync("saidian-refresh-token", session.refreshToken);
-          uni.setStorageSync("saidian-user", session.user);
+          mallStorage.set("saidian-token", session.token);
+          mallStorage.set("saidian-refresh-token", session.refreshToken);
+          mallStorage.set("saidian-user", session.user);
           resolve(session); return;
         }
         reject(Object.assign(new Error("登录已失效"), { status: response.statusCode }));
@@ -256,12 +262,12 @@ export function clearMallSession(preserveCheckout = false, expectedStamp = mallS
     // Under the lock, explicit logout can also recover an interrupted credential commit.
     if (expectedStamp !== mallSessionStamp()) return;
     commitSession(() => {
-      uni.removeStorageSync("saidian-token");
-      uni.removeStorageSync("saidian-refresh-token");
-      uni.removeStorageSync("saidian-user");
+      mallStorage.remove("saidian-token");
+      mallStorage.remove("saidian-refresh-token");
+      mallStorage.remove("saidian-user");
       if (!preserveCheckout) clearCheckoutState();
-      uni.removeStorageSync("saidian-ref");
-      uni.removeStorageSync("saidian-post-login-route");
+      mallStorage.remove("saidian-ref");
+      mallStorage.remove("saidian-post-login-route");
     });
   };
   // Unsupported browsers cannot start new login/refresh operations, but can still log out.
@@ -269,32 +275,45 @@ export function clearMallSession(preserveCheckout = false, expectedStamp = mallS
   return withSessionLock(clear);
 }
 export function clearCheckoutState(): void {
-  for (const key of ["checkout-items","checkout-address","checkout-draft","checkout-owner","checkout-pending","checkout-cart-ids"]) uni.removeStorageSync(key);
+  for (const key of ["checkout-items","checkout-address","checkout-draft","checkout-owner","checkout-pending","checkout-cart-ids"]) mallStorage.remove(key);
+}
+export async function logoutGlobalMall(): Promise<"revoked" | "local" | "changed"> {
+  if (!isGlobalMall) throw new Error("此操作仅用于国际版账号");
+  const stamp = mallSessionStamp(), token = String(mallStorage.get("saidian-token") || "");
+  const revoked = !token || await new Promise<boolean>(resolve => uni.request({
+    url: "/global/api/saydian-app/v2/auth/logout", method: "POST", timeout: 15000,
+    header: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    success: response => resolve(response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.code === 200 && (response.data as any)?.data?.loggedOut === true), fail: () => resolve(false),
+  }));
+  if (!currentSession(stamp)) return "changed";
+  await clearMallSession(false, stamp);
+  if (mallStorage.get("saidian-token")) return "changed";
+  return revoked ? "revoked" : "local";
 }
 export function saveMallSession(session: any): void | Promise<void> {
   if (!session?.token || !session?.user?.id) throw new Error("登录响应不完整");
   const expected = loginSnapshots.get(session) ?? mallSessionStamp();
   return withSessionLock(() => {
     if (!currentSession(expected)) throw changedSession();
-    const previous = uni.getStorageSync("saidian-user");
-    const owner = previous?.id || uni.getStorageSync("checkout-owner");
+    const previous = mallStorage.get("saidian-user");
+    const owner = previous?.id || mallStorage.get("checkout-owner");
     commitSession(() => {
-      if (owner && owner !== session.user.id) { clearCheckoutState(); uni.removeStorageSync("saidian-ref"); }
-      uni.setStorageSync("saidian-token", session.token);
-      uni.setStorageSync("saidian-refresh-token", session.refreshToken);
-      uni.setStorageSync("saidian-user", session.user);
-      uni.setStorageSync("checkout-owner", session.user.id);
+      if (owner && owner !== session.user.id) { clearCheckoutState(); mallStorage.remove("saidian-ref"); }
+      mallStorage.set("saidian-token", session.token);
+      mallStorage.set("saidian-refresh-token", session.refreshToken);
+      mallStorage.set("saidian-user", session.user);
+      mallStorage.set("checkout-owner", session.user.id);
     });
     loginRedirecting = false;
   });
 }
 export function requireLogin(next?: string): boolean {
-  if (uni.getStorageSync("saidian-token")) return true;
+  if (mallStorage.get("saidian-token")) return true;
   const pages = getCurrentPages();
   const page = pages[pages.length - 1] as any;
   const query = Object.entries(page?.options || {}).map(([key,value]) => encodeURIComponent(key)+"="+encodeURIComponent(String(value))).join("&");
   const route = next || (page?.route ? "/" + page.route + (query ? "?" + query : "") : "/pages/profile/index");
-  if (!route.startsWith("/pages/login/")) uni.setStorageSync("saidian-post-login-route", safeMallRoute(route));
+  if (!route.startsWith("/pages/login/")) mallStorage.set("saidian-post-login-route", safeMallRoute(route));
   if (!loginRedirecting && !page?.route?.includes("pages/login/")) {
     loginRedirecting = true;
     uni.navigateTo({ url: "/pages/login/index", complete: () => { loginRedirecting = false; } });

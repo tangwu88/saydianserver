@@ -69,6 +69,7 @@
   <StoreFooter />
 </template>
 <script setup lang="ts">
+import { mallStorage } from "../../realm";
 import { onShow } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
@@ -132,11 +133,11 @@ async function remove(id: string) {
 }
 function checkout() {
   if (busy.value) return;
-  if (uni.getStorageSync('checkout-draft')?.uncertain) { toast('先恢复上次下单结果，不会创建新的结算请求');uni.navigateTo({url:'/pages/checkout/index'});return; }
+  if (mallStorage.get('checkout-draft')?.uncertain) { toast('先恢复上次下单结果，不会创建新的结算请求');uni.navigateTo({url:'/pages/checkout/index'});return; }
   if (!selected.value.length) return toast("请选择有库存的商品");
   clearCheckoutState();
-  uni.setStorageSync('checkout-owner', uni.getStorageSync('saidian-user')?.id);
-  uni.setStorageSync(
+  mallStorage.set('checkout-owner', mallStorage.get('saidian-user')?.id);
+  mallStorage.set(
     "checkout-items",
     selected.value.map((x: any) => ({
       skuId: x.skuId,

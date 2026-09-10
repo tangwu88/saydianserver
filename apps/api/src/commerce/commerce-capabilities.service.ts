@@ -22,12 +22,16 @@ export class CommerceCapabilitiesService {
 
   // Configuration readiness is not a provider verification or a payer identity
   // assertion. Creating a payment still validates the actual User.
-  async publicCapabilities() {
-    if (isGlobalRealm()) return {
-      login: { password: { enabled: !businessWritesPaused(process.env) }, sms: { enabled: false }, wechatH5: { enabled: false } },
+  async publicCapabilities(locale?: string) {
+    if (isGlobalRealm()) {
+      const official = await this.official.globalCapabilities(locale);
+      return {
+      realm: "global", consentVersion: official.consentVersion, legal: official.legal,
+      login: { password: { enabled: !businessWritesPaused(process.env) }, sms: { enabled: false, reason: "Use email or international account sign-in." }, wechatH5: official.wechatH5, wechatBinding: official.wechatBinding },
       payments: [], checkout: { enabled: false, points: { supported: false, requiresVerifiedAccount: true } },
       maintenance: { readOnly: businessWritesPaused(process.env) }, demo: false,
-    };
+      };
+    }
     const readOnly = businessWritesPaused(process.env);
     const outboundPaused = shouldPauseWorkers(process.env);
     const demo = process.env.NODE_ENV !== "production" && envBoolean("H5_DEMO_ENABLED");

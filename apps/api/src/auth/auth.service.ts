@@ -129,7 +129,7 @@ export class AuthService {
     return this.issueSession(user.id);
   }
 
-  async refresh(refreshToken: string): Promise<SessionContract> {
+  async refresh(refreshToken: string, requireVerifiedMall = false): Promise<SessionContract> {
     const normalized = refreshToken.trim();
     if (!normalized) throw new UnauthorizedException("登录已失效，请重新登录");
     const tokenHash = this.refreshHash(normalized);
@@ -137,6 +137,9 @@ export class AuthService {
       where: { refreshTokenHash: tokenHash },
       include: { user: true },
     });
+    if (requireVerifiedMall && session && !(session.user.emailVerifiedAt || session.user.mobileVerifiedAt)) {
+      throw globalError(403, "account_verification_required", "Verify your email address or international phone before using the H5 account.");
+    }
     if (
       !session ||
       session.revokedAt ||
@@ -155,6 +158,7 @@ export class AuthService {
         id: session.id,
         refreshTokenHash: tokenHash,
         revokedAt: null,
+        ...(requireVerifiedMall ? { user: { status: UserStatus.ACTIVE, OR: [{ emailVerifiedAt: { not: null } }, { mobileVerifiedAt: { not: null } }] } } : {}),
       },
       data: {
         accessJti,
@@ -174,13 +178,16 @@ export class AuthService {
   }
 
   async refreshForMall(refreshToken: string) {
-    const session = await this.refresh(refreshToken);
+    const session = await this.refresh(refreshToken, isGlobalRealm());
     return this.mallSession(session, session.member.mobileMasked ?? null);
   }
 
   async loginForMall(mobile: string, password: string, referralCode?: string) {
     const user = await this.passwordUser(mobile, password);
-    if (!(user.mobileVerifiedAt || (isGlobalRealm() && user.emailVerifiedAt))) throw new UnauthorizedException("请先使用手机验证码验证后登录商城");
+    if (!(user.mobileVerifiedAt || (isGlobalRealm() && user.emailVerifiedAt))) {
+      if (isGlobalRealm()) throw globalError(403, "account_verification_required", "Verify your email address or international phone before using the H5 account.");
+      throw new UnauthorizedException("请先使用手机验证码验证后登录商城");
+    }
     const session = await this.issueSession(user.id);
     if (referralCode) await this.bindReferral(user.id, referralCode);
     return this.mallSession(session, user.mobile);
@@ -637,7 +644,13 @@ export class AuthService {
       user: {
         id: session.member.id,
         nickname: session.member.nickname,
-        mobile,
+        mobile: isGlobalRealm() ? session.member.phoneMasked ?? session.member.mobileMasked ?? null : mobile,
+        ...(isGlobalRealm() ? {
+          memberNo: session.member.memberNo ?? null,
+          promo_code: session.member.promo_code ?? null,
+          emailMasked: session.member.emailMasked ?? null,
+          phoneMasked: session.member.phoneMasked ?? null,
+        } : {}),
         avatarUrl: session.member.avatarUrl ?? null,
       },
     };

@@ -14,7 +14,7 @@ const nginx = readFileSync(resolve(directory, "nginx.locations.conf"), "utf8");
 const adminNginx = readFileSync(resolve(directory, "admin-nginx.conf"), "utf8");
 const adminDockerfile = readFileSync(resolve(directory, "admin.Dockerfile"), "utf8");
 const example = readFileSync(resolve(directory, "env.example"), "utf8");
-const keys = new Set(example.split(/\r?\n/).filter((line) => /^[A-Z_]+=/.test(line)).map((line) => line.split("=", 1)[0]));
+const keys = new Set(example.split(/\r?\n/).filter((line) => /^[A-Z_][A-Z0-9_]*=/.test(line)).map((line) => line.split("=", 1)[0]));
 let checks = 0;
 const check = (value, message) => { assert(value, message); checks += 1; };
 
@@ -36,6 +36,8 @@ check(compose.networks.global_private.internal === true, "Data network must be i
 check(compose.networks.gateway.external === true, "Gateway must use an explicitly selected existing network");
 check(compose.services["global-api"].networks.gateway.aliases.includes("global-api"), "Gateway upstream alias must be global-api");
 check(!compose.services["global-worker"].networks.includes("gateway"), "Worker must not join gateway network");
+check(compose.services["global-api"].environment.GLOBAL_WECHAT_H5_ENABLED === "${GLOBAL_WECHAT_H5_ENABLED:-false}", "Official-account H5 login must require an explicit independent switch");
+check(!compose.services["global-worker"].environment.GLOBAL_WECHAT_H5_ENABLED, "H5 auth must not enable Worker outbound processing");
 const admin = compose.services["global-admin"];
 check(admin.image === "ghcr.io/tangwu88/saydianserver-global-admin:${GLOBAL_IMAGE_TAG:?Set a verified full commit SHA}", "Admin must use its independent immutable release image");
 check(JSON.stringify(admin.networks) === '{"gateway":{"aliases":["global-admin"]}}', "Admin must only join the gateway network with its own alias");
@@ -93,7 +95,7 @@ for (const [name, expected] of Object.entries(resourceLimits)) {
   }
   check(service.logging?.driver === "json-file" && service.logging?.options?.["max-size"] === "10m" && service.logging?.options?.["max-file"] === "3", `${name}: bounded container logs are required`);
 }
-for (const [, key] of composeText.matchAll(/(?<!\$)\$\{(GLOBAL_[A-Z_]+)/g)) {
+for (const [, key] of composeText.matchAll(/(?<!\$)\$\{(GLOBAL_[A-Z0-9_]+)/g)) {
   check(keys.has(key), `env.example must document ${key}`);
 }
 check(!/migrate|seed|docker\.sock|\/opt\/saydianapp-server/i.test(composeText), "Compose must not run migration/seed or mount domestic deployment");
@@ -105,7 +107,9 @@ check(/proxy_set_header X-App-Realm "";/.test(nginx) && /proxy_set_header X-Real
 check(/location \^~ \/global\/\s*\{\s*return 404;\s*\}/.test(nginx), "Unpublished global pages must not fall through to domestic routes");
 check(!/saydianapp-api|saydianapp-admin/.test(nginx), "Global routes must not target domestic services");
 check(adminDockerfile.includes("--filter @saydian/app-contracts build && pnpm --filter @saydian/app-admin-web build"), "Admin image must build contracts and the admin frontend");
-check(!/apps\/(?:shop|download-web|api|worker)|COPY\s+\.\s+\./.test(adminDockerfile), "Admin image must not copy unrelated applications or the entire repository");
+check(!/apps\/(?:download-web|api|worker)|COPY\s+\.\s+\./.test(adminDockerfile), "Global static image must not copy unrelated applications or the entire repository");
+check(adminDockerfile.includes("RUN VITE_APP_REALM=global VITE_API_BASE=/global/api/saidian-mall/v1 VITE_PUBLIC_BASE=/global/saidian-mall/ pnpm --filter @saydian/app-shop build:h5"), "H5 must use independently scoped build variables without changing admin build configuration");
+check(adminDockerfile.includes("COPY --from=build /workspace/apps/shop/dist/build/h5 /usr/share/nginx/html/global/saidian-mall"), "Global H5 must be copied into its own static tree");
 check(adminDockerfile.includes("FROM nginxinc/nginx-unprivileged:") && adminDockerfile.includes("ENV VITE_BASE_PATH=/admin/"), "Admin runtime must be unprivileged and use the existing /admin/ public path");
 check(adminDockerfile.includes("COPY --from=build /workspace/apps/admin-web/dist /usr/share/nginx/html/admin"), "Admin runtime must contain the compiled frontend only");
 check(adminNginx.includes("listen 8080;") && adminNginx.includes("location /admin/ {") && adminNginx.includes("try_files $uri $uri/ /admin/index.html;"), "Admin must serve SPA navigation under /admin/");
@@ -113,6 +117,10 @@ check(/location = \/admin\/index\.html\s*\{[^}]*try_files \$uri =404;[^}]*Cache-
 check(/location \^~ \/admin\/assets\/\s*\{[^}]*try_files \$uri =404;/s.test(adminNginx), "Missing static assets must return 404 rather than SPA HTML");
 check(!/proxy_pass|fastcgi_pass|uwsgi_pass|scgi_pass/.test(adminNginx), "Static admin must not proxy API requests or receive service credentials");
 check(/location \/\s*\{\s*return 404;\s*\}/.test(adminNginx), "Static admin must not serve other application paths");
+check(nginx.includes("location ^~ /global/saidian-mall/") && nginx.includes("proxy_pass http://global-admin:8080;"), "Only the fixed global H5 prefix may use the global static upstream");
+check(/location \^~ \/global\/saidian-mall\/\s*\{[^}]*access_log off;/s.test(nginx) && !nginx.includes("proxy_hide_header Referrer-Policy;"), "Gateway must not log OAuth query strings or hide the static Referrer-Policy");
+check(/location = \/global\/saidian-mall\/oauth\/callback\s*\{[^}]*access_log off;[^}]*try_files \/global\/saidian-mall\/index\.html =404;[^}]*Cache-Control "no-store"[^}]*Referrer-Policy "no-referrer"/s.test(adminNginx), "Callback must serve the real H5 without redirect, logs or referrer leakage");
+check(adminNginx.includes("location ~ ^/global/saidian-mall/(assets|static)/ {") && adminNginx.includes("try_files $uri =404;"), "H5 static assets must return real 404s instead of HTML");
 console.log(`Global deployment structural checks passed (${checks}). No runtime operations performed.`);
 
 const docker = spawnSync("docker", ["compose", "version", "--short"], { encoding: "utf8", timeout: 10_000 });

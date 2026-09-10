@@ -5,7 +5,7 @@ import { parsePhoneNumberFromString } from "libphonenumber-js/max";
 export const globalLocales = ["en", "zh-Hans", "zh-Hant", "de", "fr", "es", "ja", "ko"] as const;
 export type GlobalLocale = typeof globalLocales[number];
 export type VerificationChannel = "email" | "sms";
-export type VerificationPurpose = "register" | "reset_password";
+export type VerificationPurpose = "register" | "reset_password" | "wechat_bind";
 
 export function globalError(status: number, errorKey: string, message: string): HttpException {
   return new HttpException({ message, errorKey }, status);

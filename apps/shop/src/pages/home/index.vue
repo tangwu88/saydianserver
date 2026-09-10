@@ -22,6 +22,7 @@
   <StoreFooter />
 </template>
 <script setup lang="ts">
+import { mallStorage } from "../../realm";
 import { onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
@@ -37,7 +38,7 @@ async function load() { loading.value = true; error.value = ""; try { await load
 onShow(() => { captureReferral(); void load(); });
 function go(url: string) { uni.navigateTo({ url }); }
 function openProduct(id: string) { go(`/pages/product/index?id=${encodeURIComponent(id)}`); }
-function category(id?: string) { uni.setStorageSync("saidian-category-selected", id || ""); uni.switchTab({ url: "/pages/category/index" }); }
+function category(id?: string) { mallStorage.set("saidian-category-selected", id || ""); uni.switchTab({ url: "/pages/category/index" }); }
 function openBanner(banner: any) {
   if (banner.productId) return openProduct(banner.productId);
   const url = String(banner.targetUrl || banner.linkUrl || banner.link || "");

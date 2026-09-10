@@ -24,6 +24,7 @@
   >
 </template>
 <script setup lang="ts">
+import { mallStorage } from "../../realm";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import { api, toast } from "../../api";
@@ -53,7 +54,7 @@ async function remove(id: string) {
 }
 function choose(item: any) {
   if (!selectMode.value) return;
-  uni.setStorageSync("checkout-address", item);
+  mallStorage.set("checkout-address", item);
   uni.navigateBack();
 }
 </script>

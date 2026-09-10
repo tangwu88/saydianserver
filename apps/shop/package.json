@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
     "dev:h5": "uni -p h5",
     "build": "pnpm run build:h5",
     "build:h5": "uni build -p h5",

@@ -37,10 +37,11 @@
   >
 </template>
 <script setup lang="ts">
+import { mallStorage } from "../../realm";
 import { onLoad } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
 import { api, toast } from "../../api";
-const busy=ref(false),owner=String(uni.getStorageSync('saidian-user')?.id || '');
+const busy=ref(false),owner=String(mallStorage.get('saidian-user')?.id || '');
 const form = reactive<any>({
   name: "",
   mobile: "",
@@ -68,7 +69,7 @@ function region(e: any) {
 }
 async function save() {
   if (busy.value) return;
-  if (owner !== String(uni.getStorageSync('saidian-user')?.id || '')) return toast('账号已切换，请重新打开地址编辑页');
+  if (owner !== String(mallStorage.get('saidian-user')?.id || '')) return toast('账号已切换，请重新打开地址编辑页');
   if (!form.name.trim() || !/^1\d{10}$/.test(form.mobile) || !form.province.trim() || !form.city.trim() || !form.district.trim() || !form.detail.trim()) return toast('请完整填写收货人、手机号和地址');
   busy.value=true;
   try {

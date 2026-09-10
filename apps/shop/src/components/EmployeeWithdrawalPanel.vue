@@ -1,17 +1,19 @@
 <script setup lang="ts">
+import { mallStorage, isGlobalMall, globalCommerceNotice } from "../realm";
 import { onMounted, ref } from "vue";
-import { money, toast } from "../api";
+import { money, toast, API_BASE } from "../api";
 
 const data = ref<any>(), amount = ref(""), busy = ref(false), loading = ref(false), requestKey = ref("");
 const props=defineProps<{employeeId:string}>();
 const uncertain=ref(false);
 const labels: Record<string, string> = { SUBMITTED: "待审核", APPROVED: "已审核", PROCESSING: "付款处理中", WAIT_USER_CONFIRM: "等待确认收款", SUCCEEDED: "已付款", FAILED: "已失败并退回", REJECTED: "已拒绝", CANCELLED: "已取消" };
 function request(method = "GET", body?: unknown) {
-  const token=String(uni.getStorageSync('employee-token')||'');
+  if (isGlobalMall) return Promise.reject(new Error(globalCommerceNotice));
+  const token=String(mallStorage.get('employee-token')||'');
   return new Promise<any>((resolve, reject) => uni.request({
-    url: `${import.meta.env.VITE_API_BASE || "/api/saidian-mall/v1"}/wecom/me/withdrawals`, method: method as "GET" | "POST", data: body as any,
+    url: `${API_BASE}/wecom/me/withdrawals`, method: method as "GET" | "POST", data: body as any,
     header: { authorization: `Bearer ${token}` },timeout:15000,
-    success: (response) => { if(token!==String(uni.getStorageSync('employee-token')||''))return reject(new Error('员工账号已切换'));
+    success: (response) => { if(token!==String(mallStorage.get('employee-token')||''))return reject(new Error('员工账号已切换'));
       response.statusCode < 300 ? resolve(response.data) : reject(Object.assign(new Error((response.data as any)?.message || '提现请求失败'),{status:response.statusCode})); }, fail: reject,
   }));
 }
@@ -25,12 +27,12 @@ async function apply() {
   // Retain the key through uncertain retries; input changes clear it. This key is not an auth credential.
   if (!requestKey.value) requestKey.value = `employee_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
   busy.value = true;
-  try {const saved=uni.getStorageSync('employee-withdrawal-draft');const payload=saved?.employeeId===props.employeeId&&saved.uncertain?saved.payload:{amountCents,idempotencyKey:requestKey.value};uni.setStorageSync('employee-withdrawal-draft',{employeeId:props.employeeId,payload,uncertain:true});uncertain.value=true;
-    await request('POST',payload);uni.removeStorageSync('employee-withdrawal-draft');uncertain.value=false;amount.value = ''; requestKey.value = ''; uni.showToast({ title: '已申请，等待审核', icon: 'none' }); await load(); }
-  catch (error) { if([400,403,409,422].includes((error as any)?.status)){uncertain.value=false;uni.removeStorageSync('employee-withdrawal-draft');}toast(error); }
+  try {const saved=mallStorage.get('employee-withdrawal-draft');const payload=saved?.employeeId===props.employeeId&&saved.uncertain?saved.payload:{amountCents,idempotencyKey:requestKey.value};mallStorage.set('employee-withdrawal-draft',{employeeId:props.employeeId,payload,uncertain:true});uncertain.value=true;
+    await request('POST',payload);mallStorage.remove('employee-withdrawal-draft');uncertain.value=false;amount.value = ''; requestKey.value = ''; uni.showToast({ title: '已申请，等待审核', icon: 'none' }); await load(); }
+  catch (error) { if([400,403,409,422].includes((error as any)?.status)){uncertain.value=false;mallStorage.remove('employee-withdrawal-draft');}toast(error); }
   finally { busy.value = false; }
 }
-onMounted(()=>{const saved=uni.getStorageSync('employee-withdrawal-draft');if(saved?.employeeId===props.employeeId&&saved.uncertain){uncertain.value=true;requestKey.value=saved.payload.idempotencyKey;amount.value=(saved.payload.amountCents/100).toFixed(2);}else uni.removeStorageSync('employee-withdrawal-draft');void load();});
+onMounted(()=>{const saved=mallStorage.get('employee-withdrawal-draft');if(saved?.employeeId===props.employeeId&&saved.uncertain){uncertain.value=true;requestKey.value=saved.payload.idempotencyKey;amount.value=(saved.payload.amountCents/100).toFixed(2);}else mallStorage.remove('employee-withdrawal-draft');void load();});
 </script>
 
 <template>

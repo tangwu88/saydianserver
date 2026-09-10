@@ -1,4 +1,4 @@
-<template><DesktopHeader/><view class="page login-page"><view class="login-card card"><image class="login-logo" :src="brandLogo" mode="aspectFit"/><h1>{{ bindTicket ? "绑定手机账号" : "登录赛电商城" }}</h1><text class="muted">与赛电 App 共用会员、订单和积分账户</text>
+<template><GlobalLogin v-if="isGlobalMall"/><template v-else><DesktopHeader/><view class="page login-page"><view class="login-card card"><image class="login-logo" :src="brandLogo" mode="aspectFit"/><h1>{{ bindTicket ? "绑定手机账号" : "登录赛电商城" }}</h1><text class="muted">与赛电 App 共用会员、订单和积分账户</text>
 <view v-if="capabilities?.demo" class="notice">本地演示：使用合成手机号，验证码不会发送到手机。</view>
 <view v-if="error" class="error-state">{{ error }}</view>
 <view v-if="!bindTicket" class="login-tabs"><button :class="{active:mode==='sms'}" @click="mode='sms'">验证码登录</button><button :class="{active:mode==='password'}" @click="mode='password'">密码登录</button></view>
@@ -13,8 +13,10 @@
 <!-- #endif -->
 <!-- #ifdef MP-WEIXIN --><button class="outline-btn" @click="miniLogin">微信小程序登录</button><!-- #endif -->
 <button class="text-button" @click="browse">先逛逛</button>
-</view></view></template>
+</view></view></template></template>
 <script setup lang="ts">
+import { mallStorage, isGlobalMall } from "../../realm";
+import GlobalLogin from "../../components/GlobalLogin.vue";
 import { onLoad,onUnload } from "@dcloudio/uni-app"; import { computed,ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";import { brandLogo } from "../../storefront";
 import { api,saveMallSession,COMMERCE_CONSENT_VERSION,ensureMiniProgramSession,toast } from "../../api";
@@ -25,6 +27,7 @@ const enabled=computed(()=>bindTicket.value ? capabilities.value?.login?.sms?.en
 let timer:ReturnType<typeof setInterval>|undefined;
 onUnload(()=>{if(timer)clearInterval(timer);});
 onLoad(async()=>{
+  if (isGlobalMall) return;
   /* #ifdef H5 */
   if(typeof navigator!=="undefined" && /wxwork/i.test(navigator.userAgent)){uni.reLaunch({url:"/pages/employee/index"});return;}
   /* #endif */
@@ -38,7 +41,7 @@ onLoad(async()=>{
       const response:any=await api("/auth/wechat/h5/login",{method:"POST",data:{code:oauthCode,state,codeVerifier:stored.verifier,consentVersion:COMMERCE_CONSENT_VERSION}});
       sessionStorage.removeItem("saidian-oauth:"+state);
       const clean=new URL(location.href);clean.searchParams.delete("code");clean.searchParams.delete("state");history.replaceState(null,"",clean.href);
-      if(response.requiresMobileBinding){bindTicket.value=response.bindTicket;agreementAccepted.value=true;mode.value="sms";uni.setStorageSync("saidian-post-login-route",safeMallRoute(response.returnTo));}
+      if(response.requiresMobileBinding){bindTicket.value=response.bindTicket;agreementAccepted.value=true;mode.value="sms";mallStorage.set("saidian-post-login-route",safeMallRoute(response.returnTo));}
       else await save(response);
     }
     /* #endif */
@@ -57,23 +60,23 @@ async function login(){
   busy.value=true;error.value="";
   try{
     const path=bindTicket.value?"/auth/wechat/h5/bind-mobile":mode.value==="password"?"/auth/password/login":"/auth/sms/login";
-    const response=await api(path,{method:"POST",data:{mobile:mobile.value,...(mode.value==="password"&&!bindTicket.value?{password:password.value}:{code:code.value}),...(bindTicket.value?{bindTicket:bindTicket.value}:{}),consentVersion:COMMERCE_CONSENT_VERSION,referralCode:String(uni.getStorageSync("saidian-ref")||"")}});
+    const response=await api(path,{method:"POST",data:{mobile:mobile.value,...(mode.value==="password"&&!bindTicket.value?{password:password.value}:{code:code.value}),...(bindTicket.value?{bindTicket:bindTicket.value}:{}),consentVersion:COMMERCE_CONSENT_VERSION,referralCode:String(mallStorage.get("saidian-ref")||"")}});
     await save(response);
   }catch(e){error.value=e instanceof Error?e.message:"登录失败";}finally{busy.value=false;}
 }
-async function save(response:any){await saveMallSession(response);await bindReferral();const route=safeMallRoute(response.returnTo||uni.getStorageSync("saidian-post-login-route"));uni.removeStorageSync("saidian-post-login-route");uni.reLaunch({url:route});}
+async function save(response:any){await saveMallSession(response);await bindReferral();const route=safeMallRoute(response.returnTo||mallStorage.get("saidian-post-login-route"));mallStorage.remove("saidian-post-login-route");uni.reLaunch({url:route});}
 async function officialLogin(){
   if(!agreementAccepted.value)return toast("请先阅读并同意协议");
   /* #ifdef H5 */
   busy.value=true;
   try{const bytes=crypto.getRandomValues(new Uint8Array(32));const verifier=Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(verifier));const challenge=Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,"0")).join("");
-    const response:any=await api("/auth/wechat/h5/authorize-url",{method:"POST",data:{returnTo:safeMallRoute(uni.getStorageSync("saidian-post-login-route")),codeChallenge:challenge,referralCode:String(uni.getStorageSync("saidian-ref")||"")}});
+    const response:any=await api("/auth/wechat/h5/authorize-url",{method:"POST",data:{returnTo:safeMallRoute(mallStorage.get("saidian-post-login-route")),codeChallenge:challenge,referralCode:String(mallStorage.get("saidian-ref")||"")}});
     const destination=new URL(response.authorizeUrl);if(destination.protocol!=="https:" || destination.hostname!=="open.weixin.qq.com")throw new Error("授权地址不正确");
     sessionStorage.setItem("saidian-oauth:"+response.state,JSON.stringify({verifier}));location.assign(destination.href);
   }catch(e){toast(e);}finally{busy.value=false;}
   /* #endif */
 }
-async function miniLogin(){if(!agreementAccepted.value)return toast("请先阅读并同意协议");try{await ensureMiniProgramSession(true);await bindReferral();uni.reLaunch({url:safeMallRoute(uni.getStorageSync("saidian-post-login-route"))});}catch(e){toast(e);}}
+async function miniLogin(){if(!agreementAccepted.value)return toast("请先阅读并同意协议");try{await ensureMiniProgramSession(true);await bindReferral();uni.reLaunch({url:safeMallRoute(mallStorage.get("saidian-post-login-route"))});}catch(e){toast(e);}}
 function help(section:string){uni.navigateTo({url:"/pages/help/index?section="+section});}
 function browse(){uni.switchTab({url:"/pages/home/index"});}
 </script>

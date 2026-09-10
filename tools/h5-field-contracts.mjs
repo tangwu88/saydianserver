@@ -14,12 +14,15 @@ const obj = (properties, required = Object.keys(properties)) => ({ type: "object
 const mobile = { type: "string", pattern: "^1[3-9][0-9]{9}$" };
 const otp = { type: "string", pattern: "^[0-9]{6}$", description: "一次性验证码；login 与 bind_mobile 用途隔离。" };
 const hex = { type: "string", pattern: "^[a-f0-9]{64}$" };
-const consent = { type: "string", minLength: 1, maxLength: 80, description: "客户端展示并获同意的商城协议版本；当前客户端 commerce-legal-v1。" };
+const consent = { type: "string", minLength: 1, maxLength: 80, description: "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。" };
+const globalLocale = { enum: ["en", "zh-Hans", "zh-Hant", "de", "fr", "es", "ja", "ko"] };
+const globalIdentifier = { type: "string", description: "国际账号邮箱或带+国家码的E.164手机号；不会自动合并账号。" };
+const globalPassword = { type: "string", minLength: 8, description: "至少8字符、最多72 UTF-8字节；已有账号输入原密码，新账号用于设置密码。" };
 const quantity = { type: "integer", minimum: 1, maximum: 999 };
 const sid = number => `00000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 const at = "2026-09-08T01:00:00.000Z";
 const source = {
-  auth: "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts",
+  auth: "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
   store: "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/commerce/commerce.service.ts; apps/api/src/commerce/commerce-store.service.ts; packages/commerce-domain/src/pricing.ts",
   payment: "apps/api/src/billing/billing.service.ts; apps/api/src/billing/payment-provider.service.ts; packages/contracts/src/index.ts",
   capability: "apps/api/src/commerce/commerce-capabilities.service.ts",
@@ -44,9 +47,9 @@ const sessionExample = {
 const authNote = "商城成功响应为 raw：直接读取 token/user，不套 data。与 App 共享 User.id；Employee 会话的 typ/aud 和权限独立。手机号显示形态可能为掩码，不据此判断账号身份。";
 export const h5FieldContracts = {
   "CommerceCompatibilityController.loginPassword": record(
-    obj({ mobile, password: { ...text, minLength: 1 }, referralCode: text }, ["mobile", "password"]),
+    { anyOf: [obj({ mobile: { anyOf: [mobile, globalIdentifier] }, password: { ...text, minLength: 1 }, referralCode: text }, ["mobile", "password"]), obj({ identifier: globalIdentifier, password: globalPassword }, ["identifier", "password"])] },
     { mobile: "19900000001", password: "H5-CONTRACT-Test-Password-Only" }, sessionSchema, sessionExample, source.auth,
-    authNote + "复用现有手机号密码核验；演示种子会员没有预设密码，错误凭据不会自动注册。"),
+    authNote + "国内传mobile；国际版支持mobile或identifier字段中的邮箱/E.164手机号，须有真实联系方式验证记录。错误凭据不会自动注册。"),
   "CommerceCompatibilityController.requestSms": record(
     obj({ mobile, usage: { enum: ["login", "bind_mobile"] } }, ["mobile"]),
     { mobile: "19900000001", usage: "login" },
@@ -62,28 +65,46 @@ export const h5FieldContracts = {
     authNote + "同一 refreshToken 并发只有一次可成功。过期保留带 checkout-owner 的草稿；同一用户重新登录可恢复，换用户清除旧草稿，禁止旧响应覆盖新会话。"),
 };
 const returnTo = { ...text, maxLength: 1024, description: "受限站内相对路径，如 /pages/checkout/index；拒绝外站、协议相对URL、hash及敏感令牌查询参数。不是任意OAuth redirect_uri。" };
-const boundSession = obj({ ...sessionSchema.properties, requiresMobileBinding: { const: false }, returnTo });
-const bindingPending = obj({ requiresMobileBinding: { const: true }, bindTicket: hex, expiresIn: positive, returnTo });
+const boundSession = obj({ ...sessionSchema.properties, requiresMobileBinding: { const: false }, requiresAccountBinding: { const: false }, returnTo }, [...Object.keys(sessionSchema.properties), "requiresMobileBinding", "returnTo"]);
+const bindingPending = obj({ requiresMobileBinding: { const: true }, requiresAccountBinding: { const: true }, bindTicket: hex, expiresIn: positive, returnTo }, ["requiresMobileBinding", "bindTicket", "expiresIn", "returnTo"]);
 const oauthState = "a".repeat(64), bindTicket = "b".repeat(64);
 const verifier = "H5-CONTRACT-verifier-00000000000000000000000000000001";
 h5FieldContracts["CommerceCompatibilityController.authorizeWechatH5"] = record(
-  obj({ returnTo, codeChallenge: { ...hex, description: "SHA-256(codeVerifier) 小写hex。codeVerifier随机43至128字符，仅保存在当前浏览器sessionStorage；不是由微信校验的PKCE扩展。" }, referralCode: text }, ["returnTo", "codeChallenge"]),
+  obj({ returnTo, codeChallenge: { ...hex, description: "SHA-256(codeVerifier) 小写hex。codeVerifier随机43至128字符，仅保存在当前浏览器sessionStorage；不是由微信校验的PKCE扩展。" }, referralCode: text, consentVersion: consent, locale: globalLocale }, ["returnTo", "codeChallenge"]),
   { returnTo: "/pages/checkout/index", codeChallenge: "72ece7cd194df3719ae06574d0392e54b9d2166287f064d88c94d24b87673bb6", referralCode: "H5DEMO" },
   obj({ authorizeUrl: { ...text, format: "uri" }, state: hex, expiresIn: positive }),
   { authorizeUrl: "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxH5CONTRACT000001&redirect_uri=https%3A%2F%2Fstorefront.example.invalid%2Fsaidian-mall%2F&response_type=code&scope=snsapi_base&state=" + oauthState + "#wechat_redirect", state: oauthState, expiresIn: 300 },
-  source.auth, "公众号未配置返回503；redirect_uri只用服务端已校验配置。state一次性、5分钟，不接受客户端传入appId/openId。示例授权地址不可用于实际授权。");
+  source.auth, "公众号未配置返回503；redirect_uri只用服务端配置。国际版另校验开关/维护/当前协议，回调固定 /global/saidian-mall/oauth/callback，须传当前consentVersion。state一次性、5分钟，不接受客户端appId/openId。示例授权地址不可实际授权。");
 h5FieldContracts["CommerceCompatibilityController.loginWechatH5"] = record(
   obj({ code: { ...text, minLength: 1, maxLength: 1024 }, state: hex,
-    codeVerifier: { ...text, pattern: "^[A-Za-z0-9._~-]{43,128}$" }, consentVersion: consent }),
+    codeVerifier: { ...text, pattern: "^[A-Za-z0-9._~-]{43,128}$" }, consentVersion: consent, locale: globalLocale }, ["code", "state", "codeVerifier", "consentVersion"]),
   { code: "H5-CONTRACT-ONE-TIME-CODE", state: oauthState, codeVerifier: verifier, consentVersion: "commerce-legal-v1" },
   { oneOf: [bindingPending, boundSession] },
   { requiresMobileBinding: true, bindTicket, expiresIn: 300, returnTo: "/pages/checkout/index" },
-  source.auth, "从回跳URL的search读取code/state，不从hash误读。未绑定手机号分支不含token/user，必须进入绑定；已有已核验手机号返回raw用户会话。state已消费或换码失败需重新授权。");
+  source.auth, "从回跳URL的search读取code/state。未绑定分支不含token/user；国际版返回requiresAccountBinding=true并接受已核验邮箱或国际手机号。协议过时409先重新阅读授权；state消费或换码失败需重新授权。回调URL和日志不得泄露code/state。");
 h5FieldContracts["CommerceCompatibilityController.bindWechatH5Mobile"] = record(
   obj({ bindTicket: hex, mobile, code: otp, consentVersion: consent }),
   { bindTicket, mobile: "19900000001", code: "123456", consentVersion: "commerce-legal-v1" },
   boundSession, { ...sessionExample, requiresMobileBinding: false, returnTo: "/pages/checkout/index" }, source.auth,
   "先以usage=bind_mobile请求独立验证码。bindTicket一次性且5分钟。appId+openId作用域身份与已核验手机号绑定；冲突409，不自动合并两个账号，不借用小程序openId。");
+
+const globalBoundExample = { ...sessionExample, user: { ...sessionExample.user, mobile: null }, requiresMobileBinding: false, requiresAccountBinding: false, returnTo: "/pages/profile/index" };
+h5FieldContracts["CommerceCompatibilityController.bindWechatH5Account"] = record(
+  obj({ bindTicket: hex, identifier: globalIdentifier, password: globalPassword, consentVersion: consent, locale: globalLocale }, ["bindTicket", "identifier", "password", "consentVersion"]),
+  { bindTicket, identifier: "h5-contract@example.invalid", password: "H5-CONTRACT-Test-Password-Only", consentVersion: "global-contract-reviewed-v1", locale: "en" },
+  boundSession, globalBoundExample, source.auth,
+  "仅global。必须证明既有账号原密码且该账号有真实emailVerifiedAt/mobileVerifiedAt；临时免验证账号403，不自动标为已验证。票据与appId/OpenID匹配、一次性消费。未配置503、身份冲突409、过期401，不改密码或合并资产。");
+h5FieldContracts["CommerceCompatibilityController.requestWechatH5BindingCode"] = record(
+  obj({ bindTicket: hex, channel: { enum: ["email", "sms"] }, identifier: globalIdentifier, locale: globalLocale }, ["bindTicket", "channel", "identifier"]),
+  { bindTicket, channel: "email", identifier: "h5-contract@example.invalid", locale: "en" },
+  obj({ challengeId: id, expiresIn: positive, retryAfter: positive, maskedIdentifier: text }),
+  { challengeId: sid(80), expiresIn: 300, retryAfter: 60, maskedIdentifier: "h***@example.invalid" }, source.auth,
+  "仅global且必须已有有效公众号绑定票据；用途固定wechat_bind，OTP散列绑定ticket。与注册/重置共享联系人限频另加票据限频，60秒/日10次，供应商缺失503，无devCode。仅真实发送成功才可消费。");
+h5FieldContracts["CommerceCompatibilityController.bindWechatH5Code"] = record(
+  obj({ bindTicket: hex, challengeId: id, code: otp, password: globalPassword, consentVersion: consent, locale: globalLocale, nickname: { ...text, maxLength: 40 } }, ["bindTicket", "challengeId", "code", "password", "consentVersion"]),
+  { bindTicket, challengeId: sid(80), code: "000000", password: "H5-CONTRACT-Test-Password-Only", consentVersion: "global-contract-reviewed-v1", locale: "en", nickname: "H5合成会员" },
+  boundSession, globalBoundExample, source.auth,
+  "仅global。新账号设置密码；已有账号需原密码+OTP双证明，不重设密码。首次核验会撤销旧会话防预占账号提权；只标记本次真实验证的联系方式。票据与OTP/用户/身份/同意同事务消费，错误码最多5次；过期/重放400或401、冲突409、服务关闭503。");
 
 const availability = obj({ enabled: bool, reason: text }, ["enabled"]);
 const paymentChannels = ["wechat_jsapi", "wechat_mini", "wechat_h5", "wechat_native", "alipay_wap", "alipay_page"];
@@ -93,13 +114,26 @@ const capabilitiesSchema = obj({
   checkout: obj({ minimumCashCents: { const: 1 }, points: obj({ supported: { const: true }, requiresVerifiedAccount: { const: true } }) }),
   maintenance: obj({ readOnly: bool, reason: text }, ["readOnly"]), demo: bool,
 });
+// International capability is an explicit alternate shape: commerce is still
+// closed, not a domestic CNY checkout with a different API hostname.
+const internationalCapabilitiesSchema = obj({
+  realm: { const: "global" }, consentVersion: nullable(consent), legal: nullable(obj({
+    userAgreement: obj({ path: text, locale: globalLocale, version: text }),
+    privacyPolicy: obj({ path: text, locale: globalLocale, version: text }),
+  })),
+  login: obj({ password: availability, sms: availability, wechatH5: availability,
+    wechatBinding: obj({ bindExistingAvailable: bool, emailOtpAvailable: bool, smsOtpAvailable: bool,
+      password: availability, email: availability, sms: availability, smsCountries: array(text), verifiedAccountRequired: { const: true } }) }),
+  payments: array(obj({})), checkout: obj({ enabled: { const: false }, points: obj({ supported: { const: false }, requiresVerifiedAccount: { const: true } }) }),
+  maintenance: obj({ readOnly: bool }), demo: { const: false },
+});
 const capabilitiesExample = {
   login: { password: { enabled: true }, sms: { enabled: true }, wechatH5: { enabled: false, reason: "微信公众号登录尚未配置" } },
   payments: paymentChannels.map(channel => ({ channel, enabled: false, reason: "支付渠道尚未配置", environments: [channel === "wechat_jsapi" ? "wechat" : channel === "wechat_mini" ? "mini" : "browser"] })),
   checkout: { minimumCashCents: 1, points: { supported: true, requiresVerifiedAccount: true } },
   maintenance: { readOnly: false }, demo: true,
 };
-h5FieldContracts["CommerceCompatibilityController.storefrontCapabilities"] = record(null, null, capabilitiesSchema, capabilitiesExample,
+h5FieldContracts["CommerceCompatibilityController.storefrontCapabilities"] = record(null, null, { oneOf: [capabilitiesSchema, internationalCapabilitiesSchema] }, capabilitiesExample,
   source.capability, "公开只含能力布尔值/原因，不含密钥、appId或商户身份。enabled只代表本地配置通过校验，不代表真实供应商联调成功。wechat_mini仅mini环境，使用独立小程序支付appId；公众号OAuth未配置不连带禁用已配置的小程序。微信商户密钥/通知地址未配置或维护暂停仍禁用所有微信支付。demo仅非production+H5_DEMO_ENABLED；示例是隔离演示状态，不是生产承诺。");
 const skuSchema = obj({ id, specification: nullable(text), image: nullable(text), salePriceCents: cents, marketPriceCents: nullable(cents), stock: count, enabled: bool }, ["id", "salePriceCents", "stock"]);
 const cardSchema = obj({ id, categoryId: nullable(id), name: text, subtitle: nullable(text), coverImage: nullable(text), tags: array(text),
@@ -114,7 +148,7 @@ const bootstrapSchema = obj({
   categories: array(obj({ id, name: text, parentId: nullable(id), sort: int, enabled: bool })),
   featured: array(cardSchema),
   configs: { type: "object", additionalProperties: businessConfig, description: "仅store.name/store.notice/customer.service/policies公开配置键。" },
-  referral: nullable(obj({ name: text, referralCode: text })), capabilities: capabilitiesSchema,
+  referral: nullable(obj({ name: text, referralCode: text })), capabilities: { oneOf: [capabilitiesSchema, internationalCapabilitiesSchema] },
 });
 h5FieldContracts["CommerceCompatibilityController.bootstrap"] = record(null, null, bootstrapSchema, {
   banners: [{ id: sid(6), title: "H5-CONTRACT演示", imageUrl, targetUrl: "/pages/product/index?id=" + sid(2), enabled: true, sort: 100 }],

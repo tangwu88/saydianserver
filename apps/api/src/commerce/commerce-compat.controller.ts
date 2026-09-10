@@ -28,6 +28,7 @@ import {
 } from "../common/request-context";
 import { UserAuthGuard } from "../common/user-auth.guard";
 import { CommerceService } from "./commerce.service";
+import { isGlobalRealm } from "../common/deployment-realm";
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 
@@ -52,7 +53,7 @@ export class CommerceCompatibilityController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   loginPassword(@Body() input: unknown) {
     const body = safeObject(input);
-    return this.auth.loginForMall(String(body.mobile ?? ""), String(body.password ?? ""),
+    return this.auth.loginForMall(String((isGlobalRealm() ? body.identifier ?? body.mobile : body.mobile) ?? ""), String(body.password ?? ""),
       body.referralCode ? String(body.referralCode) : undefined);
   }
 
@@ -61,6 +62,7 @@ export class CommerceCompatibilityController {
   authorizeWechatH5(@Body() input: unknown) {
     const body = safeObject(input);
     return this.wechatH5.authorize({ returnTo: String(body.returnTo ?? "/"), codeChallenge: String(body.codeChallenge ?? ""),
+      consentVersion: String(body.consentVersion ?? ""), locale: body.locale,
       ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}) });
   }
 
@@ -69,7 +71,7 @@ export class CommerceCompatibilityController {
   loginWechatH5(@Body() input: unknown) {
     const body = safeObject(input);
     return this.wechatH5.login({ code: String(body.code ?? ""), state: String(body.state ?? ""),
-      codeVerifier: String(body.codeVerifier ?? ""), consentVersion: String(body.consentVersion ?? "") });
+      codeVerifier: String(body.codeVerifier ?? ""), consentVersion: String(body.consentVersion ?? ""), locale: body.locale });
   }
 
   @Post("auth/wechat/h5/bind-mobile")
@@ -80,8 +82,20 @@ export class CommerceCompatibilityController {
       code: String(body.code ?? ""), consentVersion: String(body.consentVersion ?? "") });
   }
 
+  @Post("auth/wechat/h5/bind-account")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  bindWechatH5Account(@Body() input: unknown) { return this.wechatH5.bindGlobalAccount(input); }
+
+  @Post("auth/wechat/h5/binding-code")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  requestWechatH5BindingCode(@Body() input: unknown) { return this.wechatH5.requestGlobalBindingCode(input); }
+
+  @Post("auth/wechat/h5/bind-code")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  bindWechatH5Code(@Body() input: unknown) { return this.wechatH5.bindGlobalCode(input); }
+
   @Get("storefront/capabilities")
-  storefrontCapabilities() { return this.capabilities.publicCapabilities(); }
+  storefrontCapabilities(@Query("locale") locale?: string) { return this.capabilities.publicCapabilities(locale); }
 
   @Get("payments/:id")
   @UseGuards(UserAuthGuard)
