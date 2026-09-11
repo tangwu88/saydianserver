@@ -63,4 +63,16 @@ describe("health report evidence", () => {
     expect(evidence.distinctDays).toBe(2);
     expect(evidence.validRecordIds).toHaveLength(2);
   });
+
+  it("keeps separate allow-listed measurements and daily trends without copying arbitrary fields", () => {
+    const evidence = buildHealthEvidence([
+      { id: "bp-1", metric: "BLOOD_PRESSURE", observedAt: new Date("2026-09-01T01:00:00Z"), timezoneOffsetMinutes: 480, values: { systolic: 120, diastolic: 78, privateNote: "must-not-copy" }, quality: "VALID" },
+      { id: "bp-2", metric: "BLOOD_PRESSURE", observedAt: new Date("2026-09-02T01:00:00Z"), timezoneOffsetMinutes: 480, values: { systolic: 130, diastolic: 82 }, quality: "VALID" },
+    ]);
+    expect(evidence.metrics[0]).toMatchObject({ metric: "blood_pressure", distinctDays: 2, measurements: [
+      { key: "systolic", unit: "mmHg", sampleCount: 2, latest: 130, minimum: 120, maximum: 130, average: 125 },
+      { key: "diastolic", unit: "mmHg", sampleCount: 2, latest: 82, minimum: 78, maximum: 82, average: 80 },
+    ] });
+    expect(JSON.stringify(evidence.metrics)).not.toContain("privateNote");
+  });
 });

@@ -23,9 +23,9 @@
             ><text class="status">{{ label(order.status) }}</text></view
           ><text v-if="order.readOnly" class="small">历史订单 · 只读</text
           ><view v-for="item in orderItemSummary(order).items" :key="item.id" class="order-item"
-            ><image v-if="item.imageSnapshot"
+            ><image v-if="item.imageSnapshot" class="product-link"
               :src="item.imageSnapshot"
-            mode="aspectFit"
+            mode="aspectFit" @click.stop="openProduct(item)"
             /><view v-else class="no-image">暂无图片</view><view
               ><b>{{ item.nameSnapshot || '商品名称未获取' }}</b
               ><text class="small">{{ item.specificationSnapshot }}</text
@@ -86,6 +86,9 @@ function select(v: string) {
 }
 function open(id: string) {
   uni.navigateTo({ url: `/pages/order-detail/index?id=${id}` });
+}
+function openProduct(item: any) {
+  if (item?.productId) uni.navigateTo({ url: `/pages/product/index?id=${encodeURIComponent(item.productId)}` });
 }
 function browse() {
   uni.switchTab({ url: '/pages/home/index' });
@@ -159,6 +162,7 @@ function label(v: string) {
   height: 130rpx;
   border-radius: 14rpx;
 }
+.product-link { cursor: pointer; }
 .no-image { display: grid; place-items: center; background: #f5f5f5; font-size: 12px; color: var(--muted); }
 .order-item b,
 .order-item .small,

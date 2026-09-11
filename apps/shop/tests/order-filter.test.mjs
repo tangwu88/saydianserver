@@ -6,18 +6,19 @@ import vm from "node:vm";
 
 const ts = createRequire(import.meta.url)("typescript");
 function page() {
-  const requests = [], hooks = {};
-  const source = readFileSync(new URL("../src/pages/orders/index.vue", import.meta.url), "utf8").match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1];
+  const requests = [], hooks = {}, navigations = [];
+  const fullSource = readFileSync(new URL("../src/pages/orders/index.vue", import.meta.url), "utf8");
+  const source = fullSource.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1];
   const module = { exports: {} };
-  const code = ts.transpileModule(source + "\nmodule.exports={load,select,status,orders,label};", { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { module, exports: module.exports, Error, uni: {}, require(name) {
+  const code = ts.transpileModule(source + "\nmodule.exports={load,select,status,orders,label,openProduct};", { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  vm.runInNewContext(code, { module, exports: module.exports, Error, uni: { navigateTo: value => navigations.push(value.url) }, require(name) {
     if (name === "vue") return { ref: value => ({ value }) };
     if (name === "@dcloudio/uni-app") return Object.fromEntries(["onLoad", "onShow", "onHide", "onUnload"].map(event => [event, fn => hooks[event] = fn]));
     if (name === "../../api") return { api: async path => { requests.push(path); return [{ id: "returned-by-server" }]; } };
     if (name === "../../commerce-model" || name.endsWith(".vue")) return {};
     throw new Error("Unexpected import " + name);
   } });
-  return { ...module.exports, requests, hooks };
+  return { ...module.exports, requests, hooks, navigations, source, fullSource };
 }
 test("pending shipment and after-sale tabs use server-side groups, not an exact single status", async () => {
   const h = page();
@@ -35,4 +36,8 @@ test("old My shortcuts and explicit new group links select the same complete que
 });
 test("completed orders display Chinese while unknown server states remain explicit", () => {
   const h = page(); assert.equal(h.label("COMPLETED"), "已完成"); assert.equal(h.label("RECEIVED"), "已完成"); assert.equal(h.label("FUTURE_STATUS"), "FUTURE_STATUS");
+});
+test("order-list product images route to product details instead of the order drawer", () => {
+  const h = page(); h.openProduct({ productId: "product-a" });
+  assert.deepEqual(h.navigations, ["/pages/product/index?id=product-a"]); assert.match(h.fullSource, /class="product-link"[\s\S]*?@click\.stop="openProduct\(item\)"/);
 });

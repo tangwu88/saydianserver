@@ -4,7 +4,7 @@ import { CommerceStoreService } from "./commerce-store.service";
 const member = "synthetic-member", otherMember = "other-synthetic-member";
 
 function couponFixture() {
-  const coupon = { id: "coupon", status: "ACTIVE", employeeDistributable: false,
+  const coupon = { id: "coupon", legacyId: "SAVE10", status: "ACTIVE", employeeDistributable: false,
     validFrom: new Date(0), validUntil: new Date("2099-01-01"),
     totalQuantity: 2 as number | null, claimedQuantity: 0, reservedGiftQuantity: 0 };
   const claims: any[] = [], events: string[] = [];
@@ -37,7 +37,8 @@ function couponFixture() {
   // A serialized unit fixture verifies rechecking under the requested row lock;
   // PostgreSQL lock/SSI scheduling is covered by the separate isolated DB run.
   let pending: Promise<unknown> = Promise.resolve();
-  const prisma = { $transaction: vi.fn().mockImplementation((callback: any) => {
+  const prisma = { commerceCoupon: { findUnique: vi.fn().mockImplementation(async ({ where }: any) =>
+      where.legacyId === coupon.legacyId ? { id: coupon.id } : null) }, $transaction: vi.fn().mockImplementation((callback: any) => {
     const result = pending.then(async () => {
       const before = claims.length, quantity = coupon.claimedQuantity;
       try { return await callback(tx); }
@@ -124,6 +125,20 @@ describe("customer public coupon assets", () => {
     expect(first).toMatchObject({ userId: member, couponId: h.coupon.id });
     expect(h.events).toEqual(["lock", "existing", "eligibility", "claim", "increment"]);
     expect(h.coupon.claimedQuantity).toBe(1); expect(h.claims).toHaveLength(1);
+  });
+
+  it("redeems a normalized admin-configured code through the same locked claim path", async () => {
+    const h = couponFixture();
+    const claim = await h.service.claimCouponByCode(member, { code: " save10 " });
+    expect(h.prisma.commerceCoupon.findUnique).toHaveBeenCalledWith({ where: { legacyId: "SAVE10" }, select: { id: true } });
+    expect(claim).toMatchObject({ userId: member, couponId: h.coupon.id });
+    expect(h.events).toEqual(["lock", "existing", "eligibility", "claim", "increment"]);
+  });
+
+  it.each(["", "abc", "not valid", "missing-code"])("does not reveal coupon details for invalid or unavailable code %s", async code => {
+    const h = couponFixture();
+    await expect(h.service.claimCouponByCode(member, { code })).rejects.toMatchObject({ status: 400 });
+    expect(h.claims).toEqual([]); expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it.each(["expired", "disabled", "full"])("replays an existing claim after the coupon becomes %s without incrementing again", async condition => {

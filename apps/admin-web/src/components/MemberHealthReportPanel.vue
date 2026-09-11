@@ -5,7 +5,7 @@ import { api, readableError, responseData } from "../api";
 import { healthMetricLabel, healthTime } from "../health-display";
 
 type Report = { id: string; status: string; memberId?: string; failureReason?: string | null; generatedAt?: string | null; period?: { from: string; to: string }; content?: { overview?: string; trends?: { metric: string; text: string }[]; suggestions?: string[]; limitations?: string[] }; limitations?: string[] };
-type Availability = { canGenerate: boolean; reasons: { code: string; message: string }[]; period: { from: string; to: string }; validRecordCount: number; distinctDays: number; minimumDistinctDays: number; availableCredits: number; memberConsentBypass?: boolean; latestReport?: Report | null };
+type Availability = { canGenerate: boolean; reasons: { code: string; message: string }[]; period: { from: string; to: string }; validRecordCount: number; distinctDays: number; minimumDistinctDays: number; availableCredits: number; memberConsentBypass?: boolean; reportCreditBypass?: boolean; latestReport?: Report | null };
 const props = defineProps<{ memberId: string }>();
 const availability = ref<Availability | null>(null);
 const report = ref<Report | null>(null);
@@ -68,7 +68,10 @@ async function generateReport(): Promise<void> {
     const authority = availability.value.memberConsentBypass
       ? "本次由超级管理员从总后台发起，无需会员在 App 端另行同意；操作将写入审计。"
       : "本次按当前管理员权限及会员授权状态执行。";
-    await ElMessageBox.confirm(`将使用该会员 1 次可用报告次数，由已配置的 AI 服务分析近 30 天的去标识化健康统计。${authority}相同数据已有报告时直接复用，不重复扣次。结果仅供健康管理参考。`, "生成 AI 健康报告", { confirmButtonText: "确认生成", cancelButtonText: "取消", type: "warning" });
+    const entitlement = availability.value.reportCreditBypass
+      ? "本次由超级管理员生成，不占用会员的报告次数。"
+      : "本次将使用该会员 1 次可用报告次数。";
+    await ElMessageBox.confirm(`${entitlement}已配置的 AI 服务将分析近 30 天去标识化的基础资料、设备及健康趋势。${authority}相同数据已有报告时直接复用。结果仅供健康管理参考。`, "生成 AI 健康报告", { confirmButtonText: "确认生成", cancelButtonText: "取消", type: "warning" });
     if (!current(version, memberId)) return;
     idempotencyKey ||= crypto.randomUUID();
     const result = responseData<{ report: Report; reused: boolean }>(await api.post("/health-reports", { memberId, idempotencyKey }));
@@ -103,7 +106,7 @@ onBeforeUnmount(() => { generation++; clearPolling(); });
     <p v-if="checking" role="status">正在检查生成条件…</p>
     <p v-if="errorMessage" class="report-error" role="alert">{{ errorMessage }}</p>
     <template v-if="availability">
-      <p class="coverage">有效记录 {{ availability.validRecordCount }} 条 · 覆盖 {{ availability.distinctDays }} 天（至少 {{ availability.minimumDistinctDays }} 天） · 可用报告次数 {{ availability.availableCredits }} 次</p>
+      <p class="coverage">有效记录 {{ availability.validRecordCount }} 条 · 覆盖 {{ availability.distinctDays }} 天（至少 {{ availability.minimumDistinctDays }} 天）<template v-if="availability.reportCreditBypass"> · 管理员生成不占用会员次数</template><template v-else> · 可用报告次数 {{ availability.availableCredits }} 次</template></p>
       <ul v-if="availability.reasons.length" class="blocked-reasons" aria-label="暂不能生成的原因"><li v-for="reason in availability.reasons" :key="reason.code">{{ reason.message }}</li></ul>
       <p v-else class="ready-hint">已满足生成条件，点击后仍由服务端复核。</p>
     </template>

@@ -72,6 +72,7 @@ const fieldLabels: Record<string, string> = {
   businessType: "业务类型", channel: "渠道", offerKey: "方案标识",
   entitlement: "权益类型", creditCount: "报告次数", durationDays: "有效天数",
   scheduledAt: "计划发送时间", sentCount: "成功数", failedCount: "失败数",
+  redemptionCode: "优惠码",
   verificationStatus: "真实检测", hasSecret: "密钥已保存",
   lastError: "失败原因", attempt: "重试次数", firmware: "固件版本",
   imageUrl: "图片地址", targetUrl: "跳转地址", enabled: "启用", published: "前台展示",
@@ -269,7 +270,7 @@ async function openCreate(): Promise<void> {
     "commerce-categories": { _isNew: true, enabled: true, sort: 0 },
     "commerce-banners": { enabled: true, sort: 0 },
     "commerce-business-configs": { _isNew: true, key: "", label: "", enabled: false, valueText: "{}" },
-    "commerce-coupons": { status: "DRAFT", value: 100, minimumSpendCents: 0, totalQuantity: 100 },
+    "commerce-coupons": { status: "DRAFT", value: 100, minimumSpendCents: 0, totalQuantity: 100, redemptionCode: "" },
     "health-report-offers": { entitlement: "SINGLE_REPORT", creditCount: 1, platforms: ["android", "h5"], active: false },
     "notification-campaigns": { type: "SYSTEM", audienceAllActive: false, audienceUserIds: "" },
   };
@@ -500,7 +501,7 @@ function payloadForResource(current: string, source: Row): Row {
     "commerce-reviews": ["published"],
     "commerce-orders": ["adminRemark", "version"],
     "commerce-after-sales": ["status", "returnLogisticsCompany", "returnTrackingNo", "version"],
-    "commerce-coupons": ["name", "status", "value", "minimumSpendCents", "totalQuantity", "validFrom", "validUntil", "employeeDistributable", "perEmployeeLimit"],
+    "commerce-coupons": ["name", "redemptionCode", "status", "value", "minimumSpendCents", "totalQuantity", "validFrom", "validUntil", "employeeDistributable", "perEmployeeLimit"],
     "health-report-offers": ["offerKey", "title", "description", "entitlement", "priceCents", "currency", "creditCount", "durationDays", "platforms", "appleProductId", "active", "effectiveFrom", "effectiveUntil"],
     "notification-campaigns": ["name", "type", "title", "body", "deepLink", "scheduledAt"],
   };
@@ -961,7 +962,9 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; ++editorRequestId; }
           <el-form-item label="退货单号"><el-input v-model="form.returnTrackingNo" /></el-form-item>
         </template>
         <template v-else-if="resource === 'commerce-coupons'">
+          <el-alert title="优惠码可由顾客在结算页输入领取；优惠金额、门槛和有效期仍由服务端按本券配置计算。" type="info" :closable="false" show-icon />
           <el-form-item label="优惠券名称"><el-input v-model="form.name" /></el-form-item>
+          <el-form-item label="优惠码（选填）"><el-input v-model="form.redemptionCode" maxlength="32" placeholder="如 SAVE10，仅支持字母、数字、_ 和 -" /></el-form-item>
           <el-form-item label="优惠金额（分）"><el-input-number v-model="form.value" :min="1" /></el-form-item>
           <el-form-item label="最低消费（分）"><el-input-number v-model="form.minimumSpendCents" :min="0" /></el-form-item>
           <el-form-item label="发行数量"><el-input-number v-model="form.totalQuantity" :min="1" /></el-form-item>

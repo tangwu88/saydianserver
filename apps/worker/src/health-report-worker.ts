@@ -267,6 +267,7 @@ async function callAiProvider(
   },
   settings: { baseUrl: string; apiKey: string; model: string },
 ) {
+  const evidence = asObject(evidenceIndex);
   const response = await fetch(`${settings.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -281,11 +282,16 @@ async function callAiProvider(
         {
           role: "system",
           content:
-            "你是赛电健康报告表达助手。输入只有去标识化的统计摘要。输出JSON对象：overview为字符串；trends为对象数组，每项只能包含metric和text，metric必须逐字使用输入中的已有metric；suggestions和limitations为字符串数组。不得诊断、不得给出处方或治疗建议、不得承诺准确性、不得补造未提供的指标。数据不足时明确说未获取。必须注明这是AI生成的健康管理参考，并建议明显不适及时就医。不要生成或猜测记录编号。",
+            "你是赛电健康报告表达助手。输入是去标识化的会员基础资料、活动目标、设备概况、预警汇总和近30天多指标统计。请先检查数据量、单位、时间覆盖和异常值，再做谨慎的趋势说明。输出JSON对象：overview为字符串；trends为对象数组，每项只能包含metric和text，metric必须逐字使用输入中的已有metric；suggestions和limitations为字符串数组。建议应具体、低风险、日常可执行，并结合年龄、性别、身高体重、目标和实际趋势；资料缺失或样本稀疏时明确说未获取或证据不足。不得诊断、不得给出处方/治疗方案/药物或补充剂剂量、不得承诺准确性、不得补造未提供的指标或因果关系。必须注明这是AI生成的健康管理参考，并建议明显不适或持续异常及时就医。不要生成或猜测姓名、联系方式、账号、设备硬件标识或记录编号。",
         },
         {
           role: "user",
-          content: JSON.stringify({ period, metrics: metricSummary }),
+          content: JSON.stringify({
+            period,
+            memberContext: asObject(evidence.memberContext),
+            dataQuality: asObject(evidence.dataQuality),
+            metrics: metricSummary,
+          }),
         },
       ],
     }),

@@ -34,13 +34,14 @@ import {
 
 const REPORT_WINDOW_DAYS = 30;
 const MINIMUM_DISTINCT_DAYS = 3;
-const REPORT_TEMPLATE_VERSION = "wellness-report-v1";
+const REPORT_TEMPLATE_VERSION = "wellness-report-v2";
 const ANALYSIS_CONSENT_TYPE = "health_ai_analysis";
 type AdminReportOptions = {
   idempotencyKey: string;
   actorId: string;
   requestId?: string;
   bypassMemberConsent?: boolean;
+  bypassReportCredit?: boolean;
   validate: (tx: Prisma.TransactionClient, alreadyCovered: boolean) => Promise<void>;
 };
 
@@ -241,14 +242,19 @@ export class HealthReportsService {
           if (options.bypassMemberConsent && saved.status !== PrismaReportStatus.READY && !saved.adminConsentBypass) {
             saved = await tx.healthReport.update({ where: { id: saved.id }, data: { adminConsentBypass: true } });
           }
-          await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: saved.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: true, memberConsentBypassed: options.bypassMemberConsent === true } } });
+          if (options.bypassReportCredit && saved.status === PrismaReportStatus.AWAITING_PAYMENT) {
+            await this.queueReport(tx, userId, saved.id);
+            saved = await tx.healthReport.findUniqueOrThrow({ where: { id: saved.id } });
+          }
+          await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: saved.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: true, memberConsentBypassed: options.bypassMemberConsent === true, reportCreditBypassed: options.bypassReportCredit === true } } });
           return { ...serializeReport(saved), needsPayment: saved.status === PrismaReportStatus.AWAITING_PAYMENT, reused: true };
         }
       }
       const period = reportPeriod();
-      const [records, profile] = await Promise.all([
+      const [records, profile, memberContext] = await Promise.all([
         this.loadEvidenceRecords(userId, period.from, period.to, tx),
         tx.healthProfile.findUnique({ where: { userId } }),
+        this.memberHealthContext(userId, period, tx),
       ]);
       const evidence = buildHealthEvidence(records);
       if (evidence.distinctDays < MINIMUM_DISTINCT_DAYS || !evidence.validRecordIds.length) {
@@ -263,7 +269,7 @@ export class HealthReportsService {
         const document = await this.analysisDocument(userId, undefined, tx);
         if (!document || document.version !== profile?.analysisConsentVersion) throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
       }
-      const inputDigest = evidenceDigest(userId, period, evidence);
+      const inputDigest = evidenceDigest(userId, period, evidence, memberContext);
       const reusable = await tx.healthReport.findFirst({
         where: {
           userId,
@@ -293,7 +299,13 @@ export class HealthReportsService {
               metric: metric.metric,
               recordIds: metric.recordIds,
             })),
-            excludedRecordCount: evidence.invalidRecordIds.length,
+            memberContext,
+            dataQuality: {
+              validRecordCount: evidence.validRecordIds.length,
+              excludedRecordCount: evidence.invalidRecordIds.length,
+              distinctDays: evidence.distinctDays,
+              metricCount: evidence.metrics.length,
+            },
           },
           inputDigest,
           freePreview: buildFreePreview(evidence),
@@ -308,13 +320,15 @@ export class HealthReportsService {
       // an unpaid report with an existing credit; never create a payment here.
       const queued = reusable && (!options || reusable.status !== PrismaReportStatus.AWAITING_PAYMENT)
         ? reusable.status !== PrismaReportStatus.AWAITING_PAYMENT
-        : await this.consumeCreditAndQueue(tx, userId, report.id);
+        : options?.bypassReportCredit
+          ? await this.queueReport(tx, userId, report.id)
+          : await this.consumeCreditAndQueue(tx, userId, report.id);
       if (options && !queued) throw new ConflictException({ errorKey: "health_report_unavailable", message: "报告次数不足，请先取得有效报告权益" });
       const current = queued
         ? await tx.healthReport.findUniqueOrThrow({ where: { id: report.id } })
         : report;
       if (options) {
-        await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: report.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: Boolean(reusable), memberConsentBypassed: options.bypassMemberConsent === true } } });
+        await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: report.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: Boolean(reusable), memberConsentBypassed: options.bypassMemberConsent === true, reportCreditBypassed: options.bypassReportCredit === true } } });
         await tx.idempotencyRecord.create({ data: { userId, scope, key: options.idempotencyKey, requestHash, responseCode: 201, responseBody: { reportId: report.id }, expiresAt: new Date(Date.now() + 30 * 86_400_000) } });
       }
       return { ...serializeReport(current), needsPayment: !queued, reused: Boolean(reusable) };
@@ -452,6 +466,74 @@ export class HealthReportsService {
     );
   }
 
+  private async memberHealthContext(
+    userId: string,
+    period: { from: Date; to: Date },
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<Prisma.InputJsonObject> {
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: {
+        gender: true,
+        birthday: true,
+        heightCm: true,
+        weightKg: true,
+        locale: true,
+        activityGoal: { select: { steps: true, distanceMeters: true, caloriesKcal: true } },
+        healthProfile: { select: { timezone: true } },
+        devices: {
+          where: { unboundAt: null },
+          orderBy: { lastSeenAt: "desc" },
+          take: 10,
+          select: { vendor: true, model: true, displayName: true, lastSeenAt: true },
+        },
+        warningEvents: {
+          where: { observedAt: { gte: period.from, lte: period.to } },
+          orderBy: { observedAt: "desc" },
+          take: 1_000,
+          select: { metric: true, observedAt: true },
+        },
+      },
+    });
+    if (!user) return {};
+    const heightCm = finiteNumber(user.heightCm);
+    const weightKg = finiteNumber(user.weightKg);
+    const ageYears = user.birthday ? Math.max(0, fullYears(user.birthday, period.to)) : null;
+    const warningGroups = new Map<string, { count: number; latestObservedAt: string }>();
+    for (const warning of user.warningEvents ?? []) {
+      const metric = String(warning.metric).toLowerCase();
+      const existing = warningGroups.get(metric);
+      warningGroups.set(metric, {
+        count: (existing?.count ?? 0) + 1,
+        latestObservedAt: existing?.latestObservedAt ?? warning.observedAt.toISOString(),
+      });
+    }
+    return {
+      demographics: {
+        gender: String(user.gender ?? "UNSPECIFIED").toLowerCase(),
+        ageYears,
+        heightCm,
+        weightKg,
+        bmi: heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 100) / 100 : null,
+      },
+      locale: user.locale ?? null,
+      timezone: user.healthProfile?.timezone ?? null,
+      activityGoals: user.activityGoal ? {
+        steps: user.activityGoal.steps,
+        distanceMeters: user.activityGoal.distanceMeters,
+        caloriesKcal: user.activityGoal.caloriesKcal,
+      } : null,
+      devices: (user.devices ?? []).map(device => ({
+        vendor: plainContextText(device.vendor),
+        model: plainContextText(device.model),
+        displayName: plainContextText(device.displayName),
+        lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
+      })),
+      warningSummary: [...warningGroups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([metric, value]) => ({ metric, ...value })),
+      privacy: "De-identified context: name, phone, email, account identifiers and device hardware identifiers are excluded.",
+    } as Prisma.InputJsonObject;
+  }
+
   private async availableCredits(userId: string, db: Prisma.TransactionClient = this.prisma) {
     const now = new Date();
     const [memberships, standalone] = await Promise.all([
@@ -551,6 +633,11 @@ export class HealthReportsService {
       } else {
         return false;
       }
+      await this.queueReport(tx, userId, reportId);
+      return true;
+  }
+
+  private async queueReport(tx: Prisma.TransactionClient, userId: string, reportId: string) {
       await tx.healthReport.update({
         where: { id: reportId },
         data: { status: PrismaReportStatus.QUEUED },
@@ -730,6 +817,7 @@ function evidenceDigest(
   userId: string,
   period: { from: Date; to: Date },
   evidence: HealthEvidence,
+  memberContext: Prisma.InputJsonObject,
 ) {
   return sha256(
     JSON.stringify({
@@ -738,8 +826,26 @@ function evidenceDigest(
       from: period.from.toISOString().slice(0, 10),
       to: period.to.toISOString().slice(0, 10),
       recordIds: [...evidence.validRecordIds].sort(),
+      memberContext,
     }),
   );
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function fullYears(birthday: Date, at: Date): number {
+  let years = at.getUTCFullYear() - birthday.getUTCFullYear();
+  if (at.getUTCMonth() < birthday.getUTCMonth() || (at.getUTCMonth() === birthday.getUTCMonth() && at.getUTCDate() < birthday.getUTCDate())) years--;
+  return years;
+}
+
+function plainContextText(value: unknown): string | null {
+  const text = String(value ?? "").replace(/[\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+  return text || null;
 }
 
 function buildFreePreview(evidence: HealthEvidence): Prisma.InputJsonObject {

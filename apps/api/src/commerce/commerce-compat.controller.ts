@@ -397,6 +397,12 @@ export class CommerceCompatibilityController {
     return this.commerce.coupons(user.id);
   }
 
+  @Post("storefront/coupons/code/claim")
+  @UseGuards(UserAuthGuard)
+  claimCouponByCode(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    return this.commerce.claimCouponByCode(user.id, input);
+  }
+
   @Post("storefront/coupons/:id/claim")
   @UseGuards(UserAuthGuard)
   claimCoupon(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {

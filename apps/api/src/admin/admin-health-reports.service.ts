@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, ReportStatus } from "@prisma/client";
-import { cutoverFlag, shouldPauseWorkers } from "@saydian/app-contracts";
+import { cutoverFlag, healthReportWorkerEnabled } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
 import { safeObject } from "../common/crypto";
 import { isGlobalRealm } from "../common/deployment-realm";
@@ -17,6 +17,7 @@ export class AdminHealthReportsService {
   async availability(memberId: string, current: AdminActor, db: Prisma.TransactionClient = this.prisma, alreadyCovered = false, resolvedCredentials?: Record<string, string> | null) {
     authorize(current); uuid(memberId);
     const bypassMemberConsent = canBypassMemberConsent(current);
+    const bypassReportCredit = canBypassMemberConsent(current);
     const member = await db.user.findUnique({ where: { id: memberId }, select: { status: true } });
     if (!member) throw new NotFoundException("会员不存在");
     const [eligibility, integration, latest] = await Promise.all([
@@ -28,12 +29,12 @@ export class AdminHealthReportsService {
     if (member.status !== "ACTIVE") reasons.push({ code: "member_inactive", message: "会员账号当前不可用" });
     if (!eligibility.eligible) reasons.push({ code: "insufficient_data", message: eligibility.missing.join("；") });
     if (eligibility.consentRequired && !bypassMemberConsent) reasons.push({ code: "consent_required", message: "会员尚未同意当前健康分析说明，请由会员在 App 内阅读并同意" });
-    if (!alreadyCovered && eligibility.availableCredits < 1) reasons.push({ code: "credits_required", message: "没有可用的健康报告次数" });
+    if (!alreadyCovered && !bypassReportCredit && eligibility.availableCredits < 1) reasons.push({ code: "credits_required", message: "没有可用的健康报告次数" });
     const config = safeObject(integration?.publicConfig);
     const provider = String(config.provider ?? process.env.AI_PROVIDER ?? "disabled").trim();
     const demo = cutoverFlag(process.env.H5_DEMO_ENABLED);
     if (demo) reasons.push({ code: "demo_disabled", message: "演示环境禁止调用真实 AI 服务" });
-    if (shouldPauseWorkers(process.env)) reasons.push({ code: "worker_paused", message: "报告处理任务已暂停，请联系管理员核验运行配置" });
+    if (!healthReportWorkerEnabled(process.env)) reasons.push({ code: "worker_paused", message: "报告处理任务已暂停，请联系管理员核验运行配置" });
     if (integration?.state !== "CONFIGURED" || !provider || provider.toLowerCase() === "disabled") {
       reasons.push({ code: "ai_unconfigured", message: "AI 服务尚未配置" });
     } else if (!demo) {
@@ -55,6 +56,7 @@ export class AdminHealthReportsService {
       distinctDays: eligibility.distinctDays, minimumDistinctDays: eligibility.minimumDistinctDays,
       consentRequired: eligibility.consentRequired && !bypassMemberConsent,
       memberConsentBypass: bypassMemberConsent,
+      reportCreditBypass: bypassReportCredit,
       availableCredits: eligibility.availableCredits,
       latestReport: latest ? { id: latest.id, status: latest.status.toLowerCase(), createdAt: latest.createdAt.toISOString() } : null,
     };
@@ -73,8 +75,9 @@ export class AdminHealthReportsService {
     const revision = await this.aiConfigurationRevision(this.prisma);
     const credentials = await this.resolveAiCredentials();
     const bypassMemberConsent = canBypassMemberConsent(current);
+    const bypassReportCredit = canBypassMemberConsent(current);
     return this.reports.createForAdmin(memberId, {
-      idempotencyKey: key, actorId: current.id, bypassMemberConsent, ...(requestId ? { requestId } : {}),
+      idempotencyKey: key, actorId: current.id, bypassMemberConsent, bypassReportCredit, ...(requestId ? { requestId } : {}),
       validate: async (tx, alreadyCovered) => {
         if (revision !== await this.aiConfigurationRevision(tx)) throw new ConflictException({ errorKey: "health_report_unavailable", message: "AI 服务配置已变更，请刷新后重试" });
         const result = await this.availability(memberId, current, tx, alreadyCovered, credentials);

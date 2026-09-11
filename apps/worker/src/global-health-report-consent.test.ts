@@ -14,7 +14,11 @@ function harness() {
     report: {
       id: "synthetic-report", userId: "synthetic-member", status: "QUEUED", fullContent: null,
       adminConsentBypass: false,
-      metricSummary: [{ metric: "heart_rate" }], evidenceIndex: { byMetric: [{ metric: "heart_rate", recordIds: ["synthetic-record"] }] },
+      metricSummary: [{ metric: "heart_rate", measurements: [{ key: "bpm", unit: "bpm", average: 72 }] }], evidenceIndex: {
+        byMetric: [{ metric: "heart_rate", recordIds: ["synthetic-record"] }],
+        memberContext: { demographics: { ageYears: 45, gender: "female" }, activityGoals: { steps: 8_000 } },
+        dataQuality: { validRecordCount: 3, distinctDays: 3, excludedRecordCount: 1 },
+      },
       windowStart: new Date("2026-08-01T00:00:00Z"), windowEnd: new Date("2026-08-31T00:00:00Z"), distinctDays: 3, validRecordCount: 3,
     },
     user: { status: "ACTIVE", locale: "en" },
@@ -71,6 +75,11 @@ describe("global health report execution consent", () => {
     const h = harness();
     await h.worker.generate(h.state.report.id);
     expect(h.fetch).toHaveBeenCalledOnce();
+    const request = (h.fetch.mock.calls as unknown as Array<[unknown, { body: string }]>)[0]![1];
+    const prompt = JSON.parse(request.body).messages[1].content;
+    expect(prompt).toContain('"ageYears":45');
+    expect(prompt).toContain('"average":72');
+    expect(prompt).not.toContain("synthetic-record");
     expect(h.prisma.healthProfile.findUnique).toHaveBeenCalledTimes(3);
     expect(h.prisma.globalLegalDocument.findMany).toHaveBeenCalledWith({
       where: { documentType: "health_ai_analysis", locale: { in: ["en"] }, active: true, reviewed: true, publishedAt: { lte: expect.any(Date) } },

@@ -772,6 +772,26 @@ export class CommerceStoreService {
     });
   }
 
+  async claimCouponByCode(userId: string, input: unknown) {
+    const code = String(safeObject(input).code ?? "").trim().toUpperCase();
+    if (!/^[A-Z0-9_-]{4,32}$/.test(code)) {
+      throw new BadRequestException("请输入 4 至 32 位有效优惠码");
+    }
+    const coupon = await this.prisma.commerceCoupon.findUnique({
+      where: { legacyId: code },
+      select: { id: true },
+    });
+    if (!coupon) throw new BadRequestException("优惠码不存在、已失效或已领完");
+    try {
+      return await this.claimCoupon(userId, coupon.id);
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw new BadRequestException("优惠码不存在、已失效或已领完");
+      }
+      throw error;
+    }
+  }
+
   async submitReturnLogistics(userId: string, orderId: string, saleId: string, input: unknown) {
     const body = safeObject(input);
     if (typeof body.logisticsCompany !== "string" || typeof body.trackingNo !== "string") throw new BadRequestException("请填写物流公司和运单号文本");

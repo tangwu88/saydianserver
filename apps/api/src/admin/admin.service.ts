@@ -1634,12 +1634,16 @@ export class AdminService {
     });
   }
 
-  commerceCoupons() {
-    return this.prisma.commerceCoupon.findMany({
+  async commerceCoupons() {
+    const coupons = await this.prisma.commerceCoupon.findMany({
       include: { _count: { select: { claims: true } } },
       orderBy: { createdAt: "desc" },
       take: 500,
     });
+    return coupons.map(({ legacyId, ...coupon }) => ({
+      ...coupon,
+      redemptionCode: legacyId && /^[A-Z0-9_-]{4,32}$/.test(legacyId) ? legacyId : null,
+    }));
   }
 
   async saveCommerceCoupon(id: string | undefined, input: unknown) {
@@ -1652,8 +1656,15 @@ export class AdminService {
     const validFrom = dateValue(body.validFrom ?? existing?.validFrom, "生效时间");
     const validUntil = dateValue(body.validUntil ?? existing?.validUntil, "失效时间");
     if (validFrom >= validUntil) throw new BadRequestException("优惠券失效时间必须晚于生效时间");
+    const redemptionCode = body.redemptionCode === undefined
+      ? existing?.legacyId ?? null
+      : String(body.redemptionCode ?? "").trim().toUpperCase() || null;
+    if (redemptionCode && !/^[A-Z0-9_-]{4,32}$/.test(redemptionCode)) {
+      throw new BadRequestException("优惠码须为 4 至 32 位字母、数字、下划线或连字符");
+    }
     const data = {
       name,
+      legacyId: redemptionCode,
       type: "CASH" as const,
       status: enumValue(CouponStatus, body.status ?? existing?.status ?? "DRAFT", "优惠券状态"),
       value: positiveInteger(body.value ?? existing?.value, "优惠金额"),

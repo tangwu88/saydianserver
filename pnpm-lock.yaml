@@ -210,12 +210,21 @@ importers:
       '@dcloudio/uni-mp-weixin':
         specifier: 3.0.0-alpha-5020120260710001
         version: 3.0.0-alpha-5020120260710001(@vueuse/core@14.4.0(vue@3.4.21(typescript@5.9.3)))(debug@4.4.3(supports-color@5.5.0))(postcss@8.5.26)(rollup@4.63.1)(supports-color@5.5.0)(ts-node@10.9.2(@types/node@22.20.1)(typescript@5.9.3))(vue@3.4.21(typescript@5.9.3))
+      '@dcloudio/uni-ui':
+        specifier: 1.5.12
+        version: 1.5.12
       '@vant/area-data':
         specifier: 2.2.0
         version: 2.2.0
+      dijkstrajs:
+        specifier: 1.0.3
+        version: 1.0.3
       pinia:
         specifier: ^2.3.1
         version: 2.3.1(typescript@5.9.3)(vue@3.4.21(typescript@5.9.3))
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
       vue:
         specifier: 3.4.21
         version: 3.4.21(typescript@5.9.3)
@@ -229,6 +238,9 @@ importers:
       '@types/node':
         specifier: ^22.15.30
         version: 22.20.1
+      '@types/qrcode':
+        specifier: ^1.5.5
+        version: 1.5.5
       sass:
         specifier: ^1.89.2
         version: 1.104.0
@@ -983,6 +995,9 @@ packages:
 
   '@dcloudio/uni-stat@3.0.0-alpha-5020120260710001':
     resolution: {integrity: sha512-bXMWdKBAsPWahhaD3RDc6AlnIh/mvfhXipfTwZreknp+0y5Z5cSoKmfOTG6HGBXfMyp4/r1DXo71bgZTWtZUOw==}
+
+  '@dcloudio/uni-ui@1.5.12':
+    resolution: {integrity: sha512-mGDl2OZSz7D8xcUAzJegWDHOqB4MEFBSW9Esb/oJiu2/3Gk9+P/Z4bA4JZ9jv9VWBYbMrYwaTfK1Z728kABdYg==}
 
   '@dcloudio/vite-plugin-uni@3.0.0-alpha-5020120260710001':
     resolution: {integrity: sha512-nns/haZStdxXDUehSRiKjlOGquKl9aoV7hKN/CeJBR80mO4iNvHUAJwZLlXNA4vZbvdCfb/WxGljxG3fN5+UTQ==}
@@ -3125,9 +3140,6 @@ packages:
 
   libphonenumber-js@1.12.31:
     resolution: {integrity: sha512-Z3IhgVgrqO1S5xPYM3K5XwbkDasU67/Vys4heW+lfSBALcUZjeIIzI8zCLifY+OCzSq+fpDdywMDa7z+4srJPQ==}
-
-  libphonenumber-js@1.13.12:
-    resolution: {integrity: sha512-uLVeV1c9OTk6qkdqnj+mpMD+ZdnZ0szVyWu58HwMmpwkHA1gCEkyjd3veZQXDnuw9KEwSRjcc9B1pS9XKIN1fA==}
 
   licia@1.41.1:
     resolution: {integrity: sha512-XqObV8u1KEMdYWaNK0leRrTwhzKnLQEkhbnuUu7qGNH3zJoN7l9sfvF6PfHstSCuUOmpEP+0SBjRrk0I9uZs8g==}
@@ -5623,6 +5635,8 @@ snapshots:
       - ts-node
       - vue
 
+  '@dcloudio/uni-ui@1.5.12': {}
+
   '@dcloudio/vite-plugin-uni@3.0.0-alpha-5020120260710001(@vueuse/core@14.4.0(vue@3.4.21(typescript@5.9.3)))(postcss@8.5.26)(rollup@4.63.1)(supports-color@5.5.0)(ts-node@10.9.2(@types/node@22.20.1)(typescript@5.9.3))(vite@5.2.8(@types/node@22.20.1)(sass@1.104.0)(terser@5.51.2))(vue@3.4.21(typescript@5.9.3))':
     dependencies:
       '@babel/core': 7.25.2(supports-color@5.5.0)
@@ -7186,7 +7200,7 @@ snapshots:
   class-validator@0.14.4:
     dependencies:
       '@types/validator': 13.15.10
-      libphonenumber-js: 1.13.12
+      libphonenumber-js: 1.12.31
       validator: 13.15.35
 
   cliui@6.0.0:
@@ -7892,8 +7906,6 @@ snapshots:
       invert-kv: 3.0.1
 
   libphonenumber-js@1.12.31: {}
-
-  libphonenumber-js@1.13.12: {}
 
   licia@1.41.1: {}
 

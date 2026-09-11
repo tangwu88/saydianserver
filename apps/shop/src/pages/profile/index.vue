@@ -1,5 +1,5 @@
 <template>
-  <GlobalAccount v-if="isGlobalMall" :user="user" :error="accountError" :loading="accountLoading" @logout="logout" @refresh="loadAccount" /><template v-else>
+  <GlobalAccount v-if="isGlobalMall" :user="user" :error="accountError" :loading="accountLoading" :recent-orders="recentOrders" :recent-orders-loading="recentOrdersLoading" :recent-orders-error="recentOrdersError" @logout="logout" @refresh="loadAccount" /><template v-else>
   <DesktopHeader /><view class="page"
     ><view class="container profile-layout"
       ><view
@@ -54,10 +54,11 @@ import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import StoreFooter from "../../components/StoreFooter.vue";
-import { clearMallSession, logoutGlobalMall, refreshGlobalMallAccount, toast } from "../../api";
+import { api, clearMallSession, logoutGlobalMall, refreshGlobalMallAccount, toast } from "../../api";
 import { authErrorMessage } from "../../friendly-auth";
 const user = ref<any>();
 const accountError = ref(""), accountLoading = ref(false);
+const recentOrders = ref<any[]>([]), recentOrdersLoading = ref(false), recentOrdersError = ref("");
 let accountGeneration = 0;
 const menus = [
   { icon: "地", label: "收货地址", url: "/pages/addresses/index" },
@@ -74,12 +75,17 @@ onUnload(() => { accountGeneration++; });
 async function loadAccount() {
   const generation = ++accountGeneration;
   user.value = mallStorage.get("saidian-user") || null;
-  accountError.value = ""; accountLoading.value = false;
+  accountError.value = ""; accountLoading.value = false; recentOrders.value = []; recentOrdersError.value = ""; recentOrdersLoading.value = false;
   if (!isGlobalMall || !user.value) return;
   accountLoading.value = true;
   try { const current = await refreshGlobalMallAccount(); if (generation === accountGeneration) user.value = current; }
   catch (cause) { if (generation === accountGeneration) { user.value = mallStorage.get("saidian-user") || null; accountError.value = authErrorMessage(cause, "账号信息暂时无法更新，请重试。"); } }
   finally { if (generation === accountGeneration) accountLoading.value = false; }
+  if (generation !== accountGeneration || !user.value) return;
+  recentOrdersLoading.value = true;
+  try { const rows = await api<any[]>("/storefront/orders?status=", { auth: true }); if (generation === accountGeneration) recentOrders.value = Array.isArray(rows) ? rows.slice(0, 3) : []; }
+  catch (cause) { if (generation === accountGeneration) recentOrdersError.value = authErrorMessage(cause, "最近订单暂时无法读取。"); }
+  finally { if (generation === accountGeneration) recentOrdersLoading.value = false; }
 }
 function go(url: string) {
   uni.navigateTo({ url });
@@ -94,6 +100,7 @@ async function logout() {
       if (result === "local") toast("仅本机退出，服务端会话撤销未确认");
     } else await clearMallSession();
     user.value = null;
+    recentOrders.value = [];
     uni.reLaunch({url:'/pages/profile/index'});
   } catch (error) { toast(error); }
 }

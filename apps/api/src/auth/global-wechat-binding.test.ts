@@ -133,7 +133,8 @@ describe("global WeChat gate, callback and consent", () => {
     const h = harness(); h.delivery.capabilities.mockResolvedValue({ email: false, sms: false, smsCountries: [] });
     const result = await h.capabilities.publicCapabilities();
     expect(result).toMatchObject({ realm: "global", consentVersion: "legal-v1", login: { wechatH5: { enabled: true }, wechatBinding: { bindExistingAvailable: true, emailOtpAvailable: false, smsOtpAvailable: false, email: { reason: expect.any(String) }, sms: { reason: expect.any(String) } } }, checkout: { enabled: true, currency: "CNY" } });
-    expect(result.payments).toHaveLength(5); expect(result.payments.every(payment => !payment.enabled)).toBe(true);
+    expect(result.payments.map(payment => payment.channel)).toEqual(["wechat_jsapi", "alipay_wap", "alipay_page"]);
+    expect(result.payments.every(payment => !payment.enabled)).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
   });
 });

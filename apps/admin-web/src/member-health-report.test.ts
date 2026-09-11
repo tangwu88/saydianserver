@@ -3,7 +3,7 @@ import ts from "typescript";
 import { computed, reactive, ref } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const ready = { canGenerate: true, reasons: [], period: { from: "2026-08-11T00:00:00Z", to: "2026-09-10T00:00:00Z" }, validRecordCount: 20, distinctDays: 5, minimumDistinctDays: 3, availableCredits: 2, memberConsentBypass: true };
+const ready = { canGenerate: true, reasons: [], period: { from: "2026-08-11T00:00:00Z", to: "2026-09-10T00:00:00Z" }, validRecordCount: 20, distinctDays: 5, minimumDistinctDays: 3, availableCredits: 0, memberConsentBypass: true, reportCreditBypass: true };
 const response = (data: unknown) => ({ data: { data } });
 const queued = { id: "report-1", status: "queued", memberId: "member-1" };
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
@@ -35,6 +35,7 @@ describe("member AI health report panel", () => {
     await h.generateReport();
     expect(h.confirm).toHaveBeenCalledTimes(2); expect(h.api.post.mock.calls[0][1]).toEqual({ memberId: "member-1", idempotencyKey: "key-1" });
     expect(h.confirm.mock.calls[0][0]).toContain("无需会员在 App 端另行同意");
+    expect(h.confirm.mock.calls[0][0]).toContain("不占用会员的报告次数");
     expect(h.api.post.mock.calls[1][1]).toEqual(h.api.post.mock.calls[0][1]); expect(h.report.value.content.overview).toBe("合成报告");
   });
   it("prevents duplicate click while confirmation is pending and handles cancellation without posting", async () => {

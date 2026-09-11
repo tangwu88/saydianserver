@@ -62,7 +62,7 @@ afterEach(() => { expect(fetch).not.toHaveBeenCalled(); vi.unstubAllEnvs(); vi.u
 describe("international admin health-report availability", () => {
   it("returns public Chinese readiness without credentials or health record values", async () => {
     const h = harness(); const result = await h.service.availability(memberId, current);
-    expect(result).toMatchObject({ canGenerate: true, reasons: [], validRecordCount: 3, distinctDays: 3, minimumDistinctDays: 3, consentRequired: false, memberConsentBypass: true, availableCredits: 1, latestReport: null });
+    expect(result).toMatchObject({ canGenerate: true, reasons: [], validRecordCount: 3, distinctDays: 3, minimumDistinctDays: 3, consentRequired: false, memberConsentBypass: true, reportCreditBypass: true, availableCredits: 1, latestReport: null });
     expect(JSON.stringify(result)).not.toMatch(/SYNTHETIC-NOT-A-KEY|provider.invalid|bpm|recordIds/);
   });
   it.each(["WORKER_OUTBOUND_PAUSED", "BUSINESS_WRITES_PAUSED", "MAINTENANCE_READ_ONLY"])("blocks %s without creating or consuming", async flag => {
@@ -71,8 +71,8 @@ describe("international admin health-report availability", () => {
     await expect(h.service.create(request, current)).rejects.toMatchObject({ response: expect.objectContaining({ errorKey: "health_report_unavailable" }), status: 409 });
     expect(h.state).toMatchObject({ reports: [], outbox: [], credits: 1 });
   });
-  it.each(["member", "data", "credits", "provider", "credentials", "demo"])("fails closed for %s", async scenario => {
-    const h = harness(scenario === "credits" ? 0 : 1);
+  it.each(["member", "data", "provider", "credentials", "demo"])("fails closed for %s", async scenario => {
+    const h = harness();
     if (scenario === "member") h.db.user.findUnique.mockResolvedValue({ status: "FROZEN", locale: "en" });
     if (scenario === "data") h.db.healthRecord.findMany.mockResolvedValue([]);
     if (scenario === "provider") h.db.integrationConfig.findUnique.mockResolvedValue({ state: "UNCONFIGURED" });
@@ -81,6 +81,17 @@ describe("international admin health-report availability", () => {
     expect((await h.service.availability(memberId, current)).canGenerate).toBe(false);
     await expect(h.service.create(request, current)).rejects.toMatchObject({ status: 409 });
     expect(h.state).toMatchObject({ reports: [], outbox: [], ledgers: [] });
+  });
+  it("lets SUPER_ADMIN generate without member report credits while auditors still require one", async () => {
+    const admin = harness(0);
+    expect(await admin.service.availability(memberId, current)).toMatchObject({ canGenerate: true, reportCreditBypass: true, availableCredits: 0 });
+    await expect(admin.service.create(request, current)).resolves.toMatchObject({ report: { status: "queued", needsPayment: false } });
+    expect(admin.state).toMatchObject({ credits: 0, ledgers: [] });
+    expect(admin.state.audits).toContainEqual(expect.objectContaining({ afterJson: expect.objectContaining({ reportCreditBypassed: true }) }));
+
+    const reviewer = harness(0);
+    expect(await reviewer.service.availability(memberId, auditor)).toMatchObject({ canGenerate: false, reportCreditBypass: false, reasons: [expect.objectContaining({ code: "credits_required" })] });
+    await expect(reviewer.service.create(request, auditor)).rejects.toMatchObject({ status: 409 });
   });
   it.each(["missing", "withdrawn", "outdated", "notice"])("lets only SUPER_ADMIN bypass %s member consent while preserving an audited decision", async scenario => {
     const h = harness();
@@ -127,15 +138,16 @@ describe("international admin health-report availability", () => {
 });
 
 describe("atomic report creation and admin read", () => {
-  it("serializes concurrent admin keys and consumer creation for one snapshot, consuming exactly once", async () => {
+  it("serializes concurrent admin-key and consumer reuse without charging an admin-generated report", async () => {
     const h = harness();
-    const result = await Promise.all([h.service.create(request, current), h.service.create({ ...request, idempotencyKey: "different-admin-key" }, current), h.reports.create(memberId)]);
+    const first = await h.service.create(request, current);
+    const result = await Promise.all([h.service.create({ ...request, idempotencyKey: "different-admin-key" }, current), h.reports.create(memberId)]);
+    expect(first).toMatchObject({ report: { id: reportId, status: "queued", needsPayment: false } });
     expect(result[0]).toMatchObject({ report: { id: reportId, status: "queued", needsPayment: false } });
-    expect(result[1]).toMatchObject({ report: { id: reportId, status: "queued", needsPayment: false } });
-    expect(result[2]).toMatchObject({ id: reportId, status: "queued", needsPayment: false });
-    expect(result[2]).not.toHaveProperty("reused");
-    expect(h.state).toMatchObject({ credits: 0 });
-    expect(h.state.reports).toHaveLength(1); expect(h.state.ledgers).toHaveLength(1); expect(h.state.outbox).toHaveLength(1);
+    expect(result[1]).toMatchObject({ id: reportId, status: "queued", needsPayment: false });
+    expect(result[1]).not.toHaveProperty("reused");
+    expect(h.state).toMatchObject({ credits: 1 });
+    expect(h.state.reports).toHaveLength(1); expect(h.state.ledgers).toHaveLength(0); expect(h.state.outbox).toHaveLength(1);
     expect(h.db.$executeRaw.mock.calls[0]![0].join("")).toContain("pg_advisory_xact_lock");
     expect(h.db.$executeRaw.mock.calls[0]![1]).toBe(`health-report-create:${memberId}`);
     expect(h.db.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(h.db.healthReport.create.mock.invocationCallOrder[0]);
@@ -145,7 +157,7 @@ describe("atomic report creation and admin read", () => {
     expect(await h.service.create(request, current)).toMatchObject({ reused: true, report: { id: reportId } });
     h.db.healthProfile.findUnique.mockResolvedValue({ analysisConsentedAt: new Date(), analysisConsentWithdrawn: new Date(), analysisConsentVersion: "reviewed-test" });
     await expect(h.service.create(request, auditor)).rejects.toMatchObject({ status: 409 });
-    expect(h.state.ledgers).toHaveLength(1);
+    expect(h.state.ledgers).toHaveLength(0);
   });
   it("resolves credentials before taking a transaction connection, without nested secret pool queries", async () => {
     const h = harness(); await h.service.create(request, current);
@@ -169,10 +181,10 @@ describe("atomic report creation and admin read", () => {
     await expect(h.service.create({ ...request, granted: true }, current)).rejects.toMatchObject({ status: 400 });
     await expect(h.service.create({ ...request, idempotencyKey: "short" }, current)).rejects.toMatchObject({ status: 400 });
   });
-  it("queues an existing unpaid report only with a real available credit", async () => {
+  it("queues an existing unpaid report for SUPER_ADMIN without consuming a later credit", async () => {
     const h = harness(0); await h.reports.create(memberId); h.state.credits = 1;
     expect(await h.service.create(request, current)).toMatchObject({ reused: true, report: { status: "queued", needsPayment: false } });
-    expect(h.state.credits).toBe(0); expect(h.state.reports).toHaveLength(1);
+    expect(h.state.credits).toBe(1); expect(h.state.ledgers).toHaveLength(0); expect(h.state.reports).toHaveLength(1);
   });
   it("returns audited ready content, never raw evidence or internal failure details", async () => {
     const h = harness(); await h.service.create(request, current);

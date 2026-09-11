@@ -8,7 +8,7 @@ import {
 } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { settleCommerceCommission } from "@saydian/commerce-domain";
-import { shouldPauseWorkers } from "@saydian/app-contracts";
+import { jushuitanWorkerEnabled, shouldPauseWorkers } from "@saydian/app-contracts";
 import {
   markWorkerIntegrationVerified,
   resolveWorkerSecrets,
@@ -29,13 +29,16 @@ export class CommerceJobWorker {
   constructor(private readonly prisma: PrismaClient) {}
 
   async runOnce(): Promise<boolean> {
-    if (shouldPauseWorkers(process.env)) return false;
-    await this.scheduleSettlements();
-    await this.recoverStaleClaims();
+    const generalEnabled = !shouldPauseWorkers(process.env);
+    const jushuitanEnabled = jushuitanWorkerEnabled(process.env);
+    if (!generalEnabled && !jushuitanEnabled) return false;
+    if (generalEnabled) await this.scheduleSettlements();
+    await this.recoverStaleClaims(generalEnabled ? undefined : true);
     const job = await this.prisma.commerceIntegrationJob.findFirst({
       where: {
         status: CommerceJobStatus.PENDING,
         nextRunAt: { lte: new Date() },
+        ...(generalEnabled ? {} : { type: { startsWith: "JUSHUITAN_" } }),
       },
       orderBy: { createdAt: "asc" },
     });
@@ -125,9 +128,17 @@ export class CommerceJobWorker {
       throw new PermanentCommerceJobError("Order is no longer awaiting ERP fulfillment");
     }
     if (!order.paymentIntents.length) throw new Error("Commerce order is not paid");
+    if (order.paymentIntents.length !== 1) {
+      throw new PermanentCommerceJobError("Commerce order has multiple successful payments and requires reconciliation before ERP upload");
+    }
+    const payment = order.paymentIntents[0]!;
+    if (payment.amountCents !== order.payableCents) {
+      throw new PermanentCommerceJobError("Commerce order payment amount does not match the payable amount");
+    }
+    const shopId = jstShopId(settings.shopId);
     const result = await this.call(settings, settings.paths.orderUpload!, [
       {
-        shop_id: Number(settings.shopId),
+        shop_id: shopId,
         so_id: order.orderNo,
         order_date: formatJstDate(order.createdAt),
         shop_status: "WAIT_SELLER_SEND_GOODS",
@@ -137,28 +148,37 @@ export class CommerceJobWorker {
         receiver_district: order.district,
         receiver_address: order.addressDetail,
         receiver_name: order.recipientName,
+        receiver_phone: order.recipientMobile,
         receiver_mobile: order.recipientMobile,
         pay_amount: order.payableCents / 100,
         freight: order.shippingCents / 100,
-        remark: order.adminRemark ?? order.buyerRemark ?? undefined,
+        remark: order.adminRemark ?? undefined,
+        buyer_message: order.buyerRemark ?? undefined,
         items: order.items.map((item) => ({
           outer_oi_id: item.id,
           sku_id: item.erpSkuIdSnapshot,
+          shop_sku_id: item.erpSkuIdSnapshot,
           name: item.nameSnapshot,
           properties_value: item.specificationSnapshot,
           qty: item.quantity,
-          price: item.unitPriceCents / 100,
+          base_price: item.unitPriceCents / 100,
           amount: item.totalCents / 100,
         })),
-        pay: order.paymentIntents.map((payment) => ({
+        pay: {
           outer_pay_id: payment.paymentNo,
           pay_date: formatJstDate(payment.paidAt ?? new Date()),
           payment: payment.channel,
+          seller_account: payment.providerMerchantId ?? settings.shopId,
+          buyer_account: order.userId,
           amount: payment.amountCents / 100,
-        })),
+        },
       },
     ]);
     const first = rows(result)[0];
+    if (!first) throw new Error("Jushuitan order upload returned no per-order result");
+    if (first.issuccess === false) {
+      throw new Error(`Jushuitan order upload failed: ${String(first.msg ?? "unknown per-order error")}`);
+    }
     await this.prisma.commerceOrder.update({
       where: { id: order.id },
       data: {
@@ -372,6 +392,7 @@ export class CommerceJobWorker {
     }
     const publicConfig = asObject(integration.publicConfig);
     const customPaths = asObject(publicConfig.paths);
+    const customMethods = asObject(publicConfig.methods);
     const secrets = await resolveWorkerSecrets(this.prisma, "jushuitan", {
       appKey: "JUSHUITAN_APP_KEY",
       appSecret: "JUSHUITAN_APP_SECRET",
@@ -385,17 +406,17 @@ export class CommerceJobWorker {
       throw new Error("Jushuitan credentials are unconfigured");
     }
     return {
-      apiBase: String(publicConfig.apiBase ?? "https://openapi.jushuitan.com").replace(/\/$/, ""),
+      apiBase: String(publicConfig.apiBase ?? "https://open.erp321.com/api/open/query.aspx").replace(/\/$/, ""),
       appKey,
       appSecret,
       accessToken,
       shopId: String(publicConfig.shopId ?? secrets.shopId ?? ""),
       paths: {
-        sku: String(customPaths.sku ?? "/open/sku/query"),
-        inventory: String(customPaths.inventory ?? "/open/inventory/query"),
-        orderUpload: String(customPaths.orderUpload ?? "/open/jushuitan/orders/upload"),
-        afterSaleUpload: String(customPaths.afterSaleUpload ?? "/open/aftersale/upload"),
-        fulfillment: String(customPaths.fulfillment ?? "/open/logistic/query"),
+        sku: String(customMethods.sku ?? customPaths.sku ?? "sku.query"),
+        inventory: String(customMethods.inventory ?? customPaths.inventory ?? "inventory.query"),
+        orderUpload: String(customMethods.orderUpload ?? customPaths.orderUpload ?? "jushuitan.orders.upload"),
+        afterSaleUpload: String(customMethods.afterSaleUpload ?? customPaths.afterSaleUpload ?? "aftersale.upload"),
+        fulfillment: String(customMethods.fulfillment ?? customPaths.fulfillment ?? "logistic.query"),
       },
     };
   }
@@ -419,9 +440,29 @@ export class CommerceJobWorker {
 
   private async call(
     settings: JstSettings,
-    path: string,
+    operation: string,
     body: unknown,
   ): Promise<Record<string, unknown>> {
+    if (!operation.startsWith("/")) {
+      const ts = String(Math.floor(Date.now() / 1_000));
+      const url = new URL(settings.apiBase);
+      url.searchParams.append("method", operation);
+      url.searchParams.append("partnerid", settings.appKey);
+      url.searchParams.append("token", settings.accessToken);
+      url.searchParams.append("ts", ts);
+      url.searchParams.append(
+        "sign",
+        jstGatewaySign(operation, settings.appKey, settings.accessToken, ts, settings.appSecret),
+      );
+      return this.parseResponse(
+        await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body ?? {}),
+          signal: AbortSignal.timeout(20_000),
+        }),
+      );
+    }
     const params: Record<string, string> = {
       access_token: settings.accessToken,
       app_key: settings.appKey,
@@ -431,12 +472,15 @@ export class CommerceJobWorker {
       biz: JSON.stringify(body ?? {}),
     };
     params.sign = jstSign(params, settings.appSecret);
-    const response = await fetch(`${settings.apiBase}${path}`, {
+    return this.parseResponse(await fetch(`${settings.apiBase}${operation}`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
       body: new URLSearchParams(params),
       signal: AbortSignal.timeout(20_000),
-    });
+    }));
+  }
+
+  private async parseResponse(response: Response): Promise<Record<string, unknown>> {
     const text = await response.text();
     let result: Record<string, unknown>;
     try {
@@ -449,17 +493,23 @@ export class CommerceJobWorker {
       result.issuccess === false ||
       (result.code !== undefined && Number(result.code) !== 0)
     ) {
-      throw new Error(`Jushuitan request failed: ${String(result.msg ?? response.status)}`);
+      const code = Number(result.code);
+      const message = String(result.msg ?? result.message ?? response.status);
+      if (code === 190) {
+        throw new PermanentCommerceJobError("聚水潭未授权当前接口（错误码 190），请为该应用申请对应接口权限");
+      }
+      throw new Error(`Jushuitan request failed: ${message}`);
     }
     await markWorkerIntegrationVerified(this.prisma, "jushuitan");
     return { ...asObject(result.data), ...result };
   }
 
-  private async recoverStaleClaims() {
+  private async recoverStaleClaims(jushuitanOnly = false) {
     await this.prisma.commerceIntegrationJob.updateMany({
       where: {
         status: CommerceJobStatus.RUNNING,
         lockedAt: { lt: new Date(Date.now() - 5 * 60_000) },
+        ...(jushuitanOnly ? { type: { startsWith: "JUSHUITAN_" } } : {}),
       },
       data: { status: CommerceJobStatus.PENDING, lockedAt: null },
     });
@@ -467,6 +517,19 @@ export class CommerceJobWorker {
 }
 
 export class PermanentCommerceJobError extends Error {}
+
+export function jstGatewaySign(
+  method: string,
+  partnerId: string,
+  token: string,
+  timestamp: string,
+  partnerKey: string,
+): string {
+  return createHash("md5")
+    .update(`${method}${partnerId}token${token}ts${timestamp}${partnerKey}`, "utf8")
+    .digest("hex")
+    .toLowerCase();
+}
 
 export function jstSign(params: Record<string, string>, appSecret: string): string {
   const content = Object.entries(params)
@@ -520,9 +583,17 @@ function optionalCents(value: unknown): number | null {
   return value === null || value === undefined || value === "" ? null : toCents(value);
 }
 
+function jstShopId(value: string): number {
+  if (!/^\d+$/.test(value)) throw new PermanentCommerceJobError("Jushuitan shop id must be a positive integer");
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) throw new PermanentCommerceJobError("Jushuitan shop id must be a positive integer");
+  return number;
+}
+
 function formatJstDate(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  const shanghai = new Date(date.valueOf() + 8 * 60 * 60 * 1_000);
+  return `${shanghai.getUTCFullYear()}-${pad(shanghai.getUTCMonth() + 1)}-${pad(shanghai.getUTCDate())} ${pad(shanghai.getUTCHours())}:${pad(shanghai.getUTCMinutes())}:${pad(shanghai.getUTCSeconds())}`;
 }
 
 function parseDate(value: unknown): Date | null {

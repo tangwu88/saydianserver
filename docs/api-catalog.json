@@ -13125,6 +13125,38 @@
       }
     },
     {
+      "key": "CommerceCompatibilityController.claimCouponByCode",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/coupons/code/claim",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "输入优惠码领取优惠券",
+      "request": "{code:4-32位字母、数字、_或-；服务端统一转大写}",
+      "response": "本人领取记录；仅匹配后台启用且有效的唯一优惠码，错误不泄露券状态",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "CommerceCompatibilityController.claimCoupon",
       "method": "POST",
       "path": "/api/saidian-mall/v1/storefront/coupons/:id/claim",

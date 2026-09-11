@@ -69,4 +69,22 @@ describe("commerce administration", () => {
     await expect(service.saveCommerceCommissionPlan({ ...base, minimumWithdrawCents: 100, dailyWithdrawLimitCents: 99 })).rejects.toThrow("每日提现额度");
     await expect(service.saveCommerceCommissionPlan({ ...base, minimumWithdrawCents: 100, reviewRequired: false })).rejects.toThrow("人工审核");
   });
+  it("normalizes a customer coupon code and stores it in the existing unique external-id slot", async () => {
+    const saved = { id: "coupon", legacyId: "SAVE10" };
+    const prisma = { commerceCoupon: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue(saved) } };
+    const result = await new AdminService(prisma as any, {} as any).saveCommerceCoupon(undefined, {
+      name: "满 100 减 10", redemptionCode: " save10 ", status: "ACTIVE", value: 1000,
+      minimumSpendCents: 10000, totalQuantity: 100, validFrom: "2026-09-01T00:00:00.000Z", validUntil: "2026-10-01T00:00:00.000Z",
+    });
+    expect(result).toBe(saved);
+    expect(prisma.commerceCoupon.create).toHaveBeenCalledWith({ data: expect.objectContaining({ legacyId: "SAVE10", value: 1000, minimumSpendCents: 10000 }) });
+  });
+  it("rejects malformed coupon codes before writing", async () => {
+    const prisma = { commerceCoupon: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn() } };
+    await expect(new AdminService(prisma as any, {} as any).saveCommerceCoupon(undefined, {
+      name: "测试券", redemptionCode: "含 空格", value: 100, minimumSpendCents: 0, totalQuantity: 1,
+      validFrom: "2026-09-01T00:00:00.000Z", validUntil: "2026-10-01T00:00:00.000Z",
+    })).rejects.toThrow("优惠码");
+    expect(prisma.commerceCoupon.create).not.toHaveBeenCalled();
+  });
 });

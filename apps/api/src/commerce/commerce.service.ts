@@ -276,6 +276,10 @@ export class CommerceService {
     return this.store.claimCoupon(userId, couponId);
   }
 
+  claimCouponByCode(userId: string, input: unknown) {
+    return this.store.claimCouponByCode(userId, input);
+  }
+
   createReview(userId: string, input: unknown) {
     return this.store.createReview(userId, input);
   }

@@ -1,6 +1,6 @@
 <template>
-  <DesktopHeader /><view v-if="shareGuide" class="share-guide" role="dialog" aria-label="微信分享引导" @click="shareGuide=false"><view class="share-guide-card" @click.stop><text class="share-arrow">↗</text><b>点击右上角 ··· 分享商品</b><text>可发送给朋友，或分享到朋友圈</text><button class="primary-btn" @click="copyShareLink">复制商品链接</button><button class="text-button" @click="shareGuide=false">我知道了</button></view></view><view v-if="recovery" class="container recovery-entry"><text>上次下单结果待确认</text><button class="outline-btn" :disabled="busy" @click="restoreCheckout">恢复上次下单</button></view><view v-if="product" class="page"
-    ><view class="container product-shortcuts"><button @click="goHome">商城首页</button><button aria-label="分享商品" @click="shareProduct">分享商品</button><button @click="goCart">购物车</button></view
+  <DesktopHeader /><view v-if="posterVisible" class="poster-overlay" role="dialog" aria-modal="true" aria-label="商品分享海报" @click="closePoster"><view class="poster-card" @click.stop><view class="poster-heading"><b>分享商品</b><button aria-label="关闭分享海报" @click="closePoster"><UniIcons type="closeempty" color="currentColor" size="22" /></button></view><view v-if="posterBusy" class="poster-loading">正在生成分享海报…</view><image v-else-if="posterUrl" class="share-poster" :src="posterUrl" mode="widthFix"/><view v-else class="error-state">{{ posterError || '海报暂时无法生成' }}</view><text class="poster-tip">长按海报可保存，发送给好友后可扫码打开商品。</text><view class="poster-actions"><button class="outline-btn" :disabled="posterBusy || !posterUrl" @click="previewPoster"><UniIcons type="image-filled" color="currentColor" size="18" />查看并保存</button><button class="primary-btn" :disabled="posterBusy" @click="copyShareLink"><UniIcons type="link" color="currentColor" size="18" />复制商品链接</button></view></view></view><view v-if="recovery" class="container recovery-entry"><text>上次下单结果待确认</text><button class="outline-btn" :disabled="busy" @click="restoreCheckout">恢复上次下单</button></view><view v-if="product" class="page"
+    ><view class="container product-shortcuts"><button @click="goHome"><UniIcons type="home-filled" color="currentColor" size="18" />商城首页</button><button aria-label="分享商品" :disabled="posterBusy" @click="shareProduct"><UniIcons type="redo-filled" color="currentColor" size="18" />分享商品</button><button @click="goCart"><UniIcons type="cart-filled" color="currentColor" size="18" />购物车</button></view
     ><view class="container product-layout"
       ><view class="gallery"
         ><image
@@ -45,12 +45,11 @@
             ><button aria-label="增加数量" :disabled="busy || !canPurchase || quantity >= selectedSku.stock" @click="quantity = Math.min(selectedSku?.stock || 1, quantity + 1)">＋</button></view
           ></view
         ><view class="actions"
-          ><button class="outline-btn" :disabled="busy" @click="toggleFavorite">{{
+          ><button class="outline-btn" :disabled="busy" @click="toggleFavorite"><UniIcons :type="product.favorite ? 'heart-filled' : 'heart'" color="currentColor" size="18" />{{
             product.favorite ? "已收藏" : "收藏"
           }}</button
-          ><button class="outline-btn" :disabled="busy || !canPurchase" @click="addCart">加入购物车</button
-          ><button class="primary-btn" :disabled="busy || !canPurchase" @click="buyNow">{{ canPurchase ? '立即购买' : '暂时缺货' }}</button></view
-        ><button class="text-button" @click="help">帮助与售后</button
+          ><button class="outline-btn" :disabled="busy || !canPurchase" @click="addCart"><UniIcons type="cart" color="currentColor" size="18" />加入购物车</button
+          ><button class="primary-btn" :disabled="busy || !canPurchase" @click="buyNow"><UniIcons type="wallet-filled" color="currentColor" size="18" />{{ canPurchase ? '立即购买' : '暂时缺货' }}</button></view
         ></view
       ></view
     ><view class="container detail card"
@@ -77,10 +76,12 @@ import { mallStorage } from "../../realm";
 defineOptions({ inheritAttrs: false });
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
+import QRCode from "qrcode";
+import UniIcons from "@dcloudio/uni-ui/lib/uni-icons/uni-icons.vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import { api, money, toast, requireLogin, clearCheckoutState, mallSessionStamp } from "../../api";
 import { isLoggedIn } from "../../session";
-const id = ref(''), error = ref(''), busy = ref(false), shareGuide = ref(false);
+const id = ref(''), error = ref(''), busy = ref(false), posterVisible = ref(false), posterBusy = ref(false), posterUrl = ref(''), posterError = ref('');
 const recovery = ref<{ userId: string; key: string; session: string } | null>(null);
 const product = ref<any>(),
   selectedSku = ref<any>(),
@@ -100,13 +101,13 @@ onLoad(o => { id.value = String(o?.id || ''); });
 onShow(load);
 function goHome(){uni.switchTab({url:'/pages/home/index'});}
 function goCart(){uni.switchTab({url:'/pages/cart/index'});}
-function help(){uni.navigateTo({url:'/pages/help/index?section=service'});}
 function productShareUrl() {
   const route = `#/pages/product/index?id=${encodeURIComponent(id.value)}`;
-  return typeof location === 'undefined' ? route : `${location.origin}${location.pathname}${route}`;
+  if (typeof location === 'undefined') return route;
+  const referral = String(mallStorage.get('saidian-ref') || '').trim();
+  return `${location.origin}${location.pathname}${referral ? `?ref=${encodeURIComponent(referral)}` : ''}${route}`;
 }
 function copyShareLink() {
-  shareGuide.value = false;
   uni.setClipboardData({
     data: productShareUrl(),
     success: () => uni.showToast({ title: '商品链接已复制', icon: 'none' }),
@@ -114,30 +115,40 @@ function copyShareLink() {
 }
 async function shareProduct() {
   if (!product.value) return;
-  if (typeof navigator !== 'undefined' && /MicroMessenger/i.test(navigator.userAgent)) {
-    shareGuide.value = true;
-    return;
-  }
-  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-    try {
-      await navigator.share({
-        title: product.value.displayName || product.value.name || '赛电商品',
-        text: product.value.subtitle || '来自赛电商城的商品',
-        url: productShareUrl(),
-      });
-      return;
-    } catch (cause) {
-      if ((cause as { name?: string })?.name === 'AbortError') return;
-    }
-  }
-  copyShareLink();
+  posterVisible.value = true;
+  if (posterUrl.value || posterBusy.value) return;
+  posterBusy.value = true; posterError.value = '';
+  try { posterUrl.value = await buildSharePoster(); }
+  catch { posterError.value = '海报生成失败，可先复制商品链接分享'; }
+  finally { posterBusy.value = false; }
 }
+function closePoster(){posterVisible.value=false;}
+function previewPoster(){if(posterUrl.value)uni.previewImage({current:posterUrl.value,urls:[posterUrl.value]});}
+async function buildSharePoster():Promise<string>{
+  if(typeof document==='undefined')return QRCode.toDataURL(productShareUrl(),{width:720,margin:3,color:{dark:'#111827',light:'#ffffff'}});
+  const canvas=document.createElement('canvas');canvas.width=750;canvas.height=1080;const ctx=canvas.getContext('2d');if(!ctx)throw new Error('canvas unavailable');
+  ctx.fillStyle='#f3f5f8';ctx.fillRect(0,0,750,1080);ctx.fillStyle='#ffffff';roundRect(ctx,35,35,680,1010,32);ctx.fill();
+  ctx.fillStyle='#d20b27';ctx.font='700 34px sans-serif';ctx.fillText('SAYDIAN 赛电',72,98);ctx.fillStyle='#111827';ctx.font='700 42px sans-serif';drawWrappedText(ctx,String(product.value.displayName||product.value.name||'赛电商品'),72,158,606,56,2);
+  const productImage=await loadPosterImage(currentImage.value);if(productImage)drawContain(ctx,productImage,72,270,606,470);else{ctx.fillStyle='#f6f7f9';ctx.fillRect(72,270,606,470);ctx.fillStyle='#98a2b3';ctx.font='26px sans-serif';ctx.fillText('商品图片',320,510);}
+  ctx.fillStyle='#be092d';ctx.font='800 48px sans-serif';ctx.fillText(money(selectedSku.value?.salePriceCents),72,820);
+  ctx.fillStyle='#4b5563';ctx.font='24px sans-serif';ctx.fillText('扫码查看商品详情',72,888);
+  const qr=await loadPosterImage(await QRCode.toDataURL(productShareUrl(),{width:220,margin:1,color:{dark:'#111827',light:'#ffffff'}}));if(qr)ctx.drawImage(qr,458,810,190,190);
+  ctx.fillStyle='#8a94a3';ctx.font='20px sans-serif';ctx.fillText('商品价格与库存以打开页面时为准',72,985);
+  return canvas.toDataURL('image/png');
+}
+function roundRect(ctx:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,r:number){const radius=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+radius,y);ctx.lineTo(x+w-radius,y);ctx.quadraticCurveTo(x+w,y,x+w,y+radius);ctx.lineTo(x+w,y+h-radius);ctx.quadraticCurveTo(x+w,y+h,x+w-radius,y+h);ctx.lineTo(x+radius,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-radius);ctx.lineTo(x,y+radius);ctx.quadraticCurveTo(x,y,x+radius,y);ctx.closePath();}
+function drawWrappedText(ctx:CanvasRenderingContext2D,text:string,x:number,y:number,maxWidth:number,lineHeight:number,maxLines:number){let line='',lineNo=0;for(const char of text){const next=line+char;if(ctx.measureText(next).width>maxWidth&&line){ctx.fillText(line,x,y+lineNo*lineHeight);line=char;if(++lineNo>=maxLines)return;}else line=next;}if(line&&lineNo<maxLines)ctx.fillText(line,x,y+lineNo*lineHeight);}
+function loadPosterImage(src:string):Promise<HTMLImageElement|null>{return new Promise(resolve=>{if(!src)return resolve(null);const image=new Image();image.crossOrigin='anonymous';image.onload=()=>resolve(image);image.onerror=()=>resolve(null);image.src=src;});}
+function drawContain(ctx:CanvasRenderingContext2D,image:HTMLImageElement,x:number,y:number,w:number,h:number){const scale=Math.min(w/image.naturalWidth,h/image.naturalHeight),dw=image.naturalWidth*scale,dh=image.naturalHeight*scale;ctx.drawImage(image,x+(w-dw)/2,y+(h-dh)/2,dw,dh);}
 async function load() {
   rememberRecovery();
   try {
     error.value = '';
     const selectedId = selectedSku.value?.id;
     product.value = await api(`/storefront/products/${encodeURIComponent(id.value)}`);
+    uni.setNavigationBarTitle({ title: String(product.value.displayName || product.value.name || '商品详情') });
+    posterUrl.value = '';
+    posterError.value = '';
     selectedSku.value = product.value.skus?.find((x:any)=>x.id === selectedId) || product.value.skus?.[0];
     quantity.value = Math.max(1, Math.min(quantity.value, selectedSku.value?.stock || 1));
     currentImage.value = images.value[0] || "";
@@ -231,7 +242,7 @@ async function toggleFavorite() {
 </script>
 <style scoped lang="scss">
 .recovery-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:12px;background:#fff6de;border-radius:12px;font-size:14px}.recovery-entry button{width:auto;min-height:44px;margin:0;padding:8px 12px;line-height:1.5;font-size:14px;flex:none}
-.share-guide{position:fixed;inset:0;z-index:1200;background:rgba(13,24,34,.72);display:flex;align-items:flex-start;justify-content:flex-end;padding:20px 24px}.share-guide-card{position:relative;width:min(330px,calc(100vw - 48px));padding:70px 22px 20px;background:#fff;border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,.24);display:grid;gap:12px;text-align:center}.share-guide-card>b{font-size:18px}.share-guide-card>text:not(.share-arrow){font-size:14px;color:var(--muted)}.share-guide-card button{margin:0}.share-arrow{position:absolute;right:18px;top:4px;color:var(--green);font-size:54px;line-height:1}
+.poster-overlay{position:fixed;inset:0;z-index:1200;background:rgba(13,24,34,.72);display:grid;place-items:center;padding:20px}.poster-card{width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;padding:18px;background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.24)}.poster-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.poster-heading>b{font-size:18px}.poster-heading button{width:40px;min-height:40px;margin:0;padding:0;background:#f4f6f8;color:#374151;line-height:40px}.poster-loading{min-height:240px;display:grid;place-items:center;color:var(--muted)}.share-poster{display:block;width:100%;border-radius:12px;background:#f4f6f8}.poster-tip{display:block;margin:12px 0;color:var(--muted);font-size:13px;line-height:1.6;text-align:center}.poster-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.poster-actions button{margin:0;min-height:46px;font-size:14px}.poster-actions button,.product-shortcuts button,.actions button{display:flex;align-items:center;justify-content:center;gap:7px}
 .product-shortcuts {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px;}
 .product-shortcuts button {margin:0;padding:0 16px;min-height:44px;line-height:44px;font-size:14px;background:#fff;color:var(--green);}
 .actions button{width:100%;min-width:0;min-height:48px;font-size:14px;line-height:1.5;padding:12px 4px;margin:0;white-space:nowrap;}.actions button[disabled]{opacity:.55;}.quantity button{width:44px;min-height:44px;margin:0;padding:0;background:#fff;font-size:20px;line-height:44px;}.quantity button::after{border:0;}

@@ -325,6 +325,7 @@ export const notes = {
   "CommerceCompatibilityController.coupons": entry("商城优惠券", "无请求体", "本人可用及历史券"),
   "CommerceCompatibilityController.availableCoupons": entry("商城领券中心", "page=页码，默认1，每页20；会员鉴权", "公开有效券、本人是否已领、是否还有额度；不暴露员工赠券库存"),
   "CommerceCompatibilityController.claimCoupon": entry("领取优惠券", "id=优惠券UUID", "领取记录；重复领取幂等"),
+  "CommerceCompatibilityController.claimCouponByCode": entry("输入优惠码领取优惠券", "{code:4-32位字母、数字、_或-；服务端统一转大写}", "本人领取记录；仅匹配后台启用且有效的唯一优惠码，错误不泄露券状态"),
   "CommerceCompatibilityController.review": entry("商城商品评价", "{orderItemId,rating,content,images?}", "评价记录"),
   "CommerceCompatibilityController.createPayment": entry("商城创建统一支付单", "{orderId,channel,idempotencyKey?}", "支付单及渠道调用参数；不等于支付成功；global仅CNY商城订单的wechat_jsapi/wechat_h5/wechat_native/alipay_wap/alipay_page", "未配置或出站暂停返回503；global JSAPI必须当前公众号绑定且ACTIVE、邮箱或手机号已真实验证；临时任意码账号禁止交易；商户/验签/回调完整性在资金关系创建前与出站前复验"),
   "CommerceCompatibilityController.wechatNotify": entry("兼容微信支付回调", "微信支付签名头和密文通知", "微信约定确认响应", "微信支付"),

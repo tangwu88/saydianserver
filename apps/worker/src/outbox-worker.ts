@@ -3,7 +3,13 @@ import {
   PrismaClient,
   type OutboxEvent,
 } from "@prisma/client";
-import { buildSafePushPayload, shouldPauseWorkers } from "@saydian/app-contracts";
+import {
+  buildSafePushPayload,
+  businessWritesPaused,
+  healthReportWorkerEnabled,
+  jushuitanWorkerEnabled,
+  shouldPauseWorkers,
+} from "@saydian/app-contracts";
 import Redis from "ioredis";
 import type { AccountDeletionWorker } from "./account-deletion-worker";
 import type { PushProvider } from "./push-provider";
@@ -42,14 +48,28 @@ export class OutboxWorker {
   }
 
   async runOnce(): Promise<boolean> {
-    if (shouldPauseWorkers(process.env)) return false;
-    await this.recoverStaleClaims();
-    const deletionProcessed = await this.accountDeletions?.runOnce();
-    const commerceProcessed = await this.commerceJobs?.runOnce();
+    if (businessWritesPaused(process.env)) return false;
+    const generalEnabled = !shouldPauseWorkers(process.env);
+    const reportsEnabled = healthReportWorkerEnabled(process.env);
+    const commerceEnabled = jushuitanWorkerEnabled(process.env);
+    if (!generalEnabled && !reportsEnabled && !commerceEnabled) return false;
+    if (generalEnabled || reportsEnabled) {
+      await this.recoverStaleClaims(generalEnabled ? undefined : "health_report_generate");
+    }
+    const deletionProcessed = generalEnabled
+      ? await this.accountDeletions?.runOnce()
+      : false;
+    const commerceProcessed = generalEnabled || commerceEnabled
+      ? await this.commerceJobs?.runOnce()
+      : false;
+    if (!generalEnabled && !reportsEnabled) {
+      return Boolean(deletionProcessed || commerceProcessed);
+    }
     const candidates = await this.prisma.outboxEvent.findMany({
       where: {
         status: OutboxStatus.PENDING,
         nextAttemptAt: { lte: new Date() },
+        ...(generalEnabled ? {} : { eventType: "health_report_generate" }),
       },
       orderBy: { createdAt: "asc" },
       take: 20,
@@ -58,7 +78,12 @@ export class OutboxWorker {
       return Boolean(deletionProcessed || commerceProcessed);
     }
     for (const event of candidates) {
-      if (shouldPauseWorkers(process.env)) break;
+      if (businessWritesPaused(process.env)) break;
+      if (event.eventType === "health_report_generate") {
+        if (!healthReportWorkerEnabled(process.env)) break;
+      } else if (shouldPauseWorkers(process.env)) {
+        break;
+      }
       await this.claimAndProcess(event);
     }
     return true;
@@ -152,11 +177,12 @@ export class OutboxWorker {
     );
   }
 
-  private async recoverStaleClaims(): Promise<void> {
+  private async recoverStaleClaims(eventType?: string): Promise<void> {
     await this.prisma.outboxEvent.updateMany({
       where: {
         status: OutboxStatus.PROCESSING,
         lockedAt: { lt: new Date(Date.now() - 5 * 60_000) },
+        ...(eventType ? { eventType } : {}),
       },
       data: { status: OutboxStatus.PENDING, lockedAt: null },
     });

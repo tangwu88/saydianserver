@@ -70,6 +70,7 @@ test("global customer shopping pages and exact endpoint methods are allowed with
     ["POST", ["/storefront/cart/items", "/storefront/addresses", "/storefront/orders/preview", "/storefront/orders", "/storefront/orders/order-1/cancel", "/storefront/orders/order-1/receipt", "/storefront/orders/order-1/after-sales", "/storefront/orders/order-1/after-sales/preview", "/storefront/orders/order-1/after-sales/sale-1/return-logistics", "/storefront/favorites/product-1", "/storefront/coupons/coupon-1/claim", "/storefront/reviews", "/payments/create"]],
     ["PATCH", ["/storefront/addresses/address-1"]], ["DELETE", ["/storefront/cart/items/item-1", "/storefront/addresses/address-1"]],
   ]) for (const path of paths) assert.equal(globalApiAllowed(path, method), true, `${method} ${path}`);
+  assert.equal(globalApiAllowed("/storefront/coupons/code/claim", "POST"), true);
   for (const [method, path] of [["GET", "/payments/create"], ["GET", "/storefront/orders/preview"], ["POST", "/storefront/products/product-1"], ["DELETE", "/storefront/orders/order-1"], ["PUT", "/storefront/addresses/address-1"], ["POST", "/payments/create?channel=wechat_mini"], ["GET", "/storefront/coupon-gifts/token"], ["GET", "/storefront/orders/../admin"], ["GET", "/storefront/orders/%2e%2e"], ["GET", "/storefront/products/id#fragment"], ["GET", "/storefront/products/id\\admin"]]) assert.equal(globalApiAllowed(path, method), false, `${method} ${path}`);
   assert.equal(globalPageAllowed("/pages/product/index?id=1"), true);
   for (const page of ["cart", "checkout", "orders", "order-detail", "after-sale", "addresses", "address-edit", "favorites", "coupons", "points"]) assert.equal(globalPageAllowed(`/pages/${page}/index?id=synthetic`), true);
@@ -418,6 +419,15 @@ test("global account renders working customer order menus without employee contr
   component.props.user = { memberNo: "456", nickname: "Verified member", phoneMasked: "+86***1234", phoneVerified: true };
   tree = component.tree(); assert.doesNotMatch(renderedText(tree), /待验证|购买前需验证账号/); assert.match(renderedText(tree), /会员 ID：456/);
   assert.equal(h.requests.length, 0);
+});
+
+test("global account shows three recent orders and opens the selected order detail", () => {
+  const h = harness(), navigations = []; h.uni.navigateTo = value => navigations.push(value.url);
+  const recentOrders = [1, 2, 3].map(index => ({ id: `order-${index}`, orderNo: `TEST-${index}`, status: index === 1 ? "PENDING_PAYMENT" : "SHIPPED", payableCents: index * 1000, createdAt: "2026-09-11T00:00:00.000Z", items: [{ nameSnapshot: `商品 ${index}`, imageSnapshot: `https://example.invalid/${index}.png` }] }));
+  const component = renderedComponent(h, "GlobalAccount", { user: { memberNo: "43", nickname: "会员" }, recentOrders, recentOrdersLoading: false, recentOrdersError: "" });
+  const tree = component.tree(), rows = renderNodes(tree).filter(node => node.props?.class === "recent-order");
+  assert.equal(rows.length, 3); assert.match(renderedText(tree), /最近订单.*商品 1.*TEST-1/); rows[1].props.onClick();
+  assert.deepEqual(navigations, ["/pages/order-detail/index?id=order-2"]);
 });
 
 test("global and domestic headers expose a real cart-tab shortcut but never employee entry", () => {

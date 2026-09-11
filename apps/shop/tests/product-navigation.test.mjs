@@ -37,16 +37,18 @@ const { script, render } = compilePage("product");
 const product = changes => ({ id: "synthetic-product", name: "测试商品", tags: [], gallery: [], coverImage: null,
   skus: [{ id: "synthetic-sku", stock: 2, salePriceCents: 1000, image: null }], ...changes });
 async function page(realmName, value = product(), options = {}) {
-  const storage = new Map(), navigations = [], requests = [], hooks = {}, notices = [], copied = []; let session = "session-1", cleared = 0;
+  const storage = new Map(), navigations = [], requests = [], hooks = {}, notices = [], copied = [], titles = [], previews = []; let session = "session-1", cleared = 0;
   const uni = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value), removeStorageSync: key => storage.delete(key),
     getStorageInfoSync: () => ({ keys: [...storage.keys()] }), switchTab: value => navigations.push(value.url), navigateTo: value => navigations.push(value.url), showToast() {},
-    setClipboardData: value => { copied.push(value.data); value.success?.(); },
+    setClipboardData: value => { copied.push(value.data); value.success?.(); }, setNavigationBarTitle: value => titles.push(value.title), previewImage: value => previews.push(value),
   };
   const { realm } = realmTestModules(uni, { env: realmName === "global" ? { VITE_APP_REALM: "global" } : {} });
   if (options.user) { realm.mallStorage.set("saidian-user", options.user); realm.mallStorage.set("saidian-token", "synthetic-token"); }
   if (options.draft) { realm.mallStorage.set("checkout-draft", structuredClone(options.draft)); realm.mallStorage.set("checkout-owner", options.owner ?? options.user?.id); }
   const component = evaluate(script.content, {
     vue, "../../realm": realm, "../../components/DesktopHeader.vue": { default: { render: () => null } },
+    "@dcloudio/uni-ui/lib/uni-icons/uni-icons.vue": { default: { render: () => null } },
+    qrcode: { default: { toDataURL: async value => `data:image/png;base64,${Buffer.from(value).toString('base64')}` } },
     "../../components/ImageEvidencePicker.vue": { default: { render: () => null } },
     "@dcloudio/uni-app": { onLoad: callback => hooks.load = callback, onShow: callback => hooks.show = callback },
     "../../session": { isLoggedIn: () => !!realm.mallStorage.get("saidian-token") },
@@ -55,7 +57,7 @@ async function page(realmName, value = product(), options = {}) {
   const state = component.setup({}, { expose() {} });
   hooks.load({ id: value.id }); await hooks.show();
   const ui = vue.proxyRefs(state);
-  return { state, navigations, requests, notices, copied, storage: realm.mallStorage, setSession: value => { session = value; }, cleared: () => cleared, tree: () => render({}, [], {}, ui, {}, {}) };
+  return { state, navigations, requests, notices, copied, titles, previews, storage: realm.mallStorage, setSession: value => { session = value; }, cleared: () => cleared, tree: () => render({}, [], {}, ui, {}, {}) };
 }
 function nodes(node) {
   if (!node || typeof node !== "object") return [];
@@ -74,19 +76,15 @@ test("global product opens cart and purchase controls while anonymous actions st
   assert.equal(h.requests.length, 1); assert.equal(h.requests[0].path, "/storefront/products/synthetic-product");
 });
 
-test("product share uses native sharing, guides WeChat and keeps a copy-link fallback", async () => {
-  const shared = [];
-  const native = await page("global", product(), { navigator: { userAgent: "Synthetic Mobile", share: async value => shared.push(value) } });
-  await native.state.shareProduct();
-  assert.equal(shared.length, 1); assert.equal(shared[0].title, "测试商品");
-  assert.equal(shared[0].url, "https://app.saydian.cn/global/saidian-mall/#/pages/product/index?id=synthetic-product");
-  assert.deepEqual(native.copied, []);
-
-  const wechat = await page("global", product(), { navigator: { userAgent: "MicroMessenger Synthetic" } });
-  await wechat.state.shareProduct(); assert.equal(wechat.state.shareGuide.value, true);
-  const copy = button(wechat.tree(), "复制商品链接"); assert.ok(copy); copy.props.onClick();
-  assert.equal(wechat.state.shareGuide.value, false);
-  assert.deepEqual(wechat.copied, ["https://app.saydian.cn/global/saidian-mall/#/pages/product/index?id=synthetic-product"]);
+test("product share creates a QR poster, keeps referral attribution and provides save/copy actions", async () => {
+  const h = await page("global"); h.storage.set("saidian-ref", "TEAM01");
+  await h.state.shareProduct();
+  assert.equal(h.state.posterVisible.value, true); assert.match(h.state.posterUrl.value, /^data:image\/png;base64,/);
+  const tree = h.tree(), save = button(tree, "查看并保存"), copy = button(tree, "复制商品链接");
+  assert.ok(save); assert.ok(copy); save.props.onClick(); copy.props.onClick();
+  const expected = "https://app.saydian.cn/global/saidian-mall/?ref=TEAM01#/pages/product/index?id=synthetic-product";
+  assert.equal(h.previews[0].current, h.state.posterUrl.value); assert.deepEqual(h.copied, [expected]);
+  assert.equal(h.titles.at(-1), "测试商品");
 });
 
 test("global zero, missing or invalid stock never enables a purchase", async () => {
@@ -151,10 +149,10 @@ test("real images replace the placeholder and multiple unique thumbnails update 
   assert.equal(nodes(tree).find(node => node.type === "image" && node.props.class === "main-image").props.src, second);
 });
 
-function orderPage(name) {
+function orderPage(name, apiHandler) {
   const { script, render } = compilePage(name), navigations = [], requests = [];
   const uni = { getStorageSync() {}, setStorageSync() {}, removeStorageSync() {}, getStorageInfoSync: () => ({ keys: [] }),
-    redirectTo: value => navigations.push(value.url), getSystemInfoSync: () => ({ windowWidth: 390 }) };
+    redirectTo: value => navigations.push(value.url), navigateTo: value => navigations.push(value.url), showToast() {}, getSystemInfoSync: () => ({ windowWidth: 390 }) };
   const { realm } = realmTestModules(uni);
   const model = evaluate(readFileSync(new URL("../src/commerce-model.ts", import.meta.url), "utf8"), {});
   const component = evaluate(script.content, {
@@ -162,8 +160,8 @@ function orderPage(name) {
     "@dcloudio/uni-app": { onLoad() {}, onShow() {}, onHide() {}, onUnload() {} },
     "../../commerce-model": model,
     "../../components/ImageEvidencePicker.vue": { default: { render: () => null } },
-    "../../api": { api: async (...args) => { requests.push(args); throw new Error("Unexpected API call"); }, money: cents => `¥${(cents ?? 0) / 100}`,
-      toast() {}, requireLogin: () => true, withMallCheckoutLock: callback => callback(), mallSessionStamp: () => "test-session" },
+    "../../api": { api: async (...args) => { requests.push(args); if (apiHandler) return apiHandler(...args); throw new Error("Unexpected API call"); }, money: cents => `¥${(cents ?? 0) / 100}`,
+      toast() {}, requireLogin: () => true, withMallCheckoutLock: callback => callback(), mallSessionStamp: () => "test-session", clearCheckoutState() {} },
     "../../payments": { confirmPayment() { throw new Error("Unexpected payment query"); }, createOrderPayment() { throw new Error("Unexpected payment creation"); },
       invokePayment() { throw new Error("Unexpected payment invocation"); }, paymentEnvironment: () => "wechat", paymentLabels: { wechat_jsapi: "微信支付" } },
   }, { uni }).default;
@@ -206,6 +204,8 @@ test("checkout CTA describes no-payment saving and retains loading, recovery and
   s.capabilities.value.payments[0].enabled = true;
   assert.equal(text(cta()), "提交订单，前往支付"); assert.equal(cta().props.disabled, false);
   assert.equal(nodes(h.tree()).some(node => node.type === "input" && node.props.placeholder?.includes("配送要求")), false);
+  assert.equal(s.showBenefits.value, false);
+  nodes(h.tree()).find(node => node.type === "button" && node.props.class === "benefits-toggle").props.onClick();
   button(h.tree(), "添加订单备注（选填） ›").props.onClick();
   assert.equal(nodes(h.tree()).some(node => node.type === "input" && node.props.placeholder?.includes("配送要求")), true);
   s.remark.value = "测试配送要求";
@@ -214,6 +214,24 @@ test("checkout CTA describes no-payment saving and retains loading, recovery and
     addressId: "synthetic-address", items: [], pointCents: 0, buyerRemark: "测试配送要求",
   });
   assert.deepEqual(h.requests, []); assert.deepEqual(h.navigations, []);
+});
+
+test("checkout keeps optional benefits collapsed and redeems only a server-configured coupon code", async () => {
+  const claim = { id: "claim-1", couponId: "coupon-1" }, owned = [{ ...claim, usedAt: null, coupon: { name: "满 100 减 10" } }];
+  const h = orderPage("checkout", async (path, input) => {
+    if (path === "/storefront/coupons/code/claim") return claim;
+    if (path === "/storefront/coupons") return owned;
+    if (path === "/storefront/orders/preview") return { quote: { fingerprint: "q1:" + "a".repeat(64), lines: [], subtotalCents: 10000, couponDiscountCents: 1000, pointDiscountCents: 0, shippingCents: 0, payableCents: 9000, availablePointCents: 0, maxPointCents: 0 } };
+    throw new Error(`Unexpected API call ${path}`);
+  }), s = h.state;
+  s.address.value = { id: "address" }; s.items.value = [{ skuId: "sku", quantity: 1 }];
+  assert.equal(s.showBenefits.value, false); assert.equal(nodes(h.tree()).some(node => node.type === "input" && node.props.placeholder === "输入优惠码"), false);
+  nodes(h.tree()).find(node => node.type === "button" && node.props.class === "benefits-toggle").props.onClick();
+  s.couponCode.value = " save10 "; await s.redeemCouponCode();
+  assert.equal(s.selectedCoupon.value.id, "claim-1"); assert.equal(s.couponCode.value, "");
+  assert.deepEqual(h.requests.map(row => row[0]), ["/storefront/coupons/code/claim", "/storefront/coupons", "/storefront/orders/preview"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.requests[0][1].data)), { code: "SAVE10" });
+  assert.equal(h.requests[2][1].data.couponClaimId, "claim-1"); assert.equal("couponCode" in h.requests[2][1].data, false);
 });
 
 test("checkout only offers payment for the current browser and honors an explicitly closed market", async () => {

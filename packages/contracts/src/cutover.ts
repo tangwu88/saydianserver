@@ -12,6 +12,19 @@ export function shouldPauseWorkers(environment: Environment): boolean {
   return businessWritesPaused(environment) || cutoverFlag(environment.WORKER_OUTBOUND_PAUSED);
 }
 
+function selectiveWorkerEnabled(environment: Environment, flag: string | undefined): boolean {
+  if (businessWritesPaused(environment)) return false;
+  return !cutoverFlag(environment.WORKER_OUTBOUND_PAUSED) || cutoverFlag(flag);
+}
+
+export function healthReportWorkerEnabled(environment: Environment): boolean {
+  return selectiveWorkerEnabled(environment, environment.HEALTH_REPORT_WORKER_ENABLED);
+}
+
+export function jushuitanWorkerEnabled(environment: Environment): boolean {
+  return selectiveWorkerEnabled(environment, environment.JUSHUITAN_OUTBOUND_ENABLED);
+}
+
 export function shouldDeferCallbacks(environment: Environment): boolean {
   return businessWritesPaused(environment) || cutoverFlag(environment.CALLBACK_PROCESSING_PAUSED);
 }

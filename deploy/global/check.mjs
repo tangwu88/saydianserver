@@ -40,6 +40,11 @@ check(compose.services["global-api"].environment.GLOBAL_WECHAT_H5_ENABLED === "$
 check(!compose.services["global-worker"].environment.GLOBAL_WECHAT_H5_ENABLED, "H5 auth must not enable Worker outbound processing");
 check(compose.services["global-api"].environment.GLOBAL_WECHAT_PHONE_TEST_ENABLED === "${GLOBAL_WECHAT_PHONE_TEST_ENABLED-true}", "This authorized temporary H5 release must preserve explicit private false and empty overrides");
 check(!compose.services["global-worker"].environment.GLOBAL_WECHAT_PHONE_TEST_ENABLED, "Temporary H5 phone entry must not affect Worker");
+check(compose.services["global-api"].environment.HEALTH_REPORT_WORKER_ENABLED === "${GLOBAL_HEALTH_REPORT_WORKER_ENABLED-true}", "Admin report readiness must use the independently controlled health worker switch");
+check(compose.services["global-worker"].environment.HEALTH_REPORT_WORKER_ENABLED === "${GLOBAL_HEALTH_REPORT_WORKER_ENABLED-true}", "Health reports must have a narrow outbound release switch");
+check(compose.services["global-worker"].environment.JUSHUITAN_OUTBOUND_ENABLED === "${GLOBAL_JUSHUITAN_OUTBOUND_ENABLED-true}", "Jushuitan must have a narrow outbound release switch");
+check(!compose.services["global-api"].environment.JUSHUITAN_OUTBOUND_ENABLED, "Jushuitan outbound execution belongs only to Worker");
+check(/GLOBAL_HEALTH_REPORT_WORKER_ENABLED=false/.test(example) && /GLOBAL_JUSHUITAN_OUTBOUND_ENABLED=false/.test(example), "Fresh deployment examples must keep narrow outbound releases disabled");
 const admin = compose.services["global-admin"];
 check(admin.image === "ghcr.io/tangwu88/saydianserver-global-admin:${GLOBAL_IMAGE_TAG:?Set a verified full commit SHA}", "Admin must use its independent immutable release image");
 check(JSON.stringify(admin.networks) === '{"gateway":{"aliases":["global-admin"]}}', "Admin must only join the gateway network with its own alias");

@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **325 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **326 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -88,7 +88,7 @@
 | `POST /api/v1/site/refresh` | 旧版刷新 | public | 表单 refresh_token | LegacySession | 核心服务 |
 | `POST /api/v1/site/logout` | 旧版退出 | member | 无请求体 | {logged_out:true} | 核心服务 |
 
-## 商城 H5/小程序兼容接口（59）
+## 商城 H5/小程序兼容接口（60）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -133,6 +133,7 @@
 | `GET /api/saidian-mall/v1/storefront/favorites` | 商城收藏列表 | member | 无请求体 | 本人收藏商品 | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/favorites/:productId` | 收藏或取消商品 | member | path:productId；productId=商品UUID；{enabled:boolean} | 保存结果 | 核心服务 |
 | `GET /api/saidian-mall/v1/storefront/coupons` | 商城优惠券 | member | 无请求体 | 本人可用及历史券 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/coupons/code/claim` | 输入优惠码领取优惠券 | member | {code:4-32位字母、数字、_或-；服务端统一转大写} | 本人领取记录；仅匹配后台启用且有效的唯一优惠码，错误不泄露券状态 | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/coupons/:id/claim` | 领取优惠券 | member | path:id；id=优惠券UUID | 领取记录；重复领取幂等 | 核心服务 |
 | `GET /api/saidian-mall/v1/storefront/coupons/available` | 商城领券中心 | member | query:page?；page=页码，默认1，每页20；会员鉴权 | 公开有效券、本人是否已领、是否还有额度；不暴露员工赠券库存 | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/reviews` | 商城商品评价 | member | {orderItemId,rating,content,images?} | 评价记录 | 核心服务 |
