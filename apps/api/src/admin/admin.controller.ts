@@ -72,6 +72,27 @@ export class AdminController {
     return this.admin.members(search, Number(page ?? 1), Number(pageSize ?? 30));
   }
 
+  @Get("members/:id/profile")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  memberProfile(
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Param("id") id: string,
+    @Req() request: RequestWithContext,
+  ) {
+    return this.admin.memberProfile(current, id, request.requestId);
+  }
+
+  @Patch("members/:id/profile")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  updateMemberProfile(
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Param("id") id: string,
+    @Req() request: RequestWithContext,
+    @Body() input: unknown,
+  ) {
+    return this.admin.updateMemberProfile(current, id, request.requestId, safeObject(input));
+  }
+
   @Patch("members/:id/verification")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   updateMemberVerification(

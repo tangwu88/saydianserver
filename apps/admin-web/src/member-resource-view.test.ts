@@ -10,7 +10,7 @@ const member = {
   id: "internal-uuid", memberNo: "10001", emailMasked: "m***@example.invalid", emailVerified: false,
   emailVerificationStatus: "UNVERIFIED", mobileMasked: null, mobileVerified: false,
   mobileVerificationStatus: "NOT_PROVIDED", verificationVersion: "2026-09-11T00:00:00.000Z",
-  nickname: "Test member", healthRecordCount: 0,
+  nickname: "Test member", status: "ACTIVE", healthRecordCount: 0,
 };
 
 // Exercise the actual SFC logic with controlled network completion order.
@@ -33,7 +33,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
     readableError: () => "网络不可用，请检查后重试",
     createGlobalDownloadDraft, downloadEditorToManifest: globalDownloadEditorToManifest, downloadManifestToEditor: globalDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, updateMemberVerification, contactVerificationLabel, canManageMemberVerification, verificationBusy, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle };")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle };")(...Object.values(deps));
   return { ...instance, api, messages, prompt, confirm, route, watch, onBeforeUnmount };
 }
 
@@ -64,24 +64,51 @@ describe("international member admin list", () => {
     expect(h.api.get.mock.calls[1][1].params).toEqual({ page: 2, pageSize: 30, search: "10001" });
   });
 
-  it("shows real verification states and lets only a super administrator change them", async () => {
+  it("shows verification states and moves profile and verification changes into the super-admin editor", async () => {
     const h = harness(); const row = { ...member, mobileMasked: "+86***8888", mobileVerified: true, mobileVerificationStatus: "VERIFIED" };
     expect(h.contactVerificationLabel(row, "email")).toBe("未验证");
     expect(h.contactVerificationLabel(row, "mobile")).toBe("已验证");
-    h.api.patch.mockResolvedValueOnce({ data: { data: {
-      ...row, emailVerified: true, emailVerificationStatus: "VERIFIED",
-      emailVerifiedAt: "2026-09-11T01:00:00.000Z", verificationVersion: "2026-09-11T01:00:00.000Z",
+    h.api.get.mockResolvedValueOnce({ data: { data: {
+      id: row.id, memberNo: row.memberNo, nickname: row.nickname, status: "ACTIVE",
+      mobile: "+8613812348888", mobileVerified: true, email: "member@example.invalid", emailVerified: false,
+      verificationVersion: row.verificationVersion,
     } } });
-    await h.updateMemberVerification(row, "email", true);
-    expect(h.confirm).toHaveBeenCalledOnce();
-    expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/verification", {
-      channel: "email", verified: true, expectedUpdatedAt: "2026-09-11T00:00:00.000Z",
-    });
-    expect(row).toMatchObject({ emailVerified: true, emailVerificationStatus: "VERIFIED", verificationVersion: "2026-09-11T01:00:00.000Z" });
-    expect(h.messages.success).toHaveBeenCalledWith("邮箱验证状态已更新");
+    await h.openEdit(row);
+    expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/profile");
+    expect(h.dialogVisible.value).toBe(true); expect(h.dialogTitle.value).toBe("编辑会员 10001");
+    expect(h.form.value).toMatchObject({ mobile: "+8613812348888", mobileVerified: true, emailVerified: false });
 
-    const readonly = harness(["APP_OPERATIONS"]); await readonly.updateMemberVerification({ ...member }, "email", true);
-    expect(readonly.api.patch).not.toHaveBeenCalled(); expect(readonly.confirm).not.toHaveBeenCalled();
+    h.onMemberContactInput("mobile", "+8613912348888");
+    expect(h.form.value.mobileVerified).toBe(false);
+    h.form.value.mobileVerified = true;
+    h.form.value.emailVerified = true;
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/profile", {
+      nickname: "Test member", mobile: "+8613912348888", email: "member@example.invalid", status: "ACTIVE",
+      mobileVerified: true, emailVerified: true, expectedUpdatedAt: "2026-09-11T00:00:00.000Z",
+    });
+    expect(h.confirm).toHaveBeenCalledOnce();
+    expect(h.messages.success).toHaveBeenCalledWith("会员资料已保存");
+    expect(h.api.patch.mock.calls.some((call: unknown[]) => String(call[0]).endsWith("/verification"))).toBe(false);
+
+    const readonly = harness(["APP_OPERATIONS"]); await readonly.openEdit({ ...member });
+    expect(readonly.editable.value).toBe(false); expect(readonly.api.get).not.toHaveBeenCalled(); expect(readonly.api.patch).not.toHaveBeenCalled();
+  });
+
+  it("keeps the member editor open and writes nothing when manual verification confirmation is cancelled", async () => {
+    const h = harness();
+    h.api.get.mockResolvedValueOnce({ data: { data: {
+      id: member.id, memberNo: member.memberNo, nickname: member.nickname, status: "ACTIVE",
+      mobile: "+8613812348888", mobileVerified: false, email: "", emailVerified: false,
+      verificationVersion: member.verificationVersion,
+    } } });
+    await h.openEdit(member);
+    h.form.value.mobileVerified = true;
+    h.confirm.mockRejectedValueOnce("cancel");
+    await h.save();
+    expect(h.api.patch).not.toHaveBeenCalled();
+    expect(h.dialogVisible.value).toBe(true);
+    expect(h.messages.error).not.toHaveBeenCalled();
   });
 
   it("does not let a slow previous search replace newer results", async () => {

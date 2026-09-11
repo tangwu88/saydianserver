@@ -259,6 +259,80 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.memberProfile",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/members/:id/profile",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "超级管理员读取会员编辑资料",
+      "request": "id=会员UUID；仅国际版SUPER_ADMIN",
+      "response": "会员编号、昵称、未脱敏手机号/邮箱、账号状态及独立验证状态；读取完整联系方式写入专门审计，不返回密码和健康数据",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.updateMemberProfile",
+      "method": "PATCH",
+      "path": "/api/saydian-app/admin/v1/members/:id/profile",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "超级管理员编辑会员资料",
+      "request": "id=会员UUID；{nickname,mobile?,email?,status:ACTIVE|DISABLED,mobileVerified,emailVerified,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项",
+      "response": "原子更新资料和验证状态；联系方式、验证或账号状态变化会注销会员现有会话；重复联系方式409、过期版本409、注销流程会员409；专门审计不保存完整联系方式",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.updateMemberVerification",
       "method": "PATCH",
       "path": "/api/saydian-app/admin/v1/members/:id/verification",

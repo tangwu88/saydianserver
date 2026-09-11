@@ -201,6 +201,8 @@ export const notes = {
   "AdminController.logout": entry("后台退出", undefined, "{loggedOut:true}"),
   "AdminController.dashboard": entry("运营概览", undefined, "会员/健康/关爱/预警/反馈/积压数量"),
   "AdminController.members": entry("会员查询", "search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库", "{items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限"),
+  "AdminController.memberProfile": entry("超级管理员读取会员编辑资料", "id=会员UUID；仅国际版SUPER_ADMIN", "会员编号、昵称、未脱敏手机号/邮箱、账号状态及独立验证状态；读取完整联系方式写入专门审计，不返回密码和健康数据"),
+  "AdminController.updateMemberProfile": entry("超级管理员编辑会员资料", "id=会员UUID；{nickname,mobile?,email?,status:ACTIVE|DISABLED,mobileVerified,emailVerified,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项", "原子更新资料和验证状态；联系方式、验证或账号状态变化会注销会员现有会话；重复联系方式409、过期版本409、注销流程会员409；专门审计不保存完整联系方式"),
   "AdminController.updateMemberVerification": entry("超级管理员人工确认联系方式", "id=会员UUID；{channel:mobile|email,verified:boolean,expectedUpdatedAt}；只调整已有联系方式的验证状态，不修改号码或邮箱", "返回脱敏联系方式与手机/邮箱独立验证状态；并发变化409；写入专门审计。人工确认后会员需重新登录，临时测试会话不会原地提权"),
   "AdminController.healthSummary": entry("会员健康数量摘要", "id=会员 UUID", "按指标数量与首末采集时间"),
   "AdminController.rawHealth": entry("授权查看原始健康记录", "id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500", "HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计"),

@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **322 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **324 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -252,7 +252,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（94）
+## 管理后台接口（96）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -264,6 +264,8 @@
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members` | 会员查询 | admin | query:search?，query:page?，query:pageSize?；search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库 | {items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员读取会员编辑资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；仅国际版SUPER_ADMIN | 会员编号、昵称、未脱敏手机号/邮箱、账号状态及独立验证状态；读取完整联系方式写入专门审计，不返回密码和健康数据 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员编辑会员资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；{nickname,mobile?,email?,status:ACTIVE\|DISABLED,mobileVerified,emailVerified,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项 | 原子更新资料和验证状态；联系方式、验证或账号状态变化会注销会员现有会话；重复联系方式409、过期版本409、注销流程会员409；专门审计不保存完整联系方式 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/members/:id/verification` | 超级管理员人工确认联系方式 | admin: SUPER_ADMIN | path:id；id=会员UUID；{channel:mobile\|email,verified:boolean,expectedUpdatedAt}；只调整已有联系方式的验证状态，不修改号码或邮箱 | 返回脱敏联系方式与手机/邮箱独立验证状态；并发变化409；写入专门审计。人工确认后会员需重新登录，临时测试会话不会原地提权 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-summary` | 会员健康数量摘要 | admin | path:id；id=会员 UUID | 按指标数量与首末采集时间 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计 | 核心服务 |

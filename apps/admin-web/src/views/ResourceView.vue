@@ -39,7 +39,6 @@ const form = ref<Row>({});
 const detailRows = ref<Row[]>([]);
 const healthMode = ref<"summary" | "raw">("summary");
 const healthMember = ref<Row>({});
-const verificationBusy = ref("");
 const shipmentVisible = ref(false);
 const shipmentBusy = ref(false);
 const shipmentPreview = ref<Row>({});
@@ -107,12 +106,14 @@ const isCommerceResource = computed(() => commerceResources.includes(resource.va
 const canWrite = computed(() => canAdminResource(getAdminRoles(), resource.value, "write"));
 const canReadRawHealth = computed(() => getAdminRoles().some((role) => ["SUPER_ADMIN", "HEALTH_AUDITOR"].includes(role)));
 const canManageMemberVerification = computed(() => getAdminRoles().includes("SUPER_ADMIN"));
-const editable = computed(() => [
-  "articles", "article-categories", "legal-documents", "settings", "integrations", "admin-users",
-  "commerce-products", "commerce-categories", "commerce-orders", "commerce-after-sales",
-  "commerce-banners", "commerce-business-configs", "commerce-reviews", "commerce-coupons",
-  "health-report-offers", "notification-campaigns",
-].includes(resource.value) && canAdminResource(getAdminRoles(), resource.value, "write"));
+const editable = computed(() => resource.value === "members"
+  ? canManageMemberVerification.value
+  : [
+      "articles", "article-categories", "legal-documents", "settings", "integrations", "admin-users",
+      "commerce-products", "commerce-categories", "commerce-orders", "commerce-after-sales",
+      "commerce-banners", "commerce-business-configs", "commerce-reviews", "commerce-coupons",
+      "health-report-offers", "notification-campaigns",
+    ].includes(resource.value) && canAdminResource(getAdminRoles(), resource.value, "write"));
 const createable = computed(() => [
   "articles", "article-categories", "legal-documents", "admin-users",
   "commerce-categories", "commerce-banners", "commerce-business-configs", "commerce-coupons", "health-report-offers", "notification-campaigns",
@@ -230,37 +231,19 @@ function contactVerificationLabel(row: Row, channel: "mobile" | "email"): string
   return "未填写";
 }
 
-async function updateMemberVerification(row: Row, channel: "mobile" | "email", verified: boolean): Promise<void> {
-  if (resource.value !== "members" || !canManageMemberVerification.value) return;
-  const channelLabel = channel === "mobile" ? "手机号" : "邮箱";
-  const contact = row[channel === "mobile" ? "mobileMasked" : "emailMasked"];
-  if (!contact || !row.verificationVersion) {
-    ElMessage.error(`该会员没有可操作的${channelLabel}，请刷新后重试`);
-    return;
-  }
-  const key = `${row.id}:${channel}`;
-  if (verificationBusy.value) return;
-  verificationBusy.value = key;
-  try {
-    await ElMessageBox.confirm(
-      verified
-        ? `确认已通过人工方式核实 ${contact} 属于该会员本人？确认后，会员重新登录即可使用依赖“已验证${channelLabel}”的功能。`
-        : `确认撤销 ${contact} 的验证状态？若该会员没有其他已验证联系方式，相关登录和交易能力将受限。`,
-      verified ? `人工确认${channelLabel}` : `撤销${channelLabel}确认`,
-      { type: "warning", confirmButtonText: verified ? "确认已核实" : "确认撤销", cancelButtonText: "取消" },
-    );
-    const updated = responseData<Row>(await api.patch(`/members/${encodeURIComponent(String(row.id))}/verification`, {
-      channel,
-      verified,
-      expectedUpdatedAt: row.verificationVersion,
-    }));
-    Object.assign(row, updated);
-    ElMessage.success(`${channelLabel}验证状态已更新`);
-  } catch (error) {
-    if (error !== "cancel" && error !== "close") ElMessage.error(readableError(error));
-  } finally {
-    if (verificationBusy.value === key) verificationBusy.value = "";
-  }
+function comparableMemberContact(channel: "mobile" | "email", value: unknown): string {
+  const text = String(value ?? "").trim();
+  return channel === "email" ? text.toLowerCase() : text.replace(/[\s()\-]/g, "");
+}
+
+function onMemberContactInput(channel: "mobile" | "email", value: unknown): void {
+  const verifiedField = `${channel}Verified`;
+  const originalField = channel === "mobile" ? "_originalMobile" : "_originalEmail";
+  const originalVerifiedField = channel === "mobile" ? "_originalMobileVerified" : "_originalEmailVerified";
+  form.value[channel] = String(value ?? "");
+  form.value[verifiedField] = comparableMemberContact(channel, value) === comparableMemberContact(channel, form.value[originalField])
+    ? Boolean(form.value[originalVerifiedField])
+    : false;
 }
 
 async function openCreate(): Promise<void> {
@@ -291,6 +274,31 @@ async function openCreate(): Promise<void> {
 async function openEdit(row: Row): Promise<void> {
   const requestedResource = resource.value;
   const requestId = ++editorRequestId;
+  if (requestedResource === "members") {
+    if (!canManageMemberVerification.value) return;
+    dialogVisible.value = false;
+    try {
+      const profile = responseData<Row>(await api.get(`/members/${encodeURIComponent(String(row.id))}/profile`));
+      if (requestId !== editorRequestId || requestedResource !== resource.value) return;
+      dialogMode.value = "edit";
+      dialogTitle.value = `编辑会员 ${profile.memberNo ?? row.memberNo ?? ""}`.trim();
+      form.value = {
+        ...profile,
+        mobile: profile.mobile ?? "",
+        email: profile.email ?? "",
+        _originalMobile: profile.mobile ?? "",
+        _originalEmail: profile.email ?? "",
+        _originalMobileVerified: profile.mobileVerified === true,
+        _originalEmailVerified: profile.emailVerified === true,
+      };
+      dialogVisible.value = true;
+    } catch (error) {
+      if (requestId === editorRequestId && requestedResource === resource.value) {
+        ElMessage.error(`会员资料加载失败：${readableError(error)}`);
+      }
+    }
+    return;
+  }
   if (needsArticleCategories.value && !await loadArticleCategories(requestedResource, requestId)) return;
   if (["commerce-products", "commerce-categories"].includes(resource.value)) await ensureCommerceCategories();
   if (requestId !== editorRequestId || requestedResource !== resource.value) return;
@@ -382,7 +390,35 @@ async function save(): Promise<void> {
   try {
     const id = String(form.value.id ?? "");
     let payload: Row = payloadForResource(resource.value, form.value);
-    if (resource.value === "integrations") {
+    if (resource.value === "members") {
+      if (!canManageMemberVerification.value || !id) throw new Error("当前账号无权编辑会员资料");
+      const manuallyConfirmed: string[] = [];
+      if (form.value.mobileVerified === true && (
+        form.value._originalMobileVerified !== true
+        || comparableMemberContact("mobile", form.value.mobile) !== comparableMemberContact("mobile", form.value._originalMobile)
+      )) manuallyConfirmed.push("手机号");
+      if (form.value.emailVerified === true && (
+        form.value._originalEmailVerified !== true
+        || comparableMemberContact("email", form.value.email) !== comparableMemberContact("email", form.value._originalEmail)
+      )) manuallyConfirmed.push("邮箱");
+      if (manuallyConfirmed.length) {
+        await ElMessageBox.confirm(
+          `确认已通过人工方式核实该会员的${manuallyConfirmed.join("和")}？保存后将作为正式验证状态使用。`,
+          "确认联系方式已核实",
+          { type: "warning", confirmButtonText: "确认已核实", cancelButtonText: "取消" },
+        );
+      }
+      payload = {
+        nickname: form.value.nickname,
+        mobile: form.value.mobile,
+        email: form.value.email,
+        status: form.value.status,
+        mobileVerified: form.value.mobileVerified === true,
+        emailVerified: form.value.emailVerified === true,
+        expectedUpdatedAt: form.value.verificationVersion,
+      };
+      await api.patch(`/members/${encodeURIComponent(id)}/profile`, payload);
+    } else if (resource.value === "integrations") {
       const secretsText = String(form.value.secretsText || "").trim();
       payload = {
         state: form.value.state,
@@ -416,10 +452,11 @@ async function save(): Promise<void> {
     } else {
       await api.post(`/${resource.value}`, payload);
     }
-    ElMessage.success("已保存");
+    ElMessage.success(resource.value === "members" ? "会员资料已保存" : "已保存");
     dialogVisible.value = false;
     await load();
   } catch (error) {
+    if (error === "cancel" || error === "close") return;
     const message = readableError(error);
     ElMessage.error(message === "请求失败，请稍后重试" && error instanceof Error ? error.message : message);
   } finally { saving.value = false; }
@@ -695,17 +732,6 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; ++editorRequestId; }
                 <el-tag size="small" :type="scope.row[column === 'mobileMasked' ? 'mobileVerified' : 'emailVerified'] ? 'success' : scope.row[column] ? 'warning' : 'info'">
                   {{ contactVerificationLabel(scope.row, column === 'mobileMasked' ? 'mobile' : 'email') }}
                 </el-tag>
-                <el-button
-                  v-if="canManageMemberVerification && scope.row[column]"
-                  link
-                  size="small"
-                  :type="scope.row[column === 'mobileMasked' ? 'mobileVerified' : 'emailVerified'] ? 'danger' : 'primary'"
-                  :loading="verificationBusy === `${scope.row.id}:${column === 'mobileMasked' ? 'mobile' : 'email'}`"
-                  :disabled="Boolean(verificationBusy)"
-                  @click="updateMemberVerification(scope.row, column === 'mobileMasked' ? 'mobile' : 'email', !scope.row[column === 'mobileMasked' ? 'mobileVerified' : 'emailVerified'])"
-                >
-                  {{ scope.row[column === 'mobileMasked' ? 'mobileVerified' : 'emailVerified'] ? '撤销确认' : '人工确认' }}
-                </el-button>
               </div>
               <template v-else>{{ render(scope.row[column]) }}</template>
             </template>
@@ -726,7 +752,7 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; ++editorRequestId; }
           </el-table-column>
           <el-table-column v-if="editable || (canWrite && resource === 'health-reports')" label="操作" min-width="110" fixed="right">
             <template #default="scope">
-              <el-button v-if="editable" size="small" @click="openEdit(scope.row)">编辑</el-button>
+              <el-button v-if="editable" size="small" :disabled="resource === 'members' && ['DELETION_PENDING', 'DELETED'].includes(scope.row.status)" @click="openEdit(scope.row)">编辑</el-button>
               <el-button v-if="canWrite && resource === 'health-reports' && scope.row.status === 'FAILED'" size="small" type="warning" @click="runAction(`/health-reports/${scope.row.id}/retry`, '报告已重新排队')">重试</el-button>
               <el-button v-if="canWrite && resource === 'notification-campaigns' && scope.row.status === 'DRAFT'" size="small" type="primary" @click="runAction(`/notification-campaigns/${scope.row.id}/schedule`, '通知已安排发送')">安排发送</el-button>
             </template>
@@ -769,7 +795,28 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; ++editorRequestId; }
         <MemberHealthReportPanel v-if="dialogVisible && healthMode === 'summary' && canReadRawHealth" :key="healthMember.id" :member-id="healthMember.id" />
       </div>
       <el-form v-else label-width="110px">
-        <template v-if="resource === 'commerce-commissions'">
+        <template v-if="resource === 'members'">
+          <el-alert title="手机号、邮箱或验证状态变更后，系统会注销该会员现有会话，会员需重新登录。联系方式发生变化时验证开关会自动关闭；请在确实完成人工核实后再开启。" type="warning" :closable="false" show-icon />
+          <el-form-item label="会员编号"><el-input v-model="form.memberNo" disabled /></el-form-item>
+          <el-form-item label="昵称"><el-input v-model="form.nickname" maxlength="40" show-word-limit /></el-form-item>
+          <el-form-item label="手机号">
+            <el-input :model-value="form.mobile" clearable placeholder="带国家区号，如 +8613812345678" @input="onMemberContactInput('mobile', $event)" />
+          </el-form-item>
+          <el-form-item label="手机已核实">
+            <el-switch v-model="form.mobileVerified" :disabled="!form.mobile" active-text="已验证" inactive-text="未验证" />
+          </el-form-item>
+          <el-form-item label="邮箱">
+            <el-input :model-value="form.email" clearable placeholder="例如 member@example.com" @input="onMemberContactInput('email', $event)" />
+          </el-form-item>
+          <el-form-item label="邮箱已核实">
+            <el-switch v-model="form.emailVerified" :disabled="!form.email" active-text="已验证" inactive-text="未验证" />
+          </el-form-item>
+          <el-form-item label="账号状态">
+            <el-select v-model="form.status"><el-option label="正常" value="ACTIVE" /><el-option label="停用" value="DISABLED" /></el-select>
+          </el-form-item>
+          <p class="muted">会员编号、密码和健康数据不能在此窗口修改。保存操作会记录管理员、时间和变更类型，审计日志不保存完整手机号或邮箱。</p>
+        </template>
+        <template v-else-if="resource === 'commerce-commissions'">
           <el-alert title="奖金规则只影响新支付订单；已有奖金使用原快照。提现仅可使用可用余额，仍需财务人工审核。" type="info" :closable="false" />
           <el-form-item label="启用奖金"><el-switch v-model="form.enabled" /></el-form-item>
           <el-form-item label="奖金比例"><el-input-number v-model="form.rateBps" :min="0" :max="10000" :precision="0" /><span class="muted">基点（100 = 1%）</span></el-form-item>

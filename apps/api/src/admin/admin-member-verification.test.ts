@@ -29,12 +29,14 @@ function updateHarness(overrides: Record<string, unknown> = {}) {
   const tx = {
     user: {
       findUnique: vi.fn(async () => user ? { ...user } : null),
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => null),
       updateMany: vi.fn(async ({ where, data }: any) => {
         if (!user || where.updatedAt.getTime() !== user.updatedAt.getTime()) return { count: 0 };
         user = { ...user, ...data };
         return { count: 1 };
       }),
     },
+    userSession: { updateMany: vi.fn(async () => ({ count: 2 })) },
     auditLog,
   };
   const prisma = { $transaction: vi.fn(async (callback: any) => callback(tx)) };
@@ -88,6 +90,106 @@ describe("international member contact verification administration", () => {
       afterJson: { channel: "mobile", verified: true, verifiedAt: expect.any(String), source: "SUPER_ADMIN_MANUAL" },
     }) });
     expect(JSON.stringify(h.auditLog.create.mock.calls[0]?.[0])).not.toContain("13812348888");
+  });
+
+  it("returns editable contact values only through the audited super-admin profile endpoint", async () => {
+    const h = updateHarness();
+    const result = await h.service.memberProfile(superAdmin, h.current()!.id, "profile-read");
+    expect(result).toMatchObject({
+      memberNo: "23", mobile: "+8613812348888", mobileVerified: false,
+      email: "member@example.invalid", emailVerified: true, nickname: "Synthetic member", status: "ACTIVE",
+      verificationVersion: initialUpdatedAt.toISOString(),
+    });
+    expect(h.auditLog.create).toHaveBeenCalledExactlyOnceWith({ data: expect.objectContaining({
+      actorId: "admin-id", action: "MEMBER_PROFILE_READ", entityType: "USER_PROFILE",
+      entityId: h.current()!.id, requestId: "profile-read",
+      afterJson: { mobilePresent: true, emailPresent: true, fields: ["nickname", "mobile", "email", "status", "verification"] },
+    }) });
+    expect(JSON.stringify(h.auditLog.create.mock.calls[0]?.[0])).not.toContain("13812348888");
+    expect(JSON.stringify(h.auditLog.create.mock.calls[0]?.[0])).not.toContain("member@example.invalid");
+  });
+
+  it("updates member details and verification atomically, revokes sessions and omits PII from audit", async () => {
+    const h = updateHarness();
+    const result = await h.service.updateMemberProfile(superAdmin, h.current()!.id, "profile-update", {
+      nickname: "Updated member",
+      mobile: "+86 139 1234 8888",
+      email: "MEMBER@example.invalid",
+      status: "DISABLED",
+      mobileVerified: true,
+      emailVerified: true,
+      expectedUpdatedAt: initialUpdatedAt.toISOString(),
+    });
+    expect(result).toMatchObject({
+      nickname: "Updated member", mobile: "+8613912348888", email: "member@example.invalid",
+      status: "DISABLED", mobileVerified: true, emailVerified: true,
+    });
+    expect(h.tx.user.updateMany).toHaveBeenCalledWith({
+      where: { id: h.current()!.id, updatedAt: initialUpdatedAt },
+      data: expect.objectContaining({
+        nickname: "Updated member", mobile: "+8613912348888", email: "member@example.invalid",
+        status: "DISABLED", mobileVerifiedAt: expect.any(Date), emailVerifiedAt: new Date("2026-09-10T00:00:00.000Z"),
+      }),
+    });
+    expect(h.tx.userSession.updateMany).toHaveBeenCalledWith({
+      where: { userId: h.current()!.id, revokedAt: null }, data: { revokedAt: expect.any(Date) },
+    });
+    const audit = JSON.stringify(h.auditLog.create.mock.calls[0]?.[0]);
+    expect(audit).toContain("MEMBER_PROFILE_UPDATE");
+    expect(audit).not.toContain("13912348888");
+    expect(audit).not.toContain("member@example.invalid");
+  });
+
+  it("clears verification when a contact is changed without manual confirmation", async () => {
+    const h = updateHarness();
+    const result = await h.service.updateMemberProfile(superAdmin, h.current()!.id, "profile-update", {
+      nickname: "Synthetic member", mobile: "+8613812348888", email: "new@example.invalid",
+      status: "ACTIVE", mobileVerified: false, emailVerified: false,
+      expectedUpdatedAt: initialUpdatedAt.toISOString(),
+    });
+    expect(result).toMatchObject({ email: "new@example.invalid", emailVerified: false, emailVerifiedAt: null });
+    expect(h.current()).toMatchObject({ email: "new@example.invalid", emailVerifiedAt: null });
+  });
+
+  it("rejects invalid, duplicate, stale and protected member profile changes", async () => {
+    const invalid = updateHarness();
+    await expect(invalid.service.updateMemberProfile(superAdmin, invalid.current()!.id, "r", {
+      nickname: "", mobile: "13812348888", email: "bad", status: "ACTIVE",
+      mobileVerified: false, emailVerified: false, expectedUpdatedAt: initialUpdatedAt.toISOString(),
+    })).rejects.toThrow("昵称须为1至40个字符");
+    expect(invalid.prisma.$transaction).not.toHaveBeenCalled();
+
+    const duplicate = updateHarness();
+    duplicate.tx.user.findFirst.mockResolvedValueOnce({ id: "other-member" });
+    await expect(duplicate.service.updateMemberProfile(superAdmin, duplicate.current()!.id, "r", {
+      nickname: "Synthetic member", mobile: "+8613812348888", email: "member@example.invalid", status: "ACTIVE",
+      mobileVerified: false, emailVerified: true, expectedUpdatedAt: initialUpdatedAt.toISOString(),
+    })).rejects.toThrow("已被其他会员使用");
+    expect(duplicate.tx.user.updateMany).not.toHaveBeenCalled();
+
+    const stale = updateHarness();
+    await expect(stale.service.updateMemberProfile(superAdmin, stale.current()!.id, "r", {
+      nickname: "Synthetic member", mobile: "+8613812348888", email: "member@example.invalid", status: "ACTIVE",
+      mobileVerified: false, emailVerified: true, expectedUpdatedAt: "2026-09-10T00:00:00.000Z",
+    })).rejects.toThrow("已发生变化");
+
+    const protectedMember = updateHarness({ status: "DELETION_PENDING" });
+    await expect(protectedMember.service.updateMemberProfile(superAdmin, protectedMember.current()!.id, "r", {
+      nickname: "Synthetic member", mobile: "+8613812348888", email: "member@example.invalid", status: "ACTIVE",
+      mobileVerified: false, emailVerified: true, expectedUpdatedAt: initialUpdatedAt.toISOString(),
+    })).rejects.toThrow("注销流程中的会员不能手工编辑");
+  });
+
+  it("keeps raw member profile reads and edits restricted to global super administrators", async () => {
+    const denied = updateHarness();
+    const operator = { id: "operator", role: "APP_OPERATIONS", roles: ["APP_OPERATIONS"] };
+    await expect(denied.service.memberProfile(operator, denied.current()!.id, "r")).rejects.toThrow("只有超级管理员");
+    await expect(denied.service.updateMemberProfile(operator, denied.current()!.id, "r", {})).rejects.toThrow("只有超级管理员");
+    expect(denied.prisma.$transaction).not.toHaveBeenCalled();
+
+    vi.stubEnv("APP_REALM", "domestic");
+    await expect(denied.service.memberProfile(superAdmin, denied.current()!.id, "r")).rejects.toThrow("仅用于国际版");
+    await expect(denied.service.updateMemberProfile(superAdmin, denied.current()!.id, "r", {})).rejects.toThrow("仅用于国际版");
   });
 
   it("supports revoking one channel without changing the other channel", async () => {

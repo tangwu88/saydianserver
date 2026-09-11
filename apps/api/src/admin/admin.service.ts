@@ -15,14 +15,15 @@ import {
   ProductStatus,
   ReportEntitlementType,
   ReportStatus,
+  UserStatus,
 } from "@prisma/client";
 import { hash } from "bcryptjs";
 import { parseDownloadManifest } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
-import { maskMobile, safeObject } from "../common/crypto";
+import { isUuid, maskMobile, safeObject } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { isGlobalRealm } from "../common/deployment-realm";
-import { globalLocale, maskedIdentifier } from "../auth/global-identity";
+import { globalLocale, internationalPhone, maskedIdentifier, normalizedEmail } from "../auth/global-identity";
 import { randomUUID } from "node:crypto";
 import { afterSaleTransitions, assertAfterSaleTransition, expectedVersion, integerCents, requireCommerceOwner } from "../commerce/commerce-policy";
 import { parseLegacyAppUpdate } from "../legacy/legacy-update-contract";
@@ -39,6 +40,42 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
+
+  private assertGlobalMemberAdministrator(current: { role: string; roles?: string[] }) {
+    const roles = current.roles?.length ? current.roles : [current.role];
+    if (!roles.includes(AdminRole.SUPER_ADMIN)) {
+      throw new ForbiddenException("只有超级管理员可以编辑会员资料与验证状态");
+    }
+    if (!isGlobalRealm()) {
+      throw new ForbiddenException("会员资料编辑仅用于国际版新会员系统");
+    }
+  }
+
+  private memberProfileFields(item: {
+    id: string;
+    compatibilityId: number;
+    mobile: string | null;
+    mobileVerifiedAt: Date | null;
+    email: string | null;
+    emailVerifiedAt: Date | null;
+    nickname: string;
+    status: UserStatus;
+    updatedAt: Date;
+  }) {
+    return {
+      id: item.id,
+      memberNo: String(item.compatibilityId),
+      mobile: item.mobile,
+      mobileVerified: Boolean(item.mobile && item.mobileVerifiedAt),
+      mobileVerifiedAt: item.mobile && item.mobileVerifiedAt ? item.mobileVerifiedAt.toISOString() : null,
+      email: item.email,
+      emailVerified: Boolean(item.email && item.emailVerifiedAt),
+      emailVerifiedAt: item.email && item.emailVerifiedAt ? item.emailVerifiedAt.toISOString() : null,
+      nickname: item.nickname,
+      status: item.status,
+      verificationVersion: item.updatedAt.toISOString(),
+    };
+  }
 
   private memberVerificationFields(item: {
     id: string;
@@ -156,19 +193,189 @@ export class AdminService {
     };
   }
 
+  async memberProfile(
+    current: { id: string; role: string; roles?: string[] },
+    userId: string,
+    requestId: string,
+  ) {
+    this.assertGlobalMemberAdministrator(current);
+    if (!isUuid(userId)) throw new BadRequestException("会员编号无效");
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true, compatibilityId: true, mobile: true, mobileVerifiedAt: true,
+          email: true, emailVerifiedAt: true, nickname: true, status: true, updatedAt: true,
+        },
+      });
+      if (!user) throw new NotFoundException("会员不存在");
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: current.id,
+          action: "MEMBER_PROFILE_READ",
+          entityType: "USER_PROFILE",
+          entityId: userId,
+          requestId,
+          afterJson: {
+            mobilePresent: Boolean(user.mobile),
+            emailPresent: Boolean(user.email),
+            fields: ["nickname", "mobile", "email", "status", "verification"],
+          },
+        },
+      });
+      return this.memberProfileFields(user);
+    });
+  }
+
+  async updateMemberProfile(
+    current: { id: string; role: string; roles?: string[] },
+    userId: string,
+    requestId: string,
+    input: Record<string, unknown>,
+  ) {
+    this.assertGlobalMemberAdministrator(current);
+    if (!isUuid(userId)) throw new BadRequestException("会员编号无效");
+    const allowedFields = new Set([
+      "nickname", "mobile", "email", "status", "mobileVerified", "emailVerified", "expectedUpdatedAt",
+    ]);
+    if (Object.keys(input).some((field) => !allowedFields.has(field))) {
+      throw new BadRequestException("会员资料包含不支持的字段");
+    }
+    const nickname = String(input.nickname ?? "").trim();
+    if (!nickname || nickname.length > 40) throw new BadRequestException("昵称须为1至40个字符");
+
+    const mobileInput = String(input.mobile ?? "").trim();
+    const emailInput = String(input.email ?? "").trim();
+    const mobile = mobileInput ? internationalPhone(mobileInput)?.identifier ?? "" : null;
+    const email = emailInput ? normalizedEmail(emailInput) : null;
+    if (mobileInput && !mobile) throw new BadRequestException("手机号格式不正确，请填写带国家区号的号码");
+    if (emailInput && !email) throw new BadRequestException("邮箱地址格式不正确");
+    if (!mobile && !email) throw new BadRequestException("手机号和邮箱至少保留一项");
+    if (typeof input.mobileVerified !== "boolean" || typeof input.emailVerified !== "boolean") {
+      throw new BadRequestException("请明确设置手机号和邮箱的验证状态");
+    }
+    if (!mobile && input.mobileVerified) throw new BadRequestException("未填写手机号时不能设为已验证");
+    if (!email && input.emailVerified) throw new BadRequestException("未填写邮箱时不能设为已验证");
+    const status = String(input.status ?? "");
+    if (status !== UserStatus.ACTIVE && status !== UserStatus.DISABLED) {
+      throw new BadRequestException("账号状态只能设为正常或停用");
+    }
+    const expectedUpdatedAt = new Date(String(input.expectedUpdatedAt ?? ""));
+    if (Number.isNaN(expectedUpdatedAt.getTime())) {
+      throw new BadRequestException("会员数据版本无效，请刷新后重试");
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true, compatibilityId: true, mobile: true, mobileVerifiedAt: true,
+            email: true, emailVerifiedAt: true, nickname: true, status: true, updatedAt: true,
+          },
+        });
+        if (!user) throw new NotFoundException("会员不存在");
+        if (user.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+          throw new ConflictException("会员信息已发生变化，请刷新后重试");
+        }
+        if (user.status === UserStatus.DELETION_PENDING || user.status === UserStatus.DELETED) {
+          throw new ConflictException("注销流程中的会员不能手工编辑");
+        }
+        const conflict = await tx.user.findFirst({
+          where: {
+            id: { not: userId },
+            OR: [
+              ...(mobile ? [{ mobile }] : []),
+              ...(email ? [{ email }] : []),
+            ],
+          },
+          select: { id: true },
+        });
+        if (conflict) throw new ConflictException("手机号或邮箱已被其他会员使用");
+
+        const changedAt = new Date();
+        const mobileChanged = user.mobile !== mobile;
+        const emailChanged = user.email !== email;
+        const nextMobileVerifiedAt = mobile && input.mobileVerified
+          ? (!mobileChanged && user.mobileVerifiedAt ? user.mobileVerifiedAt : changedAt)
+          : null;
+        const nextEmailVerifiedAt = email && input.emailVerified
+          ? (!emailChanged && user.emailVerifiedAt ? user.emailVerifiedAt : changedAt)
+          : null;
+        const verificationChanged = Boolean(user.mobileVerifiedAt) !== Boolean(nextMobileVerifiedAt)
+          || Boolean(user.emailVerifiedAt) !== Boolean(nextEmailVerifiedAt);
+        const statusChanged = user.status !== status;
+        const nicknameChanged = user.nickname !== nickname;
+        if (!mobileChanged && !emailChanged && !verificationChanged && !statusChanged && !nicknameChanged) {
+          return this.memberProfileFields(user);
+        }
+
+        const result = await tx.user.updateMany({
+          where: { id: userId, updatedAt: expectedUpdatedAt },
+          data: {
+            nickname,
+            mobile,
+            mobileVerifiedAt: nextMobileVerifiedAt,
+            email,
+            emailVerifiedAt: nextEmailVerifiedAt,
+            status: status as UserStatus,
+            updatedAt: changedAt,
+          },
+        });
+        if (result.count !== 1) throw new ConflictException("会员信息已发生变化，请刷新后重试");
+        if (mobileChanged || emailChanged || verificationChanged || statusChanged) {
+          await tx.userSession.updateMany({
+            where: { userId, revokedAt: null },
+            data: { revokedAt: changedAt },
+          });
+        }
+        await tx.auditLog.create({
+          data: {
+            actorType: "ADMIN",
+            actorId: current.id,
+            action: "MEMBER_PROFILE_UPDATE",
+            entityType: "USER_PROFILE",
+            entityId: userId,
+            requestId,
+            beforeJson: {
+              mobilePresent: Boolean(user.mobile), mobileVerified: Boolean(user.mobileVerifiedAt),
+              emailPresent: Boolean(user.email), emailVerified: Boolean(user.emailVerifiedAt),
+              status: user.status, nicknameChanged,
+            },
+            afterJson: {
+              mobilePresent: Boolean(mobile), mobileVerified: Boolean(nextMobileVerifiedAt), mobileChanged,
+              emailPresent: Boolean(email), emailVerified: Boolean(nextEmailVerifiedAt), emailChanged,
+              status, nicknameChanged, source: "SUPER_ADMIN_PROFILE_EDITOR",
+            },
+          },
+        });
+        return this.memberProfileFields({
+          ...user,
+          nickname,
+          mobile,
+          mobileVerifiedAt: nextMobileVerifiedAt,
+          email,
+          emailVerifiedAt: nextEmailVerifiedAt,
+          status: status as UserStatus,
+          updatedAt: changedAt,
+        });
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ConflictException("手机号或邮箱已被其他会员使用");
+      }
+      throw error;
+    }
+  }
+
   async updateMemberVerification(
     current: { id: string; role: string; roles?: string[] },
     userId: string,
     requestId: string,
     input: Record<string, unknown>,
   ) {
-    const roles = current.roles?.length ? current.roles : [current.role];
-    if (!roles.includes(AdminRole.SUPER_ADMIN)) {
-      throw new ForbiddenException("只有超级管理员可以人工调整联系方式验证状态");
-    }
-    if (!isGlobalRealm()) {
-      throw new ForbiddenException("人工联系方式确认仅用于国际版新会员系统");
-    }
+    this.assertGlobalMemberAdministrator(current);
     const channel = String(input.channel ?? "").trim();
     if (channel !== "mobile" && channel !== "email") {
       throw new BadRequestException("验证类型必须是手机号或邮箱");
