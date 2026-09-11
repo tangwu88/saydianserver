@@ -5981,8 +5981,8 @@ export const apiCatalog = {
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "兑换公众号授权码",
       "request": "{code,state,codeVerifier,consentVersion,locale?}",
-      "response": "已验证手机号（国际版亦接受已验证邮箱）返回raw会话；否则返回一次bindTicket而非顾客会话",
-      "dependency": "微信公众号；国际版当前已审核协议；身份冲突不合并资产",
+      "response": "global 已关联已验证手机号返回 raw 会话；仅已验证邮箱仍返回手机号登记票据。临时开关开启时可续登原微信的未验证手机登记账号",
+      "dependency": "微信公众号；当前已审核协议；身份冲突不合并资产，临时会话不能用于 App/交易",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -6155,7 +6155,7 @@ export const apiCatalog = {
         },
         "contentType": "application/json",
         "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
-        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 从回跳URL的search读取code/state。未绑定分支不含token/user；国际版返回requiresAccountBinding=true并接受已核验邮箱或国际手机号。协议过时409先重新阅读授权；state消费或换码失败需重新授权。回调URL和日志不得泄露code/state。"
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 从回跳URL的search读取code/state。global 未关联手机号（包括仅核验邮箱）返回requiresAccountBinding=true，不含token/user；先完成手机登记。正式已验证手机号可登录；临时登记仅在专用开关开启且原微信身份有效时续登受限会话。协议过时409先重新阅读授权；state消费或换码失败需重新授权。回调URL和日志不得泄露code/state。"
       }
     },
     {
@@ -6331,7 +6331,7 @@ export const apiCatalog = {
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "国际H5绑定已验证账号",
       "request": "{bindTicket,identifier,password,consentVersion,locale?}；邮箱或E.164手机号",
-      "response": "raw会员会话和站内returnTo；不合并资产或修改账号密码",
+      "response": "已验证手机返回 raw 会话；仅验证邮箱返回后续手机登记票据；不合并资产或修改账号密码",
       "dependency": "仅global；已验证会员原密码；公众号独立配置和当前协议",
       "successStatus": 201,
       "contract": {
@@ -6387,81 +6387,116 @@ export const apiCatalog = {
           "locale": "en"
         },
         "responseSchema": {
-          "type": "object",
-          "properties": {
-            "token": {
-              "type": "string",
-              "description": "用户访问令牌；Authorization: Bearer，不是员工令牌。禁止记录或发布实际值。"
-            },
-            "refreshToken": {
-              "type": "string",
-              "description": "单次轮换令牌；客户端单飞刷新，不并发重用。"
-            },
-            "expiresAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "user": {
+          "oneOf": [
+            {
               "type": "object",
               "properties": {
-                "id": {
+                "token": {
                   "type": "string",
-                  "format": "uuid",
-                  "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                  "description": "用户访问令牌；Authorization: Bearer，不是员工令牌。禁止记录或发布实际值。"
                 },
-                "nickname": {
-                  "type": "string"
+                "refreshToken": {
+                  "type": "string",
+                  "description": "单次轮换令牌；客户端单飞刷新，不并发重用。"
                 },
-                "mobile": {
-                  "oneOf": [
-                    {
+                "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "user": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                    },
+                    "nickname": {
                       "type": "string"
                     },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "avatarUrl": {
-                  "oneOf": [
-                    {
-                      "type": "string"
+                    "mobile": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
-                    {
-                      "type": "null"
+                    "avatarUrl": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
-                  ]
+                  },
+                  "required": [
+                    "id",
+                    "nickname",
+                    "mobile",
+                    "avatarUrl"
+                  ],
+                  "additionalProperties": true
+                },
+                "requiresMobileBinding": {
+                  "const": false
+                },
+                "requiresAccountBinding": {
+                  "const": false
+                },
+                "returnTo": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "description": "受限站内相对路径，如 /pages/checkout/index；拒绝外站、协议相对URL、hash及敏感令牌查询参数。不是任意OAuth redirect_uri。"
                 }
               },
               "required": [
-                "id",
-                "nickname",
-                "mobile",
-                "avatarUrl"
+                "token",
+                "refreshToken",
+                "expiresAt",
+                "user",
+                "requiresMobileBinding",
+                "returnTo"
               ],
               "additionalProperties": true
             },
-            "requiresMobileBinding": {
-              "const": false
-            },
-            "requiresAccountBinding": {
-              "const": false
-            },
-            "returnTo": {
-              "type": "string",
-              "maxLength": 1024,
-              "description": "受限站内相对路径，如 /pages/checkout/index；拒绝外站、协议相对URL、hash及敏感令牌查询参数。不是任意OAuth redirect_uri。"
+            {
+              "type": "object",
+              "properties": {
+                "requiresMobileBinding": {
+                  "const": true
+                },
+                "requiresAccountBinding": {
+                  "const": true
+                },
+                "bindTicket": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "expiresIn": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "returnTo": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "description": "受限站内相对路径，如 /pages/checkout/index；拒绝外站、协议相对URL、hash及敏感令牌查询参数。不是任意OAuth redirect_uri。"
+                }
+              },
+              "required": [
+                "requiresMobileBinding",
+                "bindTicket",
+                "expiresIn",
+                "returnTo"
+              ],
+              "additionalProperties": true
             }
-          },
-          "required": [
-            "token",
-            "refreshToken",
-            "expiresAt",
-            "user",
-            "requiresMobileBinding",
-            "returnTo"
-          ],
-          "additionalProperties": true
+          ]
         },
         "responseExample": {
           "token": "H5-CONTRACT-SYNTHETIC-NOT-A-VALID-TOKEN",
@@ -6479,7 +6514,7 @@ export const apiCatalog = {
         },
         "contentType": "application/json",
         "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
-        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global。必须证明既有账号原密码且该账号有真实emailVerifiedAt/mobileVerifiedAt；临时免验证账号403，不自动标为已验证。票据与appId/OpenID匹配、一次性消费。未配置503、身份冲突409、过期401，不改密码或合并资产。"
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global。必须证明既有账号原密码且该账号有真实emailVerifiedAt/mobileVerifiedAt；临时免验证账号403，不自动标为已验证。仅验证邮箱时返回新手机登记票据而非会话；已验证手机才返回正式会话。票据与appId/OpenID匹配、一次性消费。未配置503、身份冲突409、过期401，不改密码或合并资产。"
       }
     },
     {
@@ -6674,6 +6709,331 @@ export const apiCatalog = {
           "nickname": "H5合成会员"
         },
         "responseSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "description": "用户访问令牌；Authorization: Bearer，不是员工令牌。禁止记录或发布实际值。"
+                },
+                "refreshToken": {
+                  "type": "string",
+                  "description": "单次轮换令牌；客户端单飞刷新，不并发重用。"
+                },
+                "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "user": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                    },
+                    "nickname": {
+                      "type": "string"
+                    },
+                    "mobile": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "avatarUrl": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "nickname",
+                    "mobile",
+                    "avatarUrl"
+                  ],
+                  "additionalProperties": true
+                },
+                "requiresMobileBinding": {
+                  "const": false
+                },
+                "requiresAccountBinding": {
+                  "const": false
+                },
+                "returnTo": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "description": "受限站内相对路径，如 /pages/checkout/index；拒绝外站、协议相对URL、hash及敏感令牌查询参数。不是任意OAuth redirect_uri。"
+                }
+              },
+              "required": [
+                "token",
+                "refreshToken",
+                "expiresAt",
+                "user",
+                "requiresMobileBinding",
+                "returnTo"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "requiresMobileBinding": {
+                  "const": true
+                },
+                "requiresAccountBinding": {
+                  "const": true
+                },
+                "bindTicket": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "expiresIn": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "returnTo": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "description": "受限站内相对路径，如 /pages/checkout/index；拒绝外站、协议相对URL、hash及敏感令牌查询参数。不是任意OAuth redirect_uri。"
+                }
+              },
+              "required": [
+                "requiresMobileBinding",
+                "bindTicket",
+                "expiresIn",
+                "returnTo"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        },
+        "responseExample": {
+          "token": "H5-CONTRACT-SYNTHETIC-NOT-A-VALID-TOKEN",
+          "refreshToken": "H5-CONTRACT-SYNTHETIC-NOT-A-VALID-REFRESH",
+          "expiresAt": "2026-09-08T03:00:00.000Z",
+          "user": {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "nickname": "H5-CONTRACT合成会员",
+            "mobile": null,
+            "avatarUrl": null
+          },
+          "requiresMobileBinding": false,
+          "requiresAccountBinding": false,
+          "returnTo": "/pages/profile/index"
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global。新账号设置密码；已有账号需原密码+OTP双证明，不重设密码。首次核验会撤销旧会话防预占账号提权；只标记本次真实验证的联系方式。仅验证邮箱时返回新手机登记票据而非会话。票据与OTP/用户/身份/同意同事务消费，错误码最多5次；过期/重放400或401、冲突409、服务关闭503。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.requestWechatH5PhoneCode",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/auth/wechat/h5/phone-code",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "微信授权后申请手机号登记凭证",
+      "request": "{bindTicket,identifier:E.164手机号,locale?}",
+      "response": "{challengeId,expiresIn,retryAfter,maskedIdentifier,mode:test/sms,sent,verificationRequired}；test不发短信、不返回已发送提示",
+      "dependency": "仅global；临时模式需独立显式开关；test用途不被注册/重置/原验证码绑定端点接受",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "bindTicket": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "identifier": {
+              "type": "string",
+              "pattern": "^\\+[1-9][0-9]{6,14}$"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
+            }
+          },
+          "required": [
+            "bindTicket",
+            "identifier"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "bindTicket": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "identifier": "+16505550101",
+          "locale": "en"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "challengeId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "当前统一系统 UUID，不是旧商城数字ID。"
+            },
+            "expiresIn": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maskedIdentifier": {
+              "type": "string"
+            },
+            "mode": {
+              "enum": [
+                "test",
+                "sms"
+              ]
+            },
+            "sent": {
+              "type": "boolean"
+            },
+            "verificationRequired": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "challengeId",
+            "expiresIn",
+            "retryAfter",
+            "maskedIdentifier",
+            "mode",
+            "sent",
+            "verificationRequired"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "challengeId": "00000000-0000-4000-8000-000000000082",
+          "expiresIn": 300,
+          "retryAfter": 60,
+          "maskedIdentifier": "+16***0101",
+          "mode": "test",
+          "sent": false,
+          "verificationRequired": false
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global。先真实微信授权取得一次性bindTicket；test需GLOBAL_WECHAT_PHONE_TEST_ENABLED=true且不发送短信，不写真实送达/验证标记。test用途与真实OTP隔离，不能在App注册/重置/原bind-code接口消费。能力关闭拒绝；限频及票据有效期照常执行。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.bindWechatH5Phone",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/auth/wechat/h5/bind-phone",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "微信手机号登记或核验后登录",
+      "request": "{bindTicket,challengeId,code:6位数字,consentVersion,locale?,password?}",
+      "response": "raw会话；user含phoneTestMode/phoneVerified/phoneVerificationStatus。临时模式接受任意6位数字但不验证手机号，仅原微信账号或未占用号码新建，冲突不合并",
+      "dependency": "test会话只准账号读取/退出/H5刷新，关闭开关即失效；正式短信才可标记手机号已验证",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "bindTicket": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "challengeId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "当前统一系统 UUID，不是旧商城数字ID。"
+            },
+            "code": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$",
+              "description": "一次性验证码；login 与 bind_mobile 用途隔离。"
+            },
+            "consentVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "description": "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
+            },
+            "password": {
+              "type": "string",
+              "minLength": 8,
+              "description": "至少8字符、最多72 UTF-8字节；已有账号输入原密码，新账号用于设置密码。"
+            }
+          },
+          "required": [
+            "bindTicket",
+            "challengeId",
+            "code",
+            "consentVersion"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "bindTicket": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "challengeId": "00000000-0000-4000-8000-000000000082",
+          "code": "654321",
+          "consentVersion": "global-contract-reviewed-v1",
+          "locale": "en"
+        },
+        "responseSchema": {
           "type": "object",
           "properties": {
             "token": {
@@ -6699,7 +7059,19 @@ export const apiCatalog = {
                 "nickname": {
                   "type": "string"
                 },
-                "mobile": {
+                "memberNo": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^[0-9]+$"
+                    }
+                  ]
+                },
+                "phoneMasked": {
                   "oneOf": [
                     {
                       "type": "string"
@@ -6709,22 +7081,22 @@ export const apiCatalog = {
                     }
                   ]
                 },
-                "avatarUrl": {
-                  "oneOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                "phoneVerified": {
+                  "type": "boolean"
+                },
+                "phoneTestMode": {
+                  "type": "boolean"
+                },
+                "phoneVerificationStatus": {
+                  "type": "string"
                 }
               },
               "required": [
                 "id",
                 "nickname",
-                "mobile",
-                "avatarUrl"
+                "phoneVerified",
+                "phoneTestMode",
+                "phoneVerificationStatus"
               ],
               "additionalProperties": true
             },
@@ -6746,7 +7118,8 @@ export const apiCatalog = {
             "expiresAt",
             "user",
             "requiresMobileBinding",
-            "returnTo"
+            "returnTo",
+            "requiresAccountBinding"
           ],
           "additionalProperties": true
         },
@@ -6755,10 +7128,13 @@ export const apiCatalog = {
           "refreshToken": "H5-CONTRACT-SYNTHETIC-NOT-A-VALID-REFRESH",
           "expiresAt": "2026-09-08T03:00:00.000Z",
           "user": {
-            "id": "00000000-0000-4000-8000-000000000001",
+            "id": "00000000-0000-4000-8000-000000000081",
             "nickname": "H5-CONTRACT合成会员",
-            "mobile": null,
-            "avatarUrl": null
+            "memberNo": 81,
+            "phoneMasked": "+16***0101",
+            "phoneVerified": false,
+            "phoneTestMode": true,
+            "phoneVerificationStatus": "pending"
           },
           "requiresMobileBinding": false,
           "requiresAccountBinding": false,
@@ -6766,7 +7142,91 @@ export const apiCatalog = {
         },
         "contentType": "application/json",
         "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
-        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global。新账号设置密码；已有账号需原密码+OTP双证明，不重设密码。首次核验会撤销旧会话防预占账号提权；只标记本次真实验证的联系方式。票据与OTP/用户/身份/同意同事务消费，错误码最多5次；过期/重放400或401、冲突409、服务关闭503。"
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 临时mode=test接受任意6位数字，但只登记真实微信当前主体的未验证手机号，或以尚未占用手机号新建无密码账号；任何其他账号号码冲突409，不合并、不改密码、不设mobileVerifiedAt。test会话的来源持久保存，不能用于App/交易/健康/后台；只允许本H5账号读取、退出与受控刷新，关闭开关后access和refresh立即被拒绝。正式sms模式须真实OTP；已有未验证账号须额外原密码证明，不擅自继承资产。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.wechatH5Account",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/auth/wechat/h5/account",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "读取H5当前会员安全资料",
+      "request": "Authorization: Bearer会员令牌",
+      "response": "raw安全会员资料；手机号掩码和真实核验状态；不返回其他会员或微信OpenID",
+      "dependency": "临时phone-test令牌只在此读接口/退出被接受；不能用于App、交易、健康或后台",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "当前统一系统 UUID，不是旧商城数字ID。"
+            },
+            "nickname": {
+              "type": "string"
+            },
+            "memberNo": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+                }
+              ]
+            },
+            "phoneMasked": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "phoneVerified": {
+              "type": "boolean"
+            },
+            "phoneTestMode": {
+              "type": "boolean"
+            },
+            "phoneVerificationStatus": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "nickname",
+            "phoneVerified",
+            "phoneTestMode",
+            "phoneVerificationStatus"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "id": "00000000-0000-4000-8000-000000000081",
+          "nickname": "H5-CONTRACT合成会员",
+          "memberNo": 81,
+          "phoneMasked": "+16***0101",
+          "phoneVerified": false,
+          "phoneTestMode": true,
+          "phoneVerificationStatus": "pending"
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global且需当前会员令牌。返回安全会员字段及真实手机核验状态，前端不能将phoneTestMode或填过手机号当成已验证；数据版本来自服务端，过期/撤销/临时开关关闭返回401。"
       }
     },
     {
@@ -7159,6 +7619,19 @@ export const apiCatalog = {
                         },
                         "verifiedAccountRequired": {
                           "const": true
+                        },
+                        "phoneCodeMode": {
+                          "enum": [
+                            "test",
+                            "sms",
+                            "unavailable"
+                          ]
+                        },
+                        "phoneBindingAvailable": {
+                          "type": "boolean"
+                        },
+                        "verificationRequired": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -7169,7 +7642,10 @@ export const apiCatalog = {
                         "email",
                         "sms",
                         "smsCountries",
-                        "verifiedAccountRequired"
+                        "verifiedAccountRequired",
+                        "phoneCodeMode",
+                        "phoneBindingAvailable",
+                        "verificationRequired"
                       ],
                       "additionalProperties": true
                     }
@@ -8682,6 +9158,19 @@ export const apiCatalog = {
                             },
                             "verifiedAccountRequired": {
                               "const": true
+                            },
+                            "phoneCodeMode": {
+                              "enum": [
+                                "test",
+                                "sms",
+                                "unavailable"
+                              ]
+                            },
+                            "phoneBindingAvailable": {
+                              "type": "boolean"
+                            },
+                            "verificationRequired": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
@@ -8692,7 +9181,10 @@ export const apiCatalog = {
                             "email",
                             "sms",
                             "smsCountries",
-                            "verifiedAccountRequired"
+                            "verifiedAccountRequired",
+                            "phoneCodeMode",
+                            "phoneBindingAvailable",
+                            "verificationRequired"
                           ],
                           "additionalProperties": true
                         }

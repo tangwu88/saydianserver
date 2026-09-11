@@ -86,6 +86,7 @@
         "COMMERCE_MODE": "integrated",
         "COMMERCE_STOREFRONT_URL": "${GLOBAL_STOREFRONT_URL:-https://app.saydian.cn/global/saidian-mall/}",
         "GLOBAL_WECHAT_H5_ENABLED": "${GLOBAL_WECHAT_H5_ENABLED:-false}",
+        "GLOBAL_WECHAT_PHONE_TEST_ENABLED": "${GLOBAL_WECHAT_PHONE_TEST_ENABLED:-false}",
         "GLOBAL_DOWNLOAD_URL": "${GLOBAL_DOWNLOAD_URL:-https://app.saydian.cn/global/down}",
         "MAINTENANCE_READ_ONLY": "${GLOBAL_MAINTENANCE_READ_ONLY:-true}",
         "MAINTENANCE_ALLOW_MEMBER_AUTH": "false",

@@ -94,6 +94,18 @@ export class CommerceCompatibilityController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   bindWechatH5Code(@Body() input: unknown) { return this.wechatH5.bindGlobalCode(input); }
 
+  @Post("auth/wechat/h5/phone-code")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  requestWechatH5PhoneCode(@Body() input: unknown) { return this.wechatH5.requestGlobalPhoneCode(input); }
+
+  @Post("auth/wechat/h5/bind-phone")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  bindWechatH5Phone(@Body() input: unknown) { return this.wechatH5.bindGlobalPhone(input); }
+
+  @Get("auth/wechat/h5/account")
+  @UseGuards(UserAuthGuard)
+  wechatH5Account(@CurrentUser() user: AuthenticatedUser) { return this.auth.mallAccount(user.id, user.sessionId); }
+
   @Get("storefront/capabilities")
   storefrontCapabilities(@Query("locale") locale?: string) { return this.capabilities.publicCapabilities(locale); }
 

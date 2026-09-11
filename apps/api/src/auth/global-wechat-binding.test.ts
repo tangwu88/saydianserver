@@ -14,6 +14,7 @@ let originalHash: string;
 beforeAll(async () => { originalHash = await hash(password, 4); });
 beforeEach(() => {
   for (const [key, value] of Object.entries({ APP_REALM: "global", GLOBAL_WECHAT_H5_ENABLED: "true", H5_DEMO_ENABLED: "false", BUSINESS_WRITES_PAUSED: "false", MAINTENANCE_READ_ONLY: "false", COMMERCE_STOREFRONT_URL: "https://demo.invalid/global/saidian-mall/", REFRESH_TOKEN_PEPPER: "synthetic-pepper-only", GLOBAL_UNVERIFIED_REGISTRATION_ENABLED: "true" })) vi.stubEnv(key, value);
+  vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "false");
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("External calls are forbidden; positive provider responses must be synthetic")));
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
@@ -73,6 +74,7 @@ function harness(existing = true, verified = true) {
   let tail = Promise.resolve();
   db.$transaction = vi.fn((run: any) => { const result = tail.then(async () => { const before = structuredClone(state); try { return await run(db); } catch (error) { state = before; throw error; } }); tail = result.then(() => undefined, () => undefined); return result; });
   const auth: any = { issueMallSession: vi.fn(async (id: string) => { const user = state.users.find((row: any) => row.id === id); if (!user || user.status !== "ACTIVE" || !(user.emailVerifiedAt || user.mobileVerifiedAt)) throw new Error("verified gate"); state.sessions.push(id); return { token: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date().toISOString(), user: { id, mobile: user.mobile, nickname: user.nickname } }; }) };
+  auth.issuePhoneTestMallSession = vi.fn(async (id: string) => { state.sessions.push(id); return { token: "synthetic-test-access", refreshToken: "synthetic-test-refresh", user: { id, phoneTestMode: true, phoneVerified: false, phoneVerificationStatus: "pending" } }; });
   const delivery: any = { capabilities: vi.fn().mockResolvedValue({ email: true, sms: true, smsCountries: ["US", "DE"] }), assertAvailable: vi.fn().mockResolvedValue({}), send: vi.fn().mockResolvedValue(undefined) };
   const secrets: any = { resolve: vi.fn().mockResolvedValue({ appId, appSecret: "synthetic-official-secret-only" }) };
   const binding = new GlobalWechatBindingService(db, auth, delivery);
@@ -114,11 +116,11 @@ describe("global WeChat gate, callback and consent", () => {
     await expect(h.h5.login({ code: "test", state: stateText, codeVerifier: verifier, consentVersion: "old" })).rejects.toMatchObject({ status: 409 });
     expect(fetch).not.toHaveBeenCalled(); expect(h.db.commerceOAuthState.updateMany).not.toHaveBeenCalled();
   });
-  it("logs an already scoped verified-email identity in without needing a Chinese phone", async () => {
+  it("requires the phone step for an already scoped verified-email identity", async () => {
     const h = harness(); h.state.identities.push({ id: randomUUID(), appId, openId: "official-openid-one", userId: memberId });
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ openid: "official-openid-one", access_token: "synthetic", scope: "snsapi_base" })));
-    expect(await h.h5.login({ code: "test-code", state: stateText, codeVerifier: verifier, consentVersion: "legal-v1", locale: "en" })).toMatchObject({ requiresAccountBinding: false, requiresMobileBinding: false, user: { id: memberId } });
-    expect(h.state.consents).toHaveLength(2); expect(h.db.user.update).not.toHaveBeenCalled();
+    expect(await h.h5.login({ code: "test-code", state: stateText, codeVerifier: verifier, consentVersion: "legal-v1", locale: "en" })).toMatchObject({ requiresAccountBinding: true, requiresMobileBinding: true, requiresPhoneBinding: true });
+    expect(h.auth.issueMallSession).not.toHaveBeenCalled(); expect(h.db.user.update).not.toHaveBeenCalled();
   });
   it("does not grant a known but unverified identity a mall session", async () => {
     const h = harness(true, false); h.state.identities.push({ id: randomUUID(), appId, openId: "official-openid-one", userId: memberId });
@@ -136,7 +138,7 @@ describe("global WeChat gate, callback and consent", () => {
 describe("global password identity binding", () => {
   it("binds the exact existing verified account and preserves its password/verified fields", async () => {
     const h = harness(); const before = structuredClone(h.state.users[0]);
-    expect(await h.binding.bindAccount(appId, accountInput())).toMatchObject({ requiresAccountBinding: false, user: { id: memberId } });
+    expect(await h.binding.bindAccount(appId, accountInput())).toMatchObject({ requiresAccountBinding: true, requiresPhoneBinding: true, bindTicket: expect.any(String) });
     expect(h.state.users[0]).toEqual(before); expect(h.state.identities[0]).toMatchObject({ appId, userId: memberId, unionId: "metadata-only-union" }); expect(fetch).not.toHaveBeenCalled();
   });
   it("rejects password-only elevation of a temporarily unverified account", async () => {
@@ -161,7 +163,7 @@ describe("global password identity binding", () => {
   });
   it("only one concurrent claimant may consume a ticket", async () => {
     const h = harness(); const outcomes = await Promise.allSettled([h.binding.bindAccount(appId, accountInput()), h.binding.bindAccount(appId, accountInput())]);
-    expect(outcomes.filter(x => x.status === "fulfilled")).toHaveLength(1); expect(h.state.identities).toHaveLength(1); expect(h.state.sessions).toHaveLength(1);
+    expect(outcomes.filter(x => x.status === "fulfilled")).toHaveLength(1); expect(h.state.identities).toHaveLength(1); expect(h.state.sessions).toHaveLength(0); expect(h.state.tickets).toHaveLength(2);
   });
   it("rejects stale login identity reads after unbinding", async () => {
     const h = harness(); h.db.wechatOfficialIdentity.findUnique.mockResolvedValueOnce({ id: randomUUID(), appId, openId: "official-openid-one", userId: memberId }).mockResolvedValue(null);
@@ -175,7 +177,7 @@ describe("ticket-scoped international binding verification", () => {
     expect(h.state.challenges[0]).toMatchObject({ purpose: "wechat_bind", sentAt: expect.any(Date) });
     expect(h.state.users).toHaveLength(0); expect(h.delivery.send.mock.calls[0][0].purpose).toBe("wechat_bind");
     const result = await h.binding.bindCode(appId, input);
-    expect(result).toMatchObject({ requiresAccountBinding: false, user: { id: expect.any(String) } });
+    expect(result).toMatchObject({ requiresAccountBinding: true, requiresPhoneBinding: true });
     expect(h.state.users[0]).toMatchObject({ email: "member@example.com", emailVerifiedAt: expect.any(Date), mobileVerifiedAt: null }); expect(h.state.users[0].passwordHash).toMatch(/^\$2b\$12\$/);
     expect(h.state.challenges[0].consumedAt).toBeInstanceOf(Date); expect(h.state.tickets[0].consumedAt).toBeInstanceOf(Date); expect(fetch).not.toHaveBeenCalled();
   });
@@ -204,7 +206,7 @@ describe("ticket-scoped international binding verification", () => {
   it("requires old-password plus OTP before upgrading, and revokes every old session atomically", async () => {
     const h = harness(true, false); const input = await codeInput(h); await h.binding.bindCode(appId, input);
     expect(h.state.users[0]).toMatchObject({ passwordHash: originalHash, emailVerifiedAt: expect.any(Date) }); expect(h.state.oldSessionsRevoked).toBe(true);
-    expect(h.db.userSession.updateMany.mock.invocationCallOrder[0]).toBeLessThan(h.db.user.update.mock.invocationCallOrder[0]); expect(h.state.sessions).toHaveLength(1);
+    expect(h.db.userSession.updateMany.mock.invocationCallOrder[0]).toBeLessThan(h.db.user.update.mock.invocationCallOrder[0]); expect(h.state.sessions).toHaveLength(0);
   });
   it("rolls back verification and session revocation when identity/ticket claim loses", async () => {
     const h = harness(true, false); const input = await codeInput(h); h.db.commerceWechatBindTicket.updateMany.mockResolvedValue({ count: 0 });
@@ -230,7 +232,7 @@ describe("ticket-scoped international binding verification", () => {
     const h = harness(false); const input = await codeInput(h);
     await expect(h.binding.bindCode(appId, { ...input, code: "000000" })).rejects.toMatchObject({ status: 400 }); expect(h.state.challenges[0].attempts).toBe(1);
     const result = await Promise.allSettled([h.binding.bindCode(appId, input), h.binding.bindCode(appId, input)]);
-    expect(result.filter(x => x.status === "fulfilled")).toHaveLength(1); expect(h.state.users).toHaveLength(1); expect(h.state.identities).toHaveLength(1); expect(h.state.sessions).toHaveLength(1);
+    expect(result.filter(x => x.status === "fulfilled")).toHaveLength(1); expect(h.state.users).toHaveLength(1); expect(h.state.identities).toHaveLength(1); expect(h.state.sessions).toHaveLength(0);
   });
   it("never sends an unavailable channel, and invalidates unsuccessful delivery", async () => {
     const h = harness(); h.delivery.assertAvailable.mockRejectedValueOnce(new Error("channel unavailable"));
@@ -272,5 +274,104 @@ describe("global mall refresh keeps real verification boundaries", () => {
     vi.spyOn(service as any, "sessionContract").mockResolvedValue({ member: { id: memberId }, accessToken: "test" });
     await expect(service.refreshForMall("synthetic-refresh")).rejects.toMatchObject({ status: 403 }); expect(update).not.toHaveBeenCalled();
     await service.refresh("synthetic-refresh"); expect(update).toHaveBeenCalledOnce();
+  });
+});
+
+const testPhone = "+12025550123";
+async function phoneInput(h: ReturnType<typeof harness>) {
+  const response = await h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone, locale: "en" });
+  return { bindTicket, challengeId: response.challengeId, code: response.mode === "test" ? "000000" : h.delivery.send.mock.calls.at(-1)![0].code, consentVersion: "legal-v1", locale: "en" };
+}
+function ownWechat(h: ReturnType<typeof harness>) { h.state.identities.push({ id: randomUUID(), appId, openId: "official-openid-one", userId: memberId }); }
+
+describe("explicit temporary WeChat phone registration", () => {
+  beforeEach(() => vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "true"));
+  it("advertises a separate test mode without claiming real SMS readiness", async () => {
+    const h = harness(false); h.delivery.capabilities.mockResolvedValue({ email: false, sms: false, smsCountries: [] });
+    expect((await h.capabilities.publicCapabilities()).login.wechatBinding).toMatchObject({ phoneCodeMode: "test", phoneBindingAvailable: true, verificationRequired: false, smsOtpAvailable: false });
+    const request = await h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone });
+    expect(request).toMatchObject({ mode: "test", sent: false, verificationRequired: false, challengeId: expect.any(String) });
+    expect(h.state.challenges[0]).toMatchObject({ purpose: "wechat_phone_test", sentAt: null });
+    expect(h.delivery.send).not.toHaveBeenCalled(); expect(h.delivery.assertAvailable).not.toHaveBeenCalled(); expect(h.db.integrationConfig.updateMany).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+  });
+  it.each(["000000", "123456", "987654"])("registers only a fresh phone and current OAuth identity with arbitrary six digits %s", async code => {
+    const h = harness(false); const input = await phoneInput(h);
+    expect(await h.binding.bindPhone(appId, { ...input, code })).toMatchObject({ user: { phoneTestMode: true, phoneVerified: false, phoneVerificationStatus: "pending" } });
+    expect(h.state.users).toHaveLength(1); expect(h.state.users[0]).toMatchObject({ mobile: testPhone, mobileVerifiedAt: null, emailVerifiedAt: null, passwordHash: null });
+    expect(h.state.users[0].email).toBeUndefined(); expect(h.state.identities[0]).toMatchObject({ appId, openId: "official-openid-one", userId: h.state.users[0].id });
+    expect(h.state.challenges[0].sentAt).toBeNull(); expect(h.auth.issueMallSession).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+  });
+  it.each([false, true])("never takes over an existing phone user (verified=%s), even with their password", async verified => {
+    const h = harness(); h.state.users[0].mobile = testPhone; h.state.users[0].mobileVerifiedAt = verified ? new Date() : null;
+    const input = await phoneInput(h), before = structuredClone(h.state.users);
+    await expect(h.binding.bindPhone(appId, { ...input, password })).rejects.toMatchObject({ status: 409 });
+    expect(h.state.users).toEqual(before); expect(h.state.identities).toHaveLength(0); expect(h.state.sessions).toHaveLength(0); expect(h.state.challenges[0].consumedAt).toBeNull(); expect(h.state.tickets[0].consumedAt).toBeNull();
+  });
+  it("adds an unverified phone only to the current OpenID's existing email user", async () => {
+    const h = harness(); ownWechat(h); const input = await phoneInput(h), before = structuredClone(h.state.users[0]);
+    expect(await h.binding.bindPhone(appId, input)).toMatchObject({ user: { id: memberId, phoneVerified: false } });
+    expect(h.state.users).toHaveLength(1); expect(h.state.users[0]).toEqual({ ...before, mobile: testPhone }); expect(h.state.oldSessionsRevoked).toBe(false);
+  });
+  it.each(["different-owner", "different-current-phone", "disabled-user", "detached-identity"])("rejects %s without modifying a user or consuming proof", async scenario => {
+    const h = harness(); ownWechat(h); const input = await phoneInput(h);
+    if (scenario === "different-owner") h.state.users.push({ id: randomUUID(), mobile: testPhone, status: "ACTIVE" });
+    if (scenario === "different-current-phone") h.state.users[0].mobile = "+4915123456789";
+    if (scenario === "disabled-user") h.state.users[0].status = "FROZEN";
+    if (scenario === "detached-identity") { const original = h.db.wechatOfficialIdentity.findUnique.getMockImplementation(); let reads = 0; h.db.wechatOfficialIdentity.findUnique.mockImplementation(async (query: any) => { if (query.where.appId_openId && ++reads === 2) return null; return original(query); }); }
+    const before = structuredClone(h.state.users);
+    await expect(h.binding.bindPhone(appId, input)).rejects.toThrow(); expect(h.state.users).toEqual(before); expect(h.state.challenges[0].consumedAt).toBeNull(); expect(h.state.sessions).toHaveLength(0);
+  });
+  it.each(["flag-off", "expired", "consumed", "other-ticket", "wrong-app", "fake-sent", "five-attempts", "not-six-digits"])("rejects invalid temporary proof %s", async scenario => {
+    const h = harness(false), input = await phoneInput(h);
+    if (scenario === "flag-off") vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "false");
+    if (scenario === "expired") h.state.challenges[0].expiresAt = new Date(0);
+    if (scenario === "consumed") h.state.challenges[0].consumedAt = new Date();
+    if (scenario === "other-ticket") { h.state.tickets.push({ ...h.state.tickets[0], tokenHash: sha256("b".repeat(64)) }); input.bindTicket = "b".repeat(64); }
+    if (scenario === "wrong-app") h.state.tickets[0].appId = "wxOtherAppId000000";
+    if (scenario === "fake-sent") h.state.challenges[0].sentAt = new Date();
+    if (scenario === "five-attempts") h.state.challenges[0].attempts = 5;
+    if (scenario === "not-six-digits") input.code = "any";
+    await expect(h.binding.bindPhone(appId, input)).rejects.toThrow(); expect(h.state.users).toHaveLength(0); expect(h.state.identities).toHaveLength(0); expect(h.state.sessions).toHaveLength(0);
+  });
+  it("cannot use temporary proof in the old password/OTP binding endpoint", async () => {
+    const h = harness(false), input = await phoneInput(h);
+    await expect(h.binding.bindCode(appId, { ...input, password })).rejects.toMatchObject({ status: 400 }); expect(h.state.users).toHaveLength(0);
+  });
+  it("rolls back every temporary write on a lost ticket claim, and permits only one concurrent claimant", async () => {
+    const h = harness(false), input = await phoneInput(h); h.db.commerceWechatBindTicket.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(h.binding.bindPhone(appId, input)).rejects.toMatchObject({ status: 401 }); expect(h.state.users).toHaveLength(0); expect(h.state.challenges[0].consumedAt).toBeNull();
+    const results = await Promise.allSettled([h.binding.bindPhone(appId, input), h.binding.bindPhone(appId, input)]);
+    expect(results.filter(value => value.status === "fulfilled")).toHaveLength(1); expect(h.state.users).toHaveLength(1); expect(h.state.identities).toHaveLength(1); expect(h.state.sessions).toHaveLength(1);
+  });
+  it("uses a limited session for an already registered OpenID, then requires phone verification when disabled", async () => {
+    const h = harness(true, false); ownWechat(h); h.state.users[0].mobile = testPhone;
+    expect(await h.binding.linkedUser(appId, "official-openid-one", "legal-v1", "en")).toBe(memberId);
+    expect(await h.binding.session(memberId, "/", appId)).toMatchObject({ user: { phoneTestMode: true } });
+    vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "false");
+    expect(await h.binding.linkedUser(appId, "official-openid-one", "legal-v1", "en")).toBeNull();
+    expect(await h.binding.session(memberId, "/", appId)).toMatchObject({ requiresPhoneBinding: true });
+  });
+});
+
+describe("real WeChat phone verification remains separate", () => {
+  it("uses delivered SMS to register a passwordless phone user", async () => {
+    const h = harness(false), input = await phoneInput(h);
+    expect(h.state.challenges[0]).toMatchObject({ purpose: "wechat_bind", sentAt: expect.any(Date) });
+    await h.binding.bindPhone(appId, input); expect(h.state.users[0]).toMatchObject({ mobile: testPhone, mobileVerifiedAt: expect.any(Date), passwordHash: null }); expect(h.auth.issuePhoneTestMallSession).not.toHaveBeenCalled();
+  });
+  it("requires old password plus real OTP before unlocking a preclaimed phone", async () => {
+    const h = harness(true, false); h.state.users[0].mobile = testPhone; const input = await phoneInput(h);
+    await expect(h.binding.bindPhone(appId, input)).rejects.toMatchObject({ status: 403, response: { errorKey: "phone_password_required" } });
+    expect(h.state.challenges[0].attempts).toBe(0); expect(h.state.challenges[0].consumedAt).toBeNull();
+    await expect(h.binding.bindPhone(appId, { ...input, password: "wrong-password" })).rejects.toMatchObject({ status: 401 }); expect(h.state.challenges[0].attempts).toBe(1);
+    await h.binding.bindPhone(appId, { ...input, password }); expect(h.state.users[0]).toMatchObject({ passwordHash: originalHash, mobileVerifiedAt: expect.any(Date) }); expect(h.state.oldSessionsRevoked).toBe(true);
+  });
+  it("keeps a verified phone's existing ID/password on real OTP login", async () => {
+    const h = harness(); h.state.users[0].mobile = testPhone; h.state.users[0].mobileVerifiedAt = new Date(); const input = await phoneInput(h);
+    await h.binding.bindPhone(appId, input); expect(h.state.users).toHaveLength(1); expect(h.state.users[0]).toMatchObject({ id: memberId, passwordHash: originalHash });
+  });
+  it("never accepts arbitrary test digits against a real challenge even while test mode is enabled", async () => {
+    const h = harness(false), input = await phoneInput(h); vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "true");
+    await expect(h.binding.bindPhone(appId, { ...input, code: "000000" })).rejects.toMatchObject({ status: 400 }); expect(h.state.users).toHaveLength(0);
   });
 });

@@ -35,7 +35,7 @@
             >{{ sku.specification || "默认规格" }}</view
           ></view
         ><view class="stock">库存 {{ selectedSku?.stock ?? '未获取' }} 件</view
-        ><view class="quantity"
+        ><view v-if="!isGlobalMall" class="quantity"
           ><text>数量</text
           ><view
             ><text @click="quantity = Math.max(1, quantity - 1)">−</text
@@ -48,8 +48,8 @@
           }}</view
           ><view class="outline-btn" @click="addCart">加入购物车</view
           ><view class="primary-btn" @click="buyNow">立即购买</view></view
-        ><view class="service-line"
-          >{{ isGlobalMall ? globalCommerceNotice : '赛电商城 · 帮助与售后 · 订单进度可查' }}</view
+        ><view v-if="!isGlobalMall" class="service-line"
+          >赛电商城 · 帮助与售后 · 订单进度可查</view
         ></view
       ></view
     ><view class="container detail card"

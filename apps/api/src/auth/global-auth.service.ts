@@ -178,6 +178,7 @@ export class GlobalAuthService {
     const userId = await this.consume(body.challengeId, body.code, "reset_password", async (tx, challenge) => {
       const user = await tx.user.findUnique({ where: challenge.channel === "email" ? { email: challenge.identifier } : { mobile: challenge.identifier } });
       if (!user || user.status !== UserStatus.ACTIVE) throw globalError(400, "account_unavailable", "This account cannot be reset. Please contact support.");
+      if (challenge.channel === "sms" && !user.mobileVerifiedAt) throw globalError(403, "phone_verification_required", "An unverified phone registration cannot be used to reset an account password.");
       await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
       await tx.userSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
       return user.id;

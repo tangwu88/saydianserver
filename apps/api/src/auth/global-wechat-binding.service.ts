@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma, UserStatus } from "@prisma/client";
 import { compare, hash } from "bcryptjs";
-import { randomInt, randomUUID } from "node:crypto";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { AuthService } from "./auth.service";
 import { GlobalVerificationDeliveryService } from "./global-verification-delivery.service";
 import { PrismaService } from "../common/prisma.service";
@@ -9,9 +9,10 @@ import { env } from "../common/environment";
 import { isUuid, safeObject, secureEqual, sha256 } from "../common/crypto";
 import { globalError, globalIdentity, globalLocale, maskedIdentifier } from "./global-identity";
 import { globalLegalBundle } from "./global-legal";
-import { requireGlobalWechatH5 } from "./global-wechat-policy";
+import { globalWechatPhoneTestEnabled, requireGlobalWechatH5, requireGlobalWechatPhoneTest } from "./global-wechat-policy";
 
 const purpose = "wechat_bind";
+const phoneTestPurpose = "wechat_phone_test";
 type Ticket = { tokenHash: string; appId: string; openId: string; unionId: string | null; expiresAt: Date; consumedAt: Date | null; returnTo: string };
 
 @Injectable()
@@ -41,7 +42,7 @@ export class GlobalWechatBindingService {
       await tx.$queryRaw`SELECT id FROM "WechatOfficialIdentity" WHERE id = ${current.id}::uuid FOR UPDATE`;
       const user = await tx.user.findUnique({ where: { id: current.userId } });
       if (!user || user.status !== UserStatus.ACTIVE) throw inactive();
-      if (!user.emailVerifiedAt && !user.mobileVerifiedAt) return null;
+      if (!user.mobileVerifiedAt && !(globalWechatPhoneTestEnabled() && user.mobile)) return null;
       const legal = await this.legal(version, locale, tx);
       await recordConsent(tx, user.id, legal.consentVersion, legal.locale);
       return user.id;
@@ -73,7 +74,7 @@ export class GlobalWechatBindingService {
       await recordConsent(tx, current.id, legal.consentVersion, legal.locale);
       return current.id;
     }).catch(identityConflict);
-    return this.session(userId, ticket.returnTo);
+    return this.session(userId, ticket.returnTo, appId);
   }
 
   async requestCode(appId: string, input: unknown) {
@@ -174,7 +175,93 @@ export class GlobalWechatBindingService {
       if ("credentials" in result) throw globalError(401, "invalid_credentials", "Use this account's existing password. Verification codes do not reset passwords.");
       throw invalidCode();
     }
-    return this.session(result.userId, ticket.returnTo);
+    return this.session(result.userId, ticket.returnTo, appId);
+  }
+
+  async requestPhoneCode(appId: string, input: unknown) {
+    const body = safeObject(input);
+    if (!globalWechatPhoneTestEnabled()) return { ...await this.requestCode(appId, { ...body, channel: "sms", purpose }), mode: "sms", sent: true, verificationRequired: true };
+    requireGlobalWechatPhoneTest();
+    const ticket = await this.ticket(body.bindTicket, appId), identity = globalIdentity("sms", body.identifier), locale = globalLocale(body.locale);
+    if (!await globalLegalBundle(this.prisma, locale)) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet.");
+    const id = randomUUID(), now = new Date(), expiresAt = new Date(Math.min(ticket.expiresAt.valueOf(), now.valueOf() + 300_000));
+    await this.prisma.$transaction(async tx => {
+      await this.currentConfiguration(tx); requireGlobalWechatPhoneTest();
+      await tx.$queryRaw`SELECT "tokenHash" FROM "CommerceWechatBindTicket" WHERE "tokenHash" = ${ticket.tokenHash} FOR UPDATE`;
+      await this.ticket(body.bindTicket, appId, tx);
+      for (const key of [sha256(`sms:${identity.identifier}`), sha256(`wechat-bind-ticket:${ticket.tokenHash}`)].sort()) {
+        await tx.globalVerificationThrottle.upsert({ where: { key }, create: { key, reservedAt: new Date(0) }, update: {} });
+        if ((await tx.globalVerificationThrottle.updateMany({ where: { key, reservedAt: { lte: new Date(now.valueOf() - 60_000) } }, data: { reservedAt: now } })).count !== 1) throw globalError(429, "verification_rate_limited", "Wait before requesting another code.");
+      }
+      if (await tx.globalVerificationChallenge.count({ where: { channel: "sms", identifier: identity.identifier, createdAt: { gt: new Date(now.valueOf() - 86_400_000) } } }) >= 10) throw globalError(429, "verification_rate_limited", "Too many verification requests. Try again later.");
+      await tx.globalVerificationChallenge.create({ data: { id, channel: "sms", identifier: identity.identifier, purpose: phoneTestPurpose, locale, codeHash: phoneTestHash(id, ticket.tokenHash), expiresAt } });
+    });
+    // This is explicitly not delivery or ownership verification. No sentAt,
+    // provider call, provider verification record or real OTP is fabricated.
+    return { challengeId: id, expiresIn: Math.max(1, Math.floor((expiresAt.valueOf() - now.valueOf()) / 1000)), retryAfter: 60, maskedIdentifier: maskedIdentifier("sms", identity.identifier), mode: "test", sent: false, verificationRequired: false };
+  }
+
+  async bindPhone(appId: string, input: unknown) {
+    requireGlobalWechatH5();
+    const body = safeObject(input), ticket = await this.ticket(body.bindTicket, appId);
+    const challengeId = String(body.challengeId ?? ""), code = String(body.code ?? "");
+    if (!isUuid(challengeId) || !/^\d{6}$/.test(code)) throw invalidCode();
+    const result = await this.prisma.$transaction(async tx => {
+      await this.currentConfiguration(tx);
+      await tx.$queryRaw`SELECT id FROM "GlobalVerificationChallenge" WHERE id = ${challengeId}::uuid FOR UPDATE`;
+      const challenge = await tx.globalVerificationChallenge.findUnique({ where: { id: challengeId } });
+      if (!challenge || challenge.channel !== "sms" || ![purpose, phoneTestPurpose].includes(challenge.purpose) || challenge.consumedAt || challenge.attempts >= 5 || challenge.expiresAt <= new Date()) return { invalid: true as const };
+      const temporary = challenge.purpose === phoneTestPurpose;
+      if (temporary) requireGlobalWechatPhoneTest();
+      if ((temporary && (challenge.sentAt || !secureEqual(challenge.codeHash, phoneTestHash(challengeId, ticket.tokenHash)))) ||
+          (!temporary && (!challenge.sentAt || !secureEqual(challenge.codeHash, bindingHash(challengeId, code, ticket.tokenHash))))) {
+        await tx.globalVerificationChallenge.updateMany({ where: { id: challengeId, consumedAt: null, attempts: { lt: 5 } }, data: { attempts: { increment: 1 } } });
+        return { invalid: true as const };
+      }
+      const identity = globalIdentity("sms", challenge.identifier);
+      await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`global-wechat-account:sms:${identity.identifier}`}, 0))`;
+      const initialLink = await tx.wechatOfficialIdentity.findUnique({ where: { appId_openId: { appId, openId: ticket.openId } } });
+      const byPhone = await tx.user.findUnique({ where: { mobile: identity.identifier } });
+      // An entered, unverified number is never a credential for another User.
+      if ((temporary && byPhone && byPhone.id !== initialLink?.userId) || (initialLink && byPhone && initialLink.userId !== byPhone.id)) throw conflict();
+      let user = initialLink ? await tx.user.findUnique({ where: { id: initialLink.userId } }) : byPhone;
+      if (user) {
+        await lockUser(tx, user.id);
+        user = await tx.user.findUnique({ where: { id: user.id } });
+        if (!user || user.status !== UserStatus.ACTIVE) throw inactive();
+        if (user.mobile && user.mobile !== identity.identifier) throw conflict();
+        if (temporary && user.mobileVerifiedAt) throw conflict();
+        if (!temporary && !initialLink && !user.mobileVerifiedAt) {
+          if (!user.passwordHash) throw conflict();
+          if (!body.password) throw globalError(403, "phone_password_required", "Enter the existing account password as well as the verification code.");
+          if (!await compare(password(body.password), user.passwordHash)) {
+            await tx.globalVerificationChallenge.updateMany({ where: { id: challengeId, consumedAt: null, attempts: { lt: 5 } }, data: { attempts: { increment: 1 } } });
+            return { invalid: true as const, credentials: true as const };
+          }
+        }
+      } else if (initialLink) throw inactive();
+      await lockIdentity(tx, appId, ticket.openId);
+      const linked = await tx.wechatOfficialIdentity.findUnique({ where: { appId_openId: { appId, openId: ticket.openId } } });
+      if (linked?.userId !== initialLink?.userId || (linked && linked.userId !== user?.id)) throw conflict();
+      if (user) {
+        const other = await tx.wechatOfficialIdentity.findUnique({ where: { userId_appId: { userId: user.id, appId } } });
+        if (other && other.openId !== ticket.openId) throw conflict();
+      }
+      const legal = await this.legal(body.consentVersion, body.locale ?? challenge.locale, tx);
+      if ((await tx.globalVerificationChallenge.updateMany({ where: { id: challengeId, consumedAt: null, attempts: { lt: 5 }, expiresAt: { gt: new Date() } }, data: { consumedAt: new Date() } })).count !== 1) return { invalid: true as const };
+      if (user && !temporary && !user.mobileVerifiedAt) await tx.userSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+      const data = { mobile: identity.identifier, ...(!temporary ? { mobileVerifiedAt: new Date() } : {}) };
+      const saved = user ? await tx.user.update({ where: { id: user.id }, data })
+        : await tx.user.create({ data: { ...data, passwordHash: null, nickname: "Saydian user", locale: globalLocale(body.locale ?? challenge.locale) } });
+      await this.attach(tx, ticket, saved.id);
+      await recordConsent(tx, saved.id, legal.consentVersion, legal.locale);
+      return { invalid: false as const, userId: saved.id };
+    }, { maxWait: 10_000, timeout: 30_000 }).catch(identityConflict);
+    if (result.invalid) {
+      if ("credentials" in result) throw globalError(401, "invalid_credentials", "Use this account's existing password. Verification codes do not reset passwords.");
+      throw invalidCode();
+    }
+    return this.session(result.userId, ticket.returnTo, appId);
   }
 
   private async ticket(value: unknown, appId: string, db: Prisma.TransactionClient = this.prisma): Promise<Ticket> {
@@ -200,8 +287,19 @@ export class GlobalWechatBindingService {
     if (!linked) await tx.wechatOfficialIdentity.create({ data: { userId, appId: ticket.appId, openId: ticket.openId, unionId: ticket.unionId, verifiedAt: new Date() } });
   }
 
-  private async session(userId: string, returnTo: string) {
-    return { ...await this.auth.issueMallSession(userId), requiresMobileBinding: false as const, requiresAccountBinding: false as const, returnTo };
+  async session(userId: string, returnTo: string, appId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.status !== UserStatus.ACTIVE) throw inactive();
+    if (user.mobileVerifiedAt) {
+      const result = await this.auth.issueMallSession(userId);
+      return { ...result, user: { ...result.user, phoneTestMode: false, phoneVerified: true, phoneVerificationStatus: "verified" }, requiresMobileBinding: false as const, requiresAccountBinding: false as const, returnTo };
+    }
+    if (user.mobile && globalWechatPhoneTestEnabled()) return { ...await this.auth.issuePhoneTestMallSession(userId), requiresMobileBinding: false as const, requiresAccountBinding: false as const, returnTo };
+    const identity = await this.prisma.wechatOfficialIdentity.findUnique({ where: { userId_appId: { userId, appId } } });
+    if (!identity) throw invalidTicket();
+    const token = randomBytes(32).toString("hex");
+    await this.prisma.commerceWechatBindTicket.create({ data: { tokenHash: sha256(token), appId: identity.appId, openId: identity.openId, unionId: identity.unionId, returnTo, expiresAt: new Date(Date.now() + 300_000) } });
+    return { requiresMobileBinding: true as const, requiresAccountBinding: true as const, requiresPhoneBinding: true as const, bindTicket: token, expiresIn: 300, returnTo };
   }
 }
 
@@ -215,6 +313,7 @@ async function recordConsent(tx: Prisma.TransactionClient, userId: string, versi
   });
 }
 function bindingHash(id: string, code: string, ticketHash: string) { return sha256(`global:${id}:${code}:${env("REFRESH_TOKEN_PEPPER")}:wechat-bind:${ticketHash}`); }
+function phoneTestHash(id: string, ticketHash: string) { return sha256(`global:${id}:${env("REFRESH_TOKEN_PEPPER")}:wechat-phone-test:${ticketHash}`); }
 function password(value: unknown) { const text = typeof value === "string" ? value : ""; if (text.length < 8 || Buffer.byteLength(text, "utf8") > 72) throw globalError(400, "invalid_password", "Use a password of at least 8 characters and at most 72 UTF-8 bytes."); return text; }
 function invalidTicket() { return globalError(401, "wechat_binding_expired", "WeChat authorization has expired. Authorize again."); }
 function invalidCode() { return globalError(400, "verification_invalid", "The verification code is incorrect or has expired."); }

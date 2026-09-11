@@ -1,5 +1,5 @@
 <template>
-  <GlobalAccount v-if="isGlobalMall" :user="user" @logout="logout" /><template v-else>
+  <GlobalAccount v-if="isGlobalMall" :user="user" :error="accountError" :loading="accountLoading" @logout="logout" @refresh="loadAccount" /><template v-else>
   <DesktopHeader /><view class="page"
     ><view class="container profile-layout"
       ><view
@@ -50,12 +50,15 @@
 <script setup lang="ts">
 import { mallStorage, isGlobalMall } from "../../realm";
 import GlobalAccount from "../../components/GlobalAccount.vue";
-import { onShow } from "@dcloudio/uni-app";
+import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import StoreFooter from "../../components/StoreFooter.vue";
-import { clearMallSession, logoutGlobalMall, toast } from "../../api";
+import { clearMallSession, logoutGlobalMall, refreshGlobalMallAccount, toast } from "../../api";
+import { authErrorMessage } from "../../friendly-auth";
 const user = ref<any>();
+const accountError = ref(""), accountLoading = ref(false);
+let accountGeneration = 0;
 const menus = [
   { icon: "地", label: "收货地址", url: "/pages/addresses/index" },
   { icon: "藏", label: "我的收藏", url: "/pages/favorites/index" },
@@ -65,14 +68,24 @@ const menus = [
   { icon: "服", label: "客服与帮助", url: "/pages/help/index" },
   { icon: "推", label: "员工推广中心", url: "/pages/employee/index" },
 ];
-onShow(() => {
+onShow(loadAccount);
+onHide(() => { accountGeneration++; });
+onUnload(() => { accountGeneration++; });
+async function loadAccount() {
+  const generation = ++accountGeneration;
   user.value = mallStorage.get("saidian-user") || null;
-});
+  accountError.value = ""; accountLoading.value = false;
+  if (!isGlobalMall || !user.value) return;
+  accountLoading.value = true;
+  try { const current = await refreshGlobalMallAccount(); if (generation === accountGeneration) user.value = current; }
+  catch (cause) { if (generation === accountGeneration) { user.value = mallStorage.get("saidian-user") || null; accountError.value = authErrorMessage(cause, "账号信息暂时无法更新，请重试。"); } }
+  finally { if (generation === accountGeneration) accountLoading.value = false; }
+}
 function go(url: string) {
   uni.navigateTo({ url });
 }
 async function logout() {
-  const answer = await uni.showModal({title: isGlobalMall ? '退出国际账号' : '退出顾客账号',content: isGlobalMall ? '仅清理此浏览器的国际版登录与个人缓存，不影响国内账号。' : '本地购物与个人缓存将清理，订单和积分保留在服务端。员工身份不受影响。'});
+  const answer = await uni.showModal({title: isGlobalMall ? '退出登录' : '退出顾客账号',content: isGlobalMall ? '确定退出当前账号吗？' : '本地购物与个人缓存将清理，订单和积分保留在服务端。员工身份不受影响。'});
   if (!answer.confirm) return;
   try {
     if (isGlobalMall) {

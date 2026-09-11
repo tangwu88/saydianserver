@@ -1,0 +1,26 @@
+.saydian-app-surface {
+  --green: #d20b27;
+  --deep: #980018;
+  --mint: #ffe8ec;
+  --ink: #171b2b;
+  --muted: #5f6675;
+  --line: #dde3ec;
+  min-height: 100dvh;
+  background: #f5f7fa;
+  color: var(--ink);
+  font-size: 16px;
+  padding: 24px 20px calc(96px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  h1 { font-size: 24px; font-weight: 800; line-height: 1.3; margin: 0 0 20px; }
+  h2 { font-size: 20px; font-weight: 800; line-height: 1.4; margin: 0; }
+  .muted { display: block; color: var(--muted); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+  .primary-btn,.outline-btn { min-height: 54px; height: auto; padding: 14px 18px; border-radius: 12px; line-height: 1.5; font-size: 16px; font-weight: 700; }
+  .primary-btn { background: var(--green); color: #fff; }
+  .outline-btn { border: 1px solid #98a2b3; background: #fff; color: var(--ink); }
+  button[disabled] { color: #8a9099; background: #dde0e5; border-color: #dde0e5; }
+  button::after { border: 0; }
+  .text-button { min-height: 44px; line-height: 1.5; padding: 10px 4px; color: var(--green); background: transparent; font-size: 14px; }
+  .text-button[disabled] { background: transparent; color: #8a9099; }
+  .error-state { color: #b3261e; background: #fff0f0; border-radius: 12px; padding: 12px 14px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; margin: 12px 0; }
+  .app-panel { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+}

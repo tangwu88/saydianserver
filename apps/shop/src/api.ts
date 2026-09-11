@@ -100,7 +100,7 @@ function isWeixinMiniProgram(): boolean {
 }
 
 export async function ensureMiniProgramSession(force = false): Promise<any> {
-  if (isGlobalMall) throw new Error("国际版尚未启用小程序登录");
+  if (isGlobalMall) throw new Error("请在浏览器中登录。");
   if (!isWeixinMiniProgram()) throw new Error("当前环境不是微信小程序");
   if (!force && mallStorage.get("saidian-token"))
     return mallStorage.get("saidian-user");
@@ -278,7 +278,7 @@ export function clearCheckoutState(): void {
   for (const key of ["checkout-items","checkout-address","checkout-draft","checkout-owner","checkout-pending","checkout-cart-ids"]) mallStorage.remove(key);
 }
 export async function logoutGlobalMall(): Promise<"revoked" | "local" | "changed"> {
-  if (!isGlobalMall) throw new Error("此操作仅用于国际版账号");
+  if (!isGlobalMall) throw new Error("请从原登录入口查看账号。");
   const stamp = mallSessionStamp(), token = String(mallStorage.get("saidian-token") || "");
   const revoked = !token || await new Promise<boolean>(resolve => uni.request({
     url: "/global/api/saydian-app/v2/auth/logout", method: "POST", timeout: 15000,
@@ -289,6 +289,15 @@ export async function logoutGlobalMall(): Promise<"revoked" | "local" | "changed
   await clearMallSession(false, stamp);
   if (mallStorage.get("saidian-token")) return "changed";
   return revoked ? "revoked" : "local";
+}
+export async function refreshGlobalMallAccount(): Promise<any> {
+  if (!isGlobalMall) throw new Error("此操作仅用于当前会员服务");
+  const stamp = mallSessionStamp(), owner = mallStorage.get("saidian-user")?.id;
+  const user = await api<any>("/auth/wechat/h5/account", { auth: true, sessionStamp: stamp });
+  if (!currentSession(stamp) || !owner || user?.id !== owner) throw changedSession();
+  // Same identity, fresh safe profile fields; do not trigger a cross-tab login transition.
+  mallStorage.set("saidian-user", user);
+  return user;
 }
 export function saveMallSession(session: any): void | Promise<void> {
   if (!session?.token || !session?.user?.id) throw new Error("登录响应不完整");

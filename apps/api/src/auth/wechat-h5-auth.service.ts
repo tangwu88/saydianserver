@@ -11,7 +11,7 @@ import { isGlobalRealm } from "../common/deployment-realm";
 import { GlobalWechatBindingService } from "./global-wechat-binding.service";
 import { globalLegalBundle } from "./global-legal";
 import { globalError } from "./global-identity";
-import { GLOBAL_WECHAT_CALLBACK_PATH, globalWechatH5Reason, requireGlobalWechatH5 } from "./global-wechat-policy";
+import { GLOBAL_WECHAT_CALLBACK_PATH, globalWechatH5Reason, globalWechatPhoneTestEnabled, requireGlobalWechatH5 } from "./global-wechat-policy";
 
 const lifetimeSeconds = 5 * 60;
 type OfficialConfig = { appId: string; appSecret: string; redirectUri: string };
@@ -62,6 +62,9 @@ export class WechatH5AuthService {
         sms: capability(enabled && channels.sms, "International SMS verification is not configured."),
         smsCountries: channels.smsCountries,
         verifiedAccountRequired: true,
+        phoneCodeMode: enabled && globalWechatPhoneTestEnabled() ? "test" : enabled && channels.sms ? "sms" : "unavailable",
+        phoneBindingAvailable: enabled && (globalWechatPhoneTestEnabled() || channels.sms),
+        verificationRequired: !globalWechatPhoneTestEnabled(),
       },
     };
   }
@@ -106,7 +109,7 @@ export class WechatH5AuthService {
     const identity = await this.exchange(config, input.code);
     if (isGlobalRealm()) {
       const userId = await this.binding().linkedUser(config.appId, identity.openId, input.consentVersion, input.locale);
-      if (userId) return { ...await this.auth.issueMallSession(userId), requiresMobileBinding: false as const, requiresAccountBinding: false as const, returnTo: state.returnTo };
+      if (userId) return this.binding().session(userId, state.returnTo, config.appId);
     }
     const linked = isGlobalRealm() ? null : await this.prisma.wechatOfficialIdentity.findUnique({
       where: { appId_openId: { appId: config.appId, openId: identity.openId } }, include: { user: true },
@@ -126,7 +129,7 @@ export class WechatH5AuthService {
       returnTo: state.returnTo, referralCode: state.referralCode,
       expiresAt: new Date(Date.now() + lifetimeSeconds * 1000),
     } });
-    return { requiresMobileBinding: true as const, ...(isGlobalRealm() ? { requiresAccountBinding: true as const } : {}), bindTicket, expiresIn: lifetimeSeconds, returnTo: state.returnTo };
+    return { requiresMobileBinding: true as const, ...(isGlobalRealm() ? { requiresAccountBinding: true as const, requiresPhoneBinding: true as const } : {}), bindTicket, expiresIn: lifetimeSeconds, returnTo: state.returnTo };
   }
 
   async bindMobile(input: { bindTicket: string; mobile: string; code: string; consentVersion: string }) {
@@ -191,6 +194,8 @@ export class WechatH5AuthService {
   async bindGlobalAccount(input: unknown) { requireGlobalWechatH5(); return this.binding().bindAccount((await this.configured()).appId, input); }
   async requestGlobalBindingCode(input: unknown) { requireGlobalWechatH5(); return this.binding().requestCode((await this.configured()).appId, input); }
   async bindGlobalCode(input: unknown) { requireGlobalWechatH5(); return this.binding().bindCode((await this.configured()).appId, input); }
+  async requestGlobalPhoneCode(input: unknown) { requireGlobalWechatH5(); return this.binding().requestPhoneCode((await this.configured()).appId, input); }
+  async bindGlobalPhone(input: unknown) { requireGlobalWechatH5(); return this.binding().bindPhone((await this.configured()).appId, input); }
   private binding() { if (!this.globalBinding) throw unavailable(); return this.globalBinding; }
 
   private async exchange(config: OfficialConfig, code: string) {

@@ -31,6 +31,7 @@ import {
 } from "./wechat-app-auth.service";
 import { authAudience, authIssuer, isGlobalRealm } from "../common/deployment-realm";
 import { globalError, globalLocale, internationalPhone, maskedIdentifier, normalizedEmail } from "./global-identity";
+import { GLOBAL_WECHAT_CALLBACK_PATH, H5_PHONE_TEST_SESSION_PREFIX, isH5PhoneTestSession, requireGlobalWechatPhoneTest } from "./global-wechat-policy";
 
 const accessLifetimeSeconds = 15 * 60;
 const refreshLifetimeMs = 30 * 24 * 60 * 60 * 1000;
@@ -137,6 +138,16 @@ export class AuthService {
       where: { refreshTokenHash: tokenHash },
       include: { user: true },
     });
+    if (session && isH5PhoneTestSession(session.accessJti)) {
+      if (!requireVerifiedMall) throw globalError(401, "phone_test_scope", "This temporary session is only valid in the H5 account.");
+      const appId = await this.phoneTestAppId();
+      if (session.revokedAt || session.expiresAt <= new Date() || session.user.status !== UserStatus.ACTIVE ||
+          !await this.prisma.wechatOfficialIdentity.findUnique({ where: { userId_appId: { userId: session.userId, appId } } })) throw new UnauthorizedException("登录已失效，请重新登录");
+      const replacement = randomToken(), accessJti = H5_PHONE_TEST_SESSION_PREFIX + randomUUID();
+      const rotated = await this.prisma.userSession.updateMany({ where: { id: session.id, accessJti: session.accessJti, refreshTokenHash: tokenHash, revokedAt: null, expiresAt: { gt: new Date() }, user: { status: UserStatus.ACTIVE, wechatOfficialIdentities: { some: { appId } } } }, data: { accessJti, refreshTokenHash: this.refreshHash(replacement), lastUsedAt: new Date() } });
+      if (rotated.count !== 1) throw new UnauthorizedException("登录已失效，请重新登录");
+      return this.sessionContract(session.userId, session.id, accessJti, replacement);
+    }
     if (requireVerifiedMall && session && !(session.user.emailVerifiedAt || session.user.mobileVerifiedAt)) {
       throw globalError(403, "account_verification_required", "Verify your email address or international phone before using the H5 account.");
     }
@@ -179,7 +190,39 @@ export class AuthService {
 
   async refreshForMall(refreshToken: string) {
     const session = await this.refresh(refreshToken, isGlobalRealm());
-    return this.mallSession(session, session.member.mobileMasked ?? null);
+    const result = this.mallSession(session, session.member.mobileMasked ?? null);
+    return (session as SessionContract & { phoneTestMode?: boolean }).phoneTestMode
+      ? { ...result, user: { ...result.user, phoneTestMode: true, phoneVerified: false, phoneVerificationStatus: "pending" } } : result;
+  }
+
+  async phoneTestAppId() {
+    requireGlobalWechatPhoneTest();
+    const config = await this.prisma.integrationConfig.findUnique({ where: { key: "wechat_official" } });
+    const secret = await this.integrationSecrets.resolve("wechat_official", { appId: "WECHAT_OFFICIAL_APP_ID", appSecret: "WECHAT_OFFICIAL_APP_SECRET" });
+    const publicConfig = safeJsonObject(config?.publicConfig), appId = (secret.appId ?? String(publicConfig.appId ?? "")).trim();
+    try {
+      const callback = new URL(String(publicConfig.redirectUri ?? env("WECHAT_OFFICIAL_REDIRECT_URI", "")));
+      if (config?.state !== IntegrationState.CONFIGURED || !/^wx[A-Za-z0-9]{8,64}$/.test(appId) || (secret.appSecret ?? "").length < 16 ||
+          callback.origin !== new URL(env("COMMERCE_STOREFRONT_URL", "")).origin || callback.protocol !== "https:" || callback.pathname !== GLOBAL_WECHAT_CALLBACK_PATH || callback.username || callback.password || callback.hash || callback.search) throw new Error("configuration");
+    } catch { throw globalError(503, "wechat_h5_unavailable", "WeChat official-account sign-in is unavailable."); }
+    return appId;
+  }
+
+  async issuePhoneTestMallSession(userId: string) {
+    const appId = await this.phoneTestAppId();
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (user.status !== UserStatus.ACTIVE || !await this.prisma.wechatOfficialIdentity.findUnique({ where: { userId_appId: { userId, appId } } })) throw new UnauthorizedException("登录已失效，请重新登录");
+    const id = randomUUID(), accessJti = H5_PHONE_TEST_SESSION_PREFIX + randomUUID(), refreshToken = randomToken();
+    await this.prisma.userSession.create({ data: { id, userId, accessJti, refreshTokenHash: this.refreshHash(refreshToken), expiresAt: new Date(Date.now() + 86_400_000) } });
+    const result = this.mallSession(await this.sessionContract(userId, id, accessJti, refreshToken), user.mobile);
+    return { ...result, user: { ...result.user, phoneTestMode: true, phoneVerified: false, phoneVerificationStatus: "pending" } };
+  }
+
+  async mallAccount(userId: string, sessionId: string) {
+    if (!isGlobalRealm()) throw globalError(404, "not_found", "This feature is unavailable.");
+    const [user, session] = await Promise.all([this.prisma.user.findUniqueOrThrow({ where: { id: userId } }), this.prisma.userSession.findUniqueOrThrow({ where: { id: sessionId } })]);
+    const result = this.mallSession({ member: this.toProfile(user) } as SessionContract, user.mobile).user;
+    return { ...result, phoneTestMode: isH5PhoneTestSession(session.accessJti), phoneVerified: Boolean(user.mobileVerifiedAt), phoneVerificationStatus: user.mobileVerifiedAt ? "verified" : "pending" };
   }
 
   async loginForMall(mobile: string, password: string, referralCode?: string) {
@@ -557,6 +600,7 @@ export class AuthService {
       refreshToken,
       expiresAt: expiresAt.toISOString(),
       member: this.toProfile(user),
+      ...(isH5PhoneTestSession(accessJti) ? { phoneTestMode: true } : {}),
     };
   }
 

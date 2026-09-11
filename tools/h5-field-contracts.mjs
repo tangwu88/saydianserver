@@ -81,7 +81,7 @@ h5FieldContracts["CommerceCompatibilityController.loginWechatH5"] = record(
   { code: "H5-CONTRACT-ONE-TIME-CODE", state: oauthState, codeVerifier: verifier, consentVersion: "commerce-legal-v1" },
   { oneOf: [bindingPending, boundSession] },
   { requiresMobileBinding: true, bindTicket, expiresIn: 300, returnTo: "/pages/checkout/index" },
-  source.auth, "从回跳URL的search读取code/state。未绑定分支不含token/user；国际版返回requiresAccountBinding=true并接受已核验邮箱或国际手机号。协议过时409先重新阅读授权；state消费或换码失败需重新授权。回调URL和日志不得泄露code/state。");
+  source.auth, "从回跳URL的search读取code/state。global 未关联手机号（包括仅核验邮箱）返回requiresAccountBinding=true，不含token/user；先完成手机登记。正式已验证手机号可登录；临时登记仅在专用开关开启且原微信身份有效时续登受限会话。协议过时409先重新阅读授权；state消费或换码失败需重新授权。回调URL和日志不得泄露code/state。");
 h5FieldContracts["CommerceCompatibilityController.bindWechatH5Mobile"] = record(
   obj({ bindTicket: hex, mobile, code: otp, consentVersion: consent }),
   { bindTicket, mobile: "19900000001", code: "123456", consentVersion: "commerce-legal-v1" },
@@ -92,8 +92,8 @@ const globalBoundExample = { ...sessionExample, user: { ...sessionExample.user, 
 h5FieldContracts["CommerceCompatibilityController.bindWechatH5Account"] = record(
   obj({ bindTicket: hex, identifier: globalIdentifier, password: globalPassword, consentVersion: consent, locale: globalLocale }, ["bindTicket", "identifier", "password", "consentVersion"]),
   { bindTicket, identifier: "h5-contract@example.invalid", password: "H5-CONTRACT-Test-Password-Only", consentVersion: "global-contract-reviewed-v1", locale: "en" },
-  boundSession, globalBoundExample, source.auth,
-  "仅global。必须证明既有账号原密码且该账号有真实emailVerifiedAt/mobileVerifiedAt；临时免验证账号403，不自动标为已验证。票据与appId/OpenID匹配、一次性消费。未配置503、身份冲突409、过期401，不改密码或合并资产。");
+  { oneOf: [boundSession, bindingPending] }, globalBoundExample, source.auth,
+  "仅global。必须证明既有账号原密码且该账号有真实emailVerifiedAt/mobileVerifiedAt；临时免验证账号403，不自动标为已验证。仅验证邮箱时返回新手机登记票据而非会话；已验证手机才返回正式会话。票据与appId/OpenID匹配、一次性消费。未配置503、身份冲突409、过期401，不改密码或合并资产。");
 h5FieldContracts["CommerceCompatibilityController.requestWechatH5BindingCode"] = record(
   obj({ bindTicket: hex, channel: { enum: ["email", "sms"] }, identifier: globalIdentifier, locale: globalLocale }, ["bindTicket", "channel", "identifier"]),
   { bindTicket, channel: "email", identifier: "h5-contract@example.invalid", locale: "en" },
@@ -103,10 +103,28 @@ h5FieldContracts["CommerceCompatibilityController.requestWechatH5BindingCode"] =
 h5FieldContracts["CommerceCompatibilityController.bindWechatH5Code"] = record(
   obj({ bindTicket: hex, challengeId: id, code: otp, password: globalPassword, consentVersion: consent, locale: globalLocale, nickname: { ...text, maxLength: 40 } }, ["bindTicket", "challengeId", "code", "password", "consentVersion"]),
   { bindTicket, challengeId: sid(80), code: "000000", password: "H5-CONTRACT-Test-Password-Only", consentVersion: "global-contract-reviewed-v1", locale: "en", nickname: "H5合成会员" },
-  boundSession, globalBoundExample, source.auth,
-  "仅global。新账号设置密码；已有账号需原密码+OTP双证明，不重设密码。首次核验会撤销旧会话防预占账号提权；只标记本次真实验证的联系方式。票据与OTP/用户/身份/同意同事务消费，错误码最多5次；过期/重放400或401、冲突409、服务关闭503。");
+  { oneOf: [boundSession, bindingPending] }, globalBoundExample, source.auth,
+  "仅global。新账号设置密码；已有账号需原密码+OTP双证明，不重设密码。首次核验会撤销旧会话防预占账号提权；只标记本次真实验证的联系方式。仅验证邮箱时返回新手机登记票据而非会话。票据与OTP/用户/身份/同意同事务消费，错误码最多5次；过期/重放400或401、冲突409、服务关闭503。");
 
 const availability = obj({ enabled: bool, reason: text }, ["enabled"]);
+const phoneMember = obj({ id, nickname: text, memberNo: { anyOf: [positive, { type: "string", pattern: "^[0-9]+$" }] },
+  phoneMasked: nullable(text), phoneVerified: bool, phoneTestMode: bool, phoneVerificationStatus: text }, ["id", "nickname", "phoneVerified", "phoneTestMode", "phoneVerificationStatus"]);
+const phoneMemberExample = { id: sid(81), nickname: "H5-CONTRACT合成会员", memberNo: 81,
+  phoneMasked: "+16***0101", phoneVerified: false, phoneTestMode: true, phoneVerificationStatus: "pending" };
+h5FieldContracts["CommerceCompatibilityController.requestWechatH5PhoneCode"] = record(
+  obj({ bindTicket: hex, identifier: { type: "string", pattern: "^\\+[1-9][0-9]{6,14}$" }, locale: globalLocale }, ["bindTicket", "identifier"]),
+  { bindTicket, identifier: "+16505550101", locale: "en" },
+  obj({ challengeId: id, expiresIn: positive, retryAfter: positive, maskedIdentifier: text, mode: { enum: ["test", "sms"] }, sent: bool, verificationRequired: bool }),
+  { challengeId: sid(82), expiresIn: 300, retryAfter: 60, maskedIdentifier: "+16***0101", mode: "test", sent: false, verificationRequired: false }, source.auth,
+  "仅global。先真实微信授权取得一次性bindTicket；test需GLOBAL_WECHAT_PHONE_TEST_ENABLED=true且不发送短信，不写真实送达/验证标记。test用途与真实OTP隔离，不能在App注册/重置/原bind-code接口消费。能力关闭拒绝；限频及票据有效期照常执行。" );
+h5FieldContracts["CommerceCompatibilityController.bindWechatH5Phone"] = record(
+  obj({ bindTicket: hex, challengeId: id, code: otp, consentVersion: consent, locale: globalLocale, password: globalPassword }, ["bindTicket", "challengeId", "code", "consentVersion"]),
+  { bindTicket, challengeId: sid(82), code: "654321", consentVersion: "global-contract-reviewed-v1", locale: "en" },
+  obj({ ...boundSession.properties, user: phoneMember }, [...boundSession.required, "requiresAccountBinding"]),
+  { ...globalBoundExample, user: phoneMemberExample }, source.auth,
+  "临时mode=test接受任意6位数字，但只登记真实微信当前主体的未验证手机号，或以尚未占用手机号新建无密码账号；任何其他账号号码冲突409，不合并、不改密码、不设mobileVerifiedAt。test会话的来源持久保存，不能用于App/交易/健康/后台；只允许本H5账号读取、退出与受控刷新，关闭开关后access和refresh立即被拒绝。正式sms模式须真实OTP；已有未验证账号须额外原密码证明，不擅自继承资产。" );
+h5FieldContracts["CommerceCompatibilityController.wechatH5Account"] = record(null, null, phoneMember, phoneMemberExample, source.auth,
+  "仅global且需当前会员令牌。返回安全会员字段及真实手机核验状态，前端不能将phoneTestMode或填过手机号当成已验证；数据版本来自服务端，过期/撤销/临时开关关闭返回401。" );
 const paymentChannels = ["wechat_jsapi", "wechat_mini", "wechat_h5", "wechat_native", "alipay_wap", "alipay_page"];
 const capabilitiesSchema = obj({
   login: obj({ password: availability, sms: availability, wechatH5: availability }),
@@ -123,7 +141,8 @@ const internationalCapabilitiesSchema = obj({
   })),
   login: obj({ password: availability, sms: availability, wechatH5: availability,
     wechatBinding: obj({ bindExistingAvailable: bool, emailOtpAvailable: bool, smsOtpAvailable: bool,
-      password: availability, email: availability, sms: availability, smsCountries: array(text), verifiedAccountRequired: { const: true } }) }),
+      password: availability, email: availability, sms: availability, smsCountries: array(text), verifiedAccountRequired: { const: true },
+      phoneCodeMode: { enum: ["test", "sms", "unavailable"] }, phoneBindingAvailable: bool, verificationRequired: bool }) }),
   payments: array(obj({})), checkout: obj({ enabled: { const: false }, points: obj({ supported: { const: false }, requiresVerifiedAccount: { const: true } }) }),
   maintenance: obj({ readOnly: bool }), demo: { const: false },
 });

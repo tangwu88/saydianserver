@@ -11,4 +11,4 @@ export const mallStorage = {
   set: (key: string, value: unknown) => uni.setStorageSync(mallStorageKey(key), value),
   remove: (key: string) => uni.removeStorageSync(mallStorageKey(key)),
 };
-export const globalCommerceNotice = "国际版独立服务：可浏览商品及登录国际账号；购物、支付、员工推广和小程序暂未开放。";
+export const globalCommerceNotice = "此功能暂未开放，请稍后再试。";

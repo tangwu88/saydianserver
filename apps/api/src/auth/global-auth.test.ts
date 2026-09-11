@@ -197,6 +197,12 @@ describe("global registration challenges", () => {
     const session = await h.service.resetPassword({ challengeId: ch.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-new-password!" });
     expect(h.users().get(session.member.id).passwordHash).not.toBe("old"); expect(h.tx.userSession.updateMany).toHaveBeenCalledWith({ where: { userId: "member", revokedAt: null }, data: { revokedAt: expect.any(Date) } });
   });
+  it("never uses a merely registered phone as a password-reset credential", async () => {
+    const h = harness(); h.users().set("member", { id: "member", mobile: "+12025550123", mobileVerifiedAt: null, status: "ACTIVE", passwordHash: null });
+    const ch = await h.service.requestCode({ channel: "sms", identifier: "+12025550123", purpose: "reset_password" });
+    await expect(h.service.resetPassword({ challengeId: ch.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-new-password!" })).rejects.toMatchObject({ status: 403 });
+    expect(h.users().get("member").passwordHash).toBeNull(); expect(h.records().get(ch.challengeId).consumedAt).toBeNull(); expect(h.sessions).toHaveLength(0);
+  });
   it("does not revive a disabled account through reset", async () => {
     const h = harness(); h.users().set("member", { id: "member", email: "disabled@example.com", status: "DISABLED" });
     const ch = await h.service.requestCode({ channel: "email", identifier: "disabled@example.com", purpose: "reset_password" });

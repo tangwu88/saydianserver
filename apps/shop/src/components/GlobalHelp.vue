@@ -1,8 +1,8 @@
-<template><DesktopHeader /><view class="page"><view class="container card global-help"><h1>国际版协议与服务</h1><p>{{ globalCommerceNotice }}</p><p>本入口不展示国内版订单、积分或客服配置。国际交易与员工服务尚未开放。</p><view class="tabs"><button :class="{active:section==='userAgreement'}" @click="section='userAgreement'">用户协议</button><button :class="{active:section==='privacyPolicy'}" @click="section='privacyPolicy'">隐私政策</button></view><text v-if="loading">正在读取已审核的国际版协议…</text><view v-else-if="error" class="error-state">{{ error }}<button class="outline-btn" @click="load">重新加载</button></view><template v-else-if="document"><h2>{{ section==='userAgreement'?'用户协议':'隐私政策' }}</h2><text class="small">版本 {{ document.version }} · {{ document.locale }}</text><text class="legal-text">{{ legalPlainText(document.contentHtml) }}</text></template></view></view></template>
+<template><DesktopHeader /><view class="saydian-app-surface"><view class="help-content"><view class="help-top"><button class="text-button" @click="back">‹ 返回</button><h1>协议与隐私</h1></view><view class="tabs"><button :class="{active:section==='userAgreement'}" @click="section='userAgreement'">用户协议</button><button :class="{active:section==='privacyPolicy'}" @click="section='privacyPolicy'">隐私政策</button></view><text v-if="loading" class="muted">正在加载…</text><view v-else-if="error" class="error-state">{{ error }}<button class="outline-btn" @click="load">重试</button></view><view v-else-if="document" class="app-panel"><h2>{{ section==='userAgreement'?'用户协议':'隐私政策' }}</h2><text class="muted version">版本 {{ document.version }}</text><text class="legal-text">{{ legalPlainText(document.contentHtml) }}</text></view></view></view></template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { api } from "../api";
-import { globalCommerceNotice } from "../realm";
+import { authErrorMessage, authUiError } from "../friendly-auth";
 import { legalPlainText, loadGlobalLegal, type GlobalLegalDocument } from "../global-legal";
 import DesktopHeader from "./DesktopHeader.vue";
 const props = defineProps<{ initialSection?: string }>();
@@ -17,12 +17,14 @@ async function load() {
   loading.value = true; error.value = "";
   try {
     const caps: any = await api("/storefront/capabilities?locale=en");
-    if (caps.realm !== "global" || !caps.consentVersion || !caps.legal?.userAgreement || !caps.legal?.privacyPolicy) throw new Error("国际版已审核协议尚未发布，请稍后再试");
+    if (caps.realm !== "global" || !caps.consentVersion || !caps.legal?.userAgreement || !caps.legal?.privacyPolicy) throw authUiError("协议暂时无法查看，请稍后重试。");
     const [terms, privacy] = await Promise.all([loadGlobalLegal(caps.legal.userAgreement), loadGlobalLegal(caps.legal.privacyPolicy)]);
-    if (terms.version !== caps.consentVersion || privacy.version !== terms.version || privacy.locale !== terms.locale) throw new Error("协议版本不一致，暂不能展示");
+    if (terms.version !== caps.consentVersion || privacy.version !== terms.version || privacy.locale !== terms.locale) throw authUiError("协议已更新，请刷新后查看。");
     if (active) rows.value = { userAgreement: terms, privacyPolicy: privacy };
-  } catch (cause) { if (active) { rows.value = {}; error.value = cause instanceof Error ? cause.message : "读取失败，请重试"; } }
+  } catch (cause) { if (active) { rows.value = {}; error.value = authErrorMessage(cause, "协议暂时无法查看，请稍后重试。"); } }
   finally { if (active) loading.value = false; }
 }
+function back() { const pages = getCurrentPages(); if (pages.length > 1) uni.navigateBack(); else uni.switchTab({ url: "/pages/profile/index" }); }
 </script>
-<style scoped>.global-help{max-width:900px;box-sizing:border-box;overflow-wrap:anywhere}.global-help h1{font-size:24px}.global-help h2{font-size:20px}.global-help p{font-size:14px;line-height:1.8;color:#606b78}.tabs{display:flex;gap:12px;margin:24px 0}.tabs button{font-size:14px;margin:0}.tabs .active{color:#005bad;background:#eaf2fc}.legal-text{display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.9;margin:20px 0}</style>
+<style lang="scss">@import "../global-ui.scss";</style>
+<style scoped>.help-content{max-width:800px;margin:0 auto;overflow-wrap:anywhere}.help-top{display:flex;align-items:center;gap:18px;margin-bottom:20px}.help-top h1{font-size:20px;margin:0;flex:1}.help-top button{margin:0}.tabs{display:flex;gap:10px;margin-bottom:20px}.tabs button{font-size:14px;padding:10px 16px;line-height:1.5;margin:0;border-radius:10px;border:1px solid #dde3ec;color:#171b2b;background:white}.tabs .active{color:#980018;background:#ffe8ec;border-color:#ffd0d9}.version{margin-top:8px}.legal-text{display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.9;margin-top:20px}</style>

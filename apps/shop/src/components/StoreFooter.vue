@@ -2,12 +2,12 @@
   <view class="store-footer">
     <view class="footer-inner">
       <view>
-        <text class="footer-brand">SAYDIAN 赛电</text>
-        <text class="footer-copy">© 2026 SAYDIAN 赛电商城 版权所有</text>
+        <text class="footer-brand">{{ isGlobalMall ? 'Saydian' : 'SAYDIAN 赛电' }}</text>
+        <text class="footer-copy">{{ isGlobalMall ? '© 2026 Saydian' : '© 2026 SAYDIAN 赛电商城 版权所有' }}</text>
       </view>
       <view class="footer-links">
         <text @click="open('/pages/help/index')">帮助中心</text>
-        <text @click="open('/pages/help/index?section=service')">售后服务</text>
+        <text v-if="!isGlobalMall" @click="open('/pages/help/index?section=service')">售后服务</text>
         <text @click="open('/pages/help/index?section=privacy')">隐私政策</text>
         <text @click="open('/pages/help/index?section=terms')">用户协议</text>
       </view>
@@ -16,6 +16,7 @@
 </template>
 
 <script setup lang="ts">
+import { isGlobalMall } from "../realm";
 function open(url: string) {
   uni.navigateTo({ url });
 }

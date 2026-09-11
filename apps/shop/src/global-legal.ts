@@ -8,7 +8,7 @@ export async function loadGlobalLegal(reference: any): Promise<GlobalLegalDocume
       const envelope = response.data as any;
       const document = envelope?.data;
       if (response.statusCode !== 200 || envelope?.code !== 200 || !document?.contentHtml || document.version !== reference.version || document.locale !== reference.locale) {
-        reject(new Error("国际版协议未发布、版本不一致或读取失败，请重试")); return;
+        reject(new Error("协议暂时无法查看，请稍后重试。")); return;
       }
       resolve(document);
     }, fail: () => reject(new Error("协议读取失败，请检查网络后重试")),

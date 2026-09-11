@@ -13,6 +13,7 @@ export function resolveMallConfig(env: Record<string, unknown>, miniProgram = fa
 export function realmKey(key: string, realm: MallRealm) { return realm === "global" ? "saydian-global-mall:" + key : key; }
 export function globalPageAllowed(route: string) { return /^\/pages\/(home|category|search|product|profile|login|help)\/index(?:\?[^#]*)?$/.test(route) && !/[\\\r\n]/.test(route); }
 export function globalApiAllowed(path: string, method = "GET") {
-  if (/^\/auth\/(password\/login|refresh|wechat\/h5\/(authorize-url|login|bind-account|binding-code|bind-code))$/.test(path)) return method === "POST";
+  if (/^\/auth\/(password\/login|refresh|wechat\/h5\/(authorize-url|login|bind-account|binding-code|bind-code|phone-code|bind-phone))$/.test(path)) return method === "POST";
+  if (path === "/auth/wechat/h5/account") return method === "GET";
   return method === "GET" && /^\/storefront\/(bootstrap|capabilities|categories|products(?:\/[^/?#]+)?)(?:\?[^#]*)?$/.test(path);
 }
