@@ -45,18 +45,25 @@ function fixture(options = {}) {
     const uni = {
       getStorageSync: key => clone(storage.get(key)), setStorageSync: (key, value) => storage.set(key, clone(value)),
       removeStorageSync: key => storage.delete(key), redirectTo: options => redirects.push(options.url),
+      getSystemInfoSync: () => ({ windowWidth: 390 }),
     };
-    const result = evaluate(script, { uni }, {
+    const result = evaluate(script, { uni, setInterval: () => 1, clearInterval() {}, setTimeout: callback => { callback(); return 1; } }, {
       "../../realm": realmTestModules(uni, { repo }).realm,
       "vue": { ref: value => ({ value }), computed: callback => ({ get value() { return callback(); } }) },
-      "@dcloudio/uni-app": { onShow() {} },
-      "../../api": { api, withMallCheckoutLock: callback => { options.beforeLock?.(storage); return callback(); }, mallSessionStamp: () => storage.get("saidian-user")?.id, money: value => String(value), requireLogin: () => true, toast: error => errors.push(String(error)) },
+      "@dcloudio/uni-app": { onShow() {}, onHide() {}, onUnload() {} },
+      "../../api": { api, withMallCheckoutLock: callback => { options.beforeLock?.(storage); return callback(); }, mallSessionStamp: () => storage.get("saidian-user")?.id, money: value => String(value), requireLogin: () => true, toast: error => errors.push(String(error)), clearCheckoutState() {} },
       "../../commerce-model": model,
-      "../../payments": { paymentEnvironment: () => "wechat" },
+      "../../payments": {
+        paymentEnvironment: () => "wechat",
+        createOrderPayment: async orderId => ({ id: `PAY-${orderId}`, status: "pending", invoke: {} }),
+        invokePayment: async () => ({}),
+        confirmPayment: async () => ({ paid: false }),
+      },
     }).testHandles;
     result.items.value = [{ skuId: "H5-TEST-SKU", quantity: 1 }];
     result.address.value = { id: "H5-TEST-ADDRESS" };
     result.quote.value = clone(options.displayedQuote || quoted.quote);
+    result.capabilities.value = { checkout: { enabled: true }, maintenance: { readOnly: false }, payments: [{ channel: "wechat_jsapi", enabled: true }] };
     return result;
   }
   function switchAccount() {

@@ -81,6 +81,7 @@ function environment(options = {}) {
       navigateTo: navigation => { navigations.push(navigation.url); navigation.complete?.(); },
       redirectTo: navigation => navigations.push(navigation.url),
       showToast() {},
+      getSystemInfoSync: () => ({ windowWidth: 390 }),
     };
     current.window = window; current.document = document; current.uni = uni;
     current.emit = (name, event = {}) => (listeners.get(name) || []).forEach(callback => callback(event));
@@ -222,17 +223,22 @@ test("a denied Web Lock never executes the protected operation or rewrites stora
   assert.deepEqual(clone([...h.storage]), before);
 });
 function checkoutFixture(options = {}) {
-  const h = environment(options), quotes = [], creates = [], orderIds = new Map(), errors = [];
+  const h = environment(options), quotes = [], creates = [], orderIds = new Map(), errors = [], payments = [];
   const script = source("apps/shop/src/pages/checkout/index.vue").match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1] +
-    "\nexport const handles={submit,items,address,quote,uncertain,submitting,error};";
+    "\nexport const handles={submit,items,address,quote,uncertain,submitting,error,capabilities};";
   function page() {
     const doc = h.documentInstance();
-    const handles = evaluate(script, { uni: doc.uni }, {
+    const handles = evaluate(script, { uni: doc.uni, setInterval: () => 1, clearInterval() {}, setTimeout: callback => { callback(); return 1; } }, {
       "../../realm": doc.realm,
       "vue": { ref: value => ({ value }), computed: callback => ({ get value() { return callback(); } }) },
-      "@dcloudio/uni-app": { onShow() {} },
+      "@dcloudio/uni-app": { onShow() {}, onHide() {}, onUnload() {} },
       "../../commerce-model": model,
-      "../../payments": { paymentEnvironment: () => "wechat" },
+      "../../payments": {
+        paymentEnvironment: () => "wechat",
+        createOrderPayment: async orderId => { payments.push(orderId); return { id: `PAY-${orderId}`, status: "pending", invoke: {} }; },
+        invokePayment: async () => ({}),
+        confirmPayment: async () => ({ paid: false }),
+      },
       "../../api": { ...doc.api, requireLogin: () => true, toast: error => errors.push(String(error)),
         api: async (path, request) => {
           if (path.endsWith("/preview")) return new Promise(resolve => quotes.push({ doc, resolve }));
@@ -245,9 +251,10 @@ function checkoutFixture(options = {}) {
     }).handles;
     handles.items.value = [{ skuId: "H5-UNIT-SKU", quantity: 1 }];
     handles.address.value = { id: "H5-UNIT-ADDRESS" }; handles.quote.value = { payableCents: 100 };
+    handles.capabilities.value = { checkout: { enabled: true }, maintenance: { readOnly: false }, payments: [{ channel: "wechat_jsapi", enabled: true }] };
     return { ...doc, ...handles };
   }
-  return { ...h, page, quotes, creates, orderIds, errors, quote(index = 0) { quotes[index].resolve({ quote: { fingerprint: "q1:" + "a".repeat(64), payableCents: 100, lines: [] } }); } };
+  return { ...h, page, quotes, creates, orderIds, errors, payments, quote(index = 0) { quotes[index].resolve({ quote: { fingerprint: "q1:" + "a".repeat(64), payableCents: 100, lines: [] } }); } };
 }
 test("cross-document checkout lock starts before quoting and preserves one key across an unknown result and recovery", async () => {
   const h = checkoutFixture(), a = h.page(), b = h.page();
@@ -270,7 +277,7 @@ test("a second document reuses the completed order instead of creating a new ide
   const h = checkoutFixture(), a = h.page(), b = h.page();
   const first = a.submit(); await tick(); h.quote(); await tick(); h.creates[0].resolve(); await first;
   await b.submit(); assert.equal(h.quotes.length, 1); assert.equal(h.creates.length, 1);
-  assert.ok(b.navigations.some(url => url.endsWith("H5-UNIT-ORDER-1")));
+  assert.deepEqual(h.payments, ["H5-UNIT-ORDER-1", "H5-UNIT-ORDER-1"]);
 });
 test("switch-away-and-back while checkout awaits a quote cannot submit stale data under the same member ID", async () => {
   const h = checkoutFixture(), a = h.page(), b = h.page();
