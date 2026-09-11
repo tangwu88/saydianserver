@@ -259,6 +259,46 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.updateMemberVerification",
+      "method": "PATCH",
+      "path": "/api/saydian-app/admin/v1/members/:id/verification",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "超级管理员人工确认联系方式",
+      "request": "id=会员UUID；{channel:mobile|email,verified:boolean,expectedUpdatedAt}；只调整已有联系方式的验证状态，不修改号码或邮箱",
+      "response": "返回脱敏联系方式与手机/邮箱独立验证状态；并发变化409；写入专门审计。人工确认后会员需重新登录，临时测试会话不会原地提权",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.healthSummary",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/members/:id/health-summary",

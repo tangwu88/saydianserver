@@ -40,6 +40,34 @@ export class AdminService {
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
 
+  private memberVerificationFields(item: {
+    id: string;
+    compatibilityId: number;
+    mobile: string | null;
+    mobileVerifiedAt: Date | null;
+    email: string | null;
+    emailVerifiedAt: Date | null;
+    updatedAt: Date;
+  }) {
+    const mobileVerified = Boolean(item.mobile && item.mobileVerifiedAt);
+    const emailVerified = Boolean(item.email && item.emailVerifiedAt);
+    return {
+      id: item.id,
+      memberNo: String(item.compatibilityId),
+      mobileMasked: isGlobalRealm() && item.mobile ? maskedIdentifier("sms", item.mobile) : maskMobile(item.mobile),
+      mobileVerified,
+      mobileVerificationStatus: !item.mobile ? "NOT_PROVIDED" : mobileVerified ? "VERIFIED" : "UNVERIFIED",
+      mobileVerifiedAt: mobileVerified ? item.mobileVerifiedAt!.toISOString() : null,
+      ...(isGlobalRealm() ? {
+        emailMasked: item.email ? maskedIdentifier("email", item.email) : null,
+        emailVerified,
+        emailVerificationStatus: !item.email ? "NOT_PROVIDED" : emailVerified ? "VERIFIED" : "UNVERIFIED",
+        emailVerifiedAt: emailVerified ? item.emailVerifiedAt!.toISOString() : null,
+      } : {}),
+      verificationVersion: item.updatedAt.toISOString(),
+    };
+  }
+
   async dashboard() {
     const [
       members,
@@ -113,11 +141,8 @@ export class AdminService {
     ]);
     return {
       items: items.map((item) => ({
-        id: item.id,
-        memberNo: String(item.compatibilityId),
+        ...this.memberVerificationFields(item),
         legacyMemberId: item.legacyMemberId,
-        mobileMasked: isGlobalRealm() && item.mobile ? maskedIdentifier("sms", item.mobile) : maskMobile(item.mobile),
-        ...(isGlobalRealm() ? { emailMasked: item.email ? maskedIdentifier("email", item.email) : null } : {}),
         nickname: item.nickname,
         avatarUrl: item.avatarUrl,
         status: item.status,
@@ -129,6 +154,76 @@ export class AdminService {
       page,
       pageSize,
     };
+  }
+
+  async updateMemberVerification(
+    current: { id: string; role: string; roles?: string[] },
+    userId: string,
+    requestId: string,
+    input: Record<string, unknown>,
+  ) {
+    const roles = current.roles?.length ? current.roles : [current.role];
+    if (!roles.includes(AdminRole.SUPER_ADMIN)) {
+      throw new ForbiddenException("只有超级管理员可以人工调整联系方式验证状态");
+    }
+    if (!isGlobalRealm()) {
+      throw new ForbiddenException("人工联系方式确认仅用于国际版新会员系统");
+    }
+    const channel = String(input.channel ?? "").trim();
+    if (channel !== "mobile" && channel !== "email") {
+      throw new BadRequestException("验证类型必须是手机号或邮箱");
+    }
+    if (typeof input.verified !== "boolean") {
+      throw new BadRequestException("请明确选择确认或撤销确认");
+    }
+    const expectedUpdatedAt = new Date(String(input.expectedUpdatedAt ?? ""));
+    if (Number.isNaN(expectedUpdatedAt.getTime())) {
+      throw new BadRequestException("会员数据版本无效，请刷新后重试");
+    }
+    const verified = input.verified;
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true, compatibilityId: true, mobile: true, mobileVerifiedAt: true,
+          email: true, emailVerifiedAt: true, updatedAt: true,
+        },
+      });
+      if (!user) throw new NotFoundException("会员不存在");
+      if (user.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+        throw new ConflictException("会员信息已发生变化，请刷新后重试");
+      }
+      const contact = channel === "mobile" ? user.mobile : user.email;
+      if (!contact) throw new BadRequestException(channel === "mobile" ? "该会员尚未填写手机号" : "该会员尚未填写邮箱");
+      const verifiedField = channel === "mobile" ? "mobileVerifiedAt" : "emailVerifiedAt";
+      const previouslyVerifiedAt = channel === "mobile" ? user.mobileVerifiedAt : user.emailVerifiedAt;
+      if (Boolean(previouslyVerifiedAt) === verified) return this.memberVerificationFields(user);
+
+      const changedAt = new Date();
+      const nextVerifiedAt = verified ? changedAt : null;
+      const result = await tx.user.updateMany({
+        where: { id: userId, updatedAt: expectedUpdatedAt },
+        data: { [verifiedField]: nextVerifiedAt, updatedAt: changedAt },
+      });
+      if (result.count !== 1) throw new ConflictException("会员信息已发生变化，请刷新后重试");
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: current.id,
+          action: "MANUAL_CONTACT_VERIFICATION_UPDATE",
+          entityType: "USER_CONTACT_VERIFICATION",
+          entityId: userId,
+          requestId,
+          beforeJson: { channel, verified: Boolean(previouslyVerifiedAt), verifiedAt: previouslyVerifiedAt?.toISOString() ?? null },
+          afterJson: { channel, verified, verifiedAt: nextVerifiedAt?.toISOString() ?? null, source: "SUPER_ADMIN_MANUAL" },
+        },
+      });
+      return this.memberVerificationFields({
+        ...user,
+        [verifiedField]: nextVerifiedAt,
+        updatedAt: changedAt,
+      });
+    });
   }
 
   async healthSummary(userId: string) {

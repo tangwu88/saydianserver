@@ -6,7 +6,12 @@ import { canAdminResource } from "@saydian/app-contracts";
 import { createGlobalDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor } from "./global-download-setting";
 
 const envelope = (items: Record<string, unknown>[] = [], total = items.length) => ({ data: { data: { items, total, page: 1, pageSize: 30 } } });
-const member = { id: "internal-uuid", memberNo: "10001", emailMasked: "m***@example.invalid", nickname: "Test member", healthRecordCount: 0 };
+const member = {
+  id: "internal-uuid", memberNo: "10001", emailMasked: "m***@example.invalid", emailVerified: false,
+  emailVerificationStatus: "UNVERIFIED", mobileMasked: null, mobileVerified: false,
+  mobileVerificationStatus: "NOT_PROVIDED", verificationVersion: "2026-09-11T00:00:00.000Z",
+  nickname: "Test member", healthRecordCount: 0,
+};
 
 // Exercise the actual SFC logic with controlled network completion order.
 function harness(roles = ["SUPER_ADMIN"]) {
@@ -17,18 +22,19 @@ function harness(roles = ["SUPER_ADMIN"]) {
   const api = { get: vi.fn(async (..._args: any[]): Promise<any> => envelope()), patch: vi.fn(async () => ({})), post: vi.fn(async () => ({})) };
   const messages = { error: vi.fn(), success: vi.fn() };
   const prompt = vi.fn(async (..._args: any[]): Promise<any> => ({ value: "合成会员反馈核对" }));
+  const confirm = vi.fn(async (..._args: any[]): Promise<any> => "confirm");
   const route = reactive({ params: { resource: "members" } });
   const watch = vi.fn();
   const onBeforeUnmount = vi.fn();
   const deps = {
     computed, ref, watch, onBeforeUnmount, useRoute: () => route, api, canAdminResource,
-    getAdminRoles: () => roles, ElMessage: messages, ElMessageBox: { prompt },
+    getAdminRoles: () => roles, ElMessage: messages, ElMessageBox: { prompt, confirm },
     responseData: (response: any) => response.data.data,
     readableError: () => "网络不可用，请检查后重试",
     createGlobalDownloadDraft, downloadEditorToManifest: globalDownloadEditorToManifest, downloadManifestToEditor: globalDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle };")(...Object.values(deps));
-  return { ...instance, api, messages, prompt, route, watch, onBeforeUnmount };
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, updateMemberVerification, contactVerificationLabel, canManageMemberVerification, verificationBusy, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle };")(...Object.values(deps));
+  return { ...instance, api, messages, prompt, confirm, route, watch, onBeforeUnmount };
 }
 
 function deferred<T>() {
@@ -56,6 +62,26 @@ describe("international member admin list", () => {
     expect(h.render(h.rows.value[0].mobileMasked)).toBe("—");
     await h.changeCommercePage(2);
     expect(h.api.get.mock.calls[1][1].params).toEqual({ page: 2, pageSize: 30, search: "10001" });
+  });
+
+  it("shows real verification states and lets only a super administrator change them", async () => {
+    const h = harness(); const row = { ...member, mobileMasked: "+86***8888", mobileVerified: true, mobileVerificationStatus: "VERIFIED" };
+    expect(h.contactVerificationLabel(row, "email")).toBe("未验证");
+    expect(h.contactVerificationLabel(row, "mobile")).toBe("已验证");
+    h.api.patch.mockResolvedValueOnce({ data: { data: {
+      ...row, emailVerified: true, emailVerificationStatus: "VERIFIED",
+      emailVerifiedAt: "2026-09-11T01:00:00.000Z", verificationVersion: "2026-09-11T01:00:00.000Z",
+    } } });
+    await h.updateMemberVerification(row, "email", true);
+    expect(h.confirm).toHaveBeenCalledOnce();
+    expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/verification", {
+      channel: "email", verified: true, expectedUpdatedAt: "2026-09-11T00:00:00.000Z",
+    });
+    expect(row).toMatchObject({ emailVerified: true, emailVerificationStatus: "VERIFIED", verificationVersion: "2026-09-11T01:00:00.000Z" });
+    expect(h.messages.success).toHaveBeenCalledWith("邮箱验证状态已更新");
+
+    const readonly = harness(["APP_OPERATIONS"]); await readonly.updateMemberVerification({ ...member }, "email", true);
+    expect(readonly.api.patch).not.toHaveBeenCalled(); expect(readonly.confirm).not.toHaveBeenCalled();
   });
 
   it("does not let a slow previous search replace newer results", async () => {

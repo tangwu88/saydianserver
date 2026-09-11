@@ -8,9 +8,9 @@ afterEach(() => vi.unstubAllEnvs());
 const user = {
   id: "11111111-1111-4111-8111-111111111111", compatibilityId: 27,
   legacyMemberId: null, nickname: "Synthetic member", status: "ACTIVE",
-  mobile: null, email: "qa@example.invalid", locale: "en", avatarUrl: null,
+  mobile: null, mobileVerifiedAt: null, email: "qa@example.invalid", emailVerifiedAt: null, locale: "en", avatarUrl: null,
   gender: "UNSPECIFIED", birthday: null, heightCm: null, weightKg: null,
-  createdAt: new Date("2026-09-10T00:00:00Z"), _count: { healthRecords: 0, devices: 0 },
+  createdAt: new Date("2026-09-10T00:00:00Z"), updatedAt: new Date("2026-09-10T00:00:00Z"), _count: { healthRecords: 0, devices: 0 },
 };
 
 describe("member display numbers", () => {

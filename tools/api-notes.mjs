@@ -201,6 +201,7 @@ export const notes = {
   "AdminController.logout": entry("后台退出", undefined, "{loggedOut:true}"),
   "AdminController.dashboard": entry("运营概览", undefined, "会员/健康/关爱/预警/反馈/积压数量"),
   "AdminController.members": entry("会员查询", "search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库", "{items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限"),
+  "AdminController.updateMemberVerification": entry("超级管理员人工确认联系方式", "id=会员UUID；{channel:mobile|email,verified:boolean,expectedUpdatedAt}；只调整已有联系方式的验证状态，不修改号码或邮箱", "返回脱敏联系方式与手机/邮箱独立验证状态；并发变化409；写入专门审计。人工确认后会员需重新登录，临时测试会话不会原地提权"),
   "AdminController.healthSummary": entry("会员健康数量摘要", "id=会员 UUID", "按指标数量与首末采集时间"),
   "AdminController.rawHealth": entry("授权查看原始健康记录", "id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500", "HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计"),
   "AdminController.care": entry("后台关爱关系", undefined, "最多500条，双方昵称和指标权限；尚无分页"),

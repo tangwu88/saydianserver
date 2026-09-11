@@ -39,6 +39,7 @@ const form = ref<Row>({});
 const detailRows = ref<Row[]>([]);
 const healthMode = ref<"summary" | "raw">("summary");
 const healthMember = ref<Row>({});
+const verificationBusy = ref("");
 const shipmentVisible = ref(false);
 const shipmentBusy = ref(false);
 const shipmentPreview = ref<Row>({});
@@ -105,6 +106,7 @@ const commerceResources = [
 const isCommerceResource = computed(() => commerceResources.includes(resource.value));
 const canWrite = computed(() => canAdminResource(getAdminRoles(), resource.value, "write"));
 const canReadRawHealth = computed(() => getAdminRoles().some((role) => ["SUPER_ADMIN", "HEALTH_AUDITOR"].includes(role)));
+const canManageMemberVerification = computed(() => getAdminRoles().includes("SUPER_ADMIN"));
 const editable = computed(() => [
   "articles", "article-categories", "legal-documents", "settings", "integrations", "admin-users",
   "commerce-products", "commerce-categories", "commerce-orders", "commerce-after-sales",
@@ -219,6 +221,46 @@ function render(value: unknown): string {
   if (typeof value === "boolean") return value ? "是" : "否";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+function contactVerificationLabel(row: Row, channel: "mobile" | "email"): string {
+  const status = String(row[`${channel}VerificationStatus`] ?? "");
+  if (status === "VERIFIED") return "已验证";
+  if (status === "UNVERIFIED") return "未验证";
+  return "未填写";
+}
+
+async function updateMemberVerification(row: Row, channel: "mobile" | "email", verified: boolean): Promise<void> {
+  if (resource.value !== "members" || !canManageMemberVerification.value) return;
+  const channelLabel = channel === "mobile" ? "手机号" : "邮箱";
+  const contact = row[channel === "mobile" ? "mobileMasked" : "emailMasked"];
+  if (!contact || !row.verificationVersion) {
+    ElMessage.error(`该会员没有可操作的${channelLabel}，请刷新后重试`);
+    return;
+  }
+  const key = `${row.id}:${channel}`;
+  if (verificationBusy.value) return;
+  verificationBusy.value = key;
+  try {
+    await ElMessageBox.confirm(
+      verified
+        ? `确认已通过人工方式核实 ${contact} 属于该会员本人？确认后，会员重新登录即可使用依赖“已验证${channelLabel}”的功能。`
+        : `确认撤销 ${contact} 的验证状态？若该会员没有其他已验证联系方式，相关登录和交易能力将受限。`,
+      verified ? `人工确认${channelLabel}` : `撤销${channelLabel}确认`,
+      { type: "warning", confirmButtonText: verified ? "确认已核实" : "确认撤销", cancelButtonText: "取消" },
+    );
+    const updated = responseData<Row>(await api.patch(`/members/${encodeURIComponent(String(row.id))}/verification`, {
+      channel,
+      verified,
+      expectedUpdatedAt: row.verificationVersion,
+    }));
+    Object.assign(row, updated);
+    ElMessage.success(`${channelLabel}验证状态已更新`);
+  } catch (error) {
+    if (error !== "cancel" && error !== "close") ElMessage.error(readableError(error));
+  } finally {
+    if (verificationBusy.value === key) verificationBusy.value = "";
+  }
 }
 
 async function openCreate(): Promise<void> {
@@ -646,8 +688,27 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; ++editorRequestId; }
         </div>
         <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
         <el-table v-if="!loadError" v-loading="loading" :data="rows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
-          <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" min-width="145" show-overflow-tooltip>
-            <template #default="scope">{{ render(scope.row[column]) }}</template>
+          <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" :min-width="resource === 'members' && ['emailMasked', 'mobileMasked'].includes(column) ? 230 : 145" show-overflow-tooltip>
+            <template #default="scope">
+              <div v-if="resource === 'members' && ['emailMasked', 'mobileMasked'].includes(column)" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                <span>{{ render(scope.row[column]) }}</span>
+                <el-tag size="small" :type="scope.row[column === 'mobileMasked' ? 'mobileVerified' : 'emailVerified'] ? 'success' : scope.row[column] ? 'warning' : 'info'">
+                  {{ contactVerificationLabel(scope.row, column === 'mobileMasked' ? 'mobile' : 'email') }}
+                </el-tag>
+                <el-button
+                  v-if="canManageMemberVerification && scope.row[column]"
+                  link
+                  size="small"
+                  :type="scope.row[column === 'mobileMasked' ? 'mobileVerified' : 'emailVerified'] ? 'danger' : 'primary'"
+                  :loading="verificationBusy === `${scope.row.id}:${column === 'mobileMasked' ? 'mobile' : 'email'}`"
+                  :disabled="Boolean(verificationBusy)"
+                  @click="updateMemberVerification(scope.row, column === 'mobileMasked' ? 'mobile' : 'email', !scope.row[column === 'mobileMasked' ? 'mobileVerified' : 'emailVerified'])"
+                >
+                  {{ scope.row[column === 'mobileMasked' ? 'mobileVerified' : 'emailVerified'] ? '撤销确认' : '人工确认' }}
+                </el-button>
+              </div>
+              <template v-else>{{ render(scope.row[column]) }}</template>
+            </template>
           </el-table-column>
           <el-table-column v-if="resource === 'members'" label="健康数据" width="230" fixed="right">
             <template #default="scope">

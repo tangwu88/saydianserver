@@ -72,6 +72,17 @@ export class AdminController {
     return this.admin.members(search, Number(page ?? 1), Number(pageSize ?? 30));
   }
 
+  @Patch("members/:id/verification")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  updateMemberVerification(
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Param("id") id: string,
+    @Req() request: RequestWithContext,
+    @Body() input: unknown,
+  ) {
+    return this.admin.updateMemberVerification(current, id, request.requestId, safeObject(input));
+  }
+
   @Get("members/:id/health-summary")
   healthSummary(@Param("id") id: string) {
     return this.admin.healthSummary(id);
