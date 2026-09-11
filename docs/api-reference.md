@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **324 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **325 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -252,20 +252,20 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（96）
+## 管理后台接口（97）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
-| `GET /api/saydian-app/admin/v1/health-reports/availability` | 检查会员AI健康报告生成条件 | admin: SUPER_ADMIN, HEALTH_AUDITOR | query:memberId；memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR | {canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,availableCredits,latestReport}；未知条件不伪装可用；不返回密钥，不探测外部服务 | 国际会员本人最新健康分析同意、有效数据、报告次数、已配置AI和未暂停Worker |
-| `POST /api/saydian-app/admin/v1/health-reports` | 后台申请生成或复用AI健康报告 | admin: SUPER_ADMIN, HEALTH_AUDITOR | {memberId:UUID,idempotencyKey:8–160字符}；不替会员同意，不创建付款；每次请求服务端复核条件 | {report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable | 已满足availability条件；第三方真实运行需独立验收 |
+| `GET /api/saydian-app/admin/v1/health-reports/availability` | 检查会员AI健康报告生成条件 | admin: SUPER_ADMIN, HEALTH_AUDITOR | query:memberId；memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR | {canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,memberConsentBypass,availableCredits,latestReport}；SUPER_ADMIN后台生成不以会员App同意为前置，HEALTH_AUDITOR仍须当前同意；未知条件不伪装可用；不返回密钥，不探测外部服务 | 有效数据、报告次数、已配置AI和未暂停Worker；审核员另需会员当前同意 |
+| `POST /api/saydian-app/admin/v1/health-reports` | 后台申请生成或复用AI健康报告 | admin: SUPER_ADMIN, HEALTH_AUDITOR | {memberId:UUID,idempotencyKey:8–160字符}；不创建付款；每次请求服务端复核条件 | {report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；SUPER_ADMIN可绕过会员App同意且审计memberConsentBypassed=true，HEALTH_AUDITOR不可绕过；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable | 已满足availability条件；第三方真实运行需独立验收 |
 | `GET /api/saydian-app/admin/v1/health-reports/:id` | 后台查看健康报告进度和结果 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id；id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR | 报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文 | 报告队列与读取审计；AI结果仅供健康管理参考 |
 | `POST /api/saydian-app/admin/v1/auth/login` | 后台登录 | public | JSON {username,password} | AdminSession；不能与 App Token 混用 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members` | 会员查询 | admin | query:search?，query:page?，query:pageSize?；search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库 | {items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员读取会员编辑资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；仅国际版SUPER_ADMIN | 会员编号、昵称、未脱敏手机号/邮箱、账号状态及独立验证状态；读取完整联系方式写入专门审计，不返回密码和健康数据 | 核心服务 |
-| `PATCH /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员编辑会员资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；{nickname,mobile?,email?,status:ACTIVE\|DISABLED,mobileVerified,emailVerified,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项 | 原子更新资料和验证状态；联系方式、验证或账号状态变化会注销会员现有会话；重复联系方式409、过期版本409、注销流程会员409；专门审计不保存完整联系方式 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员读取会员编辑资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；仅国际版SUPER_ADMIN | 会员编号、头像、姓名/昵称、性别、出生日期、身高、体重、未脱敏手机号/邮箱、账号状态及独立验证状态；读取写入专门审计，不返回密码和健康记录 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员编辑会员资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；{nickname,avatarUrl?,gender:MALE\|FEMALE\|UNSPECIFIED,birthday?:YYYY-MM-DD,heightCm?:50..250,weightKg?:10..500,mobile?,email?,status:ACTIVE\|DISABLED,mobileVerified,emailVerified,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项 | 原子更新 App 基本资料和联系方式验证状态；联系方式、验证或账号状态变化会注销会员现有会话，单独修改基本资料不会；重复联系方式409、过期版本409、注销流程会员409；专门审计只保存变更字段名，不保存资料值或完整联系方式 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/members/:id/verification` | 超级管理员人工确认联系方式 | admin: SUPER_ADMIN | path:id；id=会员UUID；{channel:mobile\|email,verified:boolean,expectedUpdatedAt}；只调整已有联系方式的验证状态，不修改号码或邮箱 | 返回脱敏联系方式与手机/邮箱独立验证状态；并发变化409；写入专门审计。人工确认后会员需重新登录，临时测试会话不会原地提权 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-summary` | 会员健康数量摘要 | admin | path:id；id=会员 UUID | 按指标数量与首末采集时间 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计 | 核心服务 |
@@ -310,6 +310,7 @@
 | `PATCH /api/saydian-app/admin/v1/commerce-reviews/:id` | 设置评价展示状态 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, CUSTOMER_SERVICE | path:id；id=评价UUID；{published:boolean} | 评价；不能改写评分或正文 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/commerce-orders` | 总后台订单 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:status?，query:page?，query:search?；status可选；page默认1 | 会员已脱敏的订单、明细、支付、物流和售后 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/commerce-orders/:id` | 维护订单备注 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=订单UUID；{adminRemark?}；订单状态不能手工改写 | 订单 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/commerce-orders/:id/manual-payment` | 待付款订单调价或登记线下收款 | admin: SUPER_ADMIN | path:id；id=订单UUID；仅SUPER_ADMIN；{action:ADJUST_PRICE\|CONFIRM_OFFLINE_PAID,payableCents:正整数分,note:2–500字,orderVersion,idempotencyKey:8–120字符} | 更新后的订单、商品金额分摊和收款记录；重复同键同参数返回reused=true；异参、过期版本、非新系统订单、非待付款或渠道支付处理中均拒绝 | 主库商城；线下收款只登记已核实结果，不调用或伪造第三方支付 |
 | `GET /api/saydian-app/admin/v1/commerce-orders/:id/fulfillment-preview` | 本地订单可发货数量 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；订单UUID路径参数；限超级管理员/商城运营 | {orderId,version,status,items:[{orderItemId,name,quantity,shippedQuantity,refundedQuantity,afterSaleReservedQuantity,remainingQuantity}],shipments,unavailableReason?}；旧包裹或售后归属不明时阻断 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `POST /api/saydian-app/admin/v1/commerce-orders/:id/shipments` | 登记本地商品分包发货 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；{version,logisticsCompany,trackingNo,items:[{orderItemId,quantity}]}；仅已接管的新LOCAL已付款订单；运单号3–100位字母数字._- | 发货预览结构及shipmentId/replayed；同订单同运单同内容重试幂等，异参/超量/过期版本409；不生成承运轨迹 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `GET /api/saydian-app/admin/v1/commerce-orders/:id/shipping-refunds/preview` | 核验独立退运费额度 | admin: SUPER_ADMIN, FINANCE | path:id；已支付订单ID；仅财务或超级管理员 | 返回剩余运费、剩余现金、maximumCents与orderVersion；未知历史或进行中申请阻断 | 核心服务 |

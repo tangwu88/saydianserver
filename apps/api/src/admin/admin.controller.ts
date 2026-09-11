@@ -379,6 +379,17 @@ export class AdminController {
     return this.admin.updateCommerceOrder(id, input);
   }
 
+  @Post("commerce-orders/:id/manual-payment")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  manuallySettleCommerceOrder(
+    @Param("id") id: string,
+    @Body() input: unknown,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Req() request: RequestWithContext,
+  ) {
+    return this.admin.manuallySettleCommerceOrder(id, input, current, request.requestId);
+  }
+
   @Get("commerce-orders/:id/fulfillment-preview")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
   commerceFulfillmentPreview(@Param("id") id: string,

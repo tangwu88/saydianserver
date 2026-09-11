@@ -5,7 +5,7 @@ import { api, readableError, responseData } from "../api";
 import { healthMetricLabel, healthTime } from "../health-display";
 
 type Report = { id: string; status: string; memberId?: string; failureReason?: string | null; generatedAt?: string | null; period?: { from: string; to: string }; content?: { overview?: string; trends?: { metric: string; text: string }[]; suggestions?: string[]; limitations?: string[] }; limitations?: string[] };
-type Availability = { canGenerate: boolean; reasons: { code: string; message: string }[]; period: { from: string; to: string }; validRecordCount: number; distinctDays: number; minimumDistinctDays: number; availableCredits: number; latestReport?: Report | null };
+type Availability = { canGenerate: boolean; reasons: { code: string; message: string }[]; period: { from: string; to: string }; validRecordCount: number; distinctDays: number; minimumDistinctDays: number; availableCredits: number; memberConsentBypass?: boolean; latestReport?: Report | null };
 const props = defineProps<{ memberId: string }>();
 const availability = ref<Availability | null>(null);
 const report = ref<Report | null>(null);
@@ -65,7 +65,10 @@ async function generateReport(): Promise<void> {
   const version = generation; const memberId = props.memberId;
   generating.value = true; errorMessage.value = "";
   try {
-    await ElMessageBox.confirm("将使用该会员 1 次可用报告次数，由已配置的 AI 服务分析近 30 天的去标识化健康统计。相同数据已有报告时直接复用，不重复扣次。结果仅供健康管理参考。", "生成 AI 健康报告", { confirmButtonText: "确认生成", cancelButtonText: "取消", type: "warning" });
+    const authority = availability.value.memberConsentBypass
+      ? "本次由超级管理员从总后台发起，无需会员在 App 端另行同意；操作将写入审计。"
+      : "本次按当前管理员权限及会员授权状态执行。";
+    await ElMessageBox.confirm(`将使用该会员 1 次可用报告次数，由已配置的 AI 服务分析近 30 天的去标识化健康统计。${authority}相同数据已有报告时直接复用，不重复扣次。结果仅供健康管理参考。`, "生成 AI 健康报告", { confirmButtonText: "确认生成", cancelButtonText: "取消", type: "warning" });
     if (!current(version, memberId)) return;
     idempotencyKey ||= crypto.randomUUID();
     const result = responseData<{ report: Report; reused: boolean }>(await api.post("/health-reports", { memberId, idempotencyKey }));
@@ -94,7 +97,7 @@ onBeforeUnmount(() => { generation++; clearPolling(); });
 
 <template>
   <section class="report-panel" aria-label="AI 健康报告">
-    <header><div><h3>AI 健康报告</h3><p>仅分析近 30 天有效数据；需要会员本人同意健康分析。</p></div>
+    <header><div><h3>AI 健康报告</h3><p>仅分析近 30 天有效数据；每次生成和查看都会写入审计记录。</p></div>
       <el-button type="primary" :loading="generating" :disabled="checking || reading || !availability?.canGenerate || inProgress" @click="generateReport">AI 分析并生成健康报告</el-button>
     </header>
     <p v-if="checking" role="status">正在检查生成条件…</p>

@@ -13,6 +13,7 @@ function harness() {
   const state: any = {
     report: {
       id: "synthetic-report", userId: "synthetic-member", status: "QUEUED", fullContent: null,
+      adminConsentBypass: false,
       metricSummary: [{ metric: "heart_rate" }], evidenceIndex: { byMetric: [{ metric: "heart_rate", recordIds: ["synthetic-record"] }] },
       windowStart: new Date("2026-08-01T00:00:00Z"), windowEnd: new Date("2026-08-31T00:00:00Z"), distinctDays: 3, validRecordCount: 3,
     },
@@ -29,6 +30,7 @@ function harness() {
       findUnique: vi.fn(async () => state.report ? { ...state.report } : null),
       update: vi.fn(async ({ data }: any) => Object.assign(state.report, data)),
       updateMany: vi.fn(async ({ where, data }: any) => {
+        if (where.adminConsentBypass !== undefined && where.adminConsentBypass !== state.report.adminConsentBypass) return { count: 0 };
         if (!where.status.in.includes(state.report.status)) return { count: 0 };
         Object.assign(state.report, data);
         return { count: 1 };
@@ -100,6 +102,24 @@ describe("global health report execution consent", () => {
     expect(h.fetch).not.toHaveBeenCalled();
     expect(h.prisma.healthReport.update).not.toHaveBeenCalled();
     expect(h.prisma.notification.upsert).not.toHaveBeenCalled();
+  });
+
+  it("honors a durable audited SUPER_ADMIN bypass without weakening member-status checks", async () => {
+    const h = harness();
+    h.state.report.adminConsentBypass = true;
+    h.state.profile = null;
+    h.state.documents = [];
+    await h.worker.generate(h.state.report.id);
+    expect(h.fetch).toHaveBeenCalledOnce();
+    expect(h.state.report).toMatchObject({ status: "READY", adminConsentBypass: true, aiGenerated: true });
+    expect(h.prisma.healthProfile.findUnique).not.toHaveBeenCalled();
+    expect(h.prisma.globalLegalDocument.findMany).not.toHaveBeenCalled();
+
+    const inactive = harness();
+    inactive.state.report.adminConsentBypass = true;
+    inactive.state.user.status = "DISABLED";
+    await expect(inactive.worker.generate(inactive.state.report.id)).rejects.toBeInstanceOf(PermanentTaskError);
+    expect(inactive.fetch).not.toHaveBeenCalled();
   });
 
   it.each([

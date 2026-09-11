@@ -50,7 +50,10 @@ export class HealthReportWorker {
       throw new PermanentTaskError("AI report provider is unconfigured");
     }
     // A queued task is not permission to keep using data after consent changes.
-    const consent = isGlobalRealm() ? await assertGlobalAnalysisAllowed(this.prisma, report.userId) : null;
+    // SUPER_ADMIN requests persist a separate audited authorization snapshot;
+    // the worker still rejects inactive members and any changed snapshot.
+    const adminConsentBypass = report.adminConsentBypass === true;
+    const consent = isGlobalRealm() ? await assertGlobalAnalysisAllowed(this.prisma, report.userId, adminConsentBypass) : null;
     const startData = {
       status: ReportStatus.GENERATING,
       generationAttempts: { increment: 1 },
@@ -58,11 +61,11 @@ export class HealthReportWorker {
     };
     if (isGlobalRealm()) {
       const started = await this.prisma.healthReport.updateMany({
-        where: { id: report.id, status: { in: [ReportStatus.QUEUED, ReportStatus.GENERATING] } }, data: startData,
+        where: { id: report.id, adminConsentBypass, status: { in: [ReportStatus.QUEUED, ReportStatus.GENERATING] } }, data: startData,
       });
       if (started.count !== 1) return;
-      if (await assertGlobalAnalysisAllowed(this.prisma, report.userId) !== consent) {
-        throw new PermanentTaskError("Health AI analysis consent changed before generation");
+      if (await assertGlobalAnalysisAllowed(this.prisma, report.userId, adminConsentBypass) !== consent) {
+        throw new PermanentTaskError("Health AI analysis authorization changed before generation");
       }
     } else {
       await this.prisma.healthReport.update({ where: { id: report.id }, data: startData });
@@ -85,9 +88,9 @@ export class HealthReportWorker {
         await lockGlobalReport(tx, report.userId, report.id);
         const current = await tx.healthReport.findUnique({ where: { id: report.id } });
         if (!current || current.status !== ReportStatus.GENERATING) return;
-        // Keep the consent row locked until READY and its notification commit.
-        if (await assertGlobalAnalysisAllowed(tx, report.userId) !== consent) {
-          throw new PermanentTaskError("Health AI analysis consent changed during generation");
+        // Keep the authorization rows locked until READY and its notification commit.
+        if (current.adminConsentBypass !== adminConsentBypass || await assertGlobalAnalysisAllowed(tx, report.userId, adminConsentBypass) !== consent) {
+          throw new PermanentTaskError("Health AI analysis authorization changed during generation");
         }
       }
       await tx.healthReport.update({
@@ -223,11 +226,13 @@ async function lockGlobalReport(tx: Prisma.TransactionClient, userId: string, re
 async function assertGlobalAnalysisAllowed(
   prisma: Pick<Prisma.TransactionClient, "user" | "healthProfile" | "globalLegalDocument">,
   userId: string,
+  adminConsentBypass = false,
 ): Promise<string> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { status: true, locale: true } });
   if (!user || user.status !== UserStatus.ACTIVE) {
     throw new PermanentTaskError("Health report member is inactive");
   }
+  if (adminConsentBypass) return "super-admin-audited-bypass-v1";
   const profile = await prisma.healthProfile.findUnique({ where: { userId } });
   if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
     throw new PermanentTaskError("Health AI analysis consent is missing or withdrawn");

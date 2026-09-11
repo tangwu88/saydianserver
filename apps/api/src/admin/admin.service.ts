@@ -2,14 +2,17 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import {
   AdminRole,
   AfterSaleStatus,
+  BusinessType,
   CommerceJobStatus,
   CommerceOrderStatus,
   CouponStatus,
   FeedbackStatus,
+  Gender,
   IntegrationState,
   NotificationCampaignStatus,
   NotificationType,
   OutboxStatus,
+  PaymentChannel,
   PaymentStatus,
   Prisma,
   ProductStatus,
@@ -20,19 +23,31 @@ import {
 import { hash } from "bcryptjs";
 import { parseDownloadManifest } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
-import { isUuid, maskMobile, safeObject } from "../common/crypto";
+import { isUuid, maskMobile, safeObject, sha256 } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { globalLocale, internationalPhone, maskedIdentifier, normalizedEmail } from "../auth/global-identity";
 import { randomUUID } from "node:crypto";
 import { afterSaleTransitions, assertAfterSaleTransition, expectedVersion, integerCents, requireCommerceOwner } from "../commerce/commerce-policy";
 import { parseLegacyAppUpdate } from "../legacy/legacy-update-contract";
-import { shippingRefundCapacity } from "../commerce/commerce-finance";
-import { orderFulfillmentState } from "../commerce/commerce-finance";
+import { onCommerceOrderPaid, orderFulfillmentState, priceOrder, shippingRefundCapacity } from "../commerce/commerce-finance";
 import { createLocalShipment, localFulfillmentPreview } from "./local-fulfillment";
 import { protectLastSuperAdmin } from "./admin-account-policy";
 import { parseGlobalDownloadManifest } from "../support/global-download-manifest";
 import { withCategoryNumbers } from "./article-category-number";
+
+const adminOrderPaymentSelect = {
+  id: true,
+  paymentNo: true,
+  channel: true,
+  status: true,
+  amountCents: true,
+  currency: true,
+  description: true,
+  providerTransactionId: true,
+  paidAt: true,
+  createdAt: true,
+} satisfies Prisma.PaymentIntentSelect;
 
 @Injectable()
 export class AdminService {
@@ -59,6 +74,11 @@ export class AdminService {
     email: string | null;
     emailVerifiedAt: Date | null;
     nickname: string;
+    avatarUrl: string | null;
+    gender: Gender;
+    birthday: Date | null;
+    heightCm: { toNumber(): number } | null;
+    weightKg: { toNumber(): number } | null;
     status: UserStatus;
     updatedAt: Date;
   }) {
@@ -72,6 +92,11 @@ export class AdminService {
       emailVerified: Boolean(item.email && item.emailVerifiedAt),
       emailVerifiedAt: item.email && item.emailVerifiedAt ? item.emailVerifiedAt.toISOString() : null,
       nickname: item.nickname,
+      avatarUrl: item.avatarUrl,
+      gender: item.gender,
+      birthday: item.birthday?.toISOString().slice(0, 10) ?? null,
+      heightCm: item.heightCm?.toNumber() ?? null,
+      weightKg: item.weightKg?.toNumber() ?? null,
       status: item.status,
       verificationVersion: item.updatedAt.toISOString(),
     };
@@ -205,7 +230,8 @@ export class AdminService {
         where: { id: userId },
         select: {
           id: true, compatibilityId: true, mobile: true, mobileVerifiedAt: true,
-          email: true, emailVerifiedAt: true, nickname: true, status: true, updatedAt: true,
+          email: true, emailVerifiedAt: true, nickname: true, avatarUrl: true, gender: true,
+          birthday: true, heightCm: true, weightKg: true, status: true, updatedAt: true,
         },
       });
       if (!user) throw new NotFoundException("会员不存在");
@@ -220,7 +246,7 @@ export class AdminService {
           afterJson: {
             mobilePresent: Boolean(user.mobile),
             emailPresent: Boolean(user.email),
-            fields: ["nickname", "mobile", "email", "status", "verification"],
+            fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification"],
           },
         },
       });
@@ -237,13 +263,51 @@ export class AdminService {
     this.assertGlobalMemberAdministrator(current);
     if (!isUuid(userId)) throw new BadRequestException("会员编号无效");
     const allowedFields = new Set([
-      "nickname", "mobile", "email", "status", "mobileVerified", "emailVerified", "expectedUpdatedAt",
+      "nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg",
+      "mobile", "email", "status", "mobileVerified", "emailVerified", "expectedUpdatedAt",
     ]);
     if (Object.keys(input).some((field) => !allowedFields.has(field))) {
       throw new BadRequestException("会员资料包含不支持的字段");
     }
     const nickname = String(input.nickname ?? "").trim();
     if (!nickname || nickname.length > 40) throw new BadRequestException("昵称须为1至40个字符");
+
+    const hasField = (field: string) => Object.prototype.hasOwnProperty.call(input, field);
+    const avatarUrlInput = hasField("avatarUrl") ? String(input.avatarUrl ?? "").trim() || null : undefined;
+    if (avatarUrlInput && !/^https?:\/\//i.test(avatarUrlInput)) {
+      throw new BadRequestException("头像地址不正确，请填写HTTP或HTTPS图片地址");
+    }
+    const genderInput = hasField("gender") ? String(input.gender ?? "") : undefined;
+    if (genderInput !== undefined && ![Gender.MALE, Gender.FEMALE, Gender.UNSPECIFIED].includes(genderInput as Gender)) {
+      throw new BadRequestException("性别选项不正确");
+    }
+    let birthdayInput: Date | null | undefined;
+    if (hasField("birthday")) {
+      const birthdayText = String(input.birthday ?? "").trim();
+      birthdayInput = null;
+      if (birthdayText) {
+        const birthday = new Date(`${birthdayText}T00:00:00.000Z`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdayText)
+          || Number.isNaN(birthday.getTime())
+          || birthday.toISOString().slice(0, 10) !== birthdayText
+          || birthday >= new Date()) {
+          throw new BadRequestException("出生日期不正确");
+        }
+        birthdayInput = birthday;
+      }
+    }
+    const optionalProfileNumber = (field: "heightCm" | "weightKg", min: number, max: number, label: string) => {
+      if (!hasField(field)) return undefined;
+      const raw = input[field];
+      if (raw === null || String(raw).trim() === "") return null;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < min || value > max) {
+        throw new BadRequestException(`${label}须在${min}至${max}之间`);
+      }
+      return value;
+    };
+    const heightCmInput = optionalProfileNumber("heightCm", 50, 250, "身高");
+    const weightKgInput = optionalProfileNumber("weightKg", 10, 500, "体重");
 
     const mobileInput = String(input.mobile ?? "").trim();
     const emailInput = String(input.email ?? "").trim();
@@ -272,7 +336,8 @@ export class AdminService {
           where: { id: userId },
           select: {
             id: true, compatibilityId: true, mobile: true, mobileVerifiedAt: true,
-            email: true, emailVerifiedAt: true, nickname: true, status: true, updatedAt: true,
+            email: true, emailVerifiedAt: true, nickname: true, avatarUrl: true, gender: true,
+            birthday: true, heightCm: true, weightKg: true, status: true, updatedAt: true,
           },
         });
         if (!user) throw new NotFoundException("会员不存在");
@@ -306,8 +371,24 @@ export class AdminService {
         const verificationChanged = Boolean(user.mobileVerifiedAt) !== Boolean(nextMobileVerifiedAt)
           || Boolean(user.emailVerifiedAt) !== Boolean(nextEmailVerifiedAt);
         const statusChanged = user.status !== status;
-        const nicknameChanged = user.nickname !== nickname;
-        if (!mobileChanged && !emailChanged && !verificationChanged && !statusChanged && !nicknameChanged) {
+        const avatarUrl = avatarUrlInput === undefined ? user.avatarUrl : avatarUrlInput;
+        const gender = genderInput === undefined ? user.gender : genderInput as Gender;
+        const birthday = birthdayInput === undefined ? user.birthday : birthdayInput;
+        const heightCm = heightCmInput === undefined
+          ? user.heightCm
+          : heightCmInput === null ? null : new Prisma.Decimal(heightCmInput);
+        const weightKg = weightKgInput === undefined
+          ? user.weightKg
+          : weightKgInput === null ? null : new Prisma.Decimal(weightKgInput);
+        const profileFieldsChanged = [
+          ...(user.nickname !== nickname ? ["nickname"] : []),
+          ...(user.avatarUrl !== avatarUrl ? ["avatarUrl"] : []),
+          ...(user.gender !== gender ? ["gender"] : []),
+          ...((user.birthday?.toISOString().slice(0, 10) ?? null) !== (birthday?.toISOString().slice(0, 10) ?? null) ? ["birthday"] : []),
+          ...((user.heightCm?.toNumber() ?? null) !== (heightCm?.toNumber() ?? null) ? ["heightCm"] : []),
+          ...((user.weightKg?.toNumber() ?? null) !== (weightKg?.toNumber() ?? null) ? ["weightKg"] : []),
+        ];
+        if (!mobileChanged && !emailChanged && !verificationChanged && !statusChanged && !profileFieldsChanged.length) {
           return this.memberProfileFields(user);
         }
 
@@ -315,6 +396,11 @@ export class AdminService {
           where: { id: userId, updatedAt: expectedUpdatedAt },
           data: {
             nickname,
+            avatarUrl,
+            gender,
+            birthday,
+            heightCm,
+            weightKg,
             mobile,
             mobileVerifiedAt: nextMobileVerifiedAt,
             email,
@@ -341,18 +427,23 @@ export class AdminService {
             beforeJson: {
               mobilePresent: Boolean(user.mobile), mobileVerified: Boolean(user.mobileVerifiedAt),
               emailPresent: Boolean(user.email), emailVerified: Boolean(user.emailVerifiedAt),
-              status: user.status, nicknameChanged,
+              status: user.status, profileFieldsChanged,
             },
             afterJson: {
               mobilePresent: Boolean(mobile), mobileVerified: Boolean(nextMobileVerifiedAt), mobileChanged,
               emailPresent: Boolean(email), emailVerified: Boolean(nextEmailVerifiedAt), emailChanged,
-              status, nicknameChanged, source: "SUPER_ADMIN_PROFILE_EDITOR",
+              status, profileFieldsChanged, source: "SUPER_ADMIN_PROFILE_EDITOR",
             },
           },
         });
         return this.memberProfileFields({
           ...user,
           nickname,
+          avatarUrl,
+          gender,
+          birthday,
+          heightCm,
+          weightKg,
           mobile,
           mobileVerifiedAt: nextMobileVerifiedAt,
           email,
@@ -1222,9 +1313,7 @@ export class AdminService {
           user: { select: { id: true, nickname: true, mobile: true } },
           items: true,
           shipments: { include: { items: true } },
-          paymentIntents: {
-            select: { id: true, paymentNo: true, channel: true, status: true, paidAt: true },
-          },
+          paymentIntents: { select: adminOrderPaymentSelect },
           afterSales: true,
         },
         orderBy: { createdAt: "desc" },
@@ -1261,6 +1350,151 @@ export class AdminService {
     });
     if (!changed.count) throw new ConflictException("订单已更新或未完成接管，请刷新后重试");
     return this.prisma.commerceOrder.findUniqueOrThrow({ where: { id } });
+  }
+
+  async manuallySettleCommerceOrder(
+    id: string,
+    input: unknown,
+    current: { id: string; role: string; roles?: string[] },
+    requestId?: string,
+  ) {
+    const roles = current.roles?.length ? current.roles : [current.role];
+    if (!isGlobalRealm()) throw new NotFoundException("此功能仅供国际版后台使用");
+    if (!current.id || !roles.includes(AdminRole.SUPER_ADMIN)) throw new ForbiddenException("只有超级管理员可以调价或确认线下收款");
+    if (!isUuid(id)) throw new BadRequestException("订单编号不正确");
+    const body = safeObject(input);
+    if (Object.keys(body).some(field => !["action", "payableCents", "note", "orderVersion", "idempotencyKey"].includes(field))) {
+      throw new BadRequestException("订单人工处理包含不支持的字段");
+    }
+    const action = String(body.action ?? "").trim();
+    if (!["ADJUST_PRICE", "CONFIRM_OFFLINE_PAID"].includes(action)) throw new BadRequestException("请选择保留待付款或确认线下收款");
+    const payableCents = integerCents(body.payableCents, "订单应付金额", 1);
+    const orderVersion = expectedVersion(body.orderVersion);
+    const note = String(body.note ?? "").trim();
+    if (note.length < 2 || note.length > 500) throw new BadRequestException("请填写2至500字的处理备注");
+    const idempotencyKey = String(body.idempotencyKey ?? "").trim();
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 120) throw new BadRequestException("请提供有效的操作请求编号");
+    const scope = "admin_order_manual_payment_v1";
+    const requestHash = sha256(JSON.stringify({ id, action, payableCents, note, orderVersion, actorId: current.id }));
+
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${id}::uuid FOR UPDATE`;
+      const order = await tx.commerceOrder.findUnique({
+        where: { id },
+        include: { items: true, paymentIntents: { select: adminOrderPaymentSelect } },
+      });
+      if (!order) throw new NotFoundException("订单不存在");
+      requireCommerceOwner(order.executionOwner);
+      const previousRequest = await tx.idempotencyRecord.findUnique({
+        where: { userId_scope_key: { userId: order.userId, scope, key: idempotencyKey } },
+      });
+      if (previousRequest) {
+        if (previousRequest.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
+        const saved = await tx.commerceOrder.findUniqueOrThrow({
+          where: { id }, include: { items: true, paymentIntents: { select: adminOrderPaymentSelect }, shipments: { include: { items: true } }, afterSales: true },
+        });
+        return { ...saved, recipientMobile: maskMobile(saved.recipientMobile), reused: true };
+      }
+      if (order.version !== orderVersion) throw new ConflictException("订单已更新，请刷新后重试");
+      if (order.status !== CommerceOrderStatus.PENDING_PAYMENT || order.paidAt) {
+        throw new ConflictException("只有待付款订单可以调价或确认线下收款，已支付状态不能手工倒退");
+      }
+      if (order.paymentIntents.some(intent => ([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status))) {
+        throw new ConflictException("订单存在支付处理中记录，请先等待渠道结果或完成关单后再操作");
+      }
+      if (order.paymentIntents.some(intent => ([PaymentStatus.SUCCEEDED, PaymentStatus.REFUNDING, PaymentStatus.PARTIAL_REFUNDED, PaymentStatus.REFUNDED] as PaymentStatus[]).includes(intent.status))) {
+        throw new ConflictException("订单已有成功支付或退款记录，请先完成资金对账");
+      }
+      const merchandiseCashCents = payableCents - order.shippingCents;
+      const discountCents = order.subtotalCents - order.pointDiscountCents - merchandiseCashCents;
+      if (merchandiseCashCents < 0 || discountCents < 0) {
+        throw new BadRequestException(`应付金额须在${Math.max(1, order.shippingCents)}分至${order.subtotalCents - order.pointDiscountCents + order.shippingCents}分之间`);
+      }
+      const quote = priceOrder({
+        items: order.items.map(item => ({ skuId: item.skuId, quantity: item.quantity, unitPriceCents: item.unitPriceCents })),
+        couponDiscountCents: discountCents,
+        pointDiscountCents: order.pointDiscountCents,
+        shippingCents: order.shippingCents,
+        availablePointCents: order.pointDiscountCents,
+      });
+      if (quote.subtotalCents !== order.subtotalCents || quote.payableCents !== payableCents) {
+        throw new ConflictException("订单金额无法保持一致，请先核验商品和优惠快照");
+      }
+      for (const item of order.items) {
+        const allocation = quote.lines.find(line => line.skuId === item.skuId);
+        if (!allocation) throw new ConflictException("订单商品分摊不完整，请先核验");
+        await tx.commerceOrderItem.update({
+          where: { id: item.id },
+          data: {
+            couponDiscountCentsSnapshot: allocation.couponDiscountCentsSnapshot,
+            pointDiscountCentsSnapshot: allocation.pointDiscountCentsSnapshot,
+            cashPaidCentsSnapshot: allocation.cashPaidCentsSnapshot,
+          },
+        });
+      }
+      const changedAt = new Date();
+      const paid = action === "CONFIRM_OFFLINE_PAID";
+      const remarkPrefix = paid ? "线下收款" : "后台调价";
+      const adminRemark = [order.adminRemark, `[${remarkPrefix} ${changedAt.toISOString()}] ${note}`].filter(Boolean).join("\n");
+      const changed = await tx.commerceOrder.updateMany({
+        where: { id, version: orderVersion, status: CommerceOrderStatus.PENDING_PAYMENT, paidAt: null, executionOwner: "NEW_SYSTEM" },
+        data: {
+          discountCents: quote.couponDiscountCents,
+          payableCents,
+          pricingVersion: quote.pricingVersion,
+          pricingVerifiedAt: changedAt,
+          adminRemark,
+          ...(paid ? { status: CommerceOrderStatus.PAID, paidAt: changedAt } : {}),
+          version: { increment: 1 },
+        },
+      });
+      if (!changed.count) throw new ConflictException("订单已更新，请刷新后重试");
+      if (paid) {
+        const paymentDigest = sha256(`${id}:${idempotencyKey}`);
+        await tx.paymentIntent.create({ data: {
+          paymentNo: `OFFLINE-${paymentDigest.slice(0, 24).toUpperCase()}`,
+          userId: order.userId,
+          businessType: BusinessType.COMMERCE_ORDER,
+          businessId: id,
+          commerceOrderId: id,
+          channel: PaymentChannel.OFFLINE_MANUAL,
+          status: PaymentStatus.SUCCEEDED,
+          amountCents: payableCents,
+          currency: order.currency,
+          description: `后台确认线下收款：${order.orderNo}`,
+          idempotencyKey: `admin-offline:${paymentDigest}`,
+          providerTransactionId: `OFFLINE-${paymentDigest.toUpperCase()}`,
+          providerPayload: { source: "SUPER_ADMIN_OFFLINE_CONFIRMATION", adminId: current.id } as Prisma.InputJsonValue,
+          paidAt: changedAt,
+        } });
+        await onCommerceOrderPaid(tx, id);
+        const erpItems = await tx.commerceOrderItem.count({ where: { orderId: id, product: { source: "ERP" } } });
+        if (erpItems) {
+          await tx.commerceIntegrationJob.upsert({
+            where: { idempotencyKey: `jushuitan-order:${id}` },
+            create: {
+              type: "JUSHUITAN_ORDER_PUSH", idempotencyKey: `jushuitan-order:${id}`,
+              aggregateType: "commerce_order", aggregateId: id, payload: { orderId: id },
+            },
+            update: {},
+          });
+        }
+      }
+      await tx.auditLog.create({ data: {
+        actorType: "ADMIN", actorId: current.id, action: paid ? "COMMERCE_ORDER_OFFLINE_PAYMENT_CONFIRMED" : "COMMERCE_ORDER_PRICE_ADJUSTED",
+        entityType: "COMMERCE_ORDER", entityId: id, requestId: requestId ?? null,
+        beforeJson: { status: order.status, payableCents: order.payableCents, version: order.version },
+        afterJson: { status: paid ? CommerceOrderStatus.PAID : CommerceOrderStatus.PENDING_PAYMENT, payableCents, note, version: order.version + 1 },
+      } });
+      await tx.idempotencyRecord.create({ data: {
+        userId: order.userId, scope, key: idempotencyKey, requestHash, responseCode: 201,
+        responseBody: { orderId: id, action }, expiresAt: new Date(changedAt.valueOf() + 30 * 86_400_000),
+      } });
+      const saved = await tx.commerceOrder.findUniqueOrThrow({
+        where: { id }, include: { items: true, paymentIntents: { select: adminOrderPaymentSelect }, shipments: { include: { items: true } }, afterSales: true },
+      });
+      return { ...saved, recipientMobile: maskMobile(saved.recipientMobile), reused: false };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   commerceFulfillmentPreview(orderId: string, current: { id: string; role: string; roles?: string[] }) {

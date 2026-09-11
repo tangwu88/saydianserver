@@ -1,0 +1,99 @@
+import { readFileSync } from "node:fs";
+import ts from "typescript";
+import { computed, ref } from "vue";
+import { describe, expect, it, vi } from "vitest";
+
+function harness(roles = ["SUPER_ADMIN"]) {
+  const source = readFileSync(new URL("./components/CommerceWorkspace.vue", import.meta.url), "utf8")
+    .match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1]!;
+  const ast = ts.createSourceFile("commerce-workspace.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const printer = ts.createPrinter();
+  const code = ts.transpileModule(
+    ast.statements.filter(node => !ts.isImportDeclaration(node))
+      .map(node => printer.printNode(ts.EmitHint.Unspecified, node, ast)).join("\n"),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } },
+  ).outputText;
+  const order = {
+    id: "order-1",
+    orderNo: "SD-SYNTHETIC-001",
+    status: "PENDING_PAYMENT",
+    executionOwner: "NEW_SYSTEM",
+    payableCents: 9_100,
+    currency: "CNY",
+    version: 2,
+    paidAt: null,
+  };
+  const props = { resource: "commerce-orders", rows: [order], meta: {}, loading: false, createable: false, search: "" };
+  const emit = vi.fn();
+  const api = { post: vi.fn(async () => ({ data: { data: { ...order, status: "PAID", payableCents: 9_000, version: 3, paidAt: "2026-09-11T12:00:00.000Z" } } })) };
+  const ElMessage = { success: vi.fn(), error: vi.fn() };
+  const confirm = vi.fn(async () => true);
+  const deps = {
+    computed,
+    ref,
+    watch: vi.fn(),
+    defineProps: () => props,
+    defineEmits: () => emit,
+    canAdminResource: () => true,
+    getAdminRoles: () => roles,
+    api,
+    responseData: (response: any) => response.data.data,
+    readableError: (error: unknown) => error instanceof Error ? error.message : "请求失败",
+    ElMessage,
+    ElMessageBox: { confirm },
+    crypto: { randomUUID: () => "synthetic-action-key" },
+  };
+  const state = new Function(
+    ...Object.keys(deps),
+    `${code}\nreturn { detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel };`,
+  )(...Object.values(deps));
+  return { ...state, order, api, emit, ElMessage, confirm };
+}
+
+describe("commerce order super-admin payment controls", () => {
+  it("submits integer cents, current version, idempotency key, and mandatory receipt note", async () => {
+    const h = harness(); h.openDetail(h.order); h.openManualOrder(h.order);
+    expect(h.manualOrderVisible.value).toBe(true);
+    expect(h.manualOrderForm.value).toMatchObject({ action: "ADJUST_PRICE", payableYuan: 91, orderVersion: 2, idempotencyKey: "synthetic-action-key" });
+    h.manualOrderForm.value = { ...h.manualOrderForm.value, action: "CONFIRM_OFFLINE_PAID", payableYuan: 90, note: "银行转账已到账，财务已核对" };
+    await h.saveManualOrder();
+    expect(h.confirm).toHaveBeenCalledWith(expect.stringContaining("实际收到 ¥90.00"), "确认线下收款", expect.objectContaining({ confirmButtonText: "确认已收款" }));
+    expect(h.api.post).toHaveBeenCalledWith("/commerce-orders/order-1/manual-payment", {
+      action: "CONFIRM_OFFLINE_PAID",
+      payableCents: 9_000,
+      note: "银行转账已到账，财务已核对",
+      orderVersion: 2,
+      idempotencyKey: "synthetic-action-key",
+    });
+    expect(h.detailRow.value).toMatchObject({ status: "PAID", payableCents: 9_000, version: 3 });
+    expect(h.manualOrderVisible.value).toBe(false);
+    expect(h.emit).toHaveBeenCalledWith("refresh");
+    expect(h.ElMessage.success).toHaveBeenCalledWith("线下收款已登记，订单已标记为已支付");
+  });
+
+  it("does not expose or open the action for a non-super administrator", () => {
+    const h = harness(["FINANCE"]); h.openDetail(h.order); h.openManualOrder(h.order);
+    expect(h.canManuallySettleOrder.value).toBe(false);
+    expect(h.manualOrderVisible.value).toBe(false);
+  });
+
+  it("requires a meaningful note and keeps the form open on a server conflict", async () => {
+    const h = harness(); h.openDetail(h.order); h.openManualOrder(h.order);
+    h.manualOrderForm.value.note = "x"; await h.saveManualOrder();
+    expect(h.api.post).not.toHaveBeenCalled();
+    expect(h.ElMessage.error).toHaveBeenCalledWith("请填写2至500字的处理备注");
+    h.manualOrderForm.value.note = "已核对线下收款";
+    h.api.post.mockRejectedValueOnce(new Error("订单已更新，请刷新后重试"));
+    await h.saveManualOrder();
+    expect(h.manualOrderVisible.value).toBe(true);
+    expect(h.ElMessage.error).toHaveBeenLastCalledWith("订单已更新，请刷新后重试");
+  });
+
+  it("renders the explicit offline channel and the safety explanation", () => {
+    const h = harness();
+    expect(h.paymentChannelLabel("OFFLINE_MANUAL")).toBe("线下收款");
+    const source = readFileSync(new URL("./components/CommerceWorkspace.vue", import.meta.url), "utf8");
+    expect(source).toContain("已有渠道支付处理中时服务端会拒绝操作");
+    expect(source).toContain("处理备注");
+  });
+});

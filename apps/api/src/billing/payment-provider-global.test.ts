@@ -37,6 +37,16 @@ describe("global payment adapter boundary", () => {
     await expect(h.service.create({ ...intent(), ...patch } as any, {})).rejects.toMatchObject({ status: 503, response: { errorKey: "payment_unavailable" } });
     expect(h.db.integrationConfig.findUnique).not.toHaveBeenCalled(); expect(h.secrets.resolve).not.toHaveBeenCalled();
   });
+  it("never dispatches the admin-only offline channel to a payment or refund provider", async () => {
+    const h = providerFixture(true);
+    await expect(h.service.create(intent(PaymentChannel.OFFLINE_MANUAL), {})).rejects.toThrow("只能由超级管理员");
+    await expect(h.service.refund({
+      refundNo: "OFFLINE-REFUND", paymentNo: "OFFLINE-PAYMENT", providerTransactionId: "OFFLINE-TRANSACTION",
+      amountCents: 100, totalCents: 100, currency: "CNY", reason: "合成测试", channel: PaymentChannel.OFFLINE_MANUAL,
+    })).rejects.toThrow("不会调用线上退款渠道");
+    expect(h.db.integrationConfig.findUnique).not.toHaveBeenCalled();
+    expect(h.secrets.resolve).not.toHaveBeenCalled();
+  });
   it.each([PaymentChannel.WECHAT_JSAPI, PaymentChannel.WECHAT_H5, PaymentChannel.WECHAT_NATIVE, PaymentChannel.ALIPAY_WAP, PaymentChannel.ALIPAY_PAGE])("retains unconfigured failure for supported %s", async channel => {
     await expect(providerFixture().service.create(intent(channel), {})).rejects.toMatchObject({ status: 503 });
   });

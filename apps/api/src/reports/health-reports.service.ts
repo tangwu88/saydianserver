@@ -40,6 +40,7 @@ type AdminReportOptions = {
   idempotencyKey: string;
   actorId: string;
   requestId?: string;
+  bypassMemberConsent?: boolean;
   validate: (tx: Prisma.TransactionClient, alreadyCovered: boolean) => Promise<void>;
 };
 
@@ -234,10 +235,13 @@ export class HealthReportsService {
         const previous = await tx.idempotencyRecord.findUnique({ where: { userId_scope_key: { userId, scope, key: options.idempotencyKey } } });
         if (previous) {
           if (previous.requestHash !== requestHash) throw new ConflictException("同一幂等键不能用于不同的报告请求");
-          const saved = await tx.healthReport.findFirst({ where: { id: String(safeObject(previous.responseBody).reportId ?? ""), userId } });
+          let saved = await tx.healthReport.findFirst({ where: { id: String(safeObject(previous.responseBody).reportId ?? ""), userId } });
           if (!saved) throw new ConflictException("原报告已不可用，请刷新后重新操作");
           await options.validate(tx, saved.status !== PrismaReportStatus.AWAITING_PAYMENT);
-          await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: saved.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: true } } });
+          if (options.bypassMemberConsent && saved.status !== PrismaReportStatus.READY && !saved.adminConsentBypass) {
+            saved = await tx.healthReport.update({ where: { id: saved.id }, data: { adminConsentBypass: true } });
+          }
+          await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: saved.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: true, memberConsentBypassed: options.bypassMemberConsent === true } } });
           return { ...serializeReport(saved), needsPayment: saved.status === PrismaReportStatus.AWAITING_PAYMENT, reused: true };
         }
       }
@@ -252,12 +256,12 @@ export class HealthReportsService {
           `需要至少${MINIMUM_DISTINCT_DAYS}个不同日期的有效记录，暂不创建支付订单`,
         );
       }
-      if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
+      if (!options?.bypassMemberConsent && (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn)) {
         throw new ForbiddenException("同意健康分析说明后才能生成详细报告");
       }
-      if (isGlobalRealm()) {
+      if (isGlobalRealm() && !options?.bypassMemberConsent) {
         const document = await this.analysisDocument(userId, undefined, tx);
-        if (!document || document.version !== profile.analysisConsentVersion) throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
+        if (!document || document.version !== profile?.analysisConsentVersion) throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
       }
       const inputDigest = evidenceDigest(userId, period, evidence);
       const reusable = await tx.healthReport.findFirst({
@@ -276,7 +280,7 @@ export class HealthReportsService {
         orderBy: { createdAt: "desc" },
       });
       if (options) await options.validate(tx, Boolean(reusable && reusable.status !== PrismaReportStatus.AWAITING_PAYMENT));
-      const report = reusable ?? await tx.healthReport.create({
+      let report = reusable ?? await tx.healthReport.create({
         data: {
           userId,
           windowStart: period.from,
@@ -294,8 +298,12 @@ export class HealthReportsService {
           inputDigest,
           freePreview: buildFreePreview(evidence),
           templateVersion: REPORT_TEMPLATE_VERSION,
+          adminConsentBypass: options?.bypassMemberConsent === true,
         },
       });
+      if (reusable && options?.bypassMemberConsent && reusable.status !== PrismaReportStatus.READY && !reusable.adminConsentBypass) {
+        report = await tx.healthReport.update({ where: { id: reusable.id }, data: { adminConsentBypass: true } });
+      }
       // Consumer reuse retains the original payment flow. Admins may only queue
       // an unpaid report with an existing credit; never create a payment here.
       const queued = reusable && (!options || reusable.status !== PrismaReportStatus.AWAITING_PAYMENT)
@@ -306,7 +314,7 @@ export class HealthReportsService {
         ? await tx.healthReport.findUniqueOrThrow({ where: { id: report.id } })
         : report;
       if (options) {
-        await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: report.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: Boolean(reusable) } } });
+        await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: report.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: Boolean(reusable), memberConsentBypassed: options.bypassMemberConsent === true } } });
         await tx.idempotencyRecord.create({ data: { userId, scope, key: options.idempotencyKey, requestHash, responseCode: 201, responseBody: { reportId: report.id }, expiresAt: new Date(Date.now() + 30 * 86_400_000) } });
       }
       return { ...serializeReport(current), needsPayment: !queued, reused: Boolean(reusable) };

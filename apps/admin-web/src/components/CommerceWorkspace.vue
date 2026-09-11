@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { canAdminResource } from "@saydian/app-contracts";
-import { getAdminRoles } from "../api";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { api, getAdminRoles, readableError, responseData } from "../api";
 import AfterSaleEvidence from "./AfterSaleEvidence.vue";
 import ProductSkuQuickEditor from "./ProductSkuQuickEditor.vue";
 
@@ -34,14 +35,25 @@ const emit = defineEmits<{
 const statusFilter = ref("");
 const detailVisible = ref(false);
 const detailRow = ref<Row>({});
+const manualOrderVisible = ref(false);
+const manualOrderSaving = ref(false);
+const manualOrderForm = ref({
+  action: "ADJUST_PRICE",
+  payableYuan: 0,
+  note: "",
+  orderVersion: 0,
+  idempotencyKey: "",
+});
 const commissionTab = ref<"accruals" | "ledger">("accruals");
 const selectedProductIds = ref<string[]>([]);
 const canEdit = computed(() => canAdminResource(getAdminRoles(), props.resource, "write"));
 const canRefund = computed(() => canAdminResource(getAdminRoles(), props.resource, "refund"));
+const canManuallySettleOrder = computed(() => getAdminRoles().includes("SUPER_ADMIN"));
 
 watch(() => props.resource, () => {
   statusFilter.value = "";
   detailVisible.value = false;
+  manualOrderVisible.value = false;
   commissionTab.value = "accruals";
   selectedProductIds.value = [];
 });
@@ -51,7 +63,7 @@ const descriptions: Record<string, string> = {
   "commerce-categories": "按层级维护商城分类、图标、排序和启用状态；分类停用后不会出现在商城分类入口。",
   "commerce-banners": "管理商城首页轮播图片、跳转目标、排序和启用状态，图片与目标地址均由商城前端读取。",
   "commerce-business-configs": "集中维护购物、配送、发票等业务参数；支付密钥和外部平台凭据仍在集成中心配置。",
-  "commerce-orders": "按订单状态查看商品、金额、买家、收货和履约信息；订单状态只能由支付、物流与售后流程推进。",
+  "commerce-orders": "按订单状态查看商品、金额、买家、收货和履约信息；超级管理员可在待付款订单详情中调价或登记线下收款，其他状态仍由支付、物流与售后流程推进。",
   "commerce-after-sales": "商品售后与单独退运费均需审核；现金以验签渠道结果为准，纯积分商品审核后本地结算。",
   "commerce-reviews": "查看真实订单评价、评分和图片，后台只控制评价是否在商城公开展示。",
   "commerce-coupons": "管理优惠金额、使用门槛、发行数量、有效期和员工分发范围。",
@@ -230,6 +242,62 @@ function categoryName(row: Row): string {
 function openDetail(row: Row): void {
   detailRow.value = row;
   detailVisible.value = true;
+}
+
+function paymentChannelLabel(channel: unknown): string {
+  const labels: Record<string, string> = {
+    OFFLINE_MANUAL: "线下收款", WECHAT_MINI: "微信小程序", WECHAT_JSAPI: "微信公众号",
+    WECHAT_H5: "微信 H5", WECHAT_NATIVE: "微信扫码", WECHAT_APP: "微信 App",
+    ALIPAY_WAP: "支付宝手机网页", ALIPAY_PAGE: "支付宝电脑网页", ALIPAY_APP: "支付宝 App", APPLE_IAP: "Apple 内购",
+  };
+  return labels[String(channel)] ?? String(channel ?? "—");
+}
+
+function openManualOrder(row: Row): void {
+  if (!canManuallySettleOrder.value || row.status !== "PENDING_PAYMENT" || row.paidAt || row.executionOwner !== "NEW_SYSTEM") return;
+  manualOrderForm.value = {
+    action: "ADJUST_PRICE",
+    payableYuan: Number(row.payableCents ?? 0) / 100,
+    note: "",
+    orderVersion: Number(row.version ?? 0),
+    idempotencyKey: crypto.randomUUID(),
+  };
+  manualOrderVisible.value = true;
+}
+
+async function saveManualOrder(): Promise<void> {
+  if (manualOrderSaving.value) return;
+  const yuan = Number(manualOrderForm.value.payableYuan);
+  const payableCents = Math.round(yuan * 100);
+  const note = manualOrderForm.value.note.trim();
+  if (!Number.isFinite(yuan) || payableCents < 1) { ElMessage.error("请填写有效的订单应付金额"); return; }
+  if (note.length < 2 || note.length > 500) { ElMessage.error("请填写2至500字的处理备注"); return; }
+  const paid = manualOrderForm.value.action === "CONFIRM_OFFLINE_PAID";
+  manualOrderSaving.value = true;
+  try {
+    await ElMessageBox.confirm(
+      paid
+        ? `确认已在线下实际收到 ${money(payableCents, detailRow.value.currency)}？保存后订单将进入已支付状态，不能在此撤回。`
+        : `确认将订单应付金额调整为 ${money(payableCents, detailRow.value.currency)}？`,
+      paid ? "确认线下收款" : "确认订单调价",
+      { type: "warning", confirmButtonText: paid ? "确认已收款" : "确认调价", cancelButtonText: "取消" },
+    );
+    const saved = responseData<Row>(await api.post(`/commerce-orders/${encodeURIComponent(String(detailRow.value.id))}/manual-payment`, {
+      action: manualOrderForm.value.action,
+      payableCents,
+      note,
+      orderVersion: manualOrderForm.value.orderVersion,
+      idempotencyKey: manualOrderForm.value.idempotencyKey,
+    }));
+    detailRow.value = { ...detailRow.value, ...saved };
+    manualOrderVisible.value = false;
+    ElMessage.success(paid ? "线下收款已登记，订单已标记为已支付" : "订单应付金额已更新");
+    emit("refresh");
+  } catch (error) {
+    if (error !== "cancel" && error !== "close") ElMessage.error(readableError(error));
+  } finally {
+    manualOrderSaving.value = false;
+  }
 }
 
 function productSkusSaved(product: Row): void {
@@ -415,7 +483,7 @@ function changeStatus(value: unknown): void {
     <el-table v-else-if="resource === 'payments'" v-loading="loading" :data="visibleRows" border stripe empty-text="暂无支付流水">
       <el-table-column label="支付单" min-width="235"><template #default="scope"><strong>{{ scope.row.paymentNo }}</strong><small>{{ dateTime(scope.row.createdAt) }}</small></template></el-table-column>
       <el-table-column label="业务" min-width="180"><template #default="scope">{{ scope.row.businessType }}<small>{{ scope.row.businessId }}</small></template></el-table-column>
-      <el-table-column prop="channel" label="支付渠道" min-width="145" />
+      <el-table-column label="支付渠道" min-width="145"><template #default="scope">{{ paymentChannelLabel(scope.row.channel) }}</template></el-table-column>
       <el-table-column label="金额" width="135"><template #default="scope"><strong>{{ money(scope.row.amountCents, scope.row.currency) }}</strong></template></el-table-column>
       <el-table-column label="状态" width="115"><template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag></template></el-table-column>
       <el-table-column label="支付时间" width="175"><template #default="scope">{{ dateTime(scope.row.paidAt) }}</template></el-table-column>
@@ -444,14 +512,44 @@ function changeStatus(value: unknown): void {
         <el-descriptions-item v-if="detailRow.createdAt" label="创建时间">{{ dateTime(detailRow.createdAt) }}</el-descriptions-item>
         <el-descriptions-item v-if="detailRow.updatedAt" label="更新时间">{{ dateTime(detailRow.updatedAt) }}</el-descriptions-item>
       </el-descriptions>
+      <section v-if="resource === 'commerce-orders'" class="detail-section">
+        <div class="section-heading"><h3>金额与收款</h3><el-button v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && !detailRow.paidAt && detailRow.executionOwner === 'NEW_SYSTEM'" type="primary" plain size="small" @click="openManualOrder(detailRow)">调价 / 线下收款</el-button></div>
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="商品金额">{{ money(detailRow.subtotalCents, detailRow.currency) }}</el-descriptions-item>
+          <el-descriptions-item label="优惠金额">-{{ money(detailRow.discountCents, detailRow.currency) }}</el-descriptions-item>
+          <el-descriptions-item label="积分抵扣">-{{ money(detailRow.pointDiscountCents, detailRow.currency) }}</el-descriptions-item>
+          <el-descriptions-item label="运费">{{ money(detailRow.shippingCents, detailRow.currency) }}</el-descriptions-item>
+          <el-descriptions-item label="订单应付"><strong>{{ money(detailRow.payableCents, detailRow.currency) }}</strong></el-descriptions-item>
+        </el-descriptions>
+        <el-table v-if="detailRow.paymentIntents?.length" :data="detailRow.paymentIntents" border style="margin-top: 12px">
+          <el-table-column label="收款方式" min-width="125"><template #default="scope">{{ paymentChannelLabel(scope.row.channel) }}</template></el-table-column>
+          <el-table-column label="金额" width="110"><template #default="scope">{{ money(scope.row.amountCents, scope.row.currency || detailRow.currency) }}</template></el-table-column>
+          <el-table-column label="状态" width="90"><template #default="scope">{{ statusLabel(scope.row.status) }}</template></el-table-column>
+          <el-table-column label="时间" min-width="160"><template #default="scope">{{ dateTime(scope.row.paidAt || scope.row.createdAt) }}</template></el-table-column>
+        </el-table>
+      </section>
       <section v-if="detailRow.items?.length" class="detail-section"><h3>商品清单</h3><el-table :data="detailRow.items" border><el-table-column prop="nameSnapshot" label="商品" min-width="170" /><el-table-column prop="specificationSnapshot" label="规格" min-width="130" /><el-table-column prop="quantity" label="数量" width="70" /><el-table-column label="小计" width="110"><template #default="scope">{{ money(scope.row.totalCents) }}</template></el-table-column></el-table></section>
       <ProductSkuQuickEditor v-if="detailRow.skus?.length" :key="detailRow.id" :product="detailRow" :can-edit="canEdit" @saved="productSkusSaved" />
       <section v-if="detailRow.shipments?.length" class="detail-section"><h3>物流包裹</h3><el-table :data="detailRow.shipments" border><el-table-column prop="logisticsCompany" label="物流公司" /><el-table-column prop="trackingNo" label="物流单号" /><el-table-column label="发货时间"><template #default="scope">{{ dateTime(scope.row.shippedAt) }}</template></el-table-column></el-table></section>
       <section v-if="detailRow.refunds?.length" class="detail-section"><h3>退款记录</h3><el-table :data="detailRow.refunds" border><el-table-column prop="refundNo" label="退款单" /><el-table-column label="金额"><template #default="scope">{{ money(scope.row.amountCents) }}</template></el-table-column><el-table-column label="状态"><template #default="scope">{{ statusLabel(scope.row.status) }}</template></el-table-column></el-table></section>
       <section v-if="detailRow.wallet" class="detail-section"><h3>钱包摘要</h3><el-descriptions :column="1" border><el-descriptions-item label="冻结">{{ money(detailRow.wallet.frozenCents) }}</el-descriptions-item><el-descriptions-item label="可用">{{ money(detailRow.wallet.availableCents) }}</el-descriptions-item><el-descriptions-item label="提现中">{{ money(detailRow.wallet.withdrawingCents) }}</el-descriptions-item><el-descriptions-item label="累计已付">{{ money(detailRow.wallet.totalPaidCents) }}</el-descriptions-item></el-descriptions></section>
       <section v-if="detailRow.payload" class="detail-section"><h3>任务参数</h3><pre class="detail-json">{{ jsonText(detailRow.payload) }}</pre></section>
-      <section v-if="detailRow.adminRemark || detailRow.buyerRemark" class="detail-section"><h3>订单备注</h3><p>买家：{{ detailRow.buyerRemark || "—" }}</p><p>后台：{{ detailRow.adminRemark || "—" }}</p></section>
+      <section v-if="detailRow.adminRemark || detailRow.buyerRemark" class="detail-section"><h3>订单备注</h3><p>买家：{{ detailRow.buyerRemark || "—" }}</p><p class="order-admin-remark">后台：{{ detailRow.adminRemark || "—" }}</p></section>
     </el-drawer>
+    <el-dialog v-model="manualOrderVisible" title="待付款订单人工处理" width="min(540px, 94vw)" :close-on-click-modal="false">
+      <el-alert title="仅用于待付款订单。已有渠道支付处理中时服务端会拒绝操作；已支付状态不能在这里撤回。" type="warning" :closable="false" show-icon />
+      <el-form label-width="110px" style="margin-top: 18px">
+        <el-form-item label="订单号"><el-input :model-value="detailRow.orderNo" disabled /></el-form-item>
+        <el-form-item label="订单应付">
+          <el-input-number v-model="manualOrderForm.payableYuan" :min="0.01" :max="21474836.47" :precision="2" :step="1" controls-position="right" /><span class="muted" style="margin-left: 8px">元</span>
+        </el-form-item>
+        <el-form-item label="支付状态">
+          <el-select v-model="manualOrderForm.action" style="width: 100%"><el-option label="保持待付款（只调价）" value="ADJUST_PRICE" /><el-option label="已线下收款，标记为已支付" value="CONFIRM_OFFLINE_PAID" /></el-select>
+        </el-form-item>
+        <el-form-item label="处理备注"><el-input v-model="manualOrderForm.note" type="textarea" :rows="4" maxlength="500" show-word-limit placeholder="必填，例如：2026-09-11 银行转账到账，财务已核对" /></el-form-item>
+      </el-form>
+      <template #footer><el-button :disabled="manualOrderSaving" @click="manualOrderVisible = false">取消</el-button><el-button type="primary" :loading="manualOrderSaving" @click="saveManualOrder">确认保存</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -482,6 +580,9 @@ code { color: #344054; font-family: "Cascadia Code", Consolas, monospace; font-s
 .commission-tabs { padding: 0 16px; border: 1px solid #e4e9f0; border-radius: 12px; background: #fff; }
 .detail-section { margin-top: 24px; }
 .detail-section h3 { margin: 0 0 12px; font-size: 16px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.section-heading h3 { margin: 0; }
+.order-admin-remark { white-space: pre-wrap; }
 .detail-json { padding: 14px; overflow: auto; border-radius: 8px; background: #f5f7fa; color: #344054; font-size: 12px; white-space: pre-wrap; }
 :deep(.el-table) { border-radius: 12px; }
 :deep(.el-table th.el-table__cell) { background: #f7f9fc; color: #475467; font-weight: 650; }

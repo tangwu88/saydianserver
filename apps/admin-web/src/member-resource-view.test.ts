@@ -70,13 +70,18 @@ describe("international member admin list", () => {
     expect(h.contactVerificationLabel(row, "mobile")).toBe("已验证");
     h.api.get.mockResolvedValueOnce({ data: { data: {
       id: row.id, memberNo: row.memberNo, nickname: row.nickname, status: "ACTIVE",
+      avatarUrl: "https://cdn.example.invalid/avatar.png", gender: "FEMALE", birthday: "1990-01-02",
+      heightCm: 168.5, weightKg: 56.2,
       mobile: "+8613812348888", mobileVerified: true, email: "member@example.invalid", emailVerified: false,
       verificationVersion: row.verificationVersion,
     } } });
     await h.openEdit(row);
     expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/profile");
     expect(h.dialogVisible.value).toBe(true); expect(h.dialogTitle.value).toBe("编辑会员 10001");
-    expect(h.form.value).toMatchObject({ mobile: "+8613812348888", mobileVerified: true, emailVerified: false });
+    expect(h.form.value).toMatchObject({
+      avatarUrl: "https://cdn.example.invalid/avatar.png", gender: "FEMALE", birthday: "1990-01-02",
+      heightCm: 168.5, weightKg: 56.2, mobile: "+8613812348888", mobileVerified: true, emailVerified: false,
+    });
 
     h.onMemberContactInput("mobile", "+8613912348888");
     expect(h.form.value.mobileVerified).toBe(false);
@@ -84,7 +89,9 @@ describe("international member admin list", () => {
     h.form.value.emailVerified = true;
     await h.save();
     expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/profile", {
-      nickname: "Test member", mobile: "+8613912348888", email: "member@example.invalid", status: "ACTIVE",
+      nickname: "Test member", avatarUrl: "https://cdn.example.invalid/avatar.png", gender: "FEMALE",
+      birthday: "1990-01-02", heightCm: 168.5, weightKg: 56.2,
+      mobile: "+8613912348888", email: "member@example.invalid", status: "ACTIVE",
       mobileVerified: true, emailVerified: true, expectedUpdatedAt: "2026-09-11T00:00:00.000Z",
     });
     expect(h.confirm).toHaveBeenCalledOnce();
@@ -93,6 +100,15 @@ describe("international member admin list", () => {
 
     const readonly = harness(["APP_OPERATIONS"]); await readonly.openEdit({ ...member });
     expect(readonly.editable.value).toBe(false); expect(readonly.api.get).not.toHaveBeenCalled(); expect(readonly.api.patch).not.toHaveBeenCalled();
+  });
+
+  it("renders the member-filled profile fields with friendly Chinese controls", () => {
+    const sfc = readFileSync(new URL("./views/ResourceView.vue", import.meta.url), "utf8");
+    for (const label of ["会员填写的基本资料", "姓名/昵称", "出生日期", "身高", "体重", "头像"]) {
+      expect(sfc).toContain(label);
+    }
+    expect(sfc).toContain('value-format="YYYY-MM-DD"');
+    expect(sfc).toContain(':disabled-date="memberBirthdayDisabled"');
   });
 
   it("keeps the member editor open and writes nothing when manual verification confirmation is cancelled", async () => {

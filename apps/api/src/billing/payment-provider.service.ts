@@ -87,7 +87,7 @@ export class PaymentProviderService {
   ) {}
 
   async identity(channel: PaymentChannel): Promise<{ merchantId: string | null; appId: string | null }> {
-    if (channel === PaymentChannel.APPLE_IAP) return { merchantId: null, appId: null };
+    if (channel === PaymentChannel.APPLE_IAP || channel === PaymentChannel.OFFLINE_MANUAL) return { merchantId: null, appId: null };
     const config = await this.assertConfigured(channel.startsWith("WECHAT") ? "wechat_pay" : "alipay");
     if (channel.startsWith("WECHAT")) {
       const secrets = await this.wechatSecrets();
@@ -122,7 +122,7 @@ export class PaymentProviderService {
   }
 
   async assertIdentity(intent: { channel: PaymentChannel; providerMerchantId: string | null; providerAppId: string | null }) {
-    if (intent.channel === PaymentChannel.APPLE_IAP) return;
+    if (intent.channel === PaymentChannel.APPLE_IAP || intent.channel === PaymentChannel.OFFLINE_MANUAL) return;
     const identity = await this.identity(intent.channel);
     if (!intent.providerAppId || intent.providerAppId !== identity.appId ||
       (intent.channel.startsWith("WECHAT") && (!intent.providerMerchantId || intent.providerMerchantId !== identity.merchantId))) {
@@ -151,6 +151,7 @@ export class PaymentProviderService {
       appleProductId?: string | null;
     },
   ): Promise<Record<string, unknown>> {
+    if (intent.channel === PaymentChannel.OFFLINE_MANUAL) throw new ServiceUnavailableException("线下收款只能由超级管理员在订单详情中确认");
     assertGlobalPaymentSupported(intent);
     // A direct service caller cannot bypass the public capability's credential checks.
     if (isGlobalRealm() && intent.channel !== PaymentChannel.APPLE_IAP) await this.identity(intent.channel);
@@ -164,6 +165,9 @@ export class PaymentProviderService {
   }
 
   async refund(refund: RefundForProvider): Promise<ProviderRefundResult> {
+    if (refund.channel === PaymentChannel.OFFLINE_MANUAL) {
+      throw new ServiceUnavailableException("线下收款不会调用线上退款渠道；请先在线下完成退款并由财务登记");
+    }
     if (refund.channel === PaymentChannel.APPLE_IAP) {
       throw new ServiceUnavailableException("苹果购买退款由App Store处理");
     }

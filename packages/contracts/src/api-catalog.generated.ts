@@ -23,8 +23,8 @@ export const apiCatalog = {
       "source": "apps/api/src/admin/admin-health-reports.controller.ts",
       "summary": "检查会员AI健康报告生成条件",
       "request": "memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR",
-      "response": "{canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,availableCredits,latestReport}；未知条件不伪装可用；不返回密钥，不探测外部服务",
-      "dependency": "国际会员本人最新健康分析同意、有效数据、报告次数、已配置AI和未暂停Worker",
+      "response": "{canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,memberConsentBypass,availableCredits,latestReport}；SUPER_ADMIN后台生成不以会员App同意为前置，HEALTH_AUDITOR仍须当前同意；未知条件不伪装可用；不返回密钥，不探测外部服务",
+      "dependency": "有效数据、报告次数、已配置AI和未暂停Worker；审核员另需会员当前同意",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -57,8 +57,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/admin/admin-health-reports.controller.ts",
       "summary": "后台申请生成或复用AI健康报告",
-      "request": "{memberId:UUID,idempotencyKey:8–160字符}；不替会员同意，不创建付款；每次请求服务端复核条件",
-      "response": "{report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable",
+      "request": "{memberId:UUID,idempotencyKey:8–160字符}；不创建付款；每次请求服务端复核条件",
+      "response": "{report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；SUPER_ADMIN可绕过会员App同意且审计memberConsentBypassed=true，HEALTH_AUDITOR不可绕过；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable",
       "dependency": "已满足availability条件；第三方真实运行需独立验收",
       "successStatus": 201,
       "contract": {
@@ -278,7 +278,7 @@ export const apiCatalog = {
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "超级管理员读取会员编辑资料",
       "request": "id=会员UUID；仅国际版SUPER_ADMIN",
-      "response": "会员编号、昵称、未脱敏手机号/邮箱、账号状态及独立验证状态；读取完整联系方式写入专门审计，不返回密码和健康数据",
+      "response": "会员编号、头像、姓名/昵称、性别、出生日期、身高、体重、未脱敏手机号/邮箱、账号状态及独立验证状态；读取写入专门审计，不返回密码和健康记录",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -317,8 +317,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "超级管理员编辑会员资料",
-      "request": "id=会员UUID；{nickname,mobile?,email?,status:ACTIVE|DISABLED,mobileVerified,emailVerified,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项",
-      "response": "原子更新资料和验证状态；联系方式、验证或账号状态变化会注销会员现有会话；重复联系方式409、过期版本409、注销流程会员409；专门审计不保存完整联系方式",
+      "request": "id=会员UUID；{nickname,avatarUrl?,gender:MALE|FEMALE|UNSPECIFIED,birthday?:YYYY-MM-DD,heightCm?:50..250,weightKg?:10..500,mobile?,email?,status:ACTIVE|DISABLED,mobileVerified,emailVerified,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项",
+      "response": "原子更新 App 基本资料和联系方式验证状态；联系方式、验证或账号状态变化会注销会员现有会话，单独修改基本资料不会；重复联系方式409、过期版本409、注销流程会员409；专门审计只保存变更字段名，不保存资料值或完整联系方式",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -1875,6 +1875,46 @@ export const apiCatalog = {
       "response": "订单",
       "dependency": "核心服务",
       "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.manuallySettleCommerceOrder",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-orders/:id/manual-payment",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "待付款订单调价或登记线下收款",
+      "request": "id=订单UUID；仅SUPER_ADMIN；{action:ADJUST_PRICE|CONFIRM_OFFLINE_PAID,payableCents:正整数分,note:2–500字,orderVersion,idempotencyKey:8–120字符}",
+      "response": "更新后的订单、商品金额分摊和收款记录；重复同键同参数返回reused=true；异参、过期版本、非新系统订单、非待付款或渠道支付处理中均拒绝",
+      "dependency": "主库商城；线下收款只登记已核实结果，不调用或伪造第三方支付",
+      "successStatus": 201,
       "contract": {
         "status": "unreviewed",
         "requestSchema": null,

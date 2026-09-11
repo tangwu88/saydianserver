@@ -15,7 +15,11 @@ function userRow(overrides: Record<string, unknown> = {}) {
     emailVerifiedAt: new Date("2026-09-10T00:00:00.000Z") as Date | null,
     updatedAt: initialUpdatedAt,
     nickname: "Synthetic member",
-    avatarUrl: null,
+    avatarUrl: "https://cdn.example.invalid/avatar.png",
+    gender: "FEMALE",
+    birthday: new Date("1990-01-02T00:00:00.000Z") as Date | null,
+    heightCm: { toNumber: () => 168.5 } as { toNumber(): number } | null,
+    weightKg: { toNumber: () => 56.2 } as { toNumber(): number } | null,
     status: "ACTIVE",
     createdAt: new Date("2026-09-09T00:00:00.000Z"),
     _count: { healthRecords: 0, devices: 0 },
@@ -98,12 +102,14 @@ describe("international member contact verification administration", () => {
     expect(result).toMatchObject({
       memberNo: "23", mobile: "+8613812348888", mobileVerified: false,
       email: "member@example.invalid", emailVerified: true, nickname: "Synthetic member", status: "ACTIVE",
+      avatarUrl: "https://cdn.example.invalid/avatar.png", gender: "FEMALE", birthday: "1990-01-02",
+      heightCm: 168.5, weightKg: 56.2,
       verificationVersion: initialUpdatedAt.toISOString(),
     });
     expect(h.auditLog.create).toHaveBeenCalledExactlyOnceWith({ data: expect.objectContaining({
       actorId: "admin-id", action: "MEMBER_PROFILE_READ", entityType: "USER_PROFILE",
       entityId: h.current()!.id, requestId: "profile-read",
-      afterJson: { mobilePresent: true, emailPresent: true, fields: ["nickname", "mobile", "email", "status", "verification"] },
+      afterJson: { mobilePresent: true, emailPresent: true, fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification"] },
     }) });
     expect(JSON.stringify(h.auditLog.create.mock.calls[0]?.[0])).not.toContain("13812348888");
     expect(JSON.stringify(h.auditLog.create.mock.calls[0]?.[0])).not.toContain("member@example.invalid");
@@ -113,6 +119,11 @@ describe("international member contact verification administration", () => {
     const h = updateHarness();
     const result = await h.service.updateMemberProfile(superAdmin, h.current()!.id, "profile-update", {
       nickname: "Updated member",
+      avatarUrl: "https://cdn.example.invalid/updated.png",
+      gender: "MALE",
+      birthday: "1991-03-04",
+      heightCm: 180.2,
+      weightKg: 75.4,
       mobile: "+86 139 1234 8888",
       email: "MEMBER@example.invalid",
       status: "DISABLED",
@@ -123,12 +134,16 @@ describe("international member contact verification administration", () => {
     expect(result).toMatchObject({
       nickname: "Updated member", mobile: "+8613912348888", email: "member@example.invalid",
       status: "DISABLED", mobileVerified: true, emailVerified: true,
+      avatarUrl: "https://cdn.example.invalid/updated.png", gender: "MALE", birthday: "1991-03-04",
+      heightCm: 180.2, weightKg: 75.4,
     });
     expect(h.tx.user.updateMany).toHaveBeenCalledWith({
       where: { id: h.current()!.id, updatedAt: initialUpdatedAt },
       data: expect.objectContaining({
         nickname: "Updated member", mobile: "+8613912348888", email: "member@example.invalid",
         status: "DISABLED", mobileVerifiedAt: expect.any(Date), emailVerifiedAt: new Date("2026-09-10T00:00:00.000Z"),
+        avatarUrl: "https://cdn.example.invalid/updated.png", gender: "MALE",
+        birthday: new Date("1991-03-04T00:00:00.000Z"), heightCm: expect.anything(), weightKg: expect.anything(),
       }),
     });
     expect(h.tx.userSession.updateMany).toHaveBeenCalledWith({
@@ -138,6 +153,39 @@ describe("international member contact verification administration", () => {
     expect(audit).toContain("MEMBER_PROFILE_UPDATE");
     expect(audit).not.toContain("13912348888");
     expect(audit).not.toContain("member@example.invalid");
+    expect(audit).not.toContain("1991-03-04");
+    expect(audit).not.toContain("updated.png");
+  });
+
+  it("updates App profile details without revoking otherwise valid member sessions", async () => {
+    const h = updateHarness();
+    const result = await h.service.updateMemberProfile(superAdmin, h.current()!.id, "profile-only", {
+      nickname: "Synthetic member", avatarUrl: "", gender: "MALE", birthday: "1992-05-06",
+      heightCm: 172.3, weightKg: null,
+      mobile: "+8613812348888", email: "member@example.invalid", status: "ACTIVE",
+      mobileVerified: false, emailVerified: true, expectedUpdatedAt: initialUpdatedAt.toISOString(),
+    });
+    expect(result).toMatchObject({ avatarUrl: null, gender: "MALE", birthday: "1992-05-06", heightCm: 172.3, weightKg: null });
+    expect(h.tx.userSession.updateMany).not.toHaveBeenCalled();
+    expect(h.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      afterJson: expect.objectContaining({ profileFieldsChanged: ["avatarUrl", "gender", "birthday", "heightCm", "weightKg"] }),
+    }) });
+  });
+
+  it.each([
+    [{ avatarUrl: "file:///avatar.png" }, "头像地址不正确"],
+    [{ gender: "UNKNOWN" }, "性别选项不正确"],
+    [{ birthday: "2026-02-30" }, "出生日期不正确"],
+    [{ heightCm: 49.9 }, "身高须在50至250之间"],
+    [{ weightKg: 500.1 }, "体重须在10至500之间"],
+  ])("rejects invalid App profile details: %j", async (profile, message) => {
+    const h = updateHarness();
+    await expect(h.service.updateMemberProfile(superAdmin, h.current()!.id, "invalid-profile", {
+      nickname: "Synthetic member", mobile: "+8613812348888", email: "member@example.invalid",
+      status: "ACTIVE", mobileVerified: false, emailVerified: true,
+      expectedUpdatedAt: initialUpdatedAt.toISOString(), ...profile,
+    })).rejects.toThrow(message);
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it("clears verification when a contact is changed without manual confirmation", async () => {

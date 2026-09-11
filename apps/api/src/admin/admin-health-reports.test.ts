@@ -7,6 +7,7 @@ import { HealthReportsService } from "../reports/health-reports.service";
 const memberId = "11111111-1111-4111-8111-111111111111";
 const reportId = "22222222-2222-4222-8222-222222222222";
 const current = { id: "synthetic-admin", role: "SUPER_ADMIN", roles: ["SUPER_ADMIN"] };
+const auditor = { id: "synthetic-auditor", role: "HEALTH_AUDITOR", roles: ["HEALTH_AUDITOR"] };
 const request = { memberId, idempotencyKey: "synthetic-request-0001" };
 
 function harness(initialCredits = 1) {
@@ -61,7 +62,7 @@ afterEach(() => { expect(fetch).not.toHaveBeenCalled(); vi.unstubAllEnvs(); vi.u
 describe("international admin health-report availability", () => {
   it("returns public Chinese readiness without credentials or health record values", async () => {
     const h = harness(); const result = await h.service.availability(memberId, current);
-    expect(result).toMatchObject({ canGenerate: true, reasons: [], validRecordCount: 3, distinctDays: 3, minimumDistinctDays: 3, consentRequired: false, availableCredits: 1, latestReport: null });
+    expect(result).toMatchObject({ canGenerate: true, reasons: [], validRecordCount: 3, distinctDays: 3, minimumDistinctDays: 3, consentRequired: false, memberConsentBypass: true, availableCredits: 1, latestReport: null });
     expect(JSON.stringify(result)).not.toMatch(/SYNTHETIC-NOT-A-KEY|provider.invalid|bpm|recordIds/);
   });
   it.each(["WORKER_OUTBOUND_PAUSED", "BUSINESS_WRITES_PAUSED", "MAINTENANCE_READ_ONLY"])("blocks %s without creating or consuming", async flag => {
@@ -70,18 +71,41 @@ describe("international admin health-report availability", () => {
     await expect(h.service.create(request, current)).rejects.toMatchObject({ response: expect.objectContaining({ errorKey: "health_report_unavailable" }), status: 409 });
     expect(h.state).toMatchObject({ reports: [], outbox: [], credits: 1 });
   });
-  it.each(["member", "data", "consent", "outdated", "notice", "credits", "provider", "credentials", "demo"])("fails closed for %s", async scenario => {
+  it.each(["member", "data", "credits", "provider", "credentials", "demo"])("fails closed for %s", async scenario => {
     const h = harness(scenario === "credits" ? 0 : 1);
     if (scenario === "member") h.db.user.findUnique.mockResolvedValue({ status: "FROZEN", locale: "en" });
     if (scenario === "data") h.db.healthRecord.findMany.mockResolvedValue([]);
-    if (scenario === "consent") h.db.healthProfile.findUnique.mockResolvedValue(null);
-    if (scenario === "outdated") h.db.globalLegalDocument.findMany.mockResolvedValue([{ version: "new-version", locale: "en", contentHtml: "Test" }]);
-    if (scenario === "notice") h.db.globalLegalDocument.findMany.mockResolvedValue([]);
     if (scenario === "provider") h.db.integrationConfig.findUnique.mockResolvedValue({ state: "UNCONFIGURED" });
     if (scenario === "credentials") h.secrets.resolve.mockRejectedValue(new Error("secret read failed"));
     if (scenario === "demo") vi.stubEnv("H5_DEMO_ENABLED", "true");
     expect((await h.service.availability(memberId, current)).canGenerate).toBe(false);
     await expect(h.service.create(request, current)).rejects.toMatchObject({ status: 409 });
+    expect(h.state).toMatchObject({ reports: [], outbox: [], ledgers: [] });
+  });
+  it.each(["missing", "withdrawn", "outdated", "notice"])("lets only SUPER_ADMIN bypass %s member consent while preserving an audited decision", async scenario => {
+    const h = harness();
+    if (scenario === "missing") h.db.healthProfile.findUnique.mockResolvedValue(null);
+    if (scenario === "withdrawn") h.db.healthProfile.findUnique.mockResolvedValue({ analysisConsentedAt: new Date(), analysisConsentWithdrawn: new Date(), analysisConsentVersion: "reviewed-test" });
+    if (scenario === "outdated") h.db.globalLegalDocument.findMany.mockResolvedValue([{ version: "new-version", locale: "en", contentHtml: "Test" }]);
+    if (scenario === "notice") h.db.globalLegalDocument.findMany.mockResolvedValue([]);
+    const availability = await h.service.availability(memberId, current);
+    expect(availability).toMatchObject({ canGenerate: true, consentRequired: false, memberConsentBypass: true });
+    expect(availability.reasons).not.toContainEqual(expect.objectContaining({ code: "consent_required" }));
+    await expect(h.service.create(request, current)).resolves.toMatchObject({ reused: false, report: { id: reportId } });
+    expect(h.state.audits).toContainEqual(expect.objectContaining({
+      action: "HEALTH_REPORT_GENERATE_REQUEST",
+      afterJson: expect.objectContaining({ memberId, memberConsentBypassed: true }),
+    }));
+  });
+  it("keeps member consent mandatory for HEALTH_AUDITOR", async () => {
+    const h = harness(); h.db.healthProfile.findUnique.mockResolvedValue(null);
+    expect(await h.service.availability(memberId, auditor)).toMatchObject({
+      canGenerate: false,
+      consentRequired: true,
+      memberConsentBypass: false,
+      reasons: [expect.objectContaining({ code: "consent_required" })],
+    });
+    await expect(h.service.create(request, auditor)).rejects.toMatchObject({ status: 409 });
     expect(h.state).toMatchObject({ reports: [], outbox: [], ledgers: [] });
   });
   it("enforces current roles, global scope and valid member IDs before data access", async () => {
@@ -116,11 +140,11 @@ describe("atomic report creation and admin read", () => {
     expect(h.db.$executeRaw.mock.calls[0]![1]).toBe(`health-report-create:${memberId}`);
     expect(h.db.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(h.db.healthReport.create.mock.invocationCallOrder[0]);
   });
-  it("returns the same keyed report without a second credit and rechecks withdrawn consent", async () => {
+  it("returns the same keyed report without a second credit and keeps auditor consent checks on replay", async () => {
     const h = harness(); expect(await h.service.create(request, current)).toMatchObject({ reused: false });
     expect(await h.service.create(request, current)).toMatchObject({ reused: true, report: { id: reportId } });
     h.db.healthProfile.findUnique.mockResolvedValue({ analysisConsentedAt: new Date(), analysisConsentWithdrawn: new Date(), analysisConsentVersion: "reviewed-test" });
-    await expect(h.service.create(request, current)).rejects.toMatchObject({ status: 409 });
+    await expect(h.service.create(request, auditor)).rejects.toMatchObject({ status: 409 });
     expect(h.state.ledgers).toHaveLength(1);
   });
   it("resolves credentials before taking a transaction connection, without nested secret pool queries", async () => {

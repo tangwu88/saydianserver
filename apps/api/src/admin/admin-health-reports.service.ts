@@ -16,6 +16,7 @@ export class AdminHealthReportsService {
 
   async availability(memberId: string, current: AdminActor, db: Prisma.TransactionClient = this.prisma, alreadyCovered = false, resolvedCredentials?: Record<string, string> | null) {
     authorize(current); uuid(memberId);
+    const bypassMemberConsent = canBypassMemberConsent(current);
     const member = await db.user.findUnique({ where: { id: memberId }, select: { status: true } });
     if (!member) throw new NotFoundException("会员不存在");
     const [eligibility, integration, latest] = await Promise.all([
@@ -26,7 +27,7 @@ export class AdminHealthReportsService {
     const reasons: BlockReason[] = [];
     if (member.status !== "ACTIVE") reasons.push({ code: "member_inactive", message: "会员账号当前不可用" });
     if (!eligibility.eligible) reasons.push({ code: "insufficient_data", message: eligibility.missing.join("；") });
-    if (eligibility.consentRequired) reasons.push({ code: "consent_required", message: "会员尚未同意当前健康分析说明，请由会员在 App 内阅读并同意" });
+    if (eligibility.consentRequired && !bypassMemberConsent) reasons.push({ code: "consent_required", message: "会员尚未同意当前健康分析说明，请由会员在 App 内阅读并同意" });
     if (!alreadyCovered && eligibility.availableCredits < 1) reasons.push({ code: "credits_required", message: "没有可用的健康报告次数" });
     const config = safeObject(integration?.publicConfig);
     const provider = String(config.provider ?? process.env.AI_PROVIDER ?? "disabled").trim();
@@ -52,7 +53,9 @@ export class AdminHealthReportsService {
       canGenerate: reasons.length === 0, reasons,
       period: eligibility.period, validRecordCount: eligibility.validRecordCount,
       distinctDays: eligibility.distinctDays, minimumDistinctDays: eligibility.minimumDistinctDays,
-      consentRequired: eligibility.consentRequired, availableCredits: eligibility.availableCredits,
+      consentRequired: eligibility.consentRequired && !bypassMemberConsent,
+      memberConsentBypass: bypassMemberConsent,
+      availableCredits: eligibility.availableCredits,
       latestReport: latest ? { id: latest.id, status: latest.status.toLowerCase(), createdAt: latest.createdAt.toISOString() } : null,
     };
   }
@@ -69,8 +72,9 @@ export class AdminHealthReportsService {
     // while other requests hold connections waiting for this member's lock.
     const revision = await this.aiConfigurationRevision(this.prisma);
     const credentials = await this.resolveAiCredentials();
+    const bypassMemberConsent = canBypassMemberConsent(current);
     return this.reports.createForAdmin(memberId, {
-      idempotencyKey: key, actorId: current.id, ...(requestId ? { requestId } : {}),
+      idempotencyKey: key, actorId: current.id, bypassMemberConsent, ...(requestId ? { requestId } : {}),
       validate: async (tx, alreadyCovered) => {
         if (revision !== await this.aiConfigurationRevision(tx)) throw new ConflictException({ errorKey: "health_report_unavailable", message: "AI 服务配置已变更，请刷新后重试" });
         const result = await this.availability(memberId, current, tx, alreadyCovered, credentials);
@@ -108,6 +112,11 @@ export class AdminHealthReportsService {
       };
     });
   }
+}
+
+function canBypassMemberConsent(current: AdminActor): boolean {
+  const roles = current.roles?.length ? current.roles : [current.role];
+  return roles.includes("SUPER_ADMIN");
 }
 
 function authorize(current: AdminActor) {

@@ -246,6 +246,12 @@ function onMemberContactInput(channel: "mobile" | "email", value: unknown): void
     : false;
 }
 
+function memberBirthdayDisabled(date: Date): boolean {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date.getTime() > today.getTime();
+}
+
 async function openCreate(): Promise<void> {
   const requestedResource = resource.value;
   const requestId = ++editorRequestId;
@@ -284,6 +290,11 @@ async function openEdit(row: Row): Promise<void> {
       dialogTitle.value = `编辑会员 ${profile.memberNo ?? row.memberNo ?? ""}`.trim();
       form.value = {
         ...profile,
+        avatarUrl: profile.avatarUrl ?? "",
+        gender: profile.gender ?? "UNSPECIFIED",
+        birthday: profile.birthday ?? "",
+        heightCm: profile.heightCm ?? null,
+        weightKg: profile.weightKg ?? null,
         mobile: profile.mobile ?? "",
         email: profile.email ?? "",
         _originalMobile: profile.mobile ?? "",
@@ -410,6 +421,11 @@ async function save(): Promise<void> {
       }
       payload = {
         nickname: form.value.nickname,
+        avatarUrl: form.value.avatarUrl,
+        gender: form.value.gender,
+        birthday: form.value.birthday,
+        heightCm: form.value.heightCm,
+        weightKg: form.value.weightKg,
         mobile: form.value.mobile,
         email: form.value.email,
         status: form.value.status,
@@ -798,7 +814,27 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; ++editorRequestId; }
         <template v-if="resource === 'members'">
           <el-alert title="手机号、邮箱或验证状态变更后，系统会注销该会员现有会话，会员需重新登录。联系方式发生变化时验证开关会自动关闭；请在确实完成人工核实后再开启。" type="warning" :closable="false" show-icon />
           <el-form-item label="会员编号"><el-input v-model="form.memberNo" disabled /></el-form-item>
-          <el-form-item label="昵称"><el-input v-model="form.nickname" maxlength="40" show-word-limit /></el-form-item>
+          <el-divider content-position="left">会员填写的基本资料</el-divider>
+          <el-form-item label="头像">
+            <div style="display: flex; align-items: center; gap: 12px; width: 100%">
+              <el-avatar :size="52" :src="form.avatarUrl || undefined">{{ String(form.nickname || '会员').slice(0, 1) }}</el-avatar>
+              <el-input v-model="form.avatarUrl" clearable placeholder="图片 HTTP/HTTPS 地址；留空可清除" />
+            </div>
+          </el-form-item>
+          <el-form-item label="姓名/昵称"><el-input v-model="form.nickname" maxlength="40" show-word-limit placeholder="会员在 App 中填写的称呼" /></el-form-item>
+          <el-form-item label="性别">
+            <el-select v-model="form.gender" style="width: 100%"><el-option label="未设置" value="UNSPECIFIED" /><el-option label="男" value="MALE" /><el-option label="女" value="FEMALE" /></el-select>
+          </el-form-item>
+          <el-form-item label="出生日期">
+            <el-date-picker v-model="form.birthday" type="date" value-format="YYYY-MM-DD" format="YYYY年MM月DD日" clearable :disabled-date="memberBirthdayDisabled" style="width: 100%" placeholder="选择出生日期" />
+          </el-form-item>
+          <el-form-item label="身高">
+            <el-input-number v-model="form.heightCm" :min="50" :max="250" :precision="1" :step="0.1" controls-position="right" /><span class="muted" style="margin-left: 10px">厘米，可留空</span>
+          </el-form-item>
+          <el-form-item label="体重">
+            <el-input-number v-model="form.weightKg" :min="10" :max="500" :precision="1" :step="0.1" controls-position="right" /><span class="muted" style="margin-left: 10px">千克，可留空</span>
+          </el-form-item>
+          <el-divider content-position="left">登录与联系方式</el-divider>
           <el-form-item label="手机号">
             <el-input :model-value="form.mobile" clearable placeholder="带国家区号，如 +8613812345678" @input="onMemberContactInput('mobile', $event)" />
           </el-form-item>
@@ -814,7 +850,7 @@ onBeforeUnmount(() => { ++loadRequestId; ++healthRequestId; ++editorRequestId; }
           <el-form-item label="账号状态">
             <el-select v-model="form.status"><el-option label="正常" value="ACTIVE" /><el-option label="停用" value="DISABLED" /></el-select>
           </el-form-item>
-          <p class="muted">会员编号、密码和健康数据不能在此窗口修改。保存操作会记录管理员、时间和变更类型，审计日志不保存完整手机号或邮箱。</p>
+          <p class="muted">会员编号、密码和健康记录不能在此窗口修改。保存操作会记录管理员、时间和变更字段，审计日志不保存完整手机号、邮箱或会员资料值。</p>
         </template>
         <template v-else-if="resource === 'commerce-commissions'">
           <el-alert title="奖金规则只影响新支付订单；已有奖金使用原快照。提现仅可使用可用余额，仍需财务人工审核。" type="info" :closable="false" />
