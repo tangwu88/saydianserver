@@ -19,6 +19,9 @@ import { IntegrationSecretsService } from "../common/integration-secrets.service
 import { markIntegrationVerified } from "../common/integration-health";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { globalError } from "../auth/global-identity";
+import { globalCommerceCurrency, globalCommercePaymentChannels, globalPaymentConfigurationReady } from "../commerce/global-commerce-policy";
+import { requireGlobalWechatH5 } from "../auth/global-wechat-policy";
+import { officialRedirectUri } from "../auth/wechat-h5-auth.service";
 
 type IntentForProvider = {
   id: string;
@@ -31,6 +34,22 @@ type IntentForProvider = {
   businessId: string;
   channel: PaymentChannel;
 };
+
+/** Validate before reserving a new intent and again immediately before dispatch. */
+export function assertGlobalPaymentSupported(intent: { channel: PaymentChannel; businessType?: string; currency: string }) {
+  assertGlobalPaymentScope(intent);
+  if (isGlobalRealm() && intent.channel !== PaymentChannel.APPLE_IAP && intent.currency !== globalCommerceCurrency) {
+    throw globalError(503, "payment_unavailable", "当前仅支持人民币商城订单支付。");
+  }
+}
+
+export function assertGlobalPaymentScope(intent: { channel: PaymentChannel; businessType?: string }) {
+  if (!isGlobalRealm() || intent.channel === PaymentChannel.APPLE_IAP) return;
+  if (intent.businessType !== "COMMERCE_ORDER" ||
+      !globalCommercePaymentChannels.some(channel => channel === intent.channel)) {
+    throw globalError(503, "payment_unavailable", "当前仅支持人民币商城订单的微信网页、扫码或支付宝网页支付。");
+  }
+}
 
 export type RefundForProvider = {
   refundNo: string;
@@ -63,16 +82,37 @@ export class PaymentProviderService {
 
   async identity(channel: PaymentChannel): Promise<{ merchantId: string | null; appId: string | null }> {
     if (channel === PaymentChannel.APPLE_IAP) return { merchantId: null, appId: null };
-    await this.assertConfigured(channel.startsWith("WECHAT") ? "wechat_pay" : "alipay");
+    const config = await this.assertConfigured(channel.startsWith("WECHAT") ? "wechat_pay" : "alipay");
     if (channel.startsWith("WECHAT")) {
       const secrets = await this.wechatSecrets();
       const appId = channel === PaymentChannel.WECHAT_APP ? secrets.appIdApp : channel === PaymentChannel.WECHAT_MINI ? secrets.appIdMini : secrets.appIdOfficial;
       if (!secrets.merchantId || !appId) throw new ServiceUnavailableException("微信支付商户或应用未配置");
+      if (isGlobalRealm()) {
+        this.assertGlobalConfiguration(channel, config, secrets);
+        if (channel === PaymentChannel.WECHAT_JSAPI) await this.assertGlobalOfficialApp(appId);
+      }
       return { merchantId: secrets.merchantId, appId };
     }
     const secrets = await this.alipaySecrets();
     if (!secrets.appId) throw new ServiceUnavailableException("支付宝应用未配置");
+    if (isGlobalRealm()) this.assertGlobalConfiguration(channel, config, secrets);
     return { merchantId: null, appId: secrets.appId };
+  }
+
+  private assertGlobalConfiguration(channel: PaymentChannel, config: Record<string, unknown>, secrets: Record<string, string | undefined>) {
+    if (!globalPaymentConfigurationReady(channel, config, secrets, env("PUBLIC_BASE_URL", ""))) {
+      throw new ServiceUnavailableException("支付商户、验签凭据或安全回调地址尚未配置完整");
+    }
+  }
+
+  private async assertGlobalOfficialApp(appId: string) {
+    requireGlobalWechatH5();
+    const config = await this.assertConfigured("wechat_official");
+    const secret = await this.integrationSecrets.resolve("wechat_official", { appId: "WECHAT_OFFICIAL_APP_ID", appSecret: "WECHAT_OFFICIAL_APP_SECRET" });
+    if ((secret.appId ?? String(config.appId ?? "")).trim() !== appId || (secret.appSecret ?? "").trim().length < 16) {
+      throw new ServiceUnavailableException("公众号身份与微信支付应用尚未配置一致");
+    }
+    officialRedirectUri(String(config.redirectUri ?? env("WECHAT_OFFICIAL_REDIRECT_URI", "")), env("COMMERCE_STOREFRONT_URL", ""));
   }
 
   async assertIdentity(intent: { channel: PaymentChannel; providerMerchantId: string | null; providerAppId: string | null }) {
@@ -89,10 +129,10 @@ export class PaymentProviderService {
   async resolveOfficialPayer(userId: string, appId: string): Promise<string> {
     const identity = await this.prisma.wechatOfficialIdentity.findUnique({
       where: { userId_appId: { userId, appId } },
-      include: { user: { select: { status: true, mobileVerifiedAt: true } } },
+      include: { user: { select: { status: true, mobileVerifiedAt: true, emailVerifiedAt: true } } },
     });
-    if (!identity || identity.user.status !== "ACTIVE" || !identity.user.mobileVerifiedAt) {
-      throw new BadRequestException("请先在当前公众号中授权并验证手机号");
+    if (!identity || identity.user.status !== "ACTIVE" || !(identity.user.mobileVerifiedAt || (isGlobalRealm() && identity.user.emailVerifiedAt))) {
+      throw new BadRequestException(isGlobalRealm() ? "请先在当前公众号中授权并验证邮箱或手机号" : "请先在当前公众号中授权并验证手机号");
     }
     return identity.openId;
   }
@@ -105,7 +145,9 @@ export class PaymentProviderService {
       appleProductId?: string | null;
     },
   ): Promise<Record<string, unknown>> {
-    if (isGlobalRealm() && intent.channel !== PaymentChannel.APPLE_IAP) throw globalError(503, "payment_unavailable", "This payment method is not available in this market yet.");
+    assertGlobalPaymentSupported(intent);
+    // A direct service caller cannot bypass the public capability's credential checks.
+    if (isGlobalRealm() && intent.channel !== PaymentChannel.APPLE_IAP) await this.identity(intent.channel);
     if (intent.channel === PaymentChannel.APPLE_IAP) {
       return this.appleInvoke(intent, context.appleProductId);
     }

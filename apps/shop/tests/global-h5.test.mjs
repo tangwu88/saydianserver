@@ -7,7 +7,7 @@ import test from "node:test";
 import ts from "typescript";
 import { createRequire } from "node:module";
 const nodeRequire = createRequire(import.meta.url);
-const vue = nodeRequire("vue"), { parse, compileScript } = nodeRequire("vue/compiler-sfc");
+const vue = nodeRequire("vue"), { parse, compileScript, compileTemplate } = nodeRequire("vue/compiler-sfc");
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
 function harness({ realm = "global", storage = new Map(), url = "https://app.saydian.cn/global/saidian-mall/", request } = {}) {
@@ -60,13 +60,62 @@ test("all customer, checkout, employee, OAuth and lock keys are isolated; domest
     assert.equal(realmKey(key, "domestic"), key); assert.notEqual(realmKey(key, "global"), key);
   }
 });
-test("only known global browsing and auth endpoints are enabled", () => {
+test("global customer shopping pages and exact endpoint methods are allowed without employee or mini routes", () => {
   const { globalApiAllowed, globalPageAllowed } = harness().load("realm-config");
   assert.equal(globalApiAllowed("/storefront/products?page=1"), true);
   assert.equal(globalApiAllowed("/auth/wechat/h5/bind-code", "POST"), true);
-  for (const path of ["/wecom/oauth", "/auth/wechat/mini", "/auth/sms-login", "/storefront/cart/items", "/storefront/orders", "https://example.invalid"]) assert.equal(globalApiAllowed(path, "POST"), false);
+  for (const path of ["/wecom/oauth", "/auth/wechat/mini", "/auth/sms-login", "/auth/referral", "/payments/wechat/notify", "/payments/wechat/refund-notify", "/payments/alipay/notify", "/storefront/coupon-gifts/token/claim", "https://example.invalid"]) assert.equal(globalApiAllowed(path, "POST"), false, path);
+  for (const [method, paths] of [
+    ["GET", ["/storefront/bootstrap", "/storefront/capabilities?locale=en", "/storefront/markets", "/storefront/products/sku-1", "/storefront/cart", "/storefront/addresses", "/storefront/orders?status=PAID", "/storefront/orders/order-1", "/storefront/orders/order-1/logistics", "/storefront/favorites", "/storefront/coupons", "/storefront/points?page=2", "/payments/payment-1"]],
+    ["POST", ["/storefront/cart/items", "/storefront/addresses", "/storefront/orders/preview", "/storefront/orders", "/storefront/orders/order-1/cancel", "/storefront/orders/order-1/receipt", "/storefront/orders/order-1/after-sales", "/storefront/orders/order-1/after-sales/preview", "/storefront/orders/order-1/after-sales/sale-1/return-logistics", "/storefront/favorites/product-1", "/storefront/coupons/coupon-1/claim", "/storefront/reviews", "/payments/create"]],
+    ["PATCH", ["/storefront/addresses/address-1"]], ["DELETE", ["/storefront/cart/items/item-1", "/storefront/addresses/address-1"]],
+  ]) for (const path of paths) assert.equal(globalApiAllowed(path, method), true, `${method} ${path}`);
+  for (const [method, path] of [["GET", "/payments/create"], ["GET", "/storefront/orders/preview"], ["POST", "/storefront/products/product-1"], ["DELETE", "/storefront/orders/order-1"], ["PUT", "/storefront/addresses/address-1"], ["POST", "/payments/create?channel=wechat_mini"], ["GET", "/storefront/coupon-gifts/token"], ["GET", "/storefront/orders/../admin"], ["GET", "/storefront/orders/%2e%2e"], ["GET", "/storefront/products/id#fragment"], ["GET", "/storefront/products/id\\admin"]]) assert.equal(globalApiAllowed(path, method), false, `${method} ${path}`);
   assert.equal(globalPageAllowed("/pages/product/index?id=1"), true);
-  for (const route of ["/pages/employee/index", "/pages/checkout/index", "//example.invalid", "/pages/login/index#bad"]) assert.equal(globalPageAllowed(route), false);
+  for (const page of ["cart", "checkout", "orders", "order-detail", "after-sale", "addresses", "address-edit", "favorites", "coupons", "points"]) assert.equal(globalPageAllowed(`/pages/${page}/index?id=synthetic`), true);
+  for (const route of ["/pages/employee/index", "/pages/coupon-gift/index?token=employee-token", "//example.invalid", "/pages/login/index#bad"]) assert.equal(globalPageAllowed(route), false);
+});
+test("global navigation accepts Uni home-tab alias without permitting other routes", () => {
+  const h=harness(),interceptors={},toasts=[];
+  h.uni.addInterceptor=(name,value)=>{interceptors[name]=value;};h.uni.showToast=value=>toasts.push(value);
+  h.load('global-navigation').installGlobalNavigation();
+  const home={url:'/'};
+  assert.equal(interceptors.switchTab.invoke(home),undefined);assert.equal(home.url,'/pages/home/index');
+  assert.equal(toasts.length,0);
+  for (const action of Object.keys(interceptors)) for (const url of ['/pages/checkout/index','/pages/cart/index','/pages/order-detail/index?id=1']) assert.equal(interceptors[action].invoke({url}),undefined);
+  for(const url of ['//foreign.invalid','/global/saidian-mall/','/pages/employee/index','/?redirect=bad','/pages/coupon-gift/index']) {
+    assert.equal(interceptors.switchTab.invoke({url}),false);
+  }
+});
+test('global direct home and customer shopping hashes survive refresh but employee routes remain blocked',()=>{
+  const home=harness({url:'https://app.saydian.cn/global/saidian-mall/#/'});
+  home.load('global-navigation').normalizeGlobalEntry();assert.equal(home.location.hash,'#/');
+  for (const route of ['/pages/checkout/index','/pages/cart/index','/pages/order-detail/index?id=synthetic']) {
+    const customer=harness({url:'https://app.saydian.cn/global/saidian-mall/#'+route});
+    customer.load('global-navigation').normalizeGlobalEntry();assert.equal(customer.location.hash,'#'+route);
+  }
+  const blocked=harness({url:'https://app.saydian.cn/global/saidian-mall/#/pages/employee/index'});
+  blocked.load('global-navigation').normalizeGlobalEntry();assert.equal(blocked.location.hash,'#/pages/help/index');
+});
+
+test("allowed global shopping requests retain same-realm credentials and propagate temporary-session denial", async () => {
+  const h = harness({ request: request => request.success({ statusCode: 403, data: { errorKey: "phone_verification_required", message: "请先验证手机号" } }) });
+  h.storage.set("saidian-token", "domestic-token");
+  const api = h.load("api");
+  await api.saveMallSession({ token: "global-temporary-token", user: { id: "global-user", phoneVerified: false, phoneTestMode: true } });
+  await assert.rejects(api.api("/storefront/orders", { method: "POST", auth: true, data: { expectedQuote: "synthetic" } }), error => error.status === 403 && error.errorKey === "account_verification_required");
+  assert.equal(h.requests.length, 0); assert.equal(h.storage.get("saydian-global-mall:saidian-token"), "global-temporary-token");
+  await assert.rejects(api.api("/auth/wechat/h5/account", { auth: true }));
+  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/auth/wechat/h5/account");
+  assert.equal(h.storage.get("saydian-global-mall:saidian-token"), "global-temporary-token"); h.requests.length = 0;
+  await api.saveMallSession({ token: "global-verified-token", user: { id: "global-user", phoneVerified: true, phoneTestMode: false } });
+  await assert.rejects(api.api("/storefront/orders", { method: "POST", auth: true, data: { expectedQuote: "synthetic" } }), error => error.status === 403 && error.errorKey === "phone_verification_required");
+  assert.equal(h.requests.length, 1); assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/storefront/orders");
+  assert.equal(h.requests[0].header.authorization, "Bearer global-verified-token");
+  assert.equal(h.storage.get("saidian-token"), "domestic-token");
+  await assert.rejects(api.api("/payments/wechat/notify", { method: "POST" }));
+  await assert.rejects(api.api("/wecom/oauth", { method: "POST" }));
+  assert.equal(h.requests.length, 1);
 });
 test("identifier contracts still require email/E164 and validate passwords", () => {
   const { validGlobalIdentifier, validNewPassword } = harness().load("global-auth-model");
@@ -134,7 +183,7 @@ test("account switch clears only international drafts and preserves domestic ide
 });
 test("global client refuses disabled routes without network and targets its own API", async () => {
   const h = harness({ request: options => options.success({ statusCode: 200, data: { realm: "global" } }) });
-  await assert.rejects(h.load("api").api("/storefront/orders", { method: "POST" }), /暂未开放/); assert.equal(h.requests.length, 0);
+  await assert.rejects(h.load("api").api("/wecom/oauth", { method: "POST" }), /暂未开放/); assert.equal(h.requests.length, 0);
   await h.load("api").api("/storefront/capabilities?locale=en"); assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/storefront/capabilities?locale=en");
 });
 test("global logout revokes server session; network failure reports local-only logout", async () => {
@@ -328,4 +377,61 @@ test("login/account/help visible UI removes edition notices and uses App brand/t
   }
   assert.match(readFileSync(resolve(source, "global-ui.scss"), "utf8"), /#d20b27/);
   assert.match(readFileSync(resolve(source, "components/GlobalAccount.vue"), "utf8"), /phoneVerified === false[\s\S]*?待验证/);
+});
+
+function renderedComponent(h, name, initialProps = {}) {
+  const filename = resolve(source, `components/${name}.vue`), descriptor = parse(readFileSync(filename, "utf8"), { filename }).descriptor;
+  const script = compileScript(descriptor, { id: "shopping-entry-test" });
+  const template = compileTemplate({ source: descriptor.template.content, filename, id: "shopping-entry-test", compilerOptions: {
+    bindingMetadata: script.bindings, isCustomElement: tag => tag === tag.toLowerCase(),
+  } });
+  assert.deepEqual(template.errors, []);
+  const module = { exports: {} }, output = ts.transpileModule(template.code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  vm.runInNewContext(output, { module, exports: module.exports, require: name => { assert.equal(name, "vue"); return vue; } });
+  const props = vue.reactive(initialProps), state = h.load(`components/${name}.vue`).default.setup(props, { expose() {}, emit() {} });
+  const ui = vue.proxyRefs({ ...state, DesktopHeader: { render: () => null }, BrandIdentity: { render: () => null } });
+  return { props, tree: () => module.exports.render({ $emit() {} }, [], props, ui, {}, {}) };
+}
+function renderNodes(node) { return node && typeof node === "object" ? [node, ...(Array.isArray(node.children) ? node.children.flatMap(renderNodes) : [])] : []; }
+function renderedText(node) { return typeof node?.children === "string" ? node.children : Array.isArray(node?.children) ? node.children.map(renderedText).join("") : ""; }
+const renderedButton = (tree, label) => renderNodes(tree).find(node => node.type === "button" && renderedText(node).replace(/›$/, "").trim() === label);
+
+test("global account renders working customer order menus without employee controls and retains temporary verification notices", () => {
+  const h = harness(), navigations = []; h.uni.navigateTo = value => navigations.push(value.url);
+  const component = renderedComponent(h, "GlobalAccount", { user: { id: "internal-uuid-must-stay-hidden", memberNo: "123", nickname: "Synthetic member", phoneMasked: "+86***5678", phoneVerified: false, phoneTestMode: true } });
+  let tree = component.tree();
+  const expected = { "全部订单": "/pages/orders/index", "待付款": "/pages/orders/index?status=PENDING_PAYMENT", "待收货": "/pages/orders/index?status=SHIPPED", "售后": "/pages/orders/index?status=AFTER_SALE", "收货地址": "/pages/addresses/index", "我的收藏": "/pages/favorites/index", "优惠券": "/pages/coupons/index", "积分与流水": "/pages/points/index" };
+  for (const [label, route] of Object.entries(expected)) {
+    const button = renderedButton(tree, label); assert.ok(button, label); button.props.onClick(); assert.equal(navigations.at(-1), route);
+  }
+  assert.match(renderedText(tree), /待验证/); assert.match(renderedText(tree), /购买前需验证账号/);
+  assert.doesNotMatch(renderedText(tree), /internal-uuid|员工|推广中心/); assert.match(renderedText(tree), /会员 ID：123/);
+  renderedButton(tree, "更换登录账号").props.onClick(); assert.equal(navigations.at(-1), "/pages/login/index");
+  component.props.user = { memberNo: "456", nickname: "Verified member", phoneMasked: "+86***1234", phoneVerified: true };
+  tree = component.tree(); assert.doesNotMatch(renderedText(tree), /待验证|购买前需验证账号/); assert.match(renderedText(tree), /会员 ID：456/);
+  assert.equal(h.requests.length, 0);
+});
+
+test("global and domestic headers expose a real cart-tab shortcut but never employee entry", () => {
+  for (const realm of ["global", "domestic"]) {
+    const h = harness({ realm }), navigations = []; h.uni.switchTab = value => navigations.push(value.url);
+    const tree = renderedComponent(h, "DesktopHeader").tree(), button = renderedButton(tree, "购物车");
+    assert.ok(button); button.props.onClick(); assert.deepEqual(navigations, ["/pages/cart/index"]);
+    assert.doesNotMatch(renderedText(tree), /员工|推广中心/); assert.equal(h.requests.length, 0);
+  }
+});
+
+test("global H5 manifest retains all four customer tabs and its independent route base", () => {
+  const h = harness(), module = { exports: {} };
+  const output = ts.transpileModule(readFileSync(resolve(source, "../vite.config.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const imports = { vite: { defineConfig: value => value }, "@dcloudio/vite-plugin-uni": { default: () => ({ name: "synthetic-uni" }) },
+    "@dcloudio/uni-cli-shared": { parseManifestJsonOnce: () => ({}) }, "./src/realm-config": h.load("realm-config") };
+  vm.runInNewContext(output, { module, exports: module.exports, process: { env: { VITE_APP_REALM: "global", UNI_PLATFORM: "h5" } },
+    require: name => { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
+  const config = module.exports.default, transform = config.plugins[0].transform;
+  const pages = JSON.parse(transform(readFileSync(resolve(source, "pages.json"), "utf8"), "uni:pages-json-js").code);
+  assert.deepEqual(pages.tabBar.list.map(tab => tab.pagePath), ["pages/home/index", "pages/category/index", "pages/cart/index", "pages/profile/index"]);
+  assert.equal(pages.tabBar.selectedColor, "#D20B27"); assert.equal(config.base, "/global/saidian-mall/");
+  const manifest = JSON.parse(transform('{"h5":{"router":{"mode":"hash"}}}', "uni:manifest-json-js").code);
+  assert.equal(manifest.h5.router.base, "/global/saidian-mall/"); assert.equal(manifest.h5.router.mode, "hash");
 });

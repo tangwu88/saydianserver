@@ -2,7 +2,7 @@
   <button class="brand" aria-label="Saydian 首页" @click="go('/pages/home/index')"><BrandIdentity v-if="isGlobalMall"/><image v-else class="brand-logo" :src="brandLogo" mode="aspectFit" /></button>
   <view class="head-links category-links"><button @click="go('/pages/home/index')">首页</button><button @click="go('/pages/category/index')">产品中心</button><button @click="go('/pages/help/index')">帮助与服务</button></view>
   <button class="desktop-search" @click="go('/pages/search/index')">搜索商品</button>
-  <view class="head-links"><button @click="go('/pages/profile/index')">我的账户</button><button v-if="!isGlobalMall" @click="go('/pages/cart/index')">购物车</button></view>
+  <view class="head-links"><button @click="go('/pages/profile/index')">我的账户</button><button @click="go('/pages/cart/index')">购物车</button></view>
 </view></view></template>
 <script setup lang="ts">
 import { brandLogo } from "../storefront";

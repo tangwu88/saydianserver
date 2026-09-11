@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { globalAddress, globalMarkets } from "./global-commerce-policy";
+import { globalAddress, globalMarkets, configuredGlobalMarkets } from "./global-commerce-policy";
 
 describe("global delivery and currency boundaries", () => {
+  it("defaults only an absent market configuration to CN/CNY without claiming payment readiness", () => {
+    expect(configuredGlobalMarkets(null)).toEqual([{ countryCode: "CN", currency: "CNY", currencyExponent: 2, commerceEnabled: true, paymentChannels: [] }]);
+    expect(configuredGlobalMarkets({ enabled: false, value: {} })).toEqual([]);
+    expect(configuredGlobalMarkets({ enabled: true, value: {} })).toEqual([]);
+  });
+  it("enables only explicit CN/CNY and ignores caller-supplied channels", () => {
+    expect(globalMarkets({ markets: [{ countryCode: "CN", currency: "CNY", enabled: true, paymentChannels: ["card"] }] })).toEqual(configuredGlobalMarkets(null));
+    expect(globalMarkets({ markets: [{ countryCode: "CN", currency: "USD", enabled: true }] })[0]?.commerceEnabled).toBe(false);
+    expect(globalMarkets({ markets: [{ countryCode: "CN", currency: "CNY", enabled: true, commerceEnabled: false }] })[0]?.commerceEnabled).toBe(false);
+    expect(globalMarkets({ markets: [{ countryCode: "US", currency: "CNY", enabled: true }] })[0]?.commerceEnabled).toBe(false);
+  });
   it("accepts international contacts without requiring Chinese province and district", () => {
     expect(globalAddress({ countryCode: "us", name: "Synthetic Recipient", phone: "+1 202 555 0123", addressLine1: "123 Test Street", postalCode: "20001" })).toMatchObject({ countryCode: "US", mobile: "+12025550123", province: "", city: "", district: "", postalCode: "20001" });
   });

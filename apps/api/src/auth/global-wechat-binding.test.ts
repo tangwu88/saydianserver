@@ -43,7 +43,8 @@ function harness(existing = true, verified = true) {
       create: vi.fn(async ({ data }: any) => { const row = { id: randomUUID(), status: "ACTIVE", emailVerifiedAt: null, mobileVerifiedAt: null, ...data }; state.users.push(row); return row; }),
     },
     userSession: { updateMany: vi.fn(async () => { state.oldSessionsRevoked = true; return { count: 2 }; }) },
-    integrationConfig: { findUnique: vi.fn().mockResolvedValue({ state: "CONFIGURED", publicConfig: { redirectUri } }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    integrationConfig: { findUnique: vi.fn().mockResolvedValue({ state: "CONFIGURED", publicConfig: { redirectUri } }), findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    commerceBusinessConfig: { findUnique: vi.fn().mockResolvedValue(null) },
     globalLegalDocument: { findMany: vi.fn().mockResolvedValue(["user_agreement", "privacy_policy"].map(documentType => ({ documentType, version: "legal-v1", locale: "en", contentHtml: "Synthetic reviewed legal text" }))) },
     consentRecord: { upsert: vi.fn(async ({ create }: any) => { state.consents.push(create); return create; }) },
     wechatOfficialIdentity: {
@@ -128,9 +129,11 @@ describe("global WeChat gate, callback and consent", () => {
     expect(await h.h5.login({ code: "test-code", state: stateText, codeVerifier: verifier, consentVersion: "legal-v1" })).toMatchObject({ requiresAccountBinding: true, requiresMobileBinding: true });
     expect(h.auth.issueMallSession).not.toHaveBeenCalled(); expect(h.db.user.update).not.toHaveBeenCalled();
   });
-  it("advertises distinct unavailable binding channels without enabling checkout or payments", async () => {
+  it("advertises distinct unavailable binding channels independently of CN/CNY checkout and payments", async () => {
     const h = harness(); h.delivery.capabilities.mockResolvedValue({ email: false, sms: false, smsCountries: [] });
-    expect(await h.capabilities.publicCapabilities()).toMatchObject({ realm: "global", consentVersion: "legal-v1", login: { wechatH5: { enabled: true }, wechatBinding: { bindExistingAvailable: true, emailOtpAvailable: false, smsOtpAvailable: false, email: { reason: expect.any(String) }, sms: { reason: expect.any(String) } } }, checkout: { enabled: false }, payments: [] });
+    const result = await h.capabilities.publicCapabilities();
+    expect(result).toMatchObject({ realm: "global", consentVersion: "legal-v1", login: { wechatH5: { enabled: true }, wechatBinding: { bindExistingAvailable: true, emailOtpAvailable: false, smsOtpAvailable: false, email: { reason: expect.any(String) }, sms: { reason: expect.any(String) } } }, checkout: { enabled: true, currency: "CNY" } });
+    expect(result.payments).toHaveLength(5); expect(result.payments.every(payment => !payment.enabled)).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
   });
 });

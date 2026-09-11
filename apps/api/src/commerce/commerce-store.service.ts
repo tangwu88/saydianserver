@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import {
   AfterSaleStatus,
@@ -18,9 +19,12 @@ import { safeObject } from "../common/crypto";
 import { integerCents, requireCommerceOwner } from "./commerce-policy";
 import { publicSku } from "./commerce-public-sku";
 import { isGlobalRealm } from "../common/deployment-realm";
-import { globalAddress, globalMarkets } from "./global-commerce-policy";
+import { globalAddress, configuredGlobalMarkets, globalCommerceCountry, globalCommerceCurrency } from "./global-commerce-policy";
 import { globalError } from "../auth/global-identity";
 import { onCommerceOrderReceived, priceOrder, quoteAfterSale, afterSaleAvailability, financialSnapshot, cents, allocateLargestRemainder } from "./commerce-finance";
+import { commerceQuoteFingerprint, optionalExpectedQuote } from "./commerce-quote";
+import { commerceOrderListFilter } from "./commerce-order-filter";
+import { afterSaleEvidenceReferences } from "./commerce-evidence";
 
 type CreateOrderInput = {
   addressId: string;
@@ -29,6 +33,7 @@ type CreateOrderInput = {
   buyerRemark?: string;
   invoice?: Record<string, unknown>;
   pointCents?: number;
+  expectedQuote?: string;
   idempotencyKey: string;
 };
 
@@ -39,7 +44,7 @@ export class CommerceStoreService {
   async markets() {
     if (!isGlobalRealm()) return { markets: [] };
     const config = await this.prisma.commerceBusinessConfig.findUnique({ where: { key: "global.markets" } });
-    return { markets: config?.enabled ? globalMarkets(config.value) : [] };
+    return { markets: configuredGlobalMarkets(config) };
   }
 
   async bootstrap(referralCode?: string) {
@@ -313,14 +318,14 @@ export class CommerceStoreService {
         shipping_money: quote.shippingCents / 100,
         payable_money: quote.payableCents / 100,
       },
-      quote,
+      quote: { ...quote, fingerprint: commerceQuoteFingerprint(quote) },
     };
   }
 
   private async readQuote(tx: Prisma.TransactionClient, userId: string, input: Omit<CreateOrderInput, "idempotencyKey">) {
-    if (isGlobalRealm()) throw globalError(503, "market_checkout_unavailable", "Purchases are not available in this market yet.");
+    const global = isGlobalRealm();
     const normalized = normalizeItems(input.items);
-    const [user, address, skus, shippingConfig, account, claim] = await Promise.all([
+    const [user, address, skus, shippingConfig, account, claim, marketConfig] = await Promise.all([
       tx.user.findUniqueOrThrow({ where: { id: userId }, include: { referralEmployee: true } }),
       input.addressId ? tx.commerceAddress.findFirst({ where: { id: input.addressId, userId } })
         : tx.commerceAddress.findFirst({ where: { userId }, orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }] }),
@@ -328,8 +333,14 @@ export class CommerceStoreService {
       tx.commerceBusinessConfig.findUnique({ where: { key: "shipping.default" } }),
       tx.commercePointAccount.findUnique({ where: { userId } }),
       input.couponClaimId ? tx.commerceCouponClaim.findFirst({ where: { id: input.couponClaimId, userId, usedAt: null }, include: { coupon: true } }) : null,
+      global ? tx.commerceBusinessConfig.findUnique({ where: { key: "global.markets" } }) : null,
     ]);
     if (input.addressId && !address) throw new BadRequestException("收货地址不存在");
+    if (global) {
+      if (!configuredGlobalMarkets(marketConfig).some(market => market.commerceEnabled)) throw globalError(503, "market_checkout_unavailable", "当前尚未开放中国大陆人民币结算。");
+      if (!address) throw globalError(400, "delivery_address_required", "请先选择中国大陆收货地址。");
+      if (address.countryCode !== globalCommerceCountry) throw globalError(400, "delivery_country_unsupported", "当前仅支持中国大陆收货，订单以人民币结算。");
+    }
     validateSkus(skus, normalized);
     const subtotal = cents(skus.reduce((total, sku) => total + sku.salePriceCents * normalized.get(sku.id)!, 0));
     if (input.couponClaimId) {
@@ -359,24 +370,37 @@ export class CommerceStoreService {
       throw new BadRequestException("缺少有效的订单请求编号");
     }
     const normalized = normalizeItems(input.items);
+    const expectedQuote = optionalExpectedQuote(input.expectedQuote);
     const requestHash = createHash("sha256").update(stableRequestJson({
       addressId: input.addressId, items: [...normalized].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),
       couponClaimId: input.couponClaimId ?? null, pointCents: input.pointCents ?? 0,
       buyerRemark: input.buyerRemark ?? null, invoice: input.invoice ?? null,
+      ...(expectedQuote === undefined ? {} : { expectedQuote }),
     })).digest("hex");
-    const existing = await this.prisma.commerceOrder.findUnique({
+    const lookup = {
       where: { idempotencyKey: input.idempotencyKey },
-      include: { items: true },
-    });
-    if (existing) {
-      if (existing.userId !== userId) throw new ConflictException("订单请求编号已被使用");
-      if (existing.requestHash && existing.requestHash !== requestHash) throw new ConflictException("订单请求编号已被不同结算参数使用");
-      return existing;
-    }
-    return this.prisma.$transaction(
+      include: { items: true as const },
+    };
+    const checkRequest = (order: { userId: string; requestHash: string | null }) => {
+      if (order.userId !== userId) throw new ConflictException("订单请求编号已被使用");
+      if (order.requestHash && order.requestHash !== requestHash) throw new ConflictException("订单请求编号已被不同结算参数使用");
+    };
+    const existing = await this.prisma.commerceOrder.findUnique(lookup);
+    if (existing) { checkRequest(existing); return existing; }
+    try { return await this.prisma.$transaction(
       async (tx) => {
+        // Never label an overlapping same-key attempt as definitely rejected.
+        // Try-lock does not wait on a stale Serializable snapshot; callers keep
+        // their original frozen payload on 503 and can query the same key again.
+        const locks = await tx.$queryRaw<Array<{ acquired: boolean }>>`SELECT pg_try_advisory_xact_lock(hashtextextended(${"commerce-order:" + input.idempotencyKey}, 0)) AS acquired`;
+        if (!locks[0]?.acquired) throw new ServiceUnavailableException({ errorKey: "order_in_progress", message: "订单正在确认，请保留当前订单内容并稍后重试" });
+        const committed = await tx.commerceOrder.findUnique(lookup);
+        if (committed) { checkRequest(committed); return committed; }
         const { user, address, skus, couponClaimId, quote } = await this.readQuote(tx, userId, input);
         if (!address) throw new BadRequestException("收货地址不存在");
+        if (expectedQuote !== undefined && expectedQuote !== commerceQuoteFingerprint(quote)) {
+          throw new ConflictException({ errorKey: "quote_changed", message: "订单金额已变更，请重新获取报价并确认后提交" });
+        }
         const { subtotalCents, couponDiscountCents: discountCents, pointDiscountCents, shippingCents } = quote;
         const allocations = new Map(quote.lines.map(line => [line.skuId, line]));
         if (pointDiscountCents > 0) {
@@ -402,7 +426,7 @@ export class CommerceStoreService {
             payableCents: subtotalCents - discountCents - pointDiscountCents + shippingCents,
             recipientName: address.name,
             recipientMobile: address.mobile,
-            ...(isGlobalRealm() ? { countryCode: address.countryCode, postalCode: address.postalCode } : {}),
+            ...(isGlobalRealm() ? { countryCode: globalCommerceCountry, currency: globalCommerceCurrency, postalCode: address.postalCode } : {}),
             province: address.province,
             city: address.city,
             district: address.district,
@@ -458,15 +482,18 @@ export class CommerceStoreService {
         return order;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+    ); } catch (error) {
+      // A winner may have committed after the outer read / transaction snapshot.
+      const committed = await this.prisma.commerceOrder.findUnique(lookup);
+      if (committed) { checkRequest(committed); return committed; }
+      throw error;
+    }
   }
 
-  async listOrders(userId: string, statusInput?: string) {
-    const status = statusInput
-      ? parseEnum(CommerceOrderStatus, statusInput, "订单状态")
-      : undefined;
+  async listOrders(userId: string, statusInput?: string, groupInput?: string) {
+    const filter = commerceOrderListFilter(statusInput, groupInput);
     return this.prisma.commerceOrder.findMany({
-      where: { userId, ...(status ? { status } : {}) },
+      where: { userId, ...filter },
       include: {
         items: true,
         paymentIntents: true,
@@ -481,7 +508,7 @@ export class CommerceStoreService {
     const order = await this.prisma.commerceOrder.findFirst({
       where: { id, userId },
       include: {
-        items: true,
+        items: { include: { review: { select: { id: true, rating: true, content: true, published: true, createdAt: true } } } },
         paymentIntents: true,
         shipments: { include: { items: true } },
         afterSales: { include: { refunds: true, items: true } },
@@ -597,22 +624,45 @@ export class CommerceStoreService {
   }
 
   async createAfterSale(userId: string, orderId: string, input: unknown) {
-    return this.prisma.$transaction(async tx => {
+    const inputBody = safeObject(input), key = inputBody.idempotencyKey;
+    if (key !== undefined && (typeof key !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(key))) throw new BadRequestException("售后请求编号格式无效");
+    const { idempotencyKey: _key, ...payload } = inputBody;
+    // Store the scoped key hash + immutable payload hash in the existing unique
+    // requestKey column. No contact details or request body is stored in this key.
+    const prefix = key ? "customer-as:" + createHash("sha256").update(stableRequestJson([userId, orderId, key])).digest("hex") + ":" : undefined;
+    const requestKey = prefix ? prefix + createHash("sha256").update(stableRequestJson(payload)).digest("hex") : undefined;
+    const lookup = async (db: Prisma.TransactionClient) => {
+      if (!prefix) return null;
+      const existing = await db.commerceAfterSale.findFirst({ where: { requestKey: { startsWith: prefix }, orderId, order: { userId } }, include: { items: true } });
+      if (existing && existing.requestKey !== requestKey) throw new ConflictException("同一售后请求编号不能更换申请内容");
+      return existing;
+    };
+    const saved = await lookup(this.prisma);
+    if (saved) return saved;
+    try { return await this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const committed = await lookup(tx);
+      if (committed) return committed;
       const { body, order, type, quote } = await this.readAfterSaleQuote(tx, userId, orderId, input);
       if (body.orderVersion !== undefined && integerCents(body.orderVersion, "订单版本") !== order.version) throw new ConflictException("订单已更新，请刷新售后报价");
+      const evidenceImages = await afterSaleEvidenceReferences(tx, userId, body);
       const afterSale = await tx.commerceAfterSale.create({ data: {
+        ...(requestKey ? { requestKey } : {}),
         afterSaleNo: commerceNumber("AS"), orderId, type, pricingVersion: quote.pricingVersion,
         requestedCents: quote.requestedCents, pointReturnCents: quote.pointReturnCents, shippingRefundCents: quote.shippingRefundCents,
         reason: required(body.reason, "售后原因"), description: optional(body.description),
-        evidenceImages: Array.isArray(body.evidenceImages) ? body.evidenceImages.map(String).slice(0, 9) : [],
+        evidenceImages,
         items: { create: quote.items },
       }, include: { items: true } });
       const changed = await tx.commerceOrder.updateMany({ where: { id: orderId, version: order.version },
         data: { status: CommerceOrderStatus.AFTER_SALE, version: { increment: 1 } } });
       if (changed.count !== 1) throw new ConflictException("订单已更新，请刷新");
       return afterSale;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); } catch (error) {
+      const committed = await lookup(this.prisma);
+      if (committed) return committed;
+      throw error;
+    }
   }
 
   async createAfterSaleFromOrderItem(userId: string, orderItemId: string, input: unknown) {
@@ -627,6 +677,7 @@ export class CommerceStoreService {
     await this.order(userId, orderId);
     return this.prisma.commerceShipment.findMany({
       where: { orderId },
+      include: { items: true },
       orderBy: { createdAt: "desc" },
     });
   }
@@ -670,27 +721,48 @@ export class CommerceStoreService {
     });
   }
 
+  async availableCoupons(userId: string, pageInput = 1) {
+    const page = finiteInteger(pageInput, 1, 1, 10_000), pageSize = 20, now = new Date();
+    // Employee gift inventory is not a public coupon pool. Expose only public
+    // fields and do not alter the existing owned-coupons array contract.
+    const where: Prisma.CommerceCouponWhereInput = {
+      status: CouponStatus.ACTIVE, employeeDistributable: false,
+      validFrom: { lte: now }, validUntil: { gte: now },
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.commerceCoupon.findMany({ where, orderBy: [{ validUntil: "asc" }, { id: "asc" }], skip: (page - 1) * pageSize, take: pageSize,
+        select: { id: true, name: true, type: true, value: true, minimumSpendCents: true, validFrom: true, validUntil: true,
+          totalQuantity: true, claimedQuantity: true, reservedGiftQuantity: true, claims: { where: { userId }, select: { id: true } } } }),
+      this.prisma.commerceCoupon.count({ where }),
+    ]);
+    return { items: rows.map(({ claims, totalQuantity, claimedQuantity, reservedGiftQuantity, ...coupon }) => ({
+      ...coupon, claimed: claims.length > 0, available: totalQuantity === null || totalQuantity > claimedQuantity + reservedGiftQuantity,
+    })), pagination: { page, pageSize, total, hasMore: page * pageSize < total } };
+  }
+
   async claimCoupon(userId: string, couponId: string) {
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "CommerceCoupon" WHERE id = ${couponId}::uuid FOR UPDATE`;
+      // A lost response must be recoverable even when the final coupon has now
+      // been claimed or the campaign has just expired.
+      const existing = await tx.commerceCouponClaim.findUnique({ where: { couponId_userId: { couponId, userId } } });
+      if (existing) return existing;
       const now = new Date();
       const coupon = await tx.commerceCoupon.findFirst({
         where: {
           id: couponId,
           status: CouponStatus.ACTIVE,
+          employeeDistributable: false,
           validFrom: { lte: now },
           validUntil: { gte: now },
         },
       });
       if (
         !coupon ||
-        (coupon.totalQuantity !== null && coupon.claimedQuantity >= coupon.totalQuantity)
+        (coupon.totalQuantity !== null && coupon.claimedQuantity + coupon.reservedGiftQuantity >= coupon.totalQuantity)
       ) {
         throw new BadRequestException("优惠券已领完或不可用");
       }
-      const existing = await tx.commerceCouponClaim.findUnique({
-        where: { couponId_userId: { couponId, userId } },
-      });
-      if (existing) return existing;
       const claim = await tx.commerceCouponClaim.create({ data: { couponId, userId } });
       await tx.commerceCoupon.update({
         where: { id: couponId },

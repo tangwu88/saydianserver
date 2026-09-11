@@ -9,11 +9,14 @@ const errorSchema = {
   properties: { code: { type: "integer" }, message: { type: "string" }, data: { type: ["object", "null"] }, timestamp: { type: "integer" }, requestId: { type: "string" } },
 };
 
-/** Verified controller responses that bypass the JSON envelope. File MIME is stored with the avatar. */
+/** Verified controller responses that bypass the JSON envelope. File MIME comes from stored metadata. */
 function rawResponseContract(route: Json): { mediaTypes: string[]; schema: Json; example?: unknown } | undefined {
   const key = String(route.routeKey ?? route.key);
   if (key === "HealthReportsController.export") return { mediaTypes: ["application/pdf"], schema: { type: "string", format: "binary" } };
   if (key === "FilesController.download") return { mediaTypes: ["image/jpeg", "image/png", "image/webp"], schema: { type: "string", format: "binary", description: "原始头像文件字节；Content-Type 取决于已保存文件，不含JSON包裹" } };
+  if (["CommerceEvidenceController.image", "AdminCommerceEvidenceController.image"].includes(key)) {
+    return { mediaTypes: ["image/jpeg", "image/png", "image/webp"], schema: { type: "string", format: "binary", description: "经身份与文件归属校验的私有售后图片字节；不含JSON包裹，后台读取须完成审计" } };
+  }
   if (["BillingController.alipayNotify", "CommerceCompatibilityController.alipayNotify"].includes(key)) {
     return { mediaTypes: ["text/plain"], schema: { type: "string", const: "success" }, example: "success" };
   }
@@ -104,7 +107,12 @@ export function documentedExample(route: Json) {
   const hasExample = contract.requestExample !== null && contract.requestExample !== undefined;
   const contentType = contract.contentType ?? "application/json";
   const body = !needsBody ? "" : !hasExample ? null : contentType === "multipart/form-data"
-    ? Object.entries(contract.requestExample).map(([key, value]) => ` --form-string '${key}=${String(value)}'`).join("")
+    ? Object.entries(contract.requestExample).map(([key, value]) => {
+      const field = contract.requestSchema?.properties?.[key];
+      const binary = field?.type === "string" && field.format === "binary";
+      const argument = `${key}=${binary ? "@" : ""}${String(value)}`.replaceAll("'", "'\\''");
+      return ` --${binary ? "form" : "form-string"} '${argument}'`;
+    }).join("")
     : ` -H "Content-Type: application/json" --data-raw '${JSON.stringify(contract.requestExample).replaceAll("'", "'\\''")}'`;
   const query = Object.entries(contract.query ?? {}).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String((value as Json).example))}`).join("&");
   const url = `{{baseUrl}}${openApiPath(route.path)}${query ? `?${query}` : ""}`;

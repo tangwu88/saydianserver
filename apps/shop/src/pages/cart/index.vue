@@ -3,25 +3,29 @@
     ><view class="container"
       ><view class="section-title"
         ><text>购物车</text
-        ><text class="small">{{ selected.length }} 件已选</text></view
+        ><text class="small">{{ selectedQuantity }} 件已选</text></view
+      ><view v-if="error" class="error-state" role="alert">{{ error }}<button @click="load">重新加载购物车</button></view
       ><view v-if="cart.items?.length" class="cart-layout"
         ><view class="cart-list"
           ><view
             v-for="item in cart.items"
             :key="item.id"
             class="cart-item card"
-            ><view
+            ><button
               :class="['check', item.selected && 'active']"
+              :disabled="busy"
+              role="checkbox"
+              :aria-checked="!!item.selected"
+              :aria-label="'选择' + (item.sku.product.displayName || item.sku.product.name)"
               @click="update(item, item.quantity, !item.selected)"
-              >✓</view
-            ><image
+              >✓</button
+            ><image v-if="item.sku.image || item.sku.product.coverImage"
               :src="
                 item.sku.image ||
-                item.sku.product.coverImage ||
-                productPlaceholder
+                item.sku.product.coverImage
               "
               mode="aspectFit"
-            /><view class="cart-info"
+            /><view v-else class="no-image">暂无图片</view><view class="cart-info"
               ><text class="name">{{
                 item.sku.product.displayName || item.sku.product.name
               }}</text
@@ -31,7 +35,7 @@
               ><text class="price">{{ money(item.sku.salePriceCents) }}</text
               ><view class="cart-bottom"
                 ><view class="counter"
-                  ><text
+                  ><button :disabled="busy || item.quantity <= 1" aria-label="减少数量"
                     @click="
                       update(
                         item,
@@ -39,12 +43,12 @@
                         item.selected,
                       )
                     "
-                    >−</text
+                    >−</button
                   ><b>{{ item.quantity }}</b
-                  ><text @click="update(item, item.quantity + 1, item.selected)"
-                    >＋</text
+                  ><button :disabled="busy || item.quantity >= item.sku.stock" aria-label="增加数量" @click="update(item, item.quantity + 1, item.selected)"
+                    >＋</button
                   ></view
-                ><text class="delete" @click="remove(item.id)">删除</text></view
+                ><button class="delete" :disabled="busy" @click="remove(item.id)">删除</button></view
               ><text v-if="!item.available" class="unavailable"
                 >库存不足或商品已下架</text
               ></view
@@ -56,13 +60,13 @@
           ><view><text>优惠</text><b>结算页计算</b></view
           ><view class="summary-total"
             ><text>合计</text><b>{{ money(total) }}</b></view
-          ><view class="primary-btn" @click="checkout"
-            >去结算（{{ selected.length }}）</view
+          ><button class="primary-btn" :disabled="busy || !selected.length" @click="checkout"
+            >去结算（{{ selectedQuantity }}）</button
           ></view
         ></view
-      ><view v-else class="empty card"
-        ><text>购物车还是空的</text
-        ><view class="outline-btn" @click="shop">去逛逛</view></view
+      ><view v-else-if="!error" class="empty card"
+        ><text>{{ loading ? '正在读取购物车…' : '购物车还是空的' }}</text
+        ><button v-if="!loading" class="outline-btn" @click="shop">去逛逛</button></view
       ></view
     ></view
   >
@@ -74,12 +78,13 @@ import { onShow } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import StoreFooter from "../../components/StoreFooter.vue";
-import { api, money, productPlaceholder, toast, clearCheckoutState } from "../../api";
-const busy = ref(false);
+import { api, money, toast, clearCheckoutState } from "../../api";
+const busy = ref(false), error = ref(''), loading = ref(false);
 const cart = reactive<any>({ items: [] });
 const selected = computed(() =>
   cart.items.filter((x: any) => x.selected && x.available),
 );
+const selectedQuantity = computed(() => selected.value.reduce((sum: number, item: any) => sum + item.quantity, 0));
 const total = computed(() =>
   selected.value.reduce(
     (s: number, x: any) => s + x.sku.salePriceCents * x.quantity,
@@ -89,15 +94,18 @@ const total = computed(() =>
 onShow(load);
 async function load() {
   cart.items = [];
+  error.value = ''; loading.value = true;
   try {
     Object.assign(cart, await api("/storefront/cart", { auth: true }));
   } catch (e) {
-    toast(e);
-  }
+    error.value = e instanceof Error ? e.message : '购物车暂时无法读取，请重试';
+  } finally { loading.value = false; }
 }
 async function update(item: any, quantity: number, selected: boolean) {
   if (busy.value) return;
-  if (quantity > item.sku.stock) return toast('库存不足，请减少数量');
+  const stock = item.sku.stock;
+  if (Number.isSafeInteger(stock) && stock > 0 && quantity < item.quantity) quantity = Math.min(quantity, stock);
+  if (quantity > stock) return toast(stock === 0 ? '商品暂时缺货，可删除或稍后重试' : '库存不足，请减少数量');
   busy.value = true;
   try {
     Object.assign(
@@ -163,13 +171,15 @@ function shop() {
 }
 .cart-item {
   display: grid;
-  grid-template-columns: 44rpx 180rpx 1fr;
-  gap: 20rpx;
+  grid-template-columns: 44px 68px minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
 }
 .check {
-  width: 38rpx;
-  height: 38rpx;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
   border-radius: 50%;
   border: 2rpx solid #b7c4c0;
   color: transparent;
@@ -178,17 +188,20 @@ function shop() {
   justify-content: center;
   font-size: 22rpx;
 }
+.check::after, .counter button::after, .delete::after { border: 0; }
+.check:focus-visible, .counter button:focus-visible, .delete:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .check.active {
   background: var(--green);
   border-color: var(--green);
   color: #fff;
 }
-.cart-item image {
-  width: 180rpx;
-  height: 180rpx;
+.cart-item image, .no-image {
+  width: 68px;
+  height: 68px;
   border-radius: 18rpx;
   background: var(--mint);
 }
+.no-image { display: grid; place-items: center; font-size: 12px; color: var(--muted); background: #f5f5f5; }
 .cart-info {
   min-width: 0;
 }
@@ -196,6 +209,7 @@ function shop() {
   font-weight: 800;
   line-height: 1.4;
   display: block;
+  overflow-wrap: anywhere;
 }
 .cart-info .small {
   display: block;
@@ -208,6 +222,8 @@ function shop() {
 }
 .cart-bottom {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
   margin-top: 16rpx;
@@ -218,15 +234,21 @@ function shop() {
   border-radius: 10rpx;
 }
 .counter > * {
-  width: 54rpx;
-  height: 48rpx;
+  min-width: 28px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+.counter button { min-width: 44px; margin: 0; padding: 0; border-radius: 0; font-size: 16px; background: transparent; }
 .delete {
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
   color: var(--muted);
-  font-size: 22rpx;
+  font-size: 12px;
 }
 .unavailable {
   display: block;
@@ -262,9 +284,9 @@ function shop() {
     top: 108px;
   }
   .cart-item {
-    grid-template-columns: 24px 150px 1fr;
+    grid-template-columns: 44px 150px minmax(0,1fr);
   }
-  .cart-item image {
+  .cart-item image, .no-image {
     width: 150px;
     height: 150px;
   }

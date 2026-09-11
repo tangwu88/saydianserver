@@ -23,11 +23,12 @@ const sid = number => `00000000-0000-4000-8000-${String(number).padStart(12, "0"
 const at = "2026-09-08T01:00:00.000Z";
 const source = {
   auth: "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
-  store: "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/commerce/commerce.service.ts; apps/api/src/commerce/commerce-store.service.ts; packages/commerce-domain/src/pricing.ts",
+  store: "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/commerce/commerce.service.ts; apps/api/src/commerce/commerce-store.service.ts; apps/api/src/commerce/commerce-quote.ts; packages/commerce-domain/src/pricing.ts",
   payment: "apps/api/src/billing/billing.service.ts; apps/api/src/billing/payment-provider.service.ts; packages/contracts/src/index.ts",
   capability: "apps/api/src/commerce/commerce-capabilities.service.ts",
   employee: "apps/api/src/commerce/employee-promotion.service.ts; apps/api/src/commerce/employee-dashboard-query.ts; apps/api/src/commerce/commerce-withdrawal.service.ts",
   shipping: "apps/api/src/admin/admin.controller.ts; apps/api/src/admin/admin.service.ts; packages/commerce-domain/src/shipping.ts",
+  evidence: "apps/api/src/commerce/commerce-evidence.controller.ts; apps/api/src/commerce/commerce-evidence.ts; apps/api/src/support/support.service.ts; apps/api/src/common/user-auth.guard.ts; apps/api/src/admin/admin-auth.ts",
 };
 function record(requestSchema, requestExample, responseSchema, responseExample, sources, note) {
   return { status: "request-reviewed", requestSchema, requestExample, responseSchema, responseExample,
@@ -127,13 +128,14 @@ h5FieldContracts["CommerceCompatibilityController.wechatH5Account"] = record(nul
   "仅global且需当前会员令牌。返回安全会员字段及真实手机核验状态，前端不能将phoneTestMode或填过手机号当成已验证；数据版本来自服务端，过期/撤销/临时开关关闭返回401。" );
 const paymentChannels = ["wechat_jsapi", "wechat_mini", "wechat_h5", "wechat_native", "alipay_wap", "alipay_page"];
 const capabilitiesSchema = obj({
+  realm: { const: "domestic" },
   login: obj({ password: availability, sms: availability, wechatH5: availability }),
   payments: array(obj({ channel: { enum: paymentChannels }, enabled: bool, reason: text, environments: array({ enum: ["wechat", "mini", "browser"] }) }, ["channel", "enabled", "environments"])),
   checkout: obj({ minimumCashCents: { const: 1 }, points: obj({ supported: { const: true }, requiresVerifiedAccount: { const: true } }) }),
   maintenance: obj({ readOnly: bool, reason: text }, ["readOnly"]), demo: bool,
-});
-// International capability is an explicit alternate shape: commerce is still
-// closed, not a domestic CNY checkout with a different API hostname.
+}, ["login", "payments", "checkout", "maintenance", "demo"]);
+// Independent accounts may buy the supported CN/CNY offer. Other markets and
+// unconfigured payment rails remain unavailable; phone-test sessions cannot trade.
 const internationalCapabilitiesSchema = obj({
   realm: { const: "global" }, consentVersion: nullable(consent), legal: nullable(obj({
     userAgreement: obj({ path: text, locale: globalLocale, version: text }),
@@ -143,7 +145,8 @@ const internationalCapabilitiesSchema = obj({
     wechatBinding: obj({ bindExistingAvailable: bool, emailOtpAvailable: bool, smsOtpAvailable: bool,
       password: availability, email: availability, sms: availability, smsCountries: array(text), verifiedAccountRequired: { const: true },
       phoneCodeMode: { enum: ["test", "sms", "unavailable"] }, phoneBindingAvailable: bool, verificationRequired: bool }) }),
-  payments: array(obj({})), checkout: obj({ enabled: { const: false }, points: obj({ supported: { const: false }, requiresVerifiedAccount: { const: true } }) }),
+  payments: array(obj({ channel: { enum: paymentChannels.filter(channel => channel !== "wechat_mini") }, enabled: bool, reason: text, environments: array({ enum: ["wechat", "browser"] }) }, ["channel", "enabled", "environments"])),
+  checkout: obj({ enabled: bool, reason: text, countryCodes: array({ const: "CN" }), currency: { const: "CNY" }, minimumCashCents: { const: 1 }, points: obj({ supported: bool, requiresVerifiedAccount: { const: true } }) }, ["enabled", "countryCodes", "currency", "minimumCashCents", "points"]),
   maintenance: obj({ readOnly: bool }), demo: { const: false },
 });
 const capabilitiesExample = {
@@ -152,8 +155,18 @@ const capabilitiesExample = {
   checkout: { minimumCashCents: 1, points: { supported: true, requiresVerifiedAccount: true } },
   maintenance: { readOnly: false }, demo: true,
 };
+const globalCapabilitiesExample = {
+  realm: "global", consentVersion: null, legal: null,
+  login: { password: { enabled: true }, sms: { enabled: false }, wechatH5: { enabled: false },
+    wechatBinding: { bindExistingAvailable: false, emailOtpAvailable: false, smsOtpAvailable: false,
+      password: { enabled: false }, email: { enabled: false }, sms: { enabled: false }, smsCountries: [], verifiedAccountRequired: true,
+      phoneCodeMode: "unavailable", phoneBindingAvailable: false, verificationRequired: true } },
+  payments: capabilitiesExample.payments.filter(channel => channel.channel !== "wechat_mini"),
+  checkout: { enabled: true, countryCodes: ["CN"], currency: "CNY", minimumCashCents: 1, points: { supported: true, requiresVerifiedAccount: true } },
+  maintenance: { readOnly: false }, demo: false,
+};
 h5FieldContracts["CommerceCompatibilityController.storefrontCapabilities"] = record(null, null, { oneOf: [capabilitiesSchema, internationalCapabilitiesSchema] }, capabilitiesExample,
-  source.capability, "公开只含能力布尔值/原因，不含密钥、appId或商户身份。enabled只代表本地配置通过校验，不代表真实供应商联调成功。wechat_mini仅mini环境，使用独立小程序支付appId；公众号OAuth未配置不连带禁用已配置的小程序。微信商户密钥/通知地址未配置或维护暂停仍禁用所有微信支付。demo仅非production+H5_DEMO_ENABLED；示例是隔离演示状态，不是生产承诺。");
+  source.capability, "公开只含能力布尔值/原因，不含密钥、appId或商户身份。enabled只代表本地配置通过校验，不代表真实供应商联调成功。国际版只开放CN中国大陆收货、CNY整数分报价与已验证账号；临时任意验证码会话禁止交易，国际版不返回小程序支付。独立global.markets显式关闭、维护、出站暂停及缺少商户配置仍拒绝对应操作。国内wechat_mini仅mini环境，公众号OAuth未配置不连带禁用已配置的小程序。demo仅非production+H5_DEMO_ENABLED；示例是隔离演示状态，不是生产承诺。");
 const skuSchema = obj({ id, specification: nullable(text), image: nullable(text), salePriceCents: cents, marketPriceCents: nullable(cents), stock: count, enabled: bool }, ["id", "salePriceCents", "stock"]);
 const cardSchema = obj({ id, categoryId: nullable(id), name: text, subtitle: nullable(text), coverImage: nullable(text), tags: array(text),
   sales: count, priceCents: cents, marketPriceCents: nullable(cents), stock: count, defaultSku: nullable(skuSchema) });
@@ -177,7 +190,7 @@ h5FieldContracts["CommerceCompatibilityController.bootstrap"] = record(null, nul
 }, source.store + "; " + source.capability, "首页、分类、商品、公告由统一后台驱动。未命中员工推荐号referral=null，不猜员工归属。商品使用公开DTO，不应返回成本价、ERP内部字段。");
 h5FieldContracts["CommerceCompatibilityController.bootstrap"].query = { ref: { schema: text, example: "H5DEMO", required: false } };
 
-const addressSchema = obj({ id, userId: id, name: text, mobile, province: text, city: text, district: text, detail: text, isDefault: bool });
+const addressSchema = obj({ id, userId: id, name: text, mobile: { ...text, description: "国内11位手机号；国际账号地址返回带+国家码的E.164，当前购物仅支持countryCode=CN。" }, countryCode: text, postalCode: nullable(text), province: text, city: text, district: text, detail: text, isDefault: bool }, ["id", "userId", "name", "mobile", "province", "city", "district", "detail", "isDefault"]);
 const addressExample = { id: sid(4), userId: sid(1), name: "H5-CONTRACT测试收件人", mobile: "19900000001",
   province: "测试省", city: "测试市", district: "测试区", detail: "仅限本地合成演示地址1号", isDefault: true };
 const orderInput = obj({ addressId: id, items: { ...array(obj({ skuId: id, quantity })), minItems: 1 }, couponClaimId: id,
@@ -186,10 +199,11 @@ const orderRequest = { addressId: sid(4), items: [{ skuId: sid(3), quantity: 3 }
 const pricedLine = obj({ skuId: id, quantity, unitPriceCents: cents, totalCents: cents,
   couponDiscountCentsSnapshot: cents, pointDiscountCentsSnapshot: cents, cashPaidCentsSnapshot: cents,
   name: text, image: nullable(text), specification: nullable(text) });
-const quoteSchema = obj({ pricingVersion: { const: 1 }, subtotalCents: cents, couponDiscountCents: cents,
+const quoteFingerprint = { type: "string", pattern: "^q1:[a-f0-9]{64}$", description: "服务端报价指纹；包含规则版本、金额和SKU行分摊，不是库存预占或授权令牌。原样作为创建订单expectedQuote。" };
+const quoteSchema = obj({ fingerprint: quoteFingerprint, pricingVersion: { const: 1 }, subtotalCents: cents, couponDiscountCents: cents,
   pointDiscountCents: cents, shippingCents: cents, payableCents: { ...cents, minimum: 1 },
   availablePointCents: nullable(cents), maxPointCents: cents, lines: array(pricedLine) });
-const quoteExample = { pricingVersion: 1, subtotalCents: 59700, couponDiscountCents: 0, pointDiscountCents: 901,
+const quoteExample = { fingerprint: "q1:788afb20844abb8cb99656ed42a92bcf769090662c8159fde839b2d050339ecf", pricingVersion: 1, subtotalCents: 59700, couponDiscountCents: 0, pointDiscountCents: 901,
   shippingCents: 599, payableCents: 59398, availablePointCents: 5000, maxPointCents: 5000,
   lines: [{ skuId: sid(3), quantity: 3, unitPriceCents: 19900, totalCents: 59700, couponDiscountCentsSnapshot: 0,
     pointDiscountCentsSnapshot: 901, cashPaidCentsSnapshot: 58799, name: "H5-CONTRACT合成商品", image: imageUrl, specification: "合成规格" }] };
@@ -202,7 +216,7 @@ const previewExample = { address: addressExample, products: [{ id: sid(2), produ
   name: "H5-CONTRACT合成商品", image: imageUrl, specification: "合成规格", price: 199, num: 3 }],
   preview: { product_money: 597, shipping_money: 5.99, payable_money: 593.98 }, quote: quoteExample };
 h5FieldContracts["CommerceCompatibilityController.previewOrder"] = record(orderInput, orderRequest, previewSchema, previewExample,
-  source.store, "只报价不扣库存/积分。599分运费是合成配置，不是实际默认运费。availablePointCents=null表示账户未核验，此时maxPointCents=0只表示不可抵扣，不代表余额为0。先券后积分，按最大余数分摊；积分不抵运费，现金至少1分。提交时重新核价。");
+  source.store, "只报价不扣库存/积分。599分运费是合成配置，不是实际默认运费。availablePointCents=null表示账户未核验，此时maxPointCents=0只表示不可抵扣，不代表余额为0。先券后积分，按最大余数分摊；积分不抵运费，现金至少1分。提交时将quote.fingerprint作为expectedQuote；创建事务重新报价后不一致返回409 quote_changed，不产生订单或资产写入。");
 const orderStatuses = ["PENDING_PAYMENT", "PAID", "WAITING_FULFILLMENT", "SHIPPED", "RECEIVED", "COMPLETED", "CANCELLED", "CLOSED", "AFTER_SALE", "REFUNDED"];
 const itemSchema = obj({ id, orderId: id, productId: id, skuId: id, nameSnapshot: text, specificationSnapshot: nullable(text),
   imageSnapshot: nullable(text), unitPriceCents: cents, quantity, totalCents: cents,
@@ -220,9 +234,11 @@ const orderExample = { id: sid(7), orderNo: "H5-CONTRACT-ORDER-0001", userId: si
   subtotalCents: 59700, discountCents: 0, pointDiscountCents: 901, shippingCents: 599, payableCents: 59398, currency: "CNY",
   recipientName: addressExample.name, recipientMobile: addressExample.mobile, province: "测试省", city: "测试市",
   district: "测试区", addressDetail: addressExample.detail, buyerRemark: "H5-CONTRACT合成订单", paidAt: null, createdAt: at, items: [itemExample] };
-h5FieldContracts["CommerceCompatibilityController.createOrder"] = record(orderInput,
-  { ...orderRequest, idempotencyKey: "H5-CONTRACT-order-request-0001" }, orderSchema, orderExample, source.store,
-  "仅创建待付款单，不代表支付成功。Idempotency-Key请求头优先于body.idempotencyKey；至少8字符且必须随同一请求保留。同键同参返回原单，同键改地址/商品/券/积分/备注409。扣库存和积分、占用券与订单快照同事务；所有价格由服务端算。");
+h5FieldContracts["CommerceCompatibilityController.createOrder"] = record(obj({ ...orderInput.properties, expectedQuote: quoteFingerprint }, orderInput.required),
+  { ...orderRequest, expectedQuote: quoteExample.fingerprint, idempotencyKey: "H5-CONTRACT-order-request-0001" }, orderSchema, orderExample, source.store,
+  "仅创建待付款单，不代表支付成功。Idempotency-Key请求头优先于body.idempotencyKey；至少8字符且必须随同一请求保留。同键同参返回原单且优先于当前报价核验，同键改变参数（含expectedQuote）409。expectedQuote可选以兼容旧调用；新H5必传quote.fingerprint，格式错误400，事务内金额/行分摊不符409 quote_changed且所有写入均未开始。发生409应重新报价并让用户确认；网络未知结果或同键仍处理中503 order_in_progress保留原键和原expectedQuote查询，不生成新单。扣库存和积分、占用券与订单快照同事务；所有价格由服务端算。");
+h5FieldContracts["CommerceController.previewOrder"] = h5FieldContracts["CommerceCompatibilityController.previewOrder"];
+h5FieldContracts["CommerceController.createOrder"] = h5FieldContracts["CommerceCompatibilityController.createOrder"];
 const eligible = obj({ orderItemId: id, quantityRemaining: count, cashRemainingCents: cents, pointRemainingCents: cents,
   unavailableReason: text }, ["orderItemId", "quantityRemaining", "cashRemainingCents", "pointRemainingCents"]);
 const detailSchema = obj({ ...orderSchema.properties, readOnly: bool, source: text, allowedActions: array({ enum: ["PAY", "CANCEL", "CONFIRM_RECEIPT", "APPLY_AFTER_SALE"] }),
@@ -234,8 +250,12 @@ h5FieldContracts["CommerceCompatibilityController.order"] = record(null, null, {
   "仅订单本人可读。新单用allowedActions驱动操作，不由客户端自行猜状态；历史只读投影不保证items/分摊/操作字段。快照null为未核验，应阻断金额推算，不能转0。存在处理中支付时不允许取消；付款结果以payment接口和服务端核验为准。");
 
 const saleTypes = { enum: ["REFUND_ONLY", "RETURN_REFUND", "EXCHANGE"] };
+const evidenceFileIds = { ...array(id), maxItems: 9, uniqueItems: true,
+  description: "先经售后专用上传取得的本人ACTIVE文件UUID，最多9个且不得重复；须为commerce_after_sale用途、JPEG/PNG/WebP且≤10MiB。空数组允许纯文字售后。不能与非空evidenceImages混用。" };
 const saleInput = obj({ type: saleTypes, items: { ...array(obj({ orderItemId: id, quantity })), minItems: 1 },
-  orderVersion: count, reason: text, description: text, evidenceImages: array(text) }, ["type", "items"]);
+  orderVersion: count, reason: text, description: text, evidenceFileIds,
+  evidenceImages: { ...array(text), description: "仅保留国内旧客户端历史外链形状；global不接受非空值。新H5只使用evidenceFileIds，不能提交公开URL。" },
+  idempotencyKey: {type:"string",pattern:"^[A-Za-z0-9_-]{8,128}$"} }, ["type", "items"]);
 const saleRequest = { type: "REFUND_ONLY", items: [{ orderItemId: sid(8), quantity: 1 }] };
 const refundLine = obj({ orderItemId: id, quantity, amountCents: cents, pointReturnCents: cents });
 const saleQuote = obj({ orderId: id, orderVersion: count, type: saleTypes, pricingVersion: count,
@@ -247,16 +267,40 @@ const saleStatuses = ["APPLIED", "REVIEWING", "APPROVED", "REJECTED", "WAITING_R
 const saleSchema = obj({ id, afterSaleNo: text, orderId: id, type: { enum: [...saleTypes.enum, "SHIPPING_ONLY"] },
   status: { enum: saleStatuses }, version: count, pricingVersion: nullable(count), requestedCents: cents,
   pointReturnCents: nullable(cents), shippingRefundCents: nullable(cents), reason: text,
-  settledAt: nullable(date), createdAt: date, items: array(refundLine), returnLogisticsCompany: nullable(text), returnTrackingNo: nullable(text) },
+  settledAt: nullable(date), createdAt: date, items: array(refundLine),
+  evidenceImages: { ...array(text), description: "新上传为file:UUID私有引用，不是可直接放进img.src的URL；客户端以会员/后台Bearer读取对应图片接口。旧国内记录可保留旧形状。" },
+  returnLogisticsCompany: nullable(text), returnTrackingNo: nullable(text) },
   ["id", "afterSaleNo", "orderId", "type", "status", "version", "pricingVersion", "requestedCents", "pointReturnCents", "shippingRefundCents", "reason", "settledAt", "createdAt"]);
 const saleExample = { id: sid(9), afterSaleNo: "H5-CONTRACT-AS-0001", orderId: sid(7), type: "REFUND_ONLY",
   status: "APPLIED", version: 0, pricingVersion: 1, requestedCents: 19599, pointReturnCents: 300,
   shippingRefundCents: 0, reason: "H5-CONTRACT合成测试申请", settledAt: null, createdAt: at, items: saleQuoteExample.items };
 h5FieldContracts["CommerceCompatibilityController.previewAfterSale"] = record(saleInput, saleRequest, saleQuote, saleQuoteExample,
   source.store, "只报价不退款。当前一次申请的现金=requestedCents=merchandiseRefundCents+shippingRefundCents；积分单列。按累计数量取差消除分次尾差：本例先退1件19599现金+300积分，后2件39200现金+601积分。同一商品有在途售后409。首次整单退款可含原运费，分次退完商品不会自动补退运费。");
-h5FieldContracts["CommerceCompatibilityController.afterSale"] = record(saleInput,
-  { ...saleRequest, orderVersion: 1, reason: saleExample.reason, evidenceImages: [] }, saleSchema, saleExample, source.store,
-  "必须先刷新报价并传orderVersion；服务端再次核价。APPLIED只代表申请，不代表退款/积分已到账。纯积分商品可requestedCents=0但须经审核和必要退货，不能调用金额0的渠道退款。现金退款未知时保持占用，不返积分不重发。SHIPPING_ONLY禁止客户申请。");
+h5FieldContracts["CommerceCompatibilityController.afterSale"] = record({ ...saleInput, required: [...saleInput.required, "reason"] },
+  { ...saleRequest, orderVersion: 1, reason: saleExample.reason, evidenceFileIds: [sid(21)], idempotencyKey:"H5-CONTRACT-after-sale-0001" },
+  saleSchema, { ...saleExample, evidenceImages: [`file:${sid(21)}`] }, source.store + "; " + source.evidence,
+  "首次申请先报价并传orderVersion及idempotencyKey。图片上传成功后传evidenceFileIds；首次创建事务内逐个核验本人归属/用途/ACTIVE/大小/类型，非法、重复、他人文件或与非空evidenceImages混传400；global禁止非空外链。纯文字可省略图片或传空数组，存储未配置不阻断文字售后。未知结果重试必须保留原键及完整原payload（含相同图片ID），不先换新报价或重传图片：同键同参优先返回原售后，变更内容409；旧调用未传键仍兼容，但无恢复保证。APPLIED不代表退款/积分到账。纯积分商品须审核且不创建零元渠道退款；现金结果未知保持占用。SHIPPING_ONLY禁止客户申请。");
+
+const evidenceTypes = ["image/jpeg", "image/png", "image/webp"];
+const evidenceAuth = "会员Bearer必须放Authorization请求头，不放查询参数。global须ACTIVE且邮箱或手机号已真实验证；临时h5-phone-test会话、员工令牌或失效会员会话由UserAuthGuard返回401。";
+const evidenceResponse = obj({ id, byteSize: { ...positive, maximum: 10485760 }, contentType: { enum: evidenceTypes }, sha256: hex });
+h5FieldContracts["CommerceEvidenceController.capabilities"] = record(null, null,
+  obj({ enabled: bool, maxFiles: { const: 9 }, maxBytes: { const: 10485760 }, contentTypes: array({ enum: evidenceTypes }), reason: text },
+    ["enabled", "maxFiles", "maxBytes", "contentTypes"]),
+  { enabled: false, maxFiles: 9, maxBytes: 10485760, contentTypes: evidenceTypes, reason: "图片服务未配置，暂不可上传；您仍可提交文字说明。" }, source.evidence,
+  evidenceAuth + "HTTP200 raw JSON。enabled只代表object_storage状态和必要参数可构造存储客户端，不探测网络，不代表已有真实上传/读取回执。未配置返回enabled=false和reason，不返回密钥、bucket、对象地址。每个申请最多9张，每次上传1张，每张上限10MiB=10485760字节。");
+h5FieldContracts["CommerceEvidenceController.upload"] = { ...record(
+  obj({ file: { type: "string", format: "binary", description: "multipart/form-data字段file；仅1个真实JPEG/PNG/WebP文件，实际Buffer≤10485760字节；服务端复核MIME和签名字节，不接受外部URL、SVG、HTML或JSON/base64代替文件。" } }),
+  { file: "<LOCAL_JPEG_PNG_WEBP_FILE>" }, evidenceResponse,
+  { id: sid(21), byteSize: 2048, contentType: "image/jpeg", sha256: "c".repeat(64) }, source.evidence,
+  evidenceAuth + "HTTP201 raw JSON回执仅id/byteSize/contentType/sha256，不含公开URL。示例只是合成回执形状，不证明对象存储已配置或真的上传。multipart须使用file字段；无文件/无效内容/类型伪装400、文件超过10MiB由上传限制拒绝413、每分钟12次超限429；未配置或存储失败503。上传完成后另以evidenceFileIds提交售后；移除选择不删除已存对象。替换curl本地文件占位符时使用正确.jpg/.png/.webp扩展名和对应MIME。"),
+  contentType: "multipart/form-data" };
+const evidenceBinary = { type: "string", format: "binary", description: "原始JPEG/PNG/WebP文件字节；Content-Type取已存文件类型；不含JSON/data包裹，不返回公开地址。" };
+const evidenceRead = "HTTP200直接返回image/jpeg、image/png或image/webp二进制，禁止按JSON解析。响应Cache-Control: private, no-store；X-Content-Type-Options: nosniff；Referrer-Policy: no-referrer；CSP限制。不存在/不属于本人/用途或状态不符404，存储未配置或读取失败503。浏览器需带Bearer请求后显示Blob，不能将token加入URL。";
+h5FieldContracts["CommerceEvidenceController.image"] = record(null, null, evidenceBinary, null, source.evidence,
+  evidenceAuth + "id为专用售后FileObject UUID，只读取当前会员所属ACTIVE文件，不通过公开头像reader或桶URL读取。" + evidenceRead);
+h5FieldContracts["AdminCommerceEvidenceController.image"] = record(null, null, evidenceBinary, null, source.evidence,
+  "后台Bearer会话与commerce-after-sales/read权限；roles以实时多角色为准，不使用会员或员工令牌。saleId、fileId均为UUID，必须先在该售后evidenceImages中实际存在file:UUID引用，再核验原订单会员文件归属；无权限403、未关联404。成功读取前写COMMERCE_EVIDENCE_READ审计（saleId/fileId/requestId），审计失败不返回图片；不豁免超级管理员审计。" + evidenceRead);
 h5FieldContracts["CommerceCompatibilityController.returnLogistics"] = record(
   obj({ logisticsCompany: { ...text, minLength: 1, maxLength: 80 }, trackingNo: { ...text, minLength: 1, maxLength: 100 }, version: count }),
   { logisticsCompany: "H5-CONTRACT合成物流", trackingNo: "H5-CONTRACT-NOT-A-REAL-TRACKING-0001", version: 2 },
@@ -362,6 +406,23 @@ h5FieldContracts["AdminController.createCommerceShipment"] = record(
   { ...fulfillmentExample, shipmentId: sid(15), replayed: false }, fulfillmentSource,
   "示例是合成登记，不代表实际交运。订单锁+版本校验；相同订单运单号同公司同商品数量幂等replayed=true，异参/超量/过期版本409。处理中售后占数量。部分发货WAITING_FULFILLMENT、全量SHIPPED、有未结售后AFTER_SALE；不生成轨迹或签收时间。");
 
+const couponPublic = obj({ id, name:text, type:{const:'CASH'}, value:cents, minimumSpendCents:cents, validFrom:date, validUntil:date, claimed:bool, available:bool });
+h5FieldContracts['CommerceCompatibilityController.availableCoupons'] = record(null,null,
+  obj({items:array(couponPublic),pagination:obj({page:positive,pageSize:{const:20},total:count,hasMore:bool})}),
+  {items:[{id:sid(20),name:'H5-CONTRACT公开测试券',type:'CASH',value:100,minimumSpendCents:1000,validFrom:at,validUntil:'2027-09-08T01:00:00.000Z',claimed:false,available:true}],pagination:{page:1,pageSize:20,total:1,hasMore:false}},source.store,
+  '会员鉴权；仅公开ACTIVE且当前有效券，不含员工专属赠券；available已扣除赠券预留额度。领取仍需POST原claim入口再次核验。已领取重试幂等且优先于过期/领完检查。');
+h5FieldContracts['CommerceCompatibilityController.availableCoupons'].query={page:{schema:positive,example:1,required:false}};
+const orderGroups={status:{schema:{enum:orderStatuses},example:'PENDING_PAYMENT',required:false},group:{schema:{enum:['pending_shipment','after_sales']},example:'after_sales',required:false}};
+for(const key of ['CommerceCompatibilityController.orders','CommerceController.orders']){
+  h5FieldContracts[key]=record(null,null,array({oneOf:[orderSchema,legacyDetail]}),[orderExample],source.store,
+    'status与group互斥。pending_shipment在服务端完整数据包含PAID/WAITING_FULFILLMENT；after_sales按本人订单存在实际售后关联筛选，包含处理结束记录，不是仅当前AFTER_SALE状态。旧status保持精确查询。');
+  h5FieldContracts[key].query=orderGroups;
+}
+const reviewSummary=nullable(obj({id,rating:{type:'integer',minimum:1,maximum:5},content:text,published:bool,createdAt:date}));
+detailSchema.properties.items=array(obj({...itemSchema.properties,review:reviewSummary},[...itemSchema.required,'review']));
+detailExample.items=[{...itemExample,review:null}];
+h5FieldContracts['CommerceCompatibilityController.order'].note+=' items[].review为本订单商品的实际评价或null；published=false仍表示已经提交，不能重新创建。物流字段为shipments[].traceJson，商品分包关系在shipments[].items。';
+
 // Named fixtures support pure tests and let delivery docs reuse the exact values.
-export const h5ContractExamples = { session: sessionExample, capabilities: capabilitiesExample, quote: quoteExample,
+export const h5ContractExamples = { session: sessionExample, capabilities: capabilitiesExample, globalCapabilities: globalCapabilitiesExample, quote: quoteExample,
   order: orderExample, afterSale: saleQuoteExample, shipping: shippingExample };

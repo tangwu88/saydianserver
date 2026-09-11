@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { h5FieldContracts as contracts, h5ContractExamples as examples } from "./h5-field-contracts.mjs";
+import { notes } from "./api-notes.mjs";
 
 function matches(value, schema) {
   if (!schema) return true;
@@ -14,7 +16,10 @@ function matches(value, schema) {
   if (typeof value === "number" && ((schema.minimum !== undefined && value < schema.minimum) || (schema.maximum !== undefined && value > schema.maximum))) return false;
   if (typeof value === "string" && ((schema.pattern && !new RegExp(schema.pattern).test(value)) ||
     (schema.minLength && value.length < schema.minLength) || (schema.maxLength && value.length > schema.maxLength))) return false;
-  if (Array.isArray(value)) return (!schema.minItems || value.length >= schema.minItems) && value.every(item => matches(item, schema.items));
+  if (typeof value === "string" && schema.format === "uuid" && !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)) return false;
+  if (Array.isArray(value)) return (!schema.minItems || value.length >= schema.minItems) &&
+    (schema.maxItems === undefined || value.length <= schema.maxItems) &&
+    (!schema.uniqueItems || new Set(value.map(item => JSON.stringify(item))).size === value.length) && value.every(item => matches(item, schema.items));
   if (value && typeof value === "object") {
     if ((schema.required ?? []).some(key => !(key in value))) return false;
     return Object.entries(value).every(([key, item]) => matches(item, schema.properties?.[key] ??
@@ -41,6 +46,16 @@ test("H5 field keys cover authentication, quote, points, payment, employee and s
   }
   for (const key of ["CommerceEmployeeController.dashboard", "AdminController.shippingRefundPreview", "AdminController.createShippingRefund"]) assert.ok(contracts[key], key);
 });
+
+test("international capability distinguishes supported CN/CNY checkout from real payment readiness", () => {
+  const schema = contracts["CommerceCompatibilityController.storefrontCapabilities"].responseSchema;
+  const current = examples.globalCapabilities;
+  assert.ok(matches(current, schema));
+  assert.equal(current.checkout.enabled, true); assert.ok(current.payments.every(channel => !channel.enabled));
+  for (const currency of ["USD", "EUR"]) assert.equal(matches({ ...current, checkout: { ...current.checkout, currency } }, schema), false);
+  assert.equal(matches({ ...current, checkout: { ...current.checkout, countryCodes: ["US"] } }, schema), false);
+  assert.equal(matches({ ...current, payments: [{ channel: "wechat_mini", enabled: true, environments: ["mini"] }] }, schema), false);
+});
 test("quote and order JSON use integer cents and obey all line and order conservation equations", () => {
   const q = examples.quote, o = examples.order;
   const sum = field => q.lines.reduce((total, line) => total + line[field], 0);
@@ -56,6 +71,17 @@ test("quote and order JSON use integer cents and obey all line and order conserv
   assert.equal(q.payableCents, o.payableCents);
   assert.ok(q.payableCents >= examples.capabilities.checkout.minimumCashCents);
   assert.ok(q.pointDiscountCents <= q.maxPointCents);
+});
+
+test("quote examples expose matching conditional fingerprints without requiring them from older callers", () => {
+  const q = examples.quote, create = contracts["CommerceCompatibilityController.createOrder"];
+  const lines = [...q.lines].sort((a, b) => a.skuId < b.skuId ? -1 : a.skuId > b.skuId ? 1 : 0);
+  const fingerprint = "q1:" + createHash("sha256").update(JSON.stringify([q.pricingVersion, q.subtotalCents, q.couponDiscountCents,
+    q.pointDiscountCents, q.shippingCents, q.payableCents, lines.map(line => [line.skuId, line.quantity, line.unitPriceCents,
+      line.totalCents, line.couponDiscountCentsSnapshot, line.pointDiscountCentsSnapshot, line.cashPaidCentsSnapshot])])).digest("hex");
+  assert.equal(q.fingerprint, fingerprint); assert.equal(create.requestExample.expectedQuote, fingerprint);
+  assert.equal(create.requestSchema.required.includes("expectedQuote"), false);
+  assert.match(create.note, /409 quote_changed/);
 });
 test("partial refund fixture conserves cash/points and leaves freight separate", () => {
   const quote = examples.afterSale, line = examples.order.items[0];
@@ -100,4 +126,54 @@ test("unconfigured demo and unverified balances remain explicit and never leak p
     }
   };
   walk(examples.capabilities);
+});
+
+test("all four evidence routes have reviewed private contracts without an invented storage success", () => {
+  for (const key of ["CommerceEvidenceController.capabilities", "CommerceEvidenceController.upload", "CommerceEvidenceController.image", "AdminCommerceEvidenceController.image"]) {
+    assert.ok(contracts[key], key); assert.ok(notes[key], key);
+    assert.match(contracts[key].source, /commerce-evidence\.controller\.ts/);
+    assert.match(contracts[key].source, /support\.service\.ts/);
+  }
+  const capability = contracts["CommerceEvidenceController.capabilities"];
+  assert.deepEqual(capability.responseExample, { enabled: false, maxFiles: 9, maxBytes: 10485760,
+    contentTypes: ["image/jpeg", "image/png", "image/webp"], reason: "图片服务未配置，暂不可上传；您仍可提交文字说明。" });
+  assert.match(capability.note, /不代表已有真实上传/);
+  const upload = contracts["CommerceEvidenceController.upload"];
+  assert.equal(upload.contentType, "multipart/form-data");
+  assert.deepEqual(upload.requestSchema.required, ["file"]); assert.equal(upload.requestSchema.properties.file.format, "binary");
+  assert.deepEqual(Object.keys(upload.responseExample), ["id", "byteSize", "contentType", "sha256"]);
+  assert.equal(upload.responseSchema.properties.byteSize.maximum, 10485760);
+  assert.match(upload.note, /每分钟12次/); assert.match(upload.note, /413/); assert.match(upload.note, /503/);
+  assert.match(upload.note, /不证明对象存储已配置/); assert.match(upload.note, /h5-phone-test/);
+  for (const key of ["CommerceEvidenceController.image", "AdminCommerceEvidenceController.image"]) {
+    assert.deepEqual({ type: contracts[key].responseSchema.type, format: contracts[key].responseSchema.format }, { type: "string", format: "binary" });
+    assert.equal(contracts[key].responseExample, null);
+    assert.match(contracts[key].note, /private, no-store/); assert.match(contracts[key].note, /禁止按JSON解析/);
+  }
+  assert.match(contracts["AdminCommerceEvidenceController.image"].note, /COMMERCE_EVIDENCE_READ/);
+  assert.match(contracts["AdminCommerceEvidenceController.image"].note, /审计失败不返回图片/);
+});
+
+test("after-sale image references are optional owned UUIDs and remain part of the frozen idempotent payload", () => {
+  const sale = contracts["CommerceCompatibilityController.afterSale"], schema = sale.requestSchema.properties.evidenceFileIds;
+  assert.equal(sale.requestSchema.required.includes("evidenceFileIds"), false);
+  assert.ok(sale.requestSchema.required.includes("reason"));
+  assert.ok(matches([], schema)); assert.ok(matches(sale.requestExample.evidenceFileIds, schema));
+  assert.equal(matches(["https://example.invalid/evidence.jpg"], schema), false);
+  assert.equal(matches(Array(2).fill(sale.requestExample.evidenceFileIds[0]), schema), false);
+  assert.equal(matches(Array.from({ length: 10 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`), schema), false);
+  assert.deepEqual(sale.responseExample.evidenceImages, sale.requestExample.evidenceFileIds.map(id => `file:${id}`));
+  assert.match(sale.note, /global禁止非空外链/); assert.match(sale.note, /含相同图片ID/); assert.match(sale.note, /同键同参优先返回原售后/);
+  assert.ok(sale.requestExample.idempotencyKey);
+  assert.ok(contracts["CommerceCompatibilityController.availableCoupons"]);
+  assert.ok(contracts["CommerceCompatibilityController.orders"].query.group);
+  assert.ok(contracts["CommerceCompatibilityController.order"].responseSchema.oneOf[0].properties.items.items.properties.review);
+});
+
+test("the generated H5 section includes its evidence controller without moving the administrator route", () => {
+  const generator = readFileSync(new URL("./generate-api-reference.mjs", import.meta.url), "utf8");
+  const h5Section = generator.split('["商城 H5/小程序兼容接口",')[1].split('["V2 App 接口",')[0];
+  assert.match(h5Section, /r\.key\.startsWith\("CommerceEvidenceController\."\)/);
+  assert.doesNotMatch(h5Section, /AdminCommerceEvidenceController/);
+  assert.match(generator, /管理后台接口.*r\.path\.startsWith\("\/api\/saydian-app\/admin\/"\)/);
 });

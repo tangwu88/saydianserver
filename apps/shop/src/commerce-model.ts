@@ -10,8 +10,16 @@ export function parseMoneyCents(value: unknown): number {
   if (!Number.isSafeInteger(cents)) throw new Error("金额不正确");
   return cents;
 }
-export function checkoutFingerprint(userId: string, input: {addressId: string; items: {skuId:string;quantity:number}[];couponClaimId?:string;pointCents?:number;buyerRemark?:string;invoice?:unknown}): string {
-  return JSON.stringify({userId,addressId:input.addressId,items:input.items.map(x=>({skuId:x.skuId,quantity:x.quantity})).sort((a,b)=>a.skuId.localeCompare(b.skuId)),couponClaimId:input.couponClaimId||null,pointCents:input.pointCents||0,buyerRemark:input.buyerRemark||"",invoice:input.invoice||null});
+export function checkoutFingerprint(userId: string, input: {addressId: string; items: {skuId:string;quantity:number}[];couponClaimId?:string;pointCents?:number;buyerRemark?:string;invoice?:unknown;expectedQuote?:string}): string {
+  return JSON.stringify({userId,addressId:input.addressId,items:input.items.map(x=>({skuId:x.skuId,quantity:x.quantity})).sort((a,b)=>a.skuId.localeCompare(b.skuId)),couponClaimId:input.couponClaimId||null,pointCents:input.pointCents||0,buyerRemark:input.buyerRemark||"",invoice:input.invoice||null,...(input.expectedQuote===undefined?{}:{expectedQuote:input.expectedQuote})});
+}
+/** Compare charged amounts/allocations, not changing catalog copy or account balance. */
+export function checkoutQuoteFingerprint(quote: any): string | null {
+  if (!quote) return null;
+  const fields = ["pricingVersion", "subtotalCents", "couponDiscountCents", "pointDiscountCents", "shippingCents", "payableCents"];
+  const lineFields = ["skuId", "quantity", "unitPriceCents", "totalCents", "couponDiscountCentsSnapshot", "pointDiscountCentsSnapshot", "cashPaidCentsSnapshot"];
+  const lines = [...(quote.lines || [])].sort((a, b) => String(a.skuId).localeCompare(String(b.skuId)));
+  return JSON.stringify([fields.map(key => quote[key] ?? null), lines.map(line => lineFields.map(key => line[key] ?? null))]);
 }
 export function channelsForEnvironment(capabilities: any[], environment: "wechat"|"browser"|"mini", desktop: boolean) {
   const expected = environment === "mini" ? ["wechat_mini"] : environment === "wechat" ? ["wechat_jsapi"] : desktop ? ["wechat_native","alipay_page"] : ["wechat_h5","alipay_wap"];

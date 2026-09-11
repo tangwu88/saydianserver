@@ -71,6 +71,44 @@ describe("field-aware OpenAPI and examples", () => {
       expect(documentedExample(route).返回示例).toBe("success");
     }
   });
+  it("exports both private after-sale readers as authenticated raw image bytes even with stale annotations", () => {
+    for (const [key, path, auth] of [
+      ["CommerceEvidenceController.image", "/api/saidian-mall/v1/storefront/after-sale-images/:id", "member"],
+      ["AdminCommerceEvidenceController.image", "/api/saydian-app/admin/v1/commerce-after-sales/:saleId/evidence/:fileId", "admin"],
+    ]) {
+      const route = { key, path, auth, method: "GET", envelope: "raw-or-legacy", successStatus: 200,
+        contract: { responseSchema: { type: "object" }, responseExample: { url: "https://example.invalid/not-public" } } };
+      const operation = generateOpenApi([route], "test").paths[openApiPath(path!)].get;
+      expect(operation.security).toEqual([{ bearerAuth: [] }]);
+      expect(Object.keys(operation.responses["200"].content)).toEqual(["image/jpeg", "image/png", "image/webp"]);
+      expect(operation.responses["200"].content).not.toHaveProperty("application/json");
+      for (const value of Object.values(operation.responses["200"].content) as any[]) {
+        expect(value.schema).toMatchObject({ type: "string", format: "binary" });
+        expect(value).not.toHaveProperty("example");
+      }
+      for (const status of [401, 403, 404, 503]) expect(operation.responses[String(status)].content["application/json"]).toBeDefined();
+      expect(documentedExample(route).返回示例).toBeNull();
+      expect(documentedExample(route).返回类型).toEqual(["image/jpeg", "image/png", "image/webp"]);
+    }
+  });
+  it("uploads reviewed binary multipart fields with curl --form while retaining text field semantics", () => {
+    const route = { key: "CommerceEvidenceController.upload", path: "/api/saidian-mall/v1/storefront/after-sale-images", method: "POST", auth: "member",
+      envelope: "raw-or-legacy", parameters: [{ in: "file", name: "file" }],
+      contract: { contentType: "multipart/form-data", requestSchema: { type: "object", required: ["file"], properties: {
+        file: { type: "string", format: "binary" }, label: { type: "string" },
+      } }, requestExample: { file: "<LOCAL_JPEG_PNG_WEBP_FILE>", label: "@literal-label" },
+      responseSchema: { type: "object", required: ["id", "byteSize", "contentType", "sha256"] }, responseExample: null } };
+    const operation = generateOpenApi([route], "test").paths[route.path].post;
+    expect(operation.requestBody.content["multipart/form-data"].schema.properties.file).toEqual({ type: "string", format: "binary" });
+    expect(operation.responses["201"].content["application/json"].schema.required).toEqual(["id", "byteSize", "contentType", "sha256"]);
+    const example = documentedExample(route);
+    expect(example.curl).toContain("--form 'file=@<LOCAL_JPEG_PNG_WEBP_FILE>'");
+    expect(example.curl).toContain("--form-string 'label=@literal-label'");
+    expect(example.curl).not.toContain("--form-string 'file=");
+    expect(example.curl).toContain('Authorization: Bearer <ACCESS_TOKEN>');
+    route.contract.requestExample.file = "synthetic person's photo.jpg";
+    expect(documentedExample(route).curl).toContain("--form 'file=@synthetic person'\\''s photo.jpg'");
+  });
   it("round-trips password schemas and synthetic placeholders while redacting actual credentials", async () => {
     const saved = vi.fn().mockImplementation(async (args) => args.create);
     const service = new ApiDocumentationService({ apiDocumentationAnnotation: { upsert: saved } } as any);

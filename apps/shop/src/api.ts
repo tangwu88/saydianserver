@@ -140,6 +140,9 @@ export async function api<T = any>(
   } = {},
 ): Promise<T> {
   if (isGlobalMall && !globalApiAllowed(path, options.method || "GET")) throw new Error(globalCommerceNotice);
+  if (isGlobalMall && options.auth && mallStorage.get("saidian-user")?.phoneTestMode === true && path.split("?")[0] !== "/auth/wechat/h5/account") {
+    throw Object.assign(new Error("购买前请使用已验证的手机号或邮箱登录，当前账号登录状态已保留。"), { status: 403, errorKey: "account_verification_required" });
+  }
   let expectedStamp = options.sessionStamp ?? mallSessionStamp();
   if (options.auth && sessionSyncStarted && identityStamp() !== observedSession) throw changedSession();
   let token = String(mallStorage.get("saidian-token") || "");
@@ -265,7 +268,7 @@ export function clearMallSession(preserveCheckout = false, expectedStamp = mallS
       mallStorage.remove("saidian-token");
       mallStorage.remove("saidian-refresh-token");
       mallStorage.remove("saidian-user");
-      if (!preserveCheckout) clearCheckoutState();
+      if (!preserveCheckout) { clearCheckoutState(); mallStorage.remove("after-sale-drafts"); }
       mallStorage.remove("saidian-ref");
       mallStorage.remove("saidian-post-login-route");
     });
@@ -305,9 +308,9 @@ export function saveMallSession(session: any): void | Promise<void> {
   return withSessionLock(() => {
     if (!currentSession(expected)) throw changedSession();
     const previous = mallStorage.get("saidian-user");
-    const owner = previous?.id || mallStorage.get("checkout-owner");
+    const owner = previous?.id || mallStorage.get("checkout-owner") || mallStorage.get("after-sale-drafts")?.userId;
     commitSession(() => {
-      if (owner && owner !== session.user.id) { clearCheckoutState(); mallStorage.remove("saidian-ref"); }
+      if (owner && owner !== session.user.id) { clearCheckoutState(); mallStorage.remove("after-sale-drafts"); mallStorage.remove("saidian-ref"); }
       mallStorage.set("saidian-token", session.token);
       mallStorage.set("saidian-refresh-token", session.refreshToken);
       mallStorage.set("saidian-user", session.user);

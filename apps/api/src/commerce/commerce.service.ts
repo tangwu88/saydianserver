@@ -9,6 +9,8 @@ import { isUuid, safeObject } from "../common/crypto";
 import { PrismaService } from "../common/prisma.service";
 import { CommerceStoreService } from "./commerce-store.service";
 import { integerCents, pointFaceValueCents } from "./commerce-policy";
+import { optionalExpectedQuote } from "./commerce-quote";
+import { commerceOrderListFilter } from "./commerce-order-filter";
 
 @Injectable()
 export class CommerceService {
@@ -105,7 +107,7 @@ export class CommerceService {
       return this.store.previewOrder(userId, normalizeOrderInput(body, "preview"));
     }
     if (pathname === "/orders" && method === "GET") {
-      return this.store.listOrders(userId, url.searchParams.get("status") ?? undefined);
+      return this.store.listOrders(userId, url.searchParams.get("status") ?? undefined, url.searchParams.get("group") ?? undefined);
     }
     if (pathname === "/orders" && method === "POST") {
       return this.store.createOrder(userId, {
@@ -179,11 +181,13 @@ export class CommerceService {
     return { balanceCents: account?.balanceCents ?? null, verified: !!account, reason: account ? null : "积分账户尚未核验", items, pagination: { page, pageSize, total, hasMore: page * pageSize < total } };
   }
 
-  async orders(userId: string, status?: string) {
+  async orders(userId: string, status?: string, group?: string) {
+    const filter = commerceOrderListFilter(status, group);
     const [current, legacy] = await Promise.all([
-      this.store.listOrders(userId, status),
-      this.prisma.legacyOrderProjection.findMany({
-        where: { userId, ...(status ? { status } : {}) },
+      this.store.listOrders(userId, status, group),
+      // A projection status is not evidence of a real after-sale relationship.
+      group === "after_sales" ? [] : this.prisma.legacyOrderProjection.findMany({
+        where: { userId, ...(filter.status ? { status: filter.status } : {}) },
         orderBy: { legacyCreatedAt: "desc" },
       }),
     ]);
@@ -264,6 +268,10 @@ export class CommerceService {
     return this.store.coupons(userId);
   }
 
+  availableCoupons(userId: string, page = 1) {
+    return this.store.availableCoupons(userId, page);
+  }
+
   claimCoupon(userId: string, couponId: string) {
     return this.store.claimCoupon(userId, couponId);
   }
@@ -288,10 +296,12 @@ function normalizeOrderInput(body: Record<string, unknown>, mode: "preview" | "c
   });
   const addressId = String(body.addressId ?? body.address_id ?? "").trim();
   if (!addressId && mode === "create") throw new BadRequestException("请选择收货地址");
+  const expectedQuote = mode === "create" ? optionalExpectedQuote(body.expectedQuote) : undefined;
   return {
     addressId,
     items,
     pointCents: body.point !== undefined ? pointFaceValueCents(body.point) : integerCents(body.pointCents ?? 0, "积分抵扣"),
+    ...(expectedQuote === undefined ? {} : { expectedQuote }),
     ...(body.couponClaimId
       ? { couponClaimId: String(body.couponClaimId) }
       : {}),

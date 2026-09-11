@@ -1,14 +1,17 @@
 <template>
   <DesktopHeader /><view class="page"
     ><view class="container"
-      ><scroll-view scroll-x class="tabs"
-        ><text
+      ><button class="browse-link" @click="browse">继续逛逛</button><view class="tabs" role="tablist" aria-label="订单状态"
+        ><button
           v-for="tab in tabs"
           :key="tab.value"
           :class="status === tab.value && 'active'"
+          role="tab"
+          :aria-selected="status === tab.value"
           @click="select(tab.value)"
-          >{{ tab.label }}</text
-        ></scroll-view
+          >{{ tab.label }}</button
+        ></view
+      ><view v-if="error" class="error-state" role="alert">{{ error }}<button @click="load">重新加载</button></view
       ><view v-if="orders.length" class="orders"
         ><view
           v-for="order in orders"
@@ -20,10 +23,10 @@
             ><text class="status">{{ label(order.status) }}</text></view
           ><text v-if="order.readOnly" class="small">历史订单 · 只读</text
           ><view v-for="item in orderItemSummary(order).items" :key="item.id" class="order-item"
-            ><image
-              :src="item.imageSnapshot || productPlaceholder"
+            ><image v-if="item.imageSnapshot"
+              :src="item.imageSnapshot"
             mode="aspectFit"
-            /><view
+            /><view v-else class="no-image">暂无图片</view><view
               ><b>{{ item.nameSnapshot || '商品名称未获取' }}</b
               ><text class="small">{{ item.specificationSnapshot }}</text
               ><text
@@ -36,15 +39,15 @@
             {{ order.readOnly ? '订单金额' : order.paidAt ? '支付金额' : '应付' }} <b>{{ money(order.payableCents) }}</b></view
           ></view
         ></view
-      ><view v-else class="empty card">当前没有订单</view></view
+      ><view v-else-if="!error" class="empty card">{{ loading ? '正在读取订单…' : '当前没有订单' }}</view></view
     ></view
   >
 </template>
 <script setup lang="ts">
-import { onLoad, onShow } from "@dcloudio/uni-app";
+import { onLoad, onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
-import { api, money, productPlaceholder, toast } from "../../api";
+import { api, money } from "../../api";
 import { orderItemSummary } from "../../commerce-model";
 const tabs = [
     { label: "全部", value: "" },
@@ -54,17 +57,27 @@ const tabs = [
     { label: "售后", value: "AFTER_SALE" },
   ],
   status = ref(""),
-  orders = ref<any[]>([]);
-onLoad(o=>{status.value=String(o?.status || '');});
+  orders = ref<any[]>([]), error = ref(""), loading = ref(false);
+let revision = 0;
+onLoad(o=>{status.value=o?.group==='pending_shipment'?'WAITING_FULFILLMENT':o?.group==='after_sales'?'AFTER_SALE':String(o?.status || '');});
 onShow(load);
+onHide(() => { revision++; });
+onUnload(() => { revision++; });
 async function load() {
+  const request = ++revision;
   orders.value=[];
+  error.value=""; loading.value=true;
   try {
-    orders.value = await api(`/storefront/orders?status=${status.value}`, {
+    const group = status.value === "WAITING_FULFILLMENT" ? "pending_shipment" : status.value === "AFTER_SALE" ? "after_sales" : "";
+    const query = group ? `group=${group}` : `status=${encodeURIComponent(status.value)}`;
+    const rows = await api<any[]>(`/storefront/orders?${query}`, {
       auth: true,
     });
+    if (request === revision) orders.value = rows;
   } catch (e) {
-    toast(e);
+    if (request === revision) error.value = e instanceof Error ? e.message : "订单暂时无法读取，请重试";
+  } finally {
+    if (request === revision) loading.value=false;
   }
 }
 function select(v: string) {
@@ -74,6 +87,9 @@ function select(v: string) {
 function open(id: string) {
   uni.navigateTo({ url: `/pages/order-detail/index?id=${id}` });
 }
+function browse() {
+  uni.switchTab({ url: '/pages/home/index' });
+}
 const labels: any = {
   PENDING_PAYMENT: "待付款",
   PAID: "已支付",
@@ -81,6 +97,7 @@ const labels: any = {
   WAITING_FULFILLMENT: "待发货",
   SHIPPED: "待收货",
   RECEIVED: "已完成",
+  COMPLETED: "已完成",
   CANCELLED: "已取消",
   AFTER_SALE: "售后中",
   REFUNDED: "已退款",
@@ -92,20 +109,35 @@ function label(v: string) {
 </script>
 <style scoped lang="scss">
 .tabs {
+  display: flex;
   white-space: nowrap;
   margin-bottom: 24rpx;
   background: #fff;
   border-radius: 16rpx;
 }
-.tabs text {
+.tabs button {
   display: inline-flex;
-  padding: 26rpx 34rpx;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
   color: var(--muted);
 }
+.tabs button::after { border: 0; }
+.tabs button:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; }
+.browse-link { width: fit-content; margin: 0 0 10px auto; padding: 8px 14px; min-height: 44px; font-size: 14px; color: var(--green); background: #fff; }
 .tabs .active {
   color: var(--green);
   font-weight: 850;
-  border-bottom: 5rpx solid var(--green);
+  border-bottom-color: var(--green);
 }
 .orders {
   display: grid;
@@ -122,11 +154,12 @@ function label(v: string) {
   padding: 24rpx 0;
   border-bottom: 1px solid var(--line);
 }
-.order-item image {
+.order-item image, .no-image {
   width: 130rpx;
   height: 130rpx;
   border-radius: 14rpx;
 }
+.no-image { display: grid; place-items: center; background: #f5f5f5; font-size: 12px; color: var(--muted); }
 .order-item b,
 .order-item .small,
 .order-item text {
@@ -149,7 +182,8 @@ function label(v: string) {
     grid-template-columns: repeat(2, 1fr);
     gap: 20px;
   }
-  .tabs text {
+  .tabs button {
+    flex: none;
     padding: 16px 28px;
   }
   .order {

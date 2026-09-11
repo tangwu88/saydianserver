@@ -11,9 +11,24 @@ export function resolveMallConfig(env: Record<string, unknown>, miniProgram = fa
 }
 
 export function realmKey(key: string, realm: MallRealm) { return realm === "global" ? "saydian-global-mall:" + key : key; }
-export function globalPageAllowed(route: string) { return /^\/pages\/(home|category|search|product|profile|login|help)\/index(?:\?[^#]*)?$/.test(route) && !/[\\\r\n]/.test(route); }
+export function globalPageAllowed(route: string) {
+  return /^\/pages\/(home|category|search|product|profile|login|help|cart|checkout|orders|order-detail|after-sale|addresses|address-edit|favorites|coupons|points)\/index(?:\?[^#]*)?$/.test(route) && !/[\\\r\n]/.test(route);
+}
 export function globalApiAllowed(path: string, method = "GET") {
+  // Routing only: the server still verifies identity, scope, market and channel
+  // capability. In particular this list never grants temporary OTP trading rights.
+  if (/[\\#\r\n]/.test(path) || (method !== "GET" && path.includes("?"))) return false;
   if (/^\/auth\/(password\/login|refresh|wechat\/h5\/(authorize-url|login|bind-account|binding-code|bind-code|phone-code|bind-phone))$/.test(path)) return method === "POST";
   if (path === "/auth/wechat/h5/account") return method === "GET";
-  return method === "GET" && /^\/storefront\/(bootstrap|capabilities|categories|products(?:\/[^/?#]+)?)(?:\?[^#]*)?$/.test(path);
+  const route = path.split("?", 1)[0] ?? "";
+  if (route === '/storefront/after-sale-images') return method === 'POST';
+  if (/^\/storefront\/after-sale-images\/(capabilities|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(route)) return method === 'GET';
+  if (route === "/payments/create") return method === "POST";
+  if (route === "/storefront/coupons/available") return method === "GET";
+  if (route === "/storefront/orders/preview") return method === "POST";
+  if (method === "GET") return /^\/storefront\/(bootstrap|capabilities|categories|markets|products(?:\/[A-Za-z0-9_-]+)?|cart|addresses|orders(?:\/[A-Za-z0-9_-]+(?:\/logistics)?)?|favorites|coupons|points)$/.test(route) || /^\/payments\/[A-Za-z0-9_-]+$/.test(route);
+  if (method === "POST") return /^\/storefront\/(cart\/items|addresses|orders(?:\/[A-Za-z0-9_-]+\/(cancel|receipt|after-sales(?:\/preview|\/[A-Za-z0-9_-]+\/return-logistics)?))?|favorites\/[A-Za-z0-9_-]+|coupons\/[A-Za-z0-9_-]+\/claim|reviews)$/.test(route);
+  if (method === "PATCH") return /^\/storefront\/addresses\/[A-Za-z0-9_-]+$/.test(route);
+  if (method === "DELETE") return /^\/storefront\/(addresses|cart\/items)\/[A-Za-z0-9_-]+$/.test(route);
+  return false;
 }

@@ -1,6 +1,5 @@
 import { Injectable } from "@nestjs/common";
 import { IntegrationState } from "@prisma/client";
-import { createPrivateKey, createPublicKey } from "node:crypto";
 import { businessWritesPaused, shouldPauseWorkers } from "@saydian/app-contracts";
 import { WechatH5AuthService } from "../auth/wechat-h5-auth.service";
 import { env, envBoolean } from "../common/environment";
@@ -8,6 +7,7 @@ import { safeObject } from "../common/crypto";
 import { PrismaService } from "../common/prisma.service";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { isGlobalRealm } from "../common/deployment-realm";
+import { configuredGlobalMarkets, globalCommerceCountry, globalCommerceCurrency, globalCommercePaymentChannels, globalPaymentConfigurationReady, paymentRsaKey as rsaKey, securePaymentEndpoint as secureEndpoint } from "./global-commerce-policy";
 
 type Capability = { enabled: boolean; reason?: string };
 type PaymentCapability = Capability & { channel: string; environments: string[] };
@@ -23,15 +23,7 @@ export class CommerceCapabilitiesService {
   // Configuration readiness is not a provider verification or a payer identity
   // assertion. Creating a payment still validates the actual User.
   async publicCapabilities(locale?: string) {
-    if (isGlobalRealm()) {
-      const official = await this.official.globalCapabilities(locale);
-      return {
-      realm: "global", consentVersion: official.consentVersion, legal: official.legal,
-      login: { password: { enabled: !businessWritesPaused(process.env) }, sms: { enabled: false, reason: "Use email or international account sign-in." }, wechatH5: official.wechatH5, wechatBinding: official.wechatBinding },
-      payments: [], checkout: { enabled: false, points: { supported: false, requiresVerifiedAccount: true } },
-      maintenance: { readOnly: businessWritesPaused(process.env) }, demo: false,
-      };
-    }
+    const global = isGlobalRealm();
     const readOnly = businessWritesPaused(process.env);
     const outboundPaused = shouldPauseWorkers(process.env);
     const demo = process.env.NODE_ENV !== "production" && envBoolean("H5_DEMO_ENABLED");
@@ -40,8 +32,8 @@ export class CommerceCapabilitiesService {
     });
     const byKey = new Map(rows.map(row => [row.key, row]));
     const configured = (key: string) => byKey.get(key)?.state === IntegrationState.CONFIGURED;
-    let sms = process.env.NODE_ENV !== "production" && envBoolean("ALLOW_TEST_OTP");
-    if (!sms && configured("sms")) {
+    let sms = !global && process.env.NODE_ENV !== "production" && envBoolean("ALLOW_TEST_OTP");
+    if (!global && !sms && configured("sms")) {
       try {
         const publicConfig = safeObject(byKey.get("sms")?.publicConfig);
         const secret = await this.secrets.resolve("sms", { webhookUrl: "SMS_WEBHOOK_URL", webhookToken: "SMS_WEBHOOK_TOKEN" });
@@ -71,6 +63,7 @@ export class CommerceCapabilitiesService {
         wechat = merchantReady && /^wx[A-Za-z0-9]{8,64}$/.test(secret.appIdOfficial ?? "");
         mini = merchantReady && /^wx[A-Za-z0-9]{8,64}$/.test(secret.appIdMini ?? "");
         jsapi = wechat && !!officialAppId && secret.appIdOfficial === officialAppId;
+        if (global && !globalPaymentConfigurationReady("WECHAT_H5", config, secret, env("PUBLIC_BASE_URL", ""))) wechat = jsapi = false;
       } catch { wechat = false; jsapi = false; mini = false; }
     }
     if (configured("alipay")) {
@@ -82,6 +75,7 @@ export class CommerceCapabilitiesService {
         const notify = String(config.notifyUrl ?? `${env("PUBLIC_BASE_URL", "")}/api/saydian-app/v2/billing/payments/alipay/notify`);
         alipay = !!secret.appId && rsaKey(secret.privateKeyPem, true) && rsaKey(secret.publicKeyPem, false) &&
           secureEndpoint(notify) && secureEndpoint(String(config.gateway ?? "https://openapi.alipay.com/gateway.do"));
+        if (global) alipay = globalPaymentConfigurationReady("ALIPAY_WAP", config, secret, env("PUBLIC_BASE_URL", ""));
       } catch { alipay = false; }
     }
     const payments: PaymentCapability[] = [
@@ -92,6 +86,21 @@ export class CommerceCapabilitiesService {
       { channel: "alipay_wap", environments: ["browser"], ...capability(alipay && !outboundPaused, alipay && outboundPaused ? "交易维护中" : "支付宝支付未配置") },
       { channel: "alipay_page", environments: ["browser"], ...capability(alipay && !outboundPaused, alipay && outboundPaused ? "交易维护中" : "支付宝支付未配置") },
     ];
+    if (global) {
+      const [official, marketConfig] = await Promise.all([
+        this.official.globalCapabilities(locale),
+        this.prisma.commerceBusinessConfig.findUnique({ where: { key: "global.markets" } }),
+      ]);
+      const checkoutAvailable = configuredGlobalMarkets(marketConfig).some(market => market.commerceEnabled);
+      return {
+        realm: "global", consentVersion: official.consentVersion, legal: official.legal,
+        login: { password: { enabled: !readOnly }, sms: { enabled: false, reason: "Use email or international account sign-in." }, wechatH5: official.wechatH5, wechatBinding: official.wechatBinding },
+        payments: payments.filter(payment => globalCommercePaymentChannels.some(channel => channel.toLowerCase() === payment.channel))
+          .map(payment => checkoutAvailable ? payment : { ...payment, enabled: false, reason: "当前尚未开放中国大陆人民币结算" }),
+        checkout: { ...capability(checkoutAvailable && !readOnly, readOnly ? "系统维护中" : "当前尚未开放中国大陆人民币结算"), countryCodes: [globalCommerceCountry], currency: globalCommerceCurrency, minimumCashCents: 1, points: { supported: checkoutAvailable, requiresVerifiedAccount: true } },
+        maintenance: { readOnly, ...(readOnly ? { reason: "系统维护中，仅可浏览已有信息" } : {}) }, demo: false,
+      };
+    }
     return {
       login: {
         password: capability(!readOnly, "系统维护中"),
@@ -107,15 +116,3 @@ export class CommerceCapabilitiesService {
 }
 
 function capability(enabled: boolean, reason: string): Capability { return enabled ? { enabled } : { enabled, reason }; }
-function rsaKey(pem: string | undefined, privateKey: boolean): boolean {
-  if (!pem) return false;
-  try { return (privateKey ? createPrivateKey(pem) : createPublicKey(pem)).asymmetricKeyType === "rsa"; } catch { return false; }
-}
-function secureEndpoint(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return !url.username && !url.password && !url.hash &&
-      (url.protocol === "https:" || (process.env.NODE_ENV !== "production" && url.protocol === "http:" &&
-        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)));
-  } catch { return false; }
-}

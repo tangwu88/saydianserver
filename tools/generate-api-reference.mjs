@@ -51,7 +51,7 @@ for (const route of routes) {
 }
 const escape = value => String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 const lines = ["# API 逐路由目录", "", `本文件由控制器和人工复核说明生成，共 **${routes.length} 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。`, "", "调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。", "", "生成：`pnpm api:docs`；校验：`pnpm api:docs:check`。每次新增、删除或修改参数，须同步 tools/api-notes.mjs。", ""];
-for (const [name, predicate] of [["健康检查", r => r.path.startsWith("/health/")], ["V1 兼容接口", r => r.key.startsWith("Legacy")], ["商城 H5/小程序兼容接口", r => r.key.startsWith("CommerceCompatibilityController") || r.key.startsWith("CommerceEmployeeController")], ["V2 App 接口", r => r.path.startsWith("/api/saydian-app/v2/")], ["管理后台接口", r => r.path.startsWith("/api/saydian-app/admin/")]]) {
+for (const [name, predicate] of [["健康检查", r => r.path.startsWith("/health/")], ["V1 兼容接口", r => r.key.startsWith("Legacy")], ["商城 H5/小程序兼容接口", r => r.key.startsWith("CommerceCompatibilityController") || r.key.startsWith("CommerceEmployeeController") || r.key.startsWith("CommerceEvidenceController.")], ["V2 App 接口", r => r.path.startsWith("/api/saydian-app/v2/")], ["管理后台接口", r => r.path.startsWith("/api/saydian-app/admin/")]]) {
   const selected = routes.filter(predicate);
   lines.push(`## ${name}（${selected.length}）`, "", "| 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |", "| --- | --- | --- | --- | --- | --- |");
   for (const r of selected) {

@@ -1,5 +1,5 @@
 <template>
-  <GlobalHelp v-if="isGlobalMall" :key="active" :initial-section="active"/><template v-else>
+  <GlobalHelp v-if="isGlobalMall && ['agreement','privacy'].includes(active)" :key="active" :initial-section="active"/><template v-else>
   <DesktopHeader /><view class="page"
     ><view class="container help-layout"
       ><view class="card nav"
@@ -11,18 +11,18 @@
           >{{ item.label }}</view
         ></view
       ><view class="card content"
-        ><template v-if="active === 'service'"
+        ><view v-if="error" class="error-state" role="alert">{{ error }}<button class="text-button" @click="loadSupport">重试</button></view><template v-if="active === 'service'"
           ><h2>客服与服务</h2>
           <p>
             {{
-              service.phone ? "客服电话：" + service.phone : "客服电话未配置"
+              service.phone ? "客服电话：" + service.phone : "客服电话暂未提供"
             }}
           </p><button v-if="service.phone" class="outline-btn" @click="callService">拨打客服</button>
-          <p>{{ service.wecomUrl ? "企业客服入口已配置" : "企业客服入口未配置" }}</p><button v-if="service.wecomUrl" class="outline-btn" @click="openService">联系企业客服</button></template
+          <button v-if="service.wecomUrl" class="outline-btn" @click="openService">在线客服</button><p v-if="!service.phone && !service.wecomUrl && !error">如需退换货，请在订单详情中申请售后。</p><button class="text-button" @click="orders">查看我的订单</button></template
         ><template v-else-if="active === 'afterSale'"
           ><h2>售后政策</h2>
           <rich-text v-if="policies.afterSale" :nodes="policies.afterSale" />
-          <p v-else>售后政策尚未在商城后台配置。</p></template
+          <p v-else>售后政策暂未提供，请联系客服确认。您可在订单详情中提交售后申请并查看进度。</p></template
         ><template v-else-if="active === 'privacy'"
           ><h2>隐私政策</h2>
           <rich-text v-if="policies.privacy" :nodes="policies.privacy" />
@@ -48,6 +48,7 @@ import DesktopHeader from "../../components/DesktopHeader.vue";
 import { api, toast } from "../../api";
 import { isGlobalMall } from "../../realm";
 import GlobalHelp from "../../components/GlobalHelp.vue";
+const error=ref('');
 const active = ref("service"),
   service = reactive<any>({}),
   policies = reactive<any>({});
@@ -61,15 +62,20 @@ const sections = [
 onLoad(async (o) => {
   const section = o?.section === 'terms' ? 'agreement' : o?.section;
   active.value = sections.some(x=>x.key===section) ? String(section) : 'service';
-  if (isGlobalMall) return;
+  if (isGlobalMall && ['agreement','privacy'].includes(active.value)) return;
+  await loadSupport();
+});
+async function loadSupport(){
+  error.value='';
   try {
     const r: any = await api("/storefront/bootstrap");
     Object.assign(service, r.configs?.["customer.service"]?.enabled ? r.configs['customer.service'].value : {});
     Object.assign(policies, r.configs?.policies?.enabled ? r.configs.policies.value : {});
   } catch (e) {
-    toast(e);
+    error.value=e instanceof Error?e.message:'服务信息暂时无法加载';
   }
-});
+}
+function orders(){uni.navigateTo({url:'/pages/orders/index'});}
 function callService(){ if (/^[+\d -]{5,30}$/.test(String(service.phone))) uni.makePhoneCall({phoneNumber:String(service.phone)}); else toast('客服电话格式尚未配置正确'); }
 function openService(){try { const url = new URL(String(service.wecomUrl)); if (url.protocol!=='https:' || url.hostname!=='work.weixin.qq.com' || url.username || url.password) throw new Error('企业客服地址未正确配置');
   /* #ifdef H5 */

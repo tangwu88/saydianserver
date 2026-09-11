@@ -7,29 +7,32 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { realmTestModules } from "./h5-realm-fixture.mjs";
 const repo = process.env.H5_TEST_REPO || resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ts = createRequire(resolve(repo, "apps/api/package.json"))("typescript");
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 function evaluate(source, globals = {}, imports = {}) {
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const module = { exports: {} };
-  vm.runInNewContext(output, { module, exports: module.exports, ...globals,
+  vm.runInNewContext(output, { module, exports: module.exports, Error, ...globals,
     require(name) { assert.ok(Object.hasOwn(imports, name), "Unexpected import: " + name); return imports[name]; } });
   return module.exports;
 }
 const model = evaluate(readFileSync(resolve(repo, "apps/shop/src/commerce-model.ts"), "utf8"));
 const script = readFileSync(resolve(repo, "apps/shop/src/pages/checkout/index.vue"), "utf8")
   .match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1] +
-  "\nexport const testHandles={submit,items,address,quote,uncertain,submitting};";
+  "\nexport const testHandles={submit,items,address,quote,uncertain,submitting,error,quoteNeedsConfirmation,capabilities};";
 const tick = () => new Promise(resolve => setImmediate(resolve));
-const quoted = { quote: { subtotalCents: 100, payableCents: 100, lines: [] } };
+const quoteToken = "q1:" + "a".repeat(64);
+const quoted = { quote: { fingerprint: quoteToken, subtotalCents: 100, payableCents: 100, lines: [] } };
 function fixture(options = {}) {
+  let nextQuote = options.quote || quoted;
   const storage = new Map([["saidian-user", { id: "H5-TEST-A" }], ["checkout-owner", "H5-TEST-A"]]);
   const quoteWait = [], createWait = [], createReject = [], calls = [], redirects = [], errors = [], orders = new Map();
   async function api(path, request) {
     if (path.endsWith("/preview")) {
       calls.push({ kind: "quote" });
-      return options.deferQuote ? new Promise(resolve => quoteWait.push(resolve)) : quoted;
+      return options.deferQuote ? new Promise(resolve => quoteWait.push(resolve)) : nextQuote;
     }
     assert.equal(path, "/storefront/orders");
     const key = request.headers["idempotency-key"];
@@ -44,21 +47,23 @@ function fixture(options = {}) {
       removeStorageSync: key => storage.delete(key), redirectTo: options => redirects.push(options.url),
     };
     const result = evaluate(script, { uni }, {
+      "../../realm": realmTestModules(uni, { repo }).realm,
       "vue": { ref: value => ({ value }), computed: callback => ({ get value() { return callback(); } }) },
       "@dcloudio/uni-app": { onShow() {} },
-      "../../api": { api, withMallCheckoutLock: callback => callback(), mallSessionStamp: () => storage.get("saidian-user")?.id, money: value => String(value), requireLogin: () => true, toast: error => errors.push(String(error)) },
+      "../../api": { api, withMallCheckoutLock: callback => { options.beforeLock?.(storage); return callback(); }, mallSessionStamp: () => storage.get("saidian-user")?.id, money: value => String(value), requireLogin: () => true, toast: error => errors.push(String(error)) },
       "../../commerce-model": model,
+      "../../payments": { paymentEnvironment: () => "wechat" },
     }).testHandles;
     result.items.value = [{ skuId: "H5-TEST-SKU", quantity: 1 }];
     result.address.value = { id: "H5-TEST-ADDRESS" };
-    result.quote.value = quoted.quote;
+    result.quote.value = clone(options.displayedQuote || quoted.quote);
     return result;
   }
   function switchAccount() {
     storage.set("saidian-user", { id: "H5-TEST-B" }); storage.set("checkout-owner", "H5-TEST-B");
     storage.delete("checkout-draft"); storage.delete("checkout-pending");
   }
-  return { storage, quoteWait, createWait, createReject, calls, redirects, errors, orders, instance, switchAccount };
+  return { storage, quoteWait, createWait, createReject, calls, redirects, errors, orders, instance, switchAccount, setQuote(value) { nextQuote = value; } };
 }
 test("unknown create result recovers exactly the frozen key and payload without re-quoting", async () => {
   const h = fixture(), page = h.instance();
@@ -111,7 +116,8 @@ test("late create response cannot write the previous account's pending order aft
 test("unknown-result recovery is reachable even after stock/cart was consumed", () => {
   const product = readFileSync(resolve(repo, "apps/shop/src/pages/product/index.vue"), "utf8").split("function buyNow()")[1].split("function toggleFavorite")[0];
   const cart = readFileSync(resolve(repo, "apps/shop/src/pages/cart/index.vue"), "utf8").split("function checkout()")[1].split("function shop")[0];
-  for (const source of [product, cart]) assert.match(source, /uncertain[\s\S]*?navigateTo\(\{url:'\/pages\/checkout\/index'\}\)/);
+  assert.match(product, /uncertain[\s\S]*?restoreCheckout\(\)/);
+  assert.match(cart, /uncertain[\s\S]*?navigateTo\(\{url:'\/pages\/checkout\/index'\}\)/);
   assert.ok(product.indexOf("uncertain") < product.indexOf("if (!ensure())"));
   assert.ok(cart.indexOf("uncertain") < cart.indexOf("if (!selected.value.length)"));
 });
@@ -127,4 +133,122 @@ test("a definite rejection clears only the same owned request's unknown flag", a
   const original = clone(h.storage.get("checkout-draft"));
   h.createReject[0](Object.assign(new Error("definite validation error"), { status: 400 })); await pending;
   assert.deepEqual(h.storage.get("checkout-draft"), { ...original, uncertain: false });
+});
+
+const detailedQuote = () => ({ fingerprint: quoteToken, pricingVersion: 1, subtotalCents: 1000, couponDiscountCents: 100, pointDiscountCents: 200, shippingCents: 50, payableCents: 750,
+  lines: [{ skuId: "H5-TEST-SKU", quantity: 1, unitPriceCents: 1000, totalCents: 1000, couponDiscountCentsSnapshot: 100, pointDiscountCentsSnapshot: 200, cashPaidCentsSnapshot: 700 }] });
+test("a changed checkout quote pauses before creating a key, then a second click confirms the new amount", async () => {
+  const old = detailedQuote(), changed = { ...old, shippingCents: 100, payableCents: 800 };
+  const h = fixture({ displayedQuote: old, quote: { quote: changed } }), page = h.instance();
+  await page.submit();
+  assert.equal(page.quoteNeedsConfirmation.value, true); assert.match(page.error.value, /再次确认/); assert.equal(page.quote.value.payableCents, 800);
+  assert.equal(h.calls.filter(x => x.kind === "create").length, 0); assert.equal(h.storage.has("checkout-draft"), false);
+  await page.submit();
+  assert.equal(h.calls.filter(x => x.kind === "create").length, 1); assert.equal(page.quoteNeedsConfirmation.value, false); assert.equal(h.orders.size, 1);
+});
+test("coupon, points, line price and freight changes require confirmation even with unchanged final cash", async () => {
+  const old = detailedQuote();
+  for (const changed of [
+    { ...old, couponDiscountCents: 50, pointDiscountCents: 250 },
+    { ...old, couponDiscountCents: 150, shippingCents: 100 },
+    { ...old, lines: [{ ...old.lines[0], unitPriceCents: 1100, totalCents: 1100 }] },
+    { ...old, lines: [{ ...old.lines[0], pointDiscountCentsSnapshot: 150, cashPaidCentsSnapshot: 750 }] },
+  ]) {
+    const h = fixture({ displayedQuote: old, quote: { quote: changed } }), page = h.instance(); await page.submit();
+    assert.equal(page.quoteNeedsConfirmation.value, true); assert.equal(h.calls.filter(x => x.kind === "create").length, 0);
+  }
+});
+test("a second price change pauses again, while copy-only changes do not require another confirmation", async () => {
+  const old = detailedQuote(), h = fixture({ displayedQuote: old, quote: { quote: { ...old, payableCents: 800 } } }), page = h.instance();
+  await page.submit(); h.setQuote({ quote: { ...old, payableCents: 850 } }); await page.submit();
+  assert.equal(h.calls.filter(x => x.kind === "create").length, 0); assert.equal(page.quote.value.payableCents, 850);
+  h.setQuote({ quote: { ...old, payableCents: 850, availablePointCents: 9000, lines: [{ ...old.lines[0], name: "New display name", image: "new.jpg" }] } });
+  await page.submit(); assert.equal(h.calls.filter(x => x.kind === "create").length, 1);
+});
+test("a confirmed quote with an unknown create result still recovers its exact key without a new quote", async () => {
+  const old = detailedQuote(), h = fixture({ deferCreate: true, displayedQuote: old, quote: { quote: { ...old, payableCents: 800 } } }), page = h.instance();
+  await page.submit(); const pending = page.submit(); await tick();
+  const frozen = clone(h.storage.get("checkout-draft")); h.createReject[0](new Error("request timeout")); await pending;
+  const quoteCount = h.calls.filter(x => x.kind === "quote").length;
+  h.setQuote({ quote: { ...old, payableCents: 900 } }); const recover = page.submit(); await tick();
+  assert.equal(h.calls.filter(x => x.kind === "quote").length, quoteCount);
+  const creates = h.calls.filter(x => x.kind === "create"); assert.equal(creates[1].key, frozen.key); assert.deepEqual(creates[1].payload, frozen.payload);
+  h.createWait[1](); await recover; assert.equal(h.orders.size, 1);
+});
+
+test("new orders carry the server quote condition and unknown results retain it", async () => {
+  const h = fixture({ deferCreate: true }), page = h.instance(), pending = page.submit(); await tick();
+  const draft = clone(h.storage.get("checkout-draft"));
+  assert.equal(draft.payload.expectedQuote, quoteToken);
+  h.createReject[0](new Error("timeout")); await pending;
+  const retry = page.submit(); await tick();
+  assert.equal(h.calls.filter(x => x.kind === "quote").length, 1);
+  assert.equal(h.calls.filter(x => x.kind === "create")[1].payload.expectedQuote, quoteToken);
+  h.createWait[1](); await retry;
+});
+
+test("missing server quote conditions fail closed only for new orders", async () => {
+  for (const fingerprint of [undefined, "", "invalid"]) {
+    const h = fixture({ quote: { quote: { ...quoted.quote, fingerprint } } }), page = h.instance();
+    await page.submit();
+    assert.equal(h.calls.filter(x => x.kind === "create").length, 0); assert.match(page.error.value, /报价凭据/);
+    assert.equal(h.storage.has("checkout-draft"), false);
+  }
+});
+
+test("a server quote conflict keeps no pending order and the next confirmed quote uses its own condition", async () => {
+  const h = fixture({ deferCreate: true }), page = h.instance(), pending = page.submit(); await tick();
+  const first = clone(h.storage.get("checkout-draft"));
+  h.createReject[0](Object.assign(new Error("订单金额已变更，请重新获取报价并确认后提交"), { status: 409, errorKey: "quote_changed" })); await pending;
+  assert.equal(h.storage.get("checkout-draft").uncertain, false); assert.equal(h.storage.has("checkout-pending"), false); assert.equal(h.redirects.length, 0);
+  assert.match(page.error.value, /金额已变更/);
+  const nextToken = "q1:" + "b".repeat(64);
+  h.setQuote({ quote: { ...quoted.quote, fingerprint: nextToken, payableCents: 120 } });
+  await page.submit(); assert.equal(h.calls.filter(x => x.kind === "create").length, 1);
+  const retry = page.submit(); await tick();
+  const second = h.calls.filter(x => x.kind === "create")[1];
+  assert.notEqual(second.key, first.key); assert.equal(second.payload.expectedQuote, nextToken);
+  h.createWait[1](); await retry;
+});
+
+test("a same-key in-progress response remains uncertain and retries the frozen condition", async () => {
+  const h = fixture({ deferCreate: true }), page = h.instance(), pending = page.submit(); await tick();
+  const original = clone(h.storage.get("checkout-draft"));
+  h.createReject[0](Object.assign(new Error("订单正在确认，请保留当前订单内容并稍后重试"), { status: 503, errorKey: "order_in_progress" })); await pending;
+  assert.equal(h.storage.get("checkout-draft").uncertain, true);
+  const retry = page.submit(); await tick();
+  const creates = h.calls.filter(x => x.kind === "create");
+  assert.equal(creates[1].key, original.key); assert.deepEqual(creates[1].payload, original.payload);
+  assert.equal(h.calls.filter(x => x.kind === "quote").length, 1);
+  h.createWait[1](); await retry;
+});
+
+test("an explicitly closed market only replays the existing owned frozen request and never requotes", async () => {
+  const h = fixture(), page = h.instance();
+  const draft = { userId: "H5-TEST-A", key: "frozen-before-market-closed", uncertain: true, payload: { addressId: "old-address", items: [{ skuId: "old-sku", quantity: 1 }], expectedQuote: quoteToken } };
+  h.storage.set("checkout-draft", draft); page.uncertain.value = true; page.address.value = null; page.quote.value = null;
+  page.capabilities.value = { checkout: { enabled: false } };
+  await page.submit(); assert.deepEqual(h.calls, [{ kind: "create", key: draft.key, payload: draft.payload }]);
+  assert.equal(h.storage.get("checkout-pending").userId, "H5-TEST-A");
+});
+
+test("closed-market replay refuses a stale uncertain flag, foreign draft, missing payload or removal while acquiring the lock", async () => {
+  const draft = { userId: "H5-TEST-A", key: "frozen-before-market-closed", uncertain: true, payload: { addressId: "address", items: [{ skuId: "sku", quantity: 1 }] } };
+  for (const value of [undefined, { ...draft, uncertain: false }, { ...draft, userId: "H5-TEST-B" }, { ...draft, payload: undefined }, { ...draft, key: "short" }]) {
+    const h = fixture(), page = h.instance(); if (value) h.storage.set("checkout-draft", value);
+    page.uncertain.value = true; page.capabilities.value = { checkout: { enabled: false } };
+    await page.submit(); assert.deepEqual(h.calls, []); assert.equal(h.storage.has("checkout-pending"), false);
+  }
+  const h = fixture({ beforeLock: storage => storage.delete("checkout-draft") }), page = h.instance();
+  h.storage.set("checkout-draft", draft); page.uncertain.value = true; page.capabilities.value = { checkout: { enabled: false } };
+  await page.submit(); assert.deepEqual(h.calls, []); assert.match(page.error.value, /暂停新下单/);
+});
+
+test("maintenance still blocks a frozen replay and a closed market blocks fresh orders", async () => {
+  for (const recovering of [true, false]) {
+    const h = fixture(), page = h.instance();
+    h.storage.set("checkout-draft", { userId: "H5-TEST-A", key: "frozen-maintenance", uncertain: recovering, payload: {} });
+    page.uncertain.value = recovering; page.capabilities.value = { checkout: { enabled: false }, maintenance: { readOnly: recovering } };
+    await page.submit(); assert.deepEqual(h.calls, []); assert.equal(h.storage.has("checkout-pending"), false);
+  }
 });

@@ -1,0 +1,17 @@
+import { readFileSync } from "node:fs";
+import ts from "typescript";
+import { computed, reactive, ref } from "vue";
+import { describe, expect, it, vi } from "vitest";
+const id="22222222-2222-4222-8222-222222222222",saleId="33333333-3333-4333-8333-333333333333";
+function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(yes=>{resolve=yes;});return{promise,resolve};}
+function harness(){const source=readFileSync(new URL("./components/AfterSaleEvidence.vue",import.meta.url),"utf8").match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1]!;
+ const ast=ts.createSourceFile("evidence.ts",source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS),printer=ts.createPrinter();const code=ts.transpileModule(ast.statements.filter(node=>!ts.isImportDeclaration(node)).map(node=>printer.printNode(ts.EmitHint.Unspecified,node,ast)).join("\n"),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const props=reactive({saleId,references:[`file:${id}`] as unknown}),api={get:vi.fn(async(..._args:any[]):Promise<any>=>({data:new Blob(["synthetic"],{type:"image/png"})}))},onBeforeUnmount=vi.fn(),watch=vi.fn(),url={createObjectURL:vi.fn(()=>"blob:synthetic"),revokeObjectURL:vi.fn()};let token="admin-session";
+ const deps={computed,ref,onBeforeUnmount,watch,defineProps:()=>props,api,Blob,AbortController,URL:url,sessionStorage:{getItem:()=>token}};
+ const state=new Function(...Object.keys(deps),code+"\nreturn {ids,images,loading,error,load,reset};")(...Object.values(deps));return{...state,props,api,onBeforeUnmount,watch,url,setToken:(value:string)=>{token=value;}};}
+describe("private admin after-sale evidence viewer",()=>{
+ it("only constructs same-origin private API requests from canonical file IDs, no external references",async()=>{const h=harness();h.props.references=[`file:${id}`,"https://example.invalid/private.png",`file:${id}`];await h.load();expect(h.api.get).toHaveBeenCalledTimes(1);expect(h.api.get.mock.calls[0]![0]).toBe(`/commerce-after-sales/${saleId}/evidence/${id}`);expect(h.api.get.mock.calls[0]![1]).toMatchObject({responseType:"blob"});expect(h.images.value).toEqual([{id,url:"blob:synthetic"}]);h.reset();expect(h.url.revokeObjectURL).toHaveBeenCalledWith("blob:synthetic");});
+ it("rejects non-image responses and provides retry instead of a fabricated preview",async()=>{const h=harness();h.api.get.mockResolvedValueOnce({data:new Blob(["denied"],{type:"text/html"})});await h.load();expect(h.images.value).toHaveLength(0);expect(h.error.value).toContain("无法读取");expect(h.url.createObjectURL).not.toHaveBeenCalled();await h.load();expect(h.images.value).toHaveLength(1);});
+ it("does not display responses after admin switch, drawer close or another sale",async()=>{for(const change of [(h:any)=>h.setToken("other"),(h:any)=>h.reset(),(h:any)=>{h.props.saleId="44444444-4444-4444-8444-444444444444";h.reset();}]){const h=harness(),pending=deferred<any>();h.api.get.mockImplementationOnce(()=>pending.promise);const loading=h.load();change(h);pending.resolve({data:new Blob(["synthetic"],{type:"image/png"})});await loading;expect(h.images.value).toHaveLength(0);expect(h.url.createObjectURL).not.toHaveBeenCalled();}});
+ it("aborts and revokes private object URLs on unmount",async()=>{const h=harness();await h.load();h.onBeforeUnmount.mock.calls[0]![0]();expect(h.images.value).toHaveLength(0);expect(h.url.revokeObjectURL).toHaveBeenCalledTimes(1);});
+});

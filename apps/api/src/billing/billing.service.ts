@@ -39,7 +39,7 @@ import {
   AppleSignatureVerificationError,
   appleTransactionValidationError,
 } from "./apple-iap.service";
-import { PaymentProviderService } from "./payment-provider.service";
+import { PaymentProviderService, assertGlobalPaymentScope, assertGlobalPaymentSupported } from "./payment-provider.service";
 import { onCommerceOrderPaid, onCommerceRefundSucceeded, onCommercePointsRefundSucceeded, afterSaleSettlementSnapshot, settlePointOnlyAfterSale, allItemsReturned } from "../commerce/commerce-finance";
 import { orderFulfillmentState } from "../commerce/commerce-finance";
 import { shouldDeferCallbacks, shouldPauseWorkers } from "@saydian/app-contracts";
@@ -176,6 +176,8 @@ export class BillingService {
     const channel = paymentChannelMap[channelInput];
     assertPaymentOutboundEnabled();
     enforceDigitalPlatformPolicy(businessType, channel, platform);
+    // Membership resolution can create a row: reject unsupported global scopes first.
+    assertGlobalPaymentScope({ channel, businessType });
     const resolved = await this.resolveBusiness(
       userId,
       businessType,
@@ -183,6 +185,7 @@ export class BillingService {
       offerId,
       platform,
     );
+    assertGlobalPaymentSupported({ channel, businessType, currency: resolved.currency });
     const identity = await this.providers.identity(channel);
     if (channel === PaymentChannel.WECHAT_JSAPI) {
       if (!identity.appId) throw new ServiceUnavailableException("微信公众号支付应用尚未配置");

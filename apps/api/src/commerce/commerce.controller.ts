@@ -107,8 +107,8 @@ export class CommerceController {
 
   @Get("orders")
   @UseGuards(UserAuthGuard)
-  orders(@CurrentUser() user: AuthenticatedUser, @Query("status") status?: string) {
-    return this.commerce.orders(user.id, status);
+  orders(@CurrentUser() user: AuthenticatedUser, @Query("status") status?: string, @Query("group") group?: string) {
+    return this.commerce.orders(user.id, status, group);
   }
 
   @Post("orders/preview")

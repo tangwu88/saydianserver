@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { realmTestModules } from "./h5-realm-fixture.mjs";
 const repo = process.env.H5_TEST_REPO || resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const candidate = process.env.H5_CANDIDATE_ROOT || "";
 const ts = createRequire(resolve(repo, "apps/api/package.json"))("typescript");
@@ -84,7 +85,9 @@ function environment(options = {}) {
     current.window = window; current.document = document; current.uni = uni;
     current.emit = (name, event = {}) => (listeners.get(name) || []).forEach(callback => callback(event));
     current.visibility = state => { document.visibilityState = state; (documentListeners.get("visibilitychange") || []).forEach(callback => callback()); };
-    current.api = evaluate(source("apps/shop/src/api.ts"), { uni, window, document, navigator: { locks }, getCurrentPages: () => [{ route: "pages/checkout/index" }] }, { "./commerce-model": model });
+    const realmModules = realmTestModules(uni, { repo, source });
+    current.realm = realmModules.realm;
+    current.api = evaluate(source("apps/shop/src/api.ts"), { uni, window, document, navigator: { locks }, getCurrentPages: () => [{ route: "pages/checkout/index" }] }, { "./commerce-model": model, "./realm": current.realm, "./realm-config": realmModules.config });
     documents.push(current); current.api.startMallSessionSync();
     return current;
   }
@@ -225,9 +228,11 @@ function checkoutFixture(options = {}) {
   function page() {
     const doc = h.documentInstance();
     const handles = evaluate(script, { uni: doc.uni }, {
+      "../../realm": doc.realm,
       "vue": { ref: value => ({ value }), computed: callback => ({ get value() { return callback(); } }) },
       "@dcloudio/uni-app": { onShow() {} },
       "../../commerce-model": model,
+      "../../payments": { paymentEnvironment: () => "wechat" },
       "../../api": { ...doc.api, requireLogin: () => true, toast: error => errors.push(String(error)),
         api: async (path, request) => {
           if (path.endsWith("/preview")) return new Promise(resolve => quotes.push({ doc, resolve }));
@@ -242,7 +247,7 @@ function checkoutFixture(options = {}) {
     handles.address.value = { id: "H5-UNIT-ADDRESS" }; handles.quote.value = { payableCents: 100 };
     return { ...doc, ...handles };
   }
-  return { ...h, page, quotes, creates, orderIds, errors, quote(index = 0) { quotes[index].resolve({ quote: { payableCents: 100, lines: [] } }); } };
+  return { ...h, page, quotes, creates, orderIds, errors, quote(index = 0) { quotes[index].resolve({ quote: { fingerprint: "q1:" + "a".repeat(64), payableCents: 100, lines: [] } }); } };
 }
 test("cross-document checkout lock starts before quoting and preserves one key across an unknown result and recovery", async () => {
   const h = checkoutFixture(), a = h.page(), b = h.page();
@@ -293,7 +298,8 @@ test("mini-program and non-document execution retain the existing local operatio
   const uni = { getStorageSync() {} };
   for (const mini of [false, true]) {
     const globals = mini ? { uni, window: {}, document: {}, navigator: { get locks() { assert.fail("mini must not access browser locks"); } } } : { uni };
-    const api = evaluate(source("apps/shop/src/api.ts"), globals, { "./commerce-model": model }, mini);
+    const { realm, config } = realmTestModules(uni, { repo, source, mini });
+    const api = evaluate(source("apps/shop/src/api.ts"), globals, { "./commerce-model": model, "./realm": realm, "./realm-config": config }, mini);
     api.startMallSessionSync();
     assert.equal(await api.withMallCheckoutLock(async () => "local"), "local");
   }

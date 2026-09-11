@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { canAdminResource } from "@saydian/app-contracts";
 import { getAdminRoles } from "../api";
+import AfterSaleEvidence from "./AfterSaleEvidence.vue";
 
 type Row = Record<string, any>;
 type TagType = "primary" | "success" | "warning" | "info" | "danger";
@@ -427,6 +428,7 @@ function changeStatus(value: unknown): void {
     </div>
 
     <el-drawer v-model="detailVisible" title="业务详情" size="560px">
+      <AfterSaleEvidence v-if="detailVisible && resource === 'commerce-after-sales'" :key="detailRow.id" :sale-id="String(detailRow.id || '')" :references="detailRow.evidenceImages" />
       <el-descriptions :column="1" border>
         <el-descriptions-item label="编号">{{ detailRow.id || "—" }}</el-descriptions-item>
         <el-descriptions-item v-if="detailRow.orderNo" label="订单号">{{ detailRow.orderNo }}</el-descriptions-item>

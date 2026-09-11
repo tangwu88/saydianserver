@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -16,6 +17,8 @@ import { IntegrationSecretsService } from "../common/integration-secrets.service
 import { markIntegrationVerified } from "../common/integration-health";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { parseGlobalDownloadManifest } from "./global-download-manifest";
+import { canAdminResource } from "@saydian/app-contracts";
+import { evidenceId, evidenceLimits, evidencePurpose, validateEvidenceImage } from "../commerce/commerce-evidence";
 
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -131,6 +134,44 @@ export class SupportService {
       sha256: digest,
       byteSize: file.size,
     };
+  }
+
+  async commerceEvidenceCapability() {
+    try { await this.storage(); return { enabled: true, ...evidenceLimits }; }
+    catch { return { enabled: false, ...evidenceLimits, reason: "图片服务未配置，暂不可上传；您仍可提交文字说明。" }; }
+  }
+
+  async uploadCommerceEvidence(userId: string, file: Express.Multer.File) {
+    const contentType = validateEvidenceImage(file), storage = await this.storage();
+    const extension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+    const objectKey = `${evidencePurpose}/${userId}/${randomUUID()}.${extension}`, digest = sha256(file.buffer);
+    try { await storage.s3.send(new PutObjectCommand({ Bucket: storage.bucket, Key: objectKey, Body: file.buffer, ContentType: contentType, Metadata: { sha256: digest, purpose: evidencePurpose } })); }
+    catch { throw new ServiceUnavailableException("图片暂时无法上传，请稍后重试"); }
+    const stored = await this.prisma.fileObject.create({ data: { ownerUserId: userId, purpose: evidencePurpose, objectKey, originalName: String(file.originalname || "image").slice(0, 255), contentType, byteSize: file.buffer.length, sha256: digest } });
+    await markIntegrationVerified(this.prisma, "object_storage");
+    return { id: stored.id, byteSize: stored.byteSize, contentType: stored.contentType, sha256: stored.sha256 };
+  }
+
+  async commerceEvidence(userId: string, id: string) {
+    if (!evidenceId(id)) throw new NotFoundException("图片不存在");
+    const file = await this.prisma.fileObject.findFirst({ where: { id, ownerUserId: userId, purpose: evidencePurpose, status: "ACTIVE" } });
+    if (!file || !evidenceLimits.contentTypes.includes(file.contentType)) throw new NotFoundException("图片不存在");
+    const storage = await this.storage();
+    let result;
+    try { result = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey })); }
+    catch { throw new ServiceUnavailableException("图片暂时无法读取，请稍后重试"); }
+    if (!result.Body) throw new NotFoundException("图片不存在");
+    return { body: result.Body as NodeJS.ReadableStream, contentType: file.contentType, byteSize: file.byteSize, sha256: file.sha256 };
+  }
+
+  async adminCommerceEvidence(admin: { id: string; role: string; roles?: string[] }, saleId: string, fileId: string, requestId?: string) {
+    if (!canAdminResource(admin.roles?.length ? admin.roles : [admin.role], "commerce-after-sales", "read")) throw new ForbiddenException("无权查看售后图片");
+    if (!evidenceId(saleId) || !evidenceId(fileId)) throw new NotFoundException("售后图片不存在");
+    const sale = await this.prisma.commerceAfterSale.findFirst({ where: { id: saleId, evidenceImages: { has: `file:${fileId}` } }, select: { order: { select: { userId: true } } } });
+    if (!sale) throw new NotFoundException("售后图片不存在");
+    const file = await this.commerceEvidence(sale.order.userId, fileId);
+    await this.prisma.auditLog.create({ data: { actorType: "ADMIN", actorId: admin.id, action: "COMMERCE_EVIDENCE_READ", entityType: "COMMERCE_AFTER_SALE", entityId: saleId, requestId: requestId ?? null, afterJson: { fileId } } });
+    return file;
   }
 
   async storeLegacyEcgSamples(

@@ -64,7 +64,9 @@ async function rejects(work, message) {
 }
 function listeners() {
   assert.equal(process.platform, "win32", "This acceptance includes Windows PID/start-time preservation checks");
-  const command = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); @(Get-NetTCPConnection -State Listen -LocalPort 8080,5173 -ErrorAction Stop | Select-Object LocalPort,OwningProcess -Unique | ForEach-Object { $p=Get-Process -Id $_.OwningProcess; [pscustomobject]@{port=$_.LocalPort;pid=$_.OwningProcess;start=$p.StartTime.ToUniversalTime().ToString('o')} } | Sort-Object port,pid) | ConvertTo-Json -Compress";
+  // Query all listeners before filtering: Get-NetTCPConnection -LocalPort throws
+  // when one optional service is absent. Always serialize an array, including [].
+  const command = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); ConvertTo-Json -Compress -InputObject @(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object { $_.LocalPort -in 8080,5173,8081 } | Select-Object LocalPort,OwningProcess -Unique | ForEach-Object { $p=Get-Process -Id $_.OwningProcess; [pscustomobject]@{port=$_.LocalPort;pid=$_.OwningProcess;start=$p.StartTime.ToUniversalTime().ToString('o')} } | Sort-Object port,pid)";
   return JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { encoding: "utf8", windowsHide: true }).trim());
 }
 async function http(base, path, { method = "GET", token, body, headers = {} } = {}) {
@@ -183,9 +185,8 @@ async function cleanup() {
 
 try {
   beforeListeners = listeners();
-  truth(beforeListeners.some(row => row.port === 8080) && beforeListeners.some(row => row.port === 5173), "original API/admin listeners present");
-  check((await http("http://127.0.0.1:8080", "/health/ready")).status, 200, "original API ready");
-  check((await fetch("http://127.0.0.1:5173/admin/")).status, 200, "original admin responds");
+  if (beforeListeners.some(row => row.port === 8080)) check((await http("http://127.0.0.1:8080", "/health/ready")).status, 200, "original API ready");
+  if (beforeListeners.some(row => row.port === 5173)) check((await fetch("http://127.0.0.1:5173/admin/")).status, 200, "original admin responds");
   check(await prisma.integrationSecret.count(), 0, "demo DB contains no stored provider secrets");
   const suppliers = ["sms","wechat_pay","alipay","wechat_official","wechat_login","wecom","jushuitan","push","ai"];
   check(await prisma.integrationConfig.count({ where: { key: { in: suppliers }, state: "CONFIGURED" } }), 0, "real supplier integrations remain unconfigured");
@@ -523,10 +524,78 @@ try {
   await denied(injected, "/api/saidian-mall/v1/storefront/reviews", { method: "POST", token: bToken, body: { ...originalReview, content: "其他人不可修改" } });
   check(await prisma.commerceReview.count({ where: { orderItemId: reviewItem.id } }), 1, "one order item has exactly one real review after retries");
   check((await prisma.commerceReview.findUniqueOrThrow({ where: { orderItemId: reviewItem.id } })).content, originalReview.content, "database retains the original review");
+
+  // Quote-change contract over the actual demo API, using only this run's
+  // independent product/coupon. Never mutate the retained browser QA fixtures.
+  const fingerprintSku = await newProduct(1000, 3, "quote-fingerprint");
+  const fingerprintCoupon = await prisma.commerceCoupon.create({ data: {
+    name: `${marker}:quote-fingerprint-coupon`, type: "CASH", status: "ACTIVE", value: 101,
+    validFrom: new Date(Date.now() - 1000), validUntil: new Date(Date.now() + 3600_000),
+  } });
+  owned.coupons.push(fingerprintCoupon.id);
+  const fingerprintClaim = await prisma.commerceCouponClaim.create({ data: { userId: a.id, couponId: fingerprintCoupon.id } });
+  const fingerprintBody = { addressId: address.id, items: [{ skuId: fingerprintSku.id, quantity: 1 }],
+    pointCents: 100, couponClaimId: fingerprintClaim.id };
+  const fingerprintKey = `${marker}:quote-fingerprint-order`;
+  const quoteBeforePriceChange = await ok(base, "/api/saidian-mall/v1/storefront/orders/preview", { method: "POST", token: aToken, body: fingerprintBody });
+  const oldFingerprint = quoteBeforePriceChange.quote.fingerprint;
+  truth(/^q1:[0-9a-f]{64}$/.test(oldFingerprint ?? ""), "preview exposes a versioned quote fingerprint");
+  async function fingerprintAssets() {
+    return {
+      stock: (await prisma.commerceSku.findUniqueOrThrow({ where: { id: fingerprintSku.id } })).stock,
+      points: await prisma.commercePointAccount.findUniqueOrThrow({ where: { userId: a.id } }),
+      claim: await prisma.commerceCouponClaim.findUniqueOrThrow({ where: { id: fingerprintClaim.id } }),
+      coupon: await prisma.commerceCoupon.findUniqueOrThrow({ where: { id: fingerprintCoupon.id } }),
+      orders: await prisma.commerceOrder.count({ where: { userId: a.id } }),
+      pointLedger: await prisma.commercePointLedger.count({ where: { userId: a.id } }),
+      payments: await prisma.paymentIntent.count({ where: { userId: a.id } }),
+    };
+  }
+  const fingerprintPriceChanged = await prisma.commerceSku.updateMany({
+    where: { id: fingerprintSku.id, erpSkuId: `${marker}:quote-fingerprint`, product: { source: "LOCAL" } },
+    data: { salePriceCents: 1100 },
+  });
+  check(fingerprintPriceChanged.count, 1, "only the current run's quote fixture price changes");
+  const beforeStaleCreate = await fingerprintAssets();
+  const fingerprintOptions = expectedQuote => ({ method: "POST", token: aToken,
+    headers: { "idempotency-key": fingerprintKey }, body: { ...fingerprintBody, expectedQuote } });
+  const staleCreate = await http(base, "/api/saidian-mall/v1/storefront/orders", fingerprintOptions(oldFingerprint));
+  check(staleCreate.status, 409, "changed price rejects the original quote before creating an order");
+  check(staleCreate.json.errorKey, "quote_changed", "stale quote has an explicit actionable error key");
+  check(await fingerprintAssets(), beforeStaleCreate, "stale quote cannot change inventory, points, coupon, order or payment state");
+
+  const quoteAfterPriceChange = await ok(base, "/api/saidian-mall/v1/storefront/orders/preview", { method: "POST", token: aToken, body: fingerprintBody });
+  const acceptedFingerprint = quoteAfterPriceChange.quote.fingerprint;
+  truth(/^q1:[0-9a-f]{64}$/.test(acceptedFingerprint ?? "") && acceptedFingerprint !== oldFingerprint, "repricing yields a different valid fingerprint");
+  const fingerprintOrder = await ok(base, "/api/saidian-mall/v1/storefront/orders", fingerprintOptions(acceptedFingerprint));
+  check(fingerprintOrder.payableCents, quoteAfterPriceChange.quote.payableCents, "fresh fingerprint creates at the confirmed server quote");
+  const afterFreshCreate = await fingerprintAssets();
+  check(afterFreshCreate.orders, beforeStaleCreate.orders + 1, "fresh quote creates exactly one order");
+  check(afterFreshCreate.stock, beforeStaleCreate.stock - 1, "fresh quote reserves inventory once");
+  check(afterFreshCreate.points.balanceCents, beforeStaleCreate.points.balanceCents - 100, "fresh quote reserves points once");
+  check(afterFreshCreate.claim.orderId, fingerprintOrder.id, "fresh quote reserves the selected coupon");
+  // The accepted fingerprint is now stale against live pricing. Exact retries
+  // must resolve the original request before re-quoting its already-used coupon.
+  check((await prisma.commerceSku.updateMany({
+    where: { id: fingerprintSku.id, erpSkuId: `${marker}:quote-fingerprint`, product: { source: "LOCAL" } },
+    data: { salePriceCents: 1200 },
+  })).count, 1, "second repricing still touches only the owned fixture");
+  const fingerprintReplay = await ok(base, "/api/saidian-mall/v1/storefront/orders", fingerprintOptions(acceptedFingerprint));
+  check(fingerprintReplay.id, fingerprintOrder.id, "same key and originally accepted fingerprint return the existing order after repricing");
+  check(fingerprintReplay.payableCents, fingerprintOrder.payableCents, "retry preserves the original order amount");
+  check(await fingerprintAssets(), afterFreshCreate, "accepted quote replay never reserves assets or creates an order twice");
+  const differentFingerprintRetry = await http(base, "/api/saidian-mall/v1/storefront/orders", fingerprintOptions(oldFingerprint));
+  check(differentFingerprintRetry.status, 409, "same key with a different quote fingerprint is a different request and is rejected");
+  check(await fingerprintAssets(), afterFreshCreate, "changed-fingerprint retry has no side effects");
+  await ok(base, `/api/saidian-mall/v1/storefront/orders/${fingerprintOrder.id}/cancel`, { method: "POST", token: aToken });
+  const afterFingerprintCancel = await fingerprintAssets();
+  check(afterFingerprintCancel.stock, beforeStaleCreate.stock, "quote fixture cancellation returns reserved inventory");
+  check(afterFingerprintCancel.points.balanceCents, beforeStaleCreate.points.balanceCents, "quote fixture cancellation returns reserved points");
+  check(afterFingerprintCancel.claim.orderId, null, "quote fixture cancellation releases the coupon");
   check(await prisma.commerceIntegrationJob.count({ where: { aggregateId: financed.id } }), 0, "LOCAL order creates no ERP outbound job");
   check(blockedOutbound, 0, "test flow attempted no non-allowlisted network calls");
-  check(listeners(), beforeListeners, "original 8080/5173 PID and process start time unchanged");
-  check((await http("http://127.0.0.1:8080", "/health/ready")).status, 200, "original API still ready");
+  check(listeners(), beforeListeners, "original API/admin/demo PID and process start time unchanged");
+  if (beforeListeners.some(row => row.port === 8080)) check((await http("http://127.0.0.1:8080", "/health/ready")).status, 200, "original API still ready");
   console.log(`Injected Nest + real PostgreSQL phase passed; fake create=${calls.create}; fake refunds=${calls.refund}; assertions=${assertions}.`);
 } catch (error) { failure = error; }
 finally {

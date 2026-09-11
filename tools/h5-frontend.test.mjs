@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { realmTestModules } from "./h5-realm-fixture.mjs";
 
 const repo = process.env.H5_TEST_REPO || resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ts = createRequire(resolve(repo, "apps/api/package.json"))("typescript");
@@ -24,6 +25,17 @@ function load(relative, globals = {}, imports = {}) {
 }
 const model = load("apps/shop/src/commerce-model.ts");
 const normalize = (value) => JSON.parse(JSON.stringify(value));
+
+test("realm fixture executes real storage isolation with customer shopping and employee guards", () => {
+  const storage = new Map(), uni = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value), removeStorageSync: key => storage.delete(key) };
+  const domestic = realmTestModules(uni, { repo }), global = realmTestModules(uni, { repo, env: { VITE_APP_REALM: "global" } });
+  domestic.realm.mallStorage.set("saidian-token", "domestic-test"); global.realm.mallStorage.set("saidian-token", "global-test");
+  assert.equal(domestic.realm.mallStorage.get("saidian-token"), "domestic-test"); assert.equal(global.realm.mallStorage.get("saidian-token"), "global-test");
+  assert.equal(domestic.realm.mallStorageKey("checkout-draft"), "checkout-draft"); assert.equal(global.realm.mallStorageKey("checkout-draft"), "saydian-global-mall:checkout-draft");
+  assert.equal(domestic.realm.isGlobalMall, false); assert.equal(global.realm.isGlobalMall, true);
+  assert.equal(global.config.globalApiAllowed("/storefront/orders", "POST"), true); assert.equal(global.config.globalPageAllowed("/pages/checkout/index"), true);
+  assert.equal(global.config.globalApiAllowed("/wecom/oauth", "POST"), false); assert.equal(global.config.globalPageAllowed("/pages/employee/index"), false);
+});
 
 test("legacy orders without item snapshots remain unknown and canonical orders retain quantity", () => {
   for (const order of [undefined, null, { readOnly: true, source: "legacy", snapshot: { goods: [] } },
@@ -80,7 +92,8 @@ function sessionHarness() {
     login: () => assert.fail("H5 must not invoke mini-program login"),
     showToast() {},
   };
-  const api = load("apps/shop/src/api.ts", { uni, getCurrentPages: () => [{ route: "pages/checkout/index", options: {} }] }, { "./commerce-model": model });
+  const { realm, config } = realmTestModules(uni, { repo });
+  const api = load("apps/shop/src/api.ts", { uni, getCurrentPages: () => [{ route: "pages/checkout/index", options: {} }] }, { "./commerce-model": model, "./realm": realm, "./realm-config": config });
   return { api, storage, requests, navigations };
 }
 const session = id => ({ token: "test-access-" + id, refreshToken: "test-refresh-" + id, user: { id } });
@@ -133,4 +146,88 @@ test("public SKU projection excludes cost, ERP identifiers, and future private f
   const visible = { id: "sku-test", specification: "测试规格", image: null, salePriceCents: 1000, marketPriceCents: null, stock: 2, enabled: true };
   const result = publicSku({ ...visible, costPriceCents: 900, erpSkuId: "private-erp", supplierSecretFuture: "must-not-leak", product: { privateField: true } });
   assert.deepEqual(normalize(result), visible);
+});
+
+function shoppingPage(page, handles) {
+  const requests = [], messages = [], hooks = { onLoad: [], onShow: [], onHide: [], onUnload: [] };
+  const uni = { getStorageSync() {}, setStorageSync() {}, removeStorageSync() {} };
+  const { realm } = realmTestModules(uni, { repo });
+  const text = readFileSync(resolve(repo, `apps/shop/src/pages/${page}/index.vue`), "utf8").match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1] + `\nexport const handles={${handles}};`;
+  const js = ts.transpileModule(text, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const imports = {
+    "vue": { ref: value => ({ value }), reactive: value => value, computed: fn => ({ get value() { return fn(); } }) },
+    "@dcloudio/uni-app": Object.fromEntries(Object.keys(hooks).map(key => [key, fn => hooks[key].push(fn)])),
+    "../../realm": realm, "../../commerce-model": model,
+    "../../api": { api: (path, input) => new Promise((resolve, reject) => requests.push({ path, input, resolve, reject })), toast: value => messages.push(String(value)), money: String },
+  };
+  const module = { exports: {} };
+  vm.runInNewContext(js, { module, exports: module.exports, Error, uni, require: name => { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
+  return { ...module.exports.handles, requests, messages, hooks };
+}
+
+test("cart minus clamps an overstocked quantity to actual stock and never sends a zero quantity", async () => {
+  const h = shoppingPage("cart", "update,cart,busy");
+  const item = { skuId: "sku-A", quantity: 5, selected: true, sku: { stock: 2 } };
+  const pending = h.update(item, 4, true);
+  assert.equal(h.requests.length, 1); assert.equal(h.requests[0].input.data.quantity, 2);
+  h.requests[0].resolve({ items: [{ ...item, quantity: 2 }] }); await pending;
+  assert.equal(h.cart.items[0].quantity, 2); assert.equal(h.busy.value, false);
+  await h.update({ ...item, sku: { stock: 0 } }, 4, true);
+  assert.equal(h.requests.length, 1); assert.match(h.messages.at(-1), /缺货/);
+});
+test('cart selected count represents item quantities rather than distinct SKU rows',()=>{
+  const h=shoppingPage('cart','cart,selectedQuantity');
+  h.cart.items=[{selected:true,available:true,quantity:2},{selected:true,available:true,quantity:3},{selected:false,available:true,quantity:7},{selected:true,available:false,quantity:4}];
+  assert.equal(h.selectedQuantity.value,5);
+});
+
+test('cart loading failure stays visible until a successful retry instead of claiming an empty cart',async()=>{
+  const h=shoppingPage('cart','load,cart,error,loading');
+  const pending=h.load(); assert.equal(h.loading.value,true);
+  h.requests[0].reject(new Error('network unavailable')); await pending;
+  assert.equal(h.error.value,'network unavailable'); assert.equal(h.loading.value,false);
+  const retry=h.load(); h.requests[1].resolve({items:[{id:'cart-row'}]}); await retry;
+  assert.equal(h.error.value,''); assert.equal(h.cart.items[0].id,'cart-row');
+  const source=readFileSync(resolve(repo,'apps/shop/src/pages/cart/index.vue'),'utf8');
+  assert.match(source,/v-if="error"[^>]*role="alert"/);
+  assert.match(source,/v-else-if="!error"/);
+  assert.match(source,/重新加载购物车/);
+});
+
+test("cart keeps normal decrement and rejects increment beyond stock without duplicate updates", async () => {
+  const h = shoppingPage("cart", "update,cart,busy"), item = { skuId: "sku-A", quantity: 2, selected: true, sku: { stock: 2 } };
+  await h.update(item, 3, true); assert.equal(h.requests.length, 0);
+  const pending = h.update(item, 1, true); await h.update(item, 1, true);
+  assert.equal(h.requests.length, 1); assert.equal(h.requests[0].input.data.quantity, 1);
+  h.requests[0].resolve({ items: [{ ...item, quantity: 1 }] }); await pending;
+  assert.equal(h.cart.items[0].quantity, 1);
+});
+
+test("orders keeps the latest tab's result when an older status response arrives last", async () => {
+  const h = shoppingPage("orders", "load,select,status,orders,error,loading");
+  const first = h.load(); h.status.value = "SHIPPED"; const second = h.load();
+  h.requests[1].resolve([{ id: "shipped-order" }]); await second;
+  h.requests[0].resolve([{ id: "all-order" }]); await first;
+  assert.equal(h.orders.value[0].id, "shipped-order"); assert.equal(h.status.value, "SHIPPED"); assert.equal(h.loading.value, false);
+});
+
+test("an old order failure cannot replace the new tab, and a current error remains retryable", async () => {
+  const h = shoppingPage("orders", "load,select,status,orders,error,loading");
+  const first = h.load(); const second = h.load();
+  h.requests[1].resolve([{ id: "latest-order" }]); await second; h.requests[0].reject(new Error("old error")); await first;
+  assert.equal(h.error.value, ""); assert.equal(h.orders.value[0].id, "latest-order");
+  const failed = h.load(); h.requests[2].reject(new Error("network unavailable")); await failed;
+  assert.equal(h.error.value, "network unavailable"); assert.equal(h.loading.value, false);
+  const retry = h.load(); h.requests[3].resolve([]); await retry;
+  assert.equal(h.error.value, ""); assert.equal(h.orders.value.length, 0);
+});
+
+test("hidden or unloaded order pages ignore responses and load fresh on return", async () => {
+  for (const event of ["onHide", "onUnload"]) {
+    const h = shoppingPage("orders", "load,orders,error,loading");
+    const pending = h.load(); h.hooks[event].forEach(fn => fn()); h.requests[0].resolve([{ id: "hidden-order" }]); await pending;
+    assert.equal(h.orders.value.length, 0);
+    const visible = h.hooks.onShow[0](); h.requests[1].resolve([{ id: "fresh-order" }]); await visible;
+    assert.equal(h.orders.value[0].id, "fresh-order"); assert.equal(h.loading.value, false);
+  }
 });

@@ -287,8 +287,9 @@ export class CommerceCompatibilityController {
   orders(
     @CurrentUser() user: AuthenticatedUser,
     @Query("status") status?: string,
+    @Query("group") group?: string,
   ) {
-    return this.commerce.orders(user.id, status);
+    return this.commerce.orders(user.id, status, group);
   }
 
   @Get("storefront/orders/:id")
@@ -400,6 +401,12 @@ export class CommerceCompatibilityController {
   @UseGuards(UserAuthGuard)
   claimCoupon(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
     return this.commerce.claimCoupon(user.id, id);
+  }
+
+  @Get("storefront/coupons/available")
+  @UseGuards(UserAuthGuard)
+  availableCoupons(@CurrentUser() user: AuthenticatedUser, @Query("page") page?: string) {
+    return this.commerce.availableCoupons(user.id, Number(page ?? 1));
   }
 
   @Post("storefront/reviews")
