@@ -26,6 +26,24 @@ const success = {
   amount: { total: pending.amountCents, currency: pending.currency },
 };
 
+const alipayPending = {
+  ...pending,
+  id: "00000000-0000-4000-8000-000000000903",
+  paymentNo: "PAY-reconcile-alipay-1",
+  channel: PaymentChannel.ALIPAY_WAP,
+  providerPayload: { type: "FORM" },
+  providerMerchantId: null,
+  providerAppId: "alipay-app",
+};
+
+const alipaySuccess = {
+  code: "10000",
+  out_trade_no: alipayPending.paymentNo,
+  trade_no: "alipay-transaction-1",
+  trade_status: "TRADE_SUCCESS",
+  total_amount: "9.80",
+};
+
 function fixture(payload: Record<string, unknown> = success) {
   const prisma = { paymentIntent: { findFirst: vi.fn()
     .mockResolvedValueOnce(pending)
@@ -71,5 +89,36 @@ describe("member payment status reconciliation", () => {
     const h = fixture(); h.prisma.paymentIntent.findFirst.mockReset().mockResolvedValue({ ...pending, status: PaymentStatus.SUCCEEDED });
     await expect(h.service.payment("member-1", pending.id)).resolves.toMatchObject({ status: "succeeded" });
     expect(h.providers.queryWechatPayment).not.toHaveBeenCalled();
+  });
+
+  it("changes a pending payment only from a bound successful Alipay query", async () => {
+    const prisma = { paymentIntent: { findFirst: vi.fn()
+      .mockResolvedValueOnce(alipayPending)
+      .mockResolvedValueOnce({ ...alipayPending, status: PaymentStatus.SUCCEEDED, providerPayload: alipaySuccess }) } };
+    const providers = { queryAlipayPayment: vi.fn().mockResolvedValue(alipaySuccess) };
+    const service = new BillingService(prisma as any, providers as any, {} as any);
+    const markPaid = vi.spyOn(service, "markPaid").mockResolvedValue();
+    vi.spyOn((service as any).logger, "warn").mockImplementation(() => undefined);
+
+    await expect(service.payment("member-1", alipayPending.id)).resolves.toMatchObject({ status: "succeeded" });
+    expect(providers.queryAlipayPayment).toHaveBeenCalledWith(alipayPending);
+    expect(markPaid).toHaveBeenCalledWith(alipayPending.paymentNo, alipaySuccess.trade_no, alipayPending.amountCents, alipaySuccess);
+  });
+
+  it.each([
+    { trade_status: "WAIT_BUYER_PAY" },
+    { out_trade_no: "another-payment" },
+    { total_amount: "9.79" },
+    { total_amount: "bad" },
+  ])("does not mark an unconfirmed or mismatched Alipay result as paid: %j", async patch => {
+    const payload = { ...alipaySuccess, ...patch };
+    const prisma = { paymentIntent: { findFirst: vi.fn().mockResolvedValue(alipayPending) } };
+    const providers = { queryAlipayPayment: vi.fn().mockResolvedValue(payload) };
+    const service = new BillingService(prisma as any, providers as any, {} as any);
+    const markPaid = vi.spyOn(service, "markPaid").mockResolvedValue();
+    vi.spyOn((service as any).logger, "warn").mockImplementation(() => undefined);
+
+    await expect(service.payment("member-1", alipayPending.id)).resolves.toMatchObject({ status: "pending" });
+    expect(markPaid).not.toHaveBeenCalled();
   });
 });

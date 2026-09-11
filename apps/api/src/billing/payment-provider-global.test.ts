@@ -26,13 +26,13 @@ function providerFixture(ready = false) {
   return { db, secrets, config, credentials, service: new PaymentProviderService(db as any, secrets as any) };
 }
 describe("global payment adapter boundary", () => {
-  it.each([PaymentChannel.WECHAT_JSAPI, PaymentChannel.WECHAT_H5, PaymentChannel.WECHAT_NATIVE, PaymentChannel.ALIPAY_WAP, PaymentChannel.ALIPAY_PAGE])("dispatches CNY commerce %s only to its existing adapter", async channel => {
+  it.each([PaymentChannel.WECHAT_JSAPI, PaymentChannel.ALIPAY_WAP, PaymentChannel.ALIPAY_PAGE])("dispatches an allowed CNY commerce %s only to its existing adapter", async channel => {
     const h = providerFixture(true), wechat = vi.spyOn(h.service as any, "createWechat").mockResolvedValue({ type: "SYNTHETIC_WECHAT" }), alipay = vi.spyOn(h.service as any, "createAlipay").mockResolvedValue({ type: "SYNTHETIC_ALIPAY" });
     await h.service.create(intent(channel), {});
     expect(channel.startsWith("WECHAT") ? wechat : alipay).toHaveBeenCalledOnce();
     expect(channel.startsWith("WECHAT") ? alipay : wechat).not.toHaveBeenCalled();
   });
-  it.each([{ currency: "USD" }, { currency: "JPY" }, { businessType: "HEALTH_REPORT" }, { businessType: "HEALTH_MEMBERSHIP" }, { businessType: undefined }, { channel: PaymentChannel.WECHAT_MINI }, { channel: PaymentChannel.WECHAT_APP }, { channel: PaymentChannel.ALIPAY_APP }])("rejects unsupported dispatch %j before provider access", async patch => {
+  it.each([{ currency: "USD" }, { currency: "JPY" }, { businessType: "HEALTH_REPORT" }, { businessType: "HEALTH_MEMBERSHIP" }, { businessType: undefined }, { channel: PaymentChannel.WECHAT_MINI }, { channel: PaymentChannel.WECHAT_H5 }, { channel: PaymentChannel.WECHAT_NATIVE }, { channel: PaymentChannel.WECHAT_APP }, { channel: PaymentChannel.ALIPAY_APP }])("rejects unsupported dispatch %j before provider access", async patch => {
     const h = providerFixture();
     await expect(h.service.create({ ...intent(), ...patch } as any, {})).rejects.toMatchObject({ status: 503, response: { errorKey: "payment_unavailable" } });
     expect(h.db.integrationConfig.findUnique).not.toHaveBeenCalled(); expect(h.secrets.resolve).not.toHaveBeenCalled();
@@ -47,12 +47,12 @@ describe("global payment adapter boundary", () => {
     expect(h.db.integrationConfig.findUnique).not.toHaveBeenCalled();
     expect(h.secrets.resolve).not.toHaveBeenCalled();
   });
-  it.each([PaymentChannel.WECHAT_JSAPI, PaymentChannel.WECHAT_H5, PaymentChannel.WECHAT_NATIVE, PaymentChannel.ALIPAY_WAP, PaymentChannel.ALIPAY_PAGE])("retains unconfigured failure for supported %s", async channel => {
+  it.each([PaymentChannel.WECHAT_JSAPI, PaymentChannel.ALIPAY_WAP, PaymentChannel.ALIPAY_PAGE])("retains unconfigured failure for supported %s", async channel => {
     await expect(providerFixture().service.create(intent(channel), {})).rejects.toMatchObject({ status: 503 });
   });
   it.each(["platform-key", "api-v3-key", "alipay-public-key", "notify-http", "untrusted-gateway", "official-app", "official-secret", "official-callback"])("blocks incomplete configuration before identity/reservation and direct dispatch: %s", async kind => {
     const h = providerFixture(true);
-    const channel = kind.startsWith("alipay") || kind === "untrusted-gateway" ? PaymentChannel.ALIPAY_WAP : kind.startsWith("official") ? PaymentChannel.WECHAT_JSAPI : PaymentChannel.WECHAT_H5;
+    const channel = kind.startsWith("alipay") || kind === "untrusted-gateway" ? PaymentChannel.ALIPAY_WAP : kind.startsWith("official") ? PaymentChannel.WECHAT_JSAPI : PaymentChannel.WECHAT_JSAPI;
     if (kind === "platform-key") h.credentials.wechat_pay.platformPublicKeyPem = "";
     if (kind === "api-v3-key") h.credentials.wechat_pay.apiV3Key = "中".repeat(32);
     if (kind === "alipay-public-key") h.credentials.alipay.publicKeyPem = "";
@@ -90,7 +90,7 @@ function billingFixture(currency = "CNY") {
   const providers = { identity: vi.fn().mockRejectedValue(new Error("synthetic unconfigured")), create: vi.fn() };
   const service = new BillingService(db as any, providers as any, {} as any);
   const resolve = vi.spyOn(service as any, "resolveBusiness").mockResolvedValue({ currency, amountCents: 100, businessId: "order", commerceOrderId: "order" });
-  const input = { businessType: "commerce_order", businessId: "order", channel: "wechat_h5", idempotencyKey: "global-payment-key" };
+  const input = { businessType: "commerce_order", businessId: "order", channel: "alipay_wap", idempotencyKey: "global-payment-key" };
   return { service, db, providers, resolve, input };
 }
 describe("global payment reservation preflight", () => {
@@ -98,7 +98,7 @@ describe("global payment reservation preflight", () => {
     const h = billingFixture("USD"); await expect(h.service.createPayment("user", h.input, {})).rejects.toMatchObject({ status: 503, response: { errorKey: "payment_unavailable" } });
     expect(h.providers.identity).not.toHaveBeenCalled(); expect(h.db.$transaction).not.toHaveBeenCalled();
   });
-  it.each([{ businessType: "health_membership" }, { businessType: "health_report" }, { channel: "wechat_mini" }, { channel: "wechat_app" }, { channel: "alipay_app" }])("rejects unsupported scope before business resolution or assets %j", async patch => {
+  it.each([{ businessType: "health_membership" }, { businessType: "health_report" }, { channel: "wechat_mini" }, { channel: "wechat_h5" }, { channel: "wechat_native" }, { channel: "wechat_app" }, { channel: "alipay_app" }])("rejects unsupported scope before business resolution or assets %j", async patch => {
     const h = billingFixture(); await expect(h.service.createPayment("user", { ...h.input, ...patch }, {})).rejects.toMatchObject({ status: 503, response: { errorKey: "payment_unavailable" } });
     expect(h.resolve).not.toHaveBeenCalled(); expect(h.providers.identity).not.toHaveBeenCalled(); expect(h.db.$transaction).not.toHaveBeenCalled();
   });
@@ -106,6 +106,23 @@ describe("global payment reservation preflight", () => {
     vi.stubEnv(key, "true"); const h = billingFixture();
     await expect(h.service.createPayment("user", h.input, {})).rejects.toMatchObject({ status: 503 });
     expect(h.resolve).not.toHaveBeenCalled(); expect(h.providers.identity).not.toHaveBeenCalled(); expect(h.db.$transaction).not.toHaveBeenCalled();
+  });
+  it("enforces WeChat-only JSAPI and browser-only Alipay before any order resolution", async () => {
+    const inWechatAlipay = billingFixture();
+    await expect(inWechatAlipay.service.createPayment("user", inWechatAlipay.input, { clientUserAgent: "MicroMessenger" })).rejects.toMatchObject({ status: 400, response: { errorKey: "payment_channel_unavailable" } });
+    expect(inWechatAlipay.resolve).not.toHaveBeenCalled();
+
+    const browserWechat = billingFixture();
+    await expect(browserWechat.service.createPayment("user", { ...browserWechat.input, channel: "wechat_jsapi" }, { clientUserAgent: "Mozilla/5.0" })).rejects.toMatchObject({ status: 400, response: { errorKey: "payment_channel_unavailable" } });
+    expect(browserWechat.resolve).not.toHaveBeenCalled();
+
+    const inWechatJsapi = billingFixture();
+    await expect(inWechatJsapi.service.createPayment("user", { ...inWechatJsapi.input, channel: "wechat_jsapi" }, { clientUserAgent: "MicroMessenger" })).rejects.toThrow("synthetic unconfigured");
+    expect(inWechatJsapi.resolve).toHaveBeenCalledOnce();
+
+    const browserAlipay = billingFixture();
+    await expect(browserAlipay.service.createPayment("user", browserAlipay.input, { clientUserAgent: "Mozilla/5.0" })).rejects.toThrow("synthetic unconfigured");
+    expect(browserAlipay.resolve).toHaveBeenCalledOnce();
   });
   it("returns owned same-key existing payment even when new dispatch is paused or unsupported", async () => {
     const h = billingFixture("USD"); vi.stubEnv("WORKER_OUTBOUND_PAUSED", "true");

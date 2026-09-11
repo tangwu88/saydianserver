@@ -22,10 +22,10 @@ beforeEach(() => {
 });
 afterEach(() => { expect(fetch).not.toHaveBeenCalled(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("global commerce capability readiness", () => {
-  it("offers only CN/CNY and five ready H5 rails without changing global login or leaking credentials", async () => {
+  it("offers only the container-appropriate global H5 rails without changing global login or leaking credentials", async () => {
     const h = fixture(), result = await h.service.publicCapabilities("en");
     expect(result).toMatchObject({ realm: "global", checkout: { enabled: true, countryCodes: ["CN"], currency: "CNY", minimumCashCents: 1 }, login: { sms: { enabled: false }, wechatBinding: { phoneCodeMode: "test" } }, demo: false });
-    expect(result.payments.map(payment => payment.channel)).toEqual(["wechat_jsapi", "wechat_h5", "wechat_native", "alipay_wap", "alipay_page"]);
+    expect(result.payments.map(payment => payment.channel)).toEqual(["wechat_jsapi", "alipay_wap", "alipay_page"]);
     expect(result.payments.every(payment => payment.enabled)).toBe(true);
     expect(JSON.stringify(result)).not.toMatch(/privateKey|merchantId|appId|synthetic-merchant/);
     expect(h.secrets.resolve.mock.calls.every(([key]) => key !== "sms")).toBe(true);

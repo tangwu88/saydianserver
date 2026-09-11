@@ -44,6 +44,9 @@ import { PaymentProviderService, assertGlobalPaymentScope, assertGlobalPaymentSu
 import { onCommerceOrderPaid, onCommerceRefundSucceeded, onCommercePointsRefundSucceeded, afterSaleSettlementSnapshot, settlePointOnlyAfterSale, allItemsReturned } from "../commerce/commerce-finance";
 import { orderFulfillmentState } from "../commerce/commerce-finance";
 import { shouldDeferCallbacks, shouldPauseWorkers } from "@saydian/app-contracts";
+import { isGlobalRealm } from "../common/deployment-realm";
+import { globalCommercePaymentChannelAllowedForUserAgent } from "../commerce/global-commerce-policy";
+import { globalError } from "../auth/global-identity";
 
 const businessTypeMap: Record<BusinessTypeContract, BusinessType> = {
   commerce_order: BusinessType.COMMERCE_ORDER,
@@ -142,7 +145,7 @@ export class BillingService {
   async createPayment(
     userId: string,
     input: unknown,
-    context: { clientIp?: string },
+    context: { clientIp?: string; clientUserAgent?: string },
   ): Promise<PaymentIntentContract> {
     const body = safeObject(input);
     const businessTypeInput = String(body.businessType ?? "").trim();
@@ -181,6 +184,17 @@ export class BillingService {
     enforceDigitalPlatformPolicy(businessType, channel, platform);
     // Membership resolution can create a row: reject unsupported global scopes first.
     assertGlobalPaymentScope({ channel, businessType });
+    if (
+      isGlobalRealm() &&
+      businessType === BusinessType.COMMERCE_ORDER &&
+      !globalCommercePaymentChannelAllowedForUserAgent(channel, context.clientUserAgent)
+    ) {
+      throw globalError(
+        400,
+        "payment_channel_unavailable",
+        "微信内仅支持微信支付，其他浏览器仅支持支付宝支付。",
+      );
+    }
     const resolved = await this.resolveBusiness(
       userId,
       businessType,
@@ -305,6 +319,38 @@ export class BillingService {
       } catch (error) {
         this.logger.warn(
           `Wechat payment reconciliation failed for ${intent.id}: ${sanitizeError(error)}`,
+        );
+      }
+    }
+    if (
+      ([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status) &&
+      intent.channel.startsWith("ALIPAY") &&
+      intent.providerAppId
+    ) {
+      try {
+        assertPaymentOutboundEnabled();
+        const payload = await this.providers.queryAlipayPayment(intent);
+        if (["TRADE_SUCCESS", "TRADE_FINISHED"].includes(String(payload.trade_status ?? ""))) {
+          const transactionId = String(payload.trade_no ?? "");
+          const paidCents = alipayPaymentCents(payload.total_amount);
+          if (
+            String(payload.out_trade_no ?? "") !== intent.paymentNo ||
+            paidCents !== intent.amountCents ||
+            !transactionId ||
+            transactionId.length > 256 ||
+            /\s/.test(transactionId)
+          ) {
+            throw new BadRequestException("支付宝查单结果与原支付记录不匹配");
+          }
+          await this.markPaid(intent.paymentNo, transactionId, paidCents, payload);
+          const refreshed = await this.prisma.paymentIntent.findFirst({
+            where: { id, userId },
+          });
+          if (refreshed) return serializePayment(refreshed);
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Alipay payment reconciliation failed for ${intent.id}: ${sanitizeError(error)}`,
         );
       }
     }
@@ -1416,6 +1462,18 @@ function normalizedPlatform(value: unknown): string | null {
     throw new BadRequestException("客户端平台不正确");
   }
   return platform;
+}
+
+function alipayPaymentCents(value: unknown): number {
+  if (typeof value !== "string" || !/^\d{1,12}(?:\.\d{1,2})?$/.test(value)) {
+    throw new BadRequestException("支付宝查单金额格式无效");
+  }
+  const [yuan, decimal = ""] = value.split(".");
+  const cents = BigInt(yuan!) * 100n + BigInt(decimal.padEnd(2, "0"));
+  if (cents <= 0 || cents > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new BadRequestException("支付宝查单金额超出范围");
+  }
+  return Number(cents);
 }
 
 export function enforceDigitalPlatformPolicy(

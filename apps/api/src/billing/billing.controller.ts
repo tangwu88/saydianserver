@@ -65,6 +65,9 @@ export class BillingController {
   ) {
     return this.billing.createPayment(user.id, body, {
       ...(request.ip ? { clientIp: request.ip } : {}),
+      ...(typeof request.headers["user-agent"] === "string"
+        ? { clientUserAgent: request.headers["user-agent"] }
+        : {}),
     });
   }
 

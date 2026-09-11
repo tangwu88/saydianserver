@@ -41,6 +41,12 @@ type WechatPaymentForQuery = {
   providerMerchantId: string | null;
 };
 
+type AlipayPaymentForQuery = {
+  paymentNo: string;
+  channel: PaymentChannel;
+  providerAppId: string | null;
+};
+
 /** Validate before reserving a new intent and again immediately before dispatch. */
 export function assertGlobalPaymentSupported(intent: { channel: PaymentChannel; businessType?: string; currency: string }) {
   assertGlobalPaymentScope(intent);
@@ -53,7 +59,7 @@ export function assertGlobalPaymentScope(intent: { channel: PaymentChannel; busi
   if (!isGlobalRealm() || intent.channel === PaymentChannel.APPLE_IAP) return;
   if (intent.businessType !== "COMMERCE_ORDER" ||
       !globalCommercePaymentChannels.some(channel => channel === intent.channel)) {
-    throw globalError(503, "payment_unavailable", "当前仅支持人民币商城订单的微信网页、扫码或支付宝网页支付。");
+    throw globalError(503, "payment_unavailable", "当前仅支持人民币商城订单的微信支付或支付宝支付。");
   }
 }
 
@@ -199,6 +205,67 @@ export class PaymentProviderService {
       serialNo,
       privateKeyPem,
     });
+  }
+
+  async queryAlipayPayment(
+    intent: AlipayPaymentForQuery,
+  ): Promise<Record<string, unknown>> {
+    if (!intent.channel.startsWith("ALIPAY")) {
+      throw new BadRequestException("当前支付记录不是支付宝支付");
+    }
+    const publicConfig = await this.assertConfigured("alipay");
+    const secrets = await this.alipaySecrets();
+    const appId = secrets.appId ?? "";
+    const privateKeyPem = secrets.privateKeyPem ?? "";
+    const publicKeyPem = secrets.publicKeyPem ?? "";
+    if (!appId || !privateKeyPem || !publicKeyPem) {
+      throw new ServiceUnavailableException("支付宝支付暂时无法查询，请稍后再试");
+    }
+    if (!intent.providerAppId || intent.providerAppId !== appId) {
+      throw new BadRequestException("原交易应用与当前支付宝配置不一致");
+    }
+    const params: Record<string, string> = {
+      app_id: appId,
+      method: "alipay.trade.query",
+      format: "JSON",
+      charset: "utf-8",
+      sign_type: "RSA2",
+      timestamp: formatAlipayDate(new Date()),
+      version: "1.0",
+      biz_content: JSON.stringify({ out_trade_no: providerText(intent.paymentNo, "支付宝支付单号") }),
+    };
+    params.sign = rsaSign(canonical(params), privateKeyPem);
+    const response = await fetch(
+      trustedPaymentUrl(String(publicConfig.gateway ?? "https://openapi.alipay.com/gateway.do"), "alipay"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" },
+        body: new URLSearchParams(params).toString(),
+        signal: AbortSignal.timeout(20_000),
+      },
+    );
+    const raw = await response.text();
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = safeObject(JSON.parse(raw));
+    } catch {
+      throw new ServiceUnavailableException("支付宝支付状态暂时无法查询，请稍后再试");
+    }
+    const result = safeObject(parsed.alipay_trade_query_response);
+    const signature = String(parsed.sign ?? "");
+    const signedContent = extractJsonObject(raw, "alipay_trade_query_response");
+    const verifier = createVerify("RSA-SHA256");
+    verifier.update(signedContent);
+    if (!signature || !signedContent || !verifier.verify(publicKeyPem, signature, "base64")) {
+      throw new BadRequestException("支付宝查单响应验证失败");
+    }
+    if (!response.ok) {
+      throw new ServiceUnavailableException("支付宝支付状态暂时无法查询，请稍后再试");
+    }
+    if (String(result.code ?? "") === "10000") {
+      await markIntegrationVerified(this.prisma, "alipay");
+    }
+    return result;
   }
 
   async decodeWechatNotification(

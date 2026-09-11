@@ -439,7 +439,12 @@ export class CommerceCompatibilityController {
           body.idempotencyKey ?? `commerce-payment:${orderId}:${channel}`,
         ),
       },
-      request.ip ? { clientIp: request.ip } : {},
+      {
+        ...(request.ip ? { clientIp: request.ip } : {}),
+        ...(typeof request.headers["user-agent"] === "string"
+          ? { clientUserAgent: request.headers["user-agent"] }
+          : {}),
+      },
     );
   }
 

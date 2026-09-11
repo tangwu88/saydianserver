@@ -20,7 +20,20 @@ export function globalAddress(input: unknown) {
 export type GlobalMarket = { countryCode: string; currency: string; currencyExponent: number; commerceEnabled: boolean; paymentChannels: string[] };
 export const globalCommerceCountry = "CN";
 export const globalCommerceCurrency = "CNY";
-export const globalCommercePaymentChannels = ["WECHAT_JSAPI", "WECHAT_H5", "WECHAT_NATIVE", "ALIPAY_WAP", "ALIPAY_PAGE"] as const;
+// The global H5 is deliberately split by client container: public-account
+// WeChat uses JSAPI, while every other browser uses Alipay.  Do not add H5 or
+// native WeChat rails here; their presence would make a browser client expose
+// a second, unsupported choice again.
+export const globalCommercePaymentChannels = ["WECHAT_JSAPI", "ALIPAY_WAP", "ALIPAY_PAGE"] as const;
+
+export function globalCommercePaymentChannelAllowedForUserAgent(
+  channel: string,
+  userAgent: string | undefined,
+): boolean {
+  const inWechat = /micromessenger/i.test(userAgent ?? "");
+  if (inWechat) return channel === "WECHAT_JSAPI";
+  return channel === "ALIPAY_WAP" || channel === "ALIPAY_PAGE";
+}
 
 /** Shared public readiness and dispatch preflight; never returns credential material. */
 export function globalPaymentConfigurationReady(channel: string, config: Record<string, unknown>, secret: Record<string, string | undefined>, publicBaseUrl: string): boolean {
