@@ -13,7 +13,7 @@ const legalVersion = "local-phone-ui-fixture-v1";
 const state = "a".repeat(64), ticket = "b".repeat(64), challenge = "00000000-0000-4000-8000-000000000082";
 let phoneRequested = false, signedIn = false;
 const evidence = { oauth: 0, codeRequests: 0, phoneBindings: 0, accountReads: 0, logouts: 0, externalCalls: 0 };
-const user = { id: "00000000-0000-4000-8000-000000000081", memberNo: 81, nickname: "界面测试会员", emailMasked: null, phoneMasked: "+16***0101", phoneVerified: false, phoneTestMode: true, phoneVerificationStatus: "pending", mobile: "+16***0101", avatarUrl: null };
+const user = { id: "00000000-0000-4000-8000-000000000081", memberNo: 81, nickname: "界面测试会员", emailMasked: null, phoneMasked: "+86***8000", phoneVerified: false, phoneTestMode: true, phoneVerificationStatus: "pending", mobile: "+86***8000", avatarUrl: null };
 const session = () => ({ token: "LOCAL-UI-FIXTURE-NOT-A-REAL-TOKEN", refreshToken: "LOCAL-UI-FIXTURE-NOT-A-REAL-REFRESH", expiresAt: new Date(Date.now() + 3600_000).toISOString(), user, requiresMobileBinding: false, requiresAccountBinding: false, returnTo: "/pages/profile/index" });
 const reference = type => ({ version: legalVersion, locale: "en", path: `/api/saydian-app/v2/content/legal/${type}?version=${legalVersion}&locale=en` });
 const capabilities = { realm: "global", consentVersion: legalVersion, legal: { userAgreement: reference("user_agreement"), privacyPolicy: reference("privacy_policy") },
@@ -48,7 +48,7 @@ const server = createServer(async (req, res) => {
         return json({ requiresMobileBinding: true, requiresAccountBinding: true, bindTicket: ticket, expiresIn: 300, returnTo: "/pages/profile/index" });
       }
       if (url.pathname === api + "/auth/wechat/h5/phone-code") {
-        assert.equal(body.bindTicket, ticket); phoneRequested = true; evidence.codeRequests++;
+        assert.equal(body.bindTicket, ticket); assert.equal(body.identifier, "+8613800138000"); assert.equal(body.expectedMode, "test"); phoneRequested = true; evidence.codeRequests++;
         return json({ challengeId: challenge, expiresIn: 300, retryAfter: 60, maskedIdentifier: user.phoneMasked, mode: "test", sent: false, verificationRequired: false });
       }
       if (url.pathname === api + "/auth/wechat/h5/bind-phone") {

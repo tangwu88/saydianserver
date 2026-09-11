@@ -46,7 +46,7 @@ try {
   }
   check(Boolean(phone), "No unused fictional phone available; no existing data changed");
   await prisma.commerceWechatBindTicket.create({ data: { tokenHash: ticketHash, appId, openId: marker, returnTo: "/pages/profile/index", expiresAt: new Date(Date.now() + 300_000) } });
-  const code = await request(prefix + "/auth/wechat/h5/phone-code", { body: { bindTicket: ticket, identifier: phone, locale: "en" } });
+  const code = await request(prefix + "/auth/wechat/h5/phone-code", { body: { bindTicket: ticket, identifier: phone, locale: "en", expectedMode: "test" } });
   challengeId = code.challengeId;
   phoneReservation = await prisma.globalVerificationThrottle.findUnique({ where: { key: digest(`sms:${phone}`) } });
   check(code.mode === "test" && code.sent === false && code.verificationRequired === false, "Temporary challenge must not claim delivery");

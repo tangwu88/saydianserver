@@ -180,7 +180,10 @@ export class GlobalWechatBindingService {
 
   async requestPhoneCode(appId: string, input: unknown) {
     const body = safeObject(input);
-    if (!globalWechatPhoneTestEnabled()) return { ...await this.requestCode(appId, { ...body, channel: "sms", purpose }), mode: "sms", sent: true, verificationRequired: true };
+    if (body.expectedMode !== undefined && body.expectedMode !== "test") throw globalError(400, "invalid_phone_code_mode", "The requested phone-code mode is invalid.");
+    const temporary = globalWechatPhoneTestEnabled();
+    if (body.expectedMode === "test" && !temporary) throw globalError(403, "phone_test_unavailable", "Temporary phone registration is no longer available.");
+    if (!temporary) return { ...await this.requestCode(appId, { ...body, channel: "sms", purpose }), mode: "sms", sent: true, verificationRequired: true };
     requireGlobalWechatPhoneTest();
     const ticket = await this.ticket(body.bindTicket, appId), identity = globalIdentity("sms", body.identifier), locale = globalLocale(body.locale);
     if (!await globalLegalBundle(this.prisma, locale)) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet.");

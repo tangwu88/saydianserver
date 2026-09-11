@@ -38,7 +38,7 @@ check(compose.services["global-api"].networks.gateway.aliases.includes("global-a
 check(!compose.services["global-worker"].networks.includes("gateway"), "Worker must not join gateway network");
 check(compose.services["global-api"].environment.GLOBAL_WECHAT_H5_ENABLED === "${GLOBAL_WECHAT_H5_ENABLED:-false}", "Official-account H5 login must require an explicit independent switch");
 check(!compose.services["global-worker"].environment.GLOBAL_WECHAT_H5_ENABLED, "H5 auth must not enable Worker outbound processing");
-check(compose.services["global-api"].environment.GLOBAL_WECHAT_PHONE_TEST_ENABLED === "${GLOBAL_WECHAT_PHONE_TEST_ENABLED:-false}", "Temporary WeChat phone entry must default off and require its own private switch");
+check(compose.services["global-api"].environment.GLOBAL_WECHAT_PHONE_TEST_ENABLED === "${GLOBAL_WECHAT_PHONE_TEST_ENABLED-true}", "This authorized temporary H5 release must preserve explicit private false and empty overrides");
 check(!compose.services["global-worker"].environment.GLOBAL_WECHAT_PHONE_TEST_ENABLED, "Temporary H5 phone entry must not affect Worker");
 const admin = compose.services["global-admin"];
 check(admin.image === "ghcr.io/tangwu88/saydianserver-global-admin:${GLOBAL_IMAGE_TAG:?Set a verified full commit SHA}", "Admin must use its independent immutable release image");

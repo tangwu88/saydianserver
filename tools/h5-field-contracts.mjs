@@ -112,11 +112,11 @@ const phoneMember = obj({ id, nickname: text, memberNo: { anyOf: [positive, { ty
 const phoneMemberExample = { id: sid(81), nickname: "H5-CONTRACT合成会员", memberNo: 81,
   phoneMasked: "+16***0101", phoneVerified: false, phoneTestMode: true, phoneVerificationStatus: "pending" };
 h5FieldContracts["CommerceCompatibilityController.requestWechatH5PhoneCode"] = record(
-  obj({ bindTicket: hex, identifier: { type: "string", pattern: "^\\+[1-9][0-9]{6,14}$" }, locale: globalLocale }, ["bindTicket", "identifier"]),
-  { bindTicket, identifier: "+16505550101", locale: "en" },
+  obj({ bindTicket: hex, identifier: { type: "string", pattern: "^\\+[1-9][0-9]{6,14}$" }, locale: globalLocale, expectedMode: { const: "test", description: "客户端自动申请临时登记时必须传入；模式已关闭则拒绝，不能回退发送短信。" } }, ["bindTicket", "identifier"]),
+  { bindTicket, identifier: "+16505550101", locale: "en", expectedMode: "test" },
   obj({ challengeId: id, expiresIn: positive, retryAfter: positive, maskedIdentifier: text, mode: { enum: ["test", "sms"] }, sent: bool, verificationRequired: bool }),
   { challengeId: sid(82), expiresIn: 300, retryAfter: 60, maskedIdentifier: "+16***0101", mode: "test", sent: false, verificationRequired: false }, source.auth,
-  "仅global。先真实微信授权取得一次性bindTicket；test需GLOBAL_WECHAT_PHONE_TEST_ENABLED=true且不发送短信，不写真实送达/验证标记。test用途与真实OTP隔离，不能在App注册/重置/原bind-code接口消费。能力关闭拒绝；限频及票据有效期照常执行。" );
+  "仅global。先真实微信授权取得一次性bindTicket；test需GLOBAL_WECHAT_PHONE_TEST_ENABLED=true且不发送短信，不写真实送达/验证标记。界面默认+86并提交规范E.164号码；临时模式可填写6位码后自动申请票据，自动申请须带expectedMode=test，模式不符在发送前拒绝。test用途与真实OTP隔离，不能在App注册/重置/原bind-code接口消费。能力关闭拒绝；限频及票据有效期照常执行。" );
 h5FieldContracts["CommerceCompatibilityController.bindWechatH5Phone"] = record(
   obj({ bindTicket: hex, challengeId: id, code: otp, consentVersion: consent, locale: globalLocale, password: globalPassword }, ["bindTicket", "challengeId", "code", "consentVersion"]),
   { bindTicket, challengeId: sid(82), code: "654321", consentVersion: "global-contract-reviewed-v1", locale: "en" },

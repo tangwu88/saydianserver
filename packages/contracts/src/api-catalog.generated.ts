@@ -6856,8 +6856,8 @@ export const apiCatalog = {
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "微信授权后申请手机号登记凭证",
-      "request": "{bindTicket,identifier:E.164手机号,locale?}",
-      "response": "{challengeId,expiresIn,retryAfter,maskedIdentifier,mode:test/sms,sent,verificationRequired}；test不发短信、不返回已发送提示",
+      "request": "{bindTicket,identifier:E.164手机号,locale?,expectedMode?:test}；自动申请临时凭证必须传expectedMode=test",
+      "response": "{challengeId,expiresIn,retryAfter,maskedIdentifier,mode:test/sms,sent,verificationRequired}；test不发短信、不返回已发送提示；expectedMode不符在发送前拒绝",
       "dependency": "仅global；临时模式需独立显式开关；test用途不被注册/重置/原验证码绑定端点接受",
       "successStatus": 201,
       "contract": {
@@ -6884,6 +6884,10 @@ export const apiCatalog = {
                 "ja",
                 "ko"
               ]
+            },
+            "expectedMode": {
+              "const": "test",
+              "description": "客户端自动申请临时登记时必须传入；模式已关闭则拒绝，不能回退发送短信。"
             }
           },
           "required": [
@@ -6895,7 +6899,8 @@ export const apiCatalog = {
         "requestExample": {
           "bindTicket": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "identifier": "+16505550101",
-          "locale": "en"
+          "locale": "en",
+          "expectedMode": "test"
         },
         "responseSchema": {
           "type": "object",
@@ -6951,7 +6956,7 @@ export const apiCatalog = {
         },
         "contentType": "application/json",
         "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
-        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global。先真实微信授权取得一次性bindTicket；test需GLOBAL_WECHAT_PHONE_TEST_ENABLED=true且不发送短信，不写真实送达/验证标记。test用途与真实OTP隔离，不能在App注册/重置/原bind-code接口消费。能力关闭拒绝；限频及票据有效期照常执行。"
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅global。先真实微信授权取得一次性bindTicket；test需GLOBAL_WECHAT_PHONE_TEST_ENABLED=true且不发送短信，不写真实送达/验证标记。界面默认+86并提交规范E.164号码；临时模式可填写6位码后自动申请票据，自动申请须带expectedMode=test，模式不符在发送前拒绝。test用途与真实OTP隔离，不能在App注册/重置/原bind-code接口消费。能力关闭拒绝；限频及票据有效期照常执行。"
       }
     },
     {

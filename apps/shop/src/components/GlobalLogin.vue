@@ -16,10 +16,10 @@
       <button v-if="!loading && (!capabilities || !legalReady)" class="text-button retry" :disabled="busy" @click="initialize(false)">重新加载</button>
       <view v-if="!bindTicket" class="contact-tabs"><button :class="{active:contactMode==='email'}" :disabled="busy" @click="changeContact('email')">邮箱</button><button :class="{active:contactMode==='sms'}" :disabled="busy" @click="changeContact('sms')">手机号</button></view>
       <label class="field-label" :for="bindTicket ? 'bind-phone' : 'login-contact'">{{ bindTicket || contactMode === 'sms' ? '手机号' : '邮箱' }}</label>
-      <input :id="bindTicket ? 'bind-phone' : 'login-contact'" v-model="identifier" :disabled="busy" class="input" maxlength="254" :placeholder="bindTicket || contactMode === 'sms' ? '含国家区号，如 +8613812345678' : '请输入邮箱'" @input="resetChallenge" />
+      <view :class="{'phone-fields':phoneMode}"><input v-if="phoneMode" id="country-code" v-model="countryCode" :disabled="busy" class="input country-code" maxlength="4" placeholder="+86" aria-label="国家区号，可修改" @input="resetChallenge"/><input :id="bindTicket ? 'bind-phone' : 'login-contact'" v-model="identifier" :disabled="busy" class="input" :maxlength="phoneMode ? 16 : 254" :placeholder="phoneMode ? '请输入手机号' : '请输入邮箱'" @input="resetChallenge" /></view>
       <template v-if="bindTicket">
-        <view class="code-row"><input id="phone-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码"/><button class="text-button code-button" :disabled="busy || loading || countdown > 0 || !bindingEnabled" @click="sendCode">{{ countdown > 0 ? countdown + '秒后重试' : '获取验证码' }}</button></view>
-        <text v-if="codeNote" class="muted code-note">{{ codeNote }}</text>
+        <view class="code-row" :class="{'code-row-direct':temporaryPhoneCode}"><input id="phone-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码"/><button v-if="!temporaryPhoneCode" class="text-button code-button" :disabled="busy || loading || countdown > 0 || !bindingEnabled" @click="sendCode">{{ countdown > 0 ? countdown + '秒后重试' : '获取验证码' }}</button></view>
+        <text v-if="codeNote || temporaryPhoneCode" class="muted code-note">{{ codeNote || '填写6位验证码后继续。' }}</text>
         <text v-if="!loading && !bindingEnabled" class="muted code-note">暂时无法获取验证码，请稍后再试。</text>
       </template>
       <template v-if="!bindTicket || passwordRequired">
@@ -47,7 +47,7 @@ import { api, mallOAuthSessionStamp, saveMallSession } from "../api";
 import { mallStorage } from "../realm";
 import { globalPageAllowed } from "../realm-config";
 import { safeMallRoute } from "../commerce-model";
-import { OAUTH_CONTEXT_KEY, OAUTH_TTL, OAUTH_CALLBACK_PATH, validGlobalIdentifier, validOAuthContext, type OAuthContext } from "../global-auth-model";
+import { OAUTH_CONTEXT_KEY, OAUTH_TTL, OAUTH_CALLBACK_PATH, normalizeGlobalPhone, validGlobalIdentifier, validOAuthContext, type OAuthContext } from "../global-auth-model";
 import { takeGlobalOAuthCallback } from "../global-oauth";
 import { loadGlobalLegal, legalPlainText, type GlobalLegalDocument } from "../global-legal";
 import { authErrorMessage, authUiError } from "../friendly-auth";
@@ -55,11 +55,14 @@ type DocumentType = "userAgreement" | "privacyPolicy";
 const capabilities = ref<any>(), documents = ref<Partial<Record<DocumentType, GlobalLegalDocument>>>({});
 const identifier = ref(""), password = ref(""), code = ref(""), error = ref(""), busy = ref(false), loading = ref(true), accepted = ref(false), reading = ref<DocumentType | null>(null);
 const bindTicket = ref(""), bindExpiresAt = ref(0), contactMode = ref<"email" | "sms">("email"), countdown = ref(0), codeNote = ref(""), passwordRequired = ref(false), obscured = ref(true);
+const countryCode = ref("+86");
 const consent = ref({ version: "", locale: "en" }), challenge = ref<{ id: string; identifier: string; expiresAt: number } | null>(null);
 const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
 const isWecom = /wxwork/i.test(userAgent), isWechat = /micromessenger/i.test(userAgent) && !isWecom;
 const legalReady = computed(() => !!consent.value.version && !!documents.value.userAgreement && !!documents.value.privacyPolicy);
 const bindingEnabled = computed(() => capabilities.value?.login?.wechatBinding?.phoneBindingAvailable === true && ["sms", "test"].includes(capabilities.value?.login?.wechatBinding?.phoneCodeMode));
+const phoneMode = computed(() => !!bindTicket.value || contactMode.value === "sms");
+const temporaryPhoneCode = computed(() => bindingEnabled.value && capabilities.value?.login?.wechatBinding?.phoneCodeMode === "test");
 let active = true, timer: ReturnType<typeof setInterval> | undefined, resendAt = 0;
 let bindingSession = "";
 onBeforeUnmount(() => { active = false; if (timer) clearInterval(timer); password.value = ""; code.value = ""; bindTicket.value = ""; });
@@ -111,38 +114,53 @@ async function sendCode() {
   busy.value = true; error.value = "";
   try {
     requireBinding();
-    const recipient = identifier.value.trim();
-    if (!validGlobalIdentifier(recipient, "sms")) throw authUiError("请检查国家区号和手机号。");
-    const response: any = await api("/auth/wechat/h5/phone-code", { method: "POST", data: { bindTicket: bindTicket.value, identifier: recipient, locale: consent.value.locale } });
-    if (!active) return;
-    if (!response.challengeId || !Number.isFinite(response.expiresIn) || response.expiresIn <= 0 || !Number.isFinite(response.retryAfter) || !["sms", "test"].includes(response.mode)) throw authUiError("验证码暂时无法使用，请稍后重试。");
-    if ((response.mode === "sms" && (response.sent !== true || response.verificationRequired !== true)) || (response.mode === "test" && (response.sent !== false || response.verificationRequired !== false))) throw authUiError("验证码暂时无法使用，请稍后重试。");
-    challenge.value = { id: response.challengeId, identifier: recipient, expiresAt: Math.min(bindExpiresAt.value, Date.now() + response.expiresIn * 1000) };
-    passwordRequired.value = false; password.value = "";
-    codeNote.value = response.sent === true ? "验证码已发送至 " + String(response.maskedIdentifier || "所填手机号") : "请填写6位验证码";
-    resendAt = Date.now() + Math.max(1, Math.min(86400, Math.ceil(response.retryAfter))) * 1000;
-    countdown.value = Math.ceil((resendAt - Date.now()) / 1000);
-    if (timer) clearInterval(timer);
-    timer = setInterval(() => { countdown.value = Math.max(0, Math.ceil((resendAt - Date.now()) / 1000)); if (!countdown.value && timer) clearInterval(timer); }, 1000);
+    const recipient = normalizeGlobalPhone(identifier.value, countryCode.value);
+    if (!recipient) throw authUiError("请检查国家区号和手机号。");
+    await requestPhoneCode(recipient, temporaryPhoneCode.value);
   } catch (cause) { await showError(cause); }
   finally { if (active) busy.value = false; }
+}
+async function requestPhoneCode(recipient: string, testOnly: boolean) {
+  requireBinding();
+  const ticket = bindTicket.value;
+  const response: any = await api("/auth/wechat/h5/phone-code", { method: "POST", data: { bindTicket: ticket, identifier: recipient, locale: consent.value.locale, ...(testOnly ? { expectedMode: "test" } : {}) } });
+  if (!active) return;
+  requireBinding();
+  if (ticket !== bindTicket.value || recipient !== normalizeGlobalPhone(identifier.value, countryCode.value)) throw authUiError("手机号已变更，请重新填写验证码。");
+  if (!response.challengeId || !Number.isFinite(response.expiresIn) || response.expiresIn <= 0 || !Number.isFinite(response.retryAfter) || !["sms", "test"].includes(response.mode) || (testOnly && response.mode !== "test")) throw authUiError("验证码暂时无法使用，请稍后重试。");
+  if ((response.mode === "sms" && (response.sent !== true || response.verificationRequired !== true)) || (response.mode === "test" && (response.sent !== false || response.verificationRequired !== false))) throw authUiError("验证码暂时无法使用，请稍后重试。");
+  challenge.value = { id: response.challengeId, identifier: recipient, expiresAt: Math.min(bindExpiresAt.value, Date.now() + response.expiresIn * 1000) };
+  passwordRequired.value = false; password.value = "";
+  codeNote.value = response.sent === true ? "验证码已发送至 " + String(response.maskedIdentifier || "所填手机号") : "请填写6位验证码";
+  resendAt = Date.now() + Math.max(1, Math.min(86400, Math.ceil(response.retryAfter))) * 1000;
+  countdown.value = Math.ceil((resendAt - Date.now()) / 1000);
+  if (timer) clearInterval(timer);
+  timer = setInterval(() => { countdown.value = Math.max(0, Math.ceil((resendAt - Date.now()) / 1000)); if (!countdown.value && timer) clearInterval(timer); }, 1000);
 }
 async function login() {
   if (busy.value || loading.value) return;
   busy.value = true; error.value = "";
   try {
     if (!accepted.value || !legalReady.value) throw authUiError("请先阅读并同意用户协议与隐私政策。");
-    if (!validGlobalIdentifier(identifier.value, bindTicket.value ? "sms" : contactMode.value)) throw authUiError(bindTicket.value || contactMode.value === "sms" ? "请检查国家区号和手机号。" : "请输入正确的邮箱地址。");
+    const recipient = phoneMode.value ? normalizeGlobalPhone(identifier.value, countryCode.value) : identifier.value.trim();
+    if (!recipient || !validGlobalIdentifier(recipient, phoneMode.value ? "sms" : "email")) throw authUiError(phoneMode.value ? "请检查国家区号和手机号。" : "请输入正确的邮箱地址。");
     let response: any;
     if (!bindTicket.value) {
       if (!password.value) throw authUiError("请输入密码。");
       if (!capabilities.value?.login?.password?.enabled) throw authUiError("登录暂时无法使用，请稍后重试。");
-      response = await api("/auth/password/login", { method: "POST", data: { mobile: identifier.value.trim(), password: password.value } });
+      response = await api("/auth/password/login", { method: "POST", data: { mobile: recipient, password: password.value } });
     } else {
       requireBinding();
-      const pending = challenge.value;
-      if (!pending || pending.expiresAt <= Date.now() || pending.identifier !== identifier.value.trim()) throw authUiError("请先获取当前手机号的验证码。");
       if (!/^\d{6}$/.test(code.value)) throw authUiError("请输入6位验证码。");
+      if (!challenge.value || challenge.value.expiresAt <= Date.now() || challenge.value.identifier !== recipient) {
+        if (!temporaryPhoneCode.value) throw authUiError("请先获取当前手机号的验证码。");
+        if (countdown.value > 0) throw authUiError("操作较频繁，请稍后再试。");
+        await requestPhoneCode(recipient, true);
+        if (!active) return;
+      }
+      requireBinding();
+      const pending = challenge.value;
+      if (!pending || pending.expiresAt <= Date.now() || pending.identifier !== recipient) throw authUiError("验证码暂时无法使用，请稍后重试。");
       if (passwordRequired.value && !password.value) throw authUiError("请输入该手机号原账号的密码。");
       response = await api("/auth/wechat/h5/bind-phone", { method: "POST", data: { bindTicket: bindTicket.value, challengeId: pending.id, code: code.value, consentVersion: consent.value.version, locale: consent.value.locale, ...(passwordRequired.value ? { password: password.value } : {}) } });
     }
@@ -201,5 +219,6 @@ function browse() { uni.switchTab({ url: "/pages/home/index" }); }
 </script>
 <style lang="scss">@import "../global-ui.scss";</style>
 <style scoped>
+.phone-fields{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px}.country-code{text-align:center;padding:0 8px}.code-row.code-row-direct{grid-template-columns:minmax(0,1fr)}
 .auth-surface{padding-top:40px}.auth-content{width:100%;max-width:432px;margin:0 auto}.auth-brand{margin:0 auto 32px}.auth-content h1{margin-bottom:20px}.step-note{margin:-8px 0 22px}.field-label{display:block;font-size:14px;font-weight:600;margin:18px 0 8px;color:#5f6675}.input{width:100%;height:54px;border:1px solid #98a2b3;border-radius:12px;background:#fff;padding:0 16px;color:#171b2b;font-size:16px;box-sizing:border-box}.input:focus-within{border-color:#d20b27}.contact-tabs{display:flex;gap:8px;margin-bottom:18px}.contact-tabs button{font-size:15px;line-height:1.5;font-weight:600;padding:10px 18px;border:1px solid #dde3ec;border-radius:10px;margin:0;background:#fff;color:#171b2b}.contact-tabs .active{background:#fff6de;border-color:#fff6de}.password-field{position:relative}.password-field .input{padding-right:62px}.password-toggle{position:absolute;right:3px;top:3px;bottom:3px;min-width:54px;padding:0 8px;margin:0;font-size:13px;line-height:48px;color:#5f6675;background:transparent}.forgot{display:block;margin:4px 0 0 auto;text-align:right}.agreement{display:flex;flex-wrap:wrap;align-items:center;column-gap:5px;row-gap:0;font-size:12px;line-height:1.6;margin:20px 0 14px;color:#5f6675}.agreement label{display:flex;align-items:center;gap:3px}.agreement checkbox{transform:scale(.8);transform-origin:left center;width:25px}.agreement .text-button{margin:0;font-size:12px;padding:8px 0;min-height:36px}.submit{width:100%}.wechat-section{margin-top:24px}.separator{display:block;color:#98a2b3;text-align:center;font-size:12px;margin-bottom:16px}.wechat{width:70%;margin:0 auto;color:#07883e;border-color:#ccd6d0}.wechat-hint{text-align:center;margin:20px 0 0;font-size:12px}.code-row{display:grid;grid-template-columns:minmax(0,1fr) 116px;align-items:center;gap:10px;margin-top:16px}.code-button{white-space:nowrap;font-size:14px}.code-note{margin:10px 0;font-size:13px}.back-login{margin:18px auto 0}.retry{margin:0 0 12px}.document{display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.9;margin:20px 0}@media(min-width:900px){.auth-surface{padding-top:48px}.auth-content{max-width:432px}}@media(max-width:360px){.auth-surface{padding:28px 18px 40px}.code-row{grid-template-columns:minmax(0,1fr) 104px;gap:6px}}
 </style>

@@ -68,12 +68,21 @@ test("only known global browsing and auth endpoints are enabled", () => {
   assert.equal(globalPageAllowed("/pages/product/index?id=1"), true);
   for (const route of ["/pages/employee/index", "/pages/checkout/index", "//example.invalid", "/pages/login/index#bad"]) assert.equal(globalPageAllowed(route), false);
 });
-test("email/E164 and password validation do not invent domestic phone defaults", () => {
+test("identifier contracts still require email/E164 and validate passwords", () => {
   const { validGlobalIdentifier, validNewPassword } = harness().load("global-auth-model");
   assert.equal(validGlobalIdentifier("person@example.invalid"), true); assert.equal(validGlobalIdentifier("+14155550123"), true);
   for (const value of ["13812345678", "+0123456789", "not-email", "a@b", "a b@example.com"]) assert.equal(validGlobalIdentifier(value), false);
   assert.equal(validGlobalIdentifier("a@example.com", "sms"), false); assert.equal(validGlobalIdentifier("+8613812345678", "email"), false);
   assert.equal(validNewPassword("abcdefgh"), true); assert.equal(validNewPassword("短".repeat(25)), false); assert.equal(validNewPassword("1234567"), false);
+});
+
+test("global phone entry defaults to +86, accepts an adjustable prefix and never prefixes full E164 twice", () => {
+  const { normalizeGlobalPhone } = harness().load("global-auth-model");
+  assert.equal(normalizeGlobalPhone("13812345678"), "+8613812345678");
+  assert.equal(normalizeGlobalPhone("4155550123", "+1"), "+14155550123");
+  assert.equal(normalizeGlobalPhone(" +14155550123 ", "+86"), "+14155550123");
+  assert.equal(normalizeGlobalPhone("+8613812345678", "+1"), "+8613812345678");
+  for (const [phone, prefix] of [["13812345678", "+0"], ["13812345678", "86"], ["13812345678", "+1234"], ["", "+86"], ["123abc", "+86"], ["+0123456789", "+86"], ["123456789012345", "+86"]]) assert.equal(normalizeGlobalPhone(phone, prefix), null);
 });
 test("OAuth context supports the exact global locales and expires without replay", () => {
   const h = harness(), model = h.load("global-auth-model");
@@ -191,6 +200,61 @@ test("phone step uses real server challenge; temporary mode never claims SMS sen
   assert.equal(h.storage.get("saydian-global-mall:saidian-user").phoneVerified, false);
   assert.equal(h.storage.get("saydian-global-mall:saidian-user").phoneVerificationStatus, "pending");
 });
+
+test("temporary phone registration directly accepts six digits with the default +86 and one guarded challenge", async t => {
+  const h = phoneLoginHarness(t); await settle(() => !h.ui.loading.value);
+  assert.equal(h.ui.countryCode.value, "+86"); assert.equal(h.ui.temporaryPhoneCode.value, true);
+  h.ui.identifier.value = "13812345678"; h.ui.code.value = "000000"; await h.ui.login();
+  const codeCalls = h.requests.filter(request => request.url.endsWith("/phone-code"));
+  const bindCalls = h.requests.filter(request => request.url.endsWith("/bind-phone"));
+  assert.equal(codeCalls.length, 1); assert.equal(codeCalls[0].data.identifier, "+8613812345678"); assert.equal(codeCalls[0].data.expectedMode, "test");
+  assert.equal(bindCalls.length, 1); assert.equal(bindCalls[0].data.code, "000000");
+  assert.equal(h.storage.get("saydian-global-mall:saidian-user").phoneVerificationStatus, "pending"); assert.doesNotMatch(h.ui.codeNote.value, /已发送/);
+});
+
+test("phone password login uses +86 local input and preserves pasted full international numbers", async t => {
+  for (const [identifier, expected] of [["13812345678", "+8613812345678"], ["+14155550123", "+14155550123"]]) {
+    const h = phoneLoginHarness(t); await settle(() => !h.ui.loading.value);
+    h.ui.cancelBinding(); h.ui.changeContact("sms"); h.ui.identifier.value = identifier; h.ui.password.value = "synthetic-password"; h.ui.accepted.value = true;
+    await h.ui.login();
+    assert.equal(h.requests.find(request => request.url.endsWith("/auth/password/login")).data.mobile, expected);
+  }
+});
+
+test("direct temporary confirmation is single-flight and rejects incomplete codes before requesting anything", async t => {
+  let pending;
+  const h = phoneLoginHarness(t, { phoneCode: request => { pending = request; } }); await settle(() => !h.ui.loading.value);
+  h.ui.identifier.value = "13812345678"; h.ui.code.value = "12345"; await h.ui.login();
+  assert.equal(h.requests.some(request => request.url.endsWith("/phone-code")), false);
+  h.ui.code.value = "654321"; const first = h.ui.login(); const second = h.ui.login();
+  assert.equal(h.requests.filter(request => request.url.endsWith("/phone-code")).length, 1);
+  pending.success({ statusCode: 200, data: { challengeId: "direct-test-challenge", expiresIn: 300, retryAfter: 60, mode: "test", sent: false, verificationRequired: false } });
+  await Promise.all([first, second]);
+  assert.equal(h.requests.filter(request => request.url.endsWith("/bind-phone")).length, 1);
+});
+
+test("real SMS confirmation never auto-sends and requires an explicitly requested challenge", async t => {
+  const h = phoneLoginHarness(t, { mode: "sms" }); await settle(() => !h.ui.loading.value);
+  h.ui.identifier.value = "13812345678"; h.ui.code.value = "123456"; await h.ui.login();
+  assert.equal(h.requests.some(request => /\/(phone-code|bind-phone)$/.test(request.url)), false);
+  assert.equal(h.ui.error.value, "请先获取当前手机号的验证码。");
+  await h.ui.sendCode(); await h.ui.login();
+  const request = h.requests.find(request => request.url.endsWith("/phone-code")); assert.equal("expectedMode" in request.data, false);
+  assert.equal(h.requests.filter(request => request.url.endsWith("/bind-phone")).length, 1);
+});
+
+test("automatic challenge failure never falls back to sending real SMS", async t => {
+  const h = phoneLoginHarness(t, { phoneCode: request => request.success({ statusCode: 503, data: { errorKey: "phone_test_unavailable", message: "internal mode changed" } }) });
+  await settle(() => !h.ui.loading.value); h.ui.identifier.value = "13812345678"; h.ui.code.value = "123456"; await h.ui.login();
+  const calls = h.requests.filter(request => request.url.endsWith("/phone-code")); assert.equal(calls.length, 1); assert.equal(calls[0].data.expectedMode, "test");
+  assert.equal(h.requests.some(request => request.url.endsWith("/bind-phone")), false); assert.equal(h.ui.error.value, "验证码暂时无法使用，请稍后重试。"); assert.equal(h.ui.challenge.value, null);
+});
+
+test("automatic challenge rejects a real-SMS response even if stale capabilities said temporary mode", async t => {
+  const h = phoneLoginHarness(t, { phoneCode: request => request.success({ statusCode: 200, data: { challengeId: "wrong-mode", expiresIn: 300, retryAfter: 60, mode: "sms", sent: true, verificationRequired: true } }) });
+  await settle(() => !h.ui.loading.value); h.ui.identifier.value = "13812345678"; h.ui.code.value = "123456"; await h.ui.login();
+  assert.equal(h.ui.challenge.value, null); assert.equal(h.requests.some(request => request.url.endsWith("/bind-phone")), false);
+});
 test("real SMS step only says sent when server confirms sent SMS", async t => {
   const h = phoneLoginHarness(t, { mode: "sms" }); await settle(() => !h.ui.loading.value);
   h.ui.identifier.value = "+8613812345678"; await h.ui.sendCode(); assert.match(h.ui.codeNote.value, /已发送至/);
@@ -218,6 +282,18 @@ test("duplicate code clicks are fenced; changed contact clears challenge without
   await Promise.all([first, second]); h.ui.identifier.value = "+14155550123"; h.ui.resetChallenge();
   assert.equal(h.ui.challenge.value, null); assert.ok(h.ui.countdown.value > 0);
   h.ui.code.value = "123456"; await h.ui.login(); assert.equal(h.requests.some(request => request.url.endsWith("/bind-phone")), false);
+});
+
+test("changing country code clears the previous phone challenge, code and original password", async t => {
+  const h = phoneLoginHarness(t); await settle(() => !h.ui.loading.value);
+  h.ui.identifier.value = "4155550123"; await h.ui.sendCode(); h.ui.code.value = "123456"; h.ui.passwordRequired.value = true; h.ui.password.value = "old-password";
+  h.ui.countryCode.value = "+1"; h.ui.resetChallenge();
+  assert.equal(h.ui.challenge.value, null); assert.equal(h.ui.code.value, ""); assert.equal(h.ui.password.value, ""); assert.equal(h.ui.passwordRequired.value, false);
+  h.ui.code.value = "123456"; await h.ui.login(); assert.equal(h.requests.some(request => request.url.endsWith("/bind-phone")), false);
+  h.ui.countdown.value = 0; await h.ui.login();
+  assert.equal(h.requests.filter(request => request.url.endsWith("/phone-code"))[1].data.identifier, "+14155550123");
+  const template = readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8");
+  assert.match(template, /id="country-code"[^>]*@input="resetChallenge"/);
 });
 test("mismatched code response metadata never becomes an accepted challenge", async t => {
   const h = phoneLoginHarness(t, { phoneCode: request => request.success({ statusCode: 200, data: { challengeId: "bad", expiresIn: 300, retryAfter: 60, mode: "test", sent: true, verificationRequired: false } }) });

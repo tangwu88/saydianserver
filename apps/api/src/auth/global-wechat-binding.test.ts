@@ -286,6 +286,21 @@ function ownWechat(h: ReturnType<typeof harness>) { h.state.identities.push({ id
 
 describe("explicit temporary WeChat phone registration", () => {
   beforeEach(() => vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "true"));
+  it("accepts an explicitly test-only automatic challenge without sending SMS", async () => {
+    const h = harness(false);
+    expect(await h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone, expectedMode: "test" })).toMatchObject({ mode: "test", sent: false });
+    expect(h.state.challenges).toHaveLength(1); expect(h.delivery.send).not.toHaveBeenCalled(); expect(h.delivery.assertAvailable).not.toHaveBeenCalled();
+  });
+  it("rejects a stale automatic test request before falling back to a real SMS channel", async () => {
+    const h = harness(false); vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "false");
+    await expect(h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone, expectedMode: "test" })).rejects.toMatchObject({ status: 403, response: { errorKey: "phone_test_unavailable" } });
+    expect(h.state.challenges).toHaveLength(0); expect(h.delivery.send).not.toHaveBeenCalled(); expect(h.delivery.assertAvailable).not.toHaveBeenCalled();
+  });
+  it.each(["sms", "", null, true])("rejects malformed expectedMode %s before any delivery", async expectedMode => {
+    const h = harness(false);
+    await expect(h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone, expectedMode })).rejects.toMatchObject({ status: 400 });
+    expect(h.state.challenges).toHaveLength(0); expect(h.delivery.send).not.toHaveBeenCalled();
+  });
   it("advertises a separate test mode without claiming real SMS readiness", async () => {
     const h = harness(false); h.delivery.capabilities.mockResolvedValue({ email: false, sms: false, smsCountries: [] });
     expect((await h.capabilities.publicCapabilities()).login.wechatBinding).toMatchObject({ phoneCodeMode: "test", phoneBindingAvailable: true, verificationRequired: false, smsOtpAvailable: false });

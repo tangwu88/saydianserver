@@ -6,6 +6,7 @@ export function authErrorMessage(cause: unknown, fallback = "暂时无法完成�
     invalid_credentials: "账号或密码不正确，请重新输入。",
     account_verification_required: "请先完成手机号确认，再登录账号。",
     phone_password_required: "请输入该手机号原账号的密码。",
+    phone_test_unavailable: "验证码暂时无法使用，请稍后重试。",
     identity_conflict: "无法关联此手机号，请使用账号密码登录或联系客服。",
     invalid_phone: "请检查国家区号和手机号。",
     invalid_email: "请输入正确的邮箱地址。",

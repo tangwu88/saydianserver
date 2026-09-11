@@ -19,10 +19,16 @@ test("phone test activation rejects missing WeChat authorization and ambiguous s
 });
 test("test flag never enables real OTP or the Worker", () => {
   const compose = JSON.parse(readFileSync(new URL("./compose.json", import.meta.url), "utf8"));
-  assert.equal(compose.services["global-api"].environment.GLOBAL_WECHAT_PHONE_TEST_ENABLED, "${GLOBAL_WECHAT_PHONE_TEST_ENABLED:-false}");
+  assert.equal(compose.services["global-api"].environment.GLOBAL_WECHAT_PHONE_TEST_ENABLED, "${GLOBAL_WECHAT_PHONE_TEST_ENABLED-true}");
   assert.equal(compose.services["global-worker"].environment.GLOBAL_WECHAT_PHONE_TEST_ENABLED, undefined);
   for (const name of ["global-api", "global-worker"]) {
     assert.equal(compose.services[name].environment.ALLOW_TEST_OTP, "false");
     assert.equal(compose.services[name].environment.GLOBAL_SMS_PROVIDER, "disabled");
   }
+});
+
+test("fresh private config stays explicit and the runtime helper can disable the temporary release", () => {
+  const example = readFileSync(new URL("./env.example", import.meta.url), "utf8");
+  assert.match(example, /^GLOBAL_WECHAT_PHONE_TEST_ENABLED=false$/m);
+  assert.equal(withPhoneTestSwitch("GLOBAL_WECHAT_H5_ENABLED=true\n", false), "GLOBAL_WECHAT_H5_ENABLED=true\nGLOBAL_WECHAT_PHONE_TEST_ENABLED=false\n");
 });
