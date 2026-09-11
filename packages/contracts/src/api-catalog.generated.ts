@@ -1246,6 +1246,47 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.quickUpdateCommerceProductSkus",
+      "method": "PATCH",
+      "path": "/api/saydian-app/admin/v1/commerce-products/:id/skus",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "快速修改商品SKU售价与库存",
+      "request": "id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数}]}；每次1至100条",
+      "response": "原子更新并返回商品；版本过期409且不部分保存；ERP商品后续同步可能覆盖手工值",
+      "dependency": "主库商城/聚水潭",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.updateCommerceProduct",
       "method": "PATCH",
       "path": "/api/saydian-app/admin/v1/commerce-products/:id",

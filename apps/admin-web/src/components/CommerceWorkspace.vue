@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import { canAdminResource } from "@saydian/app-contracts";
 import { getAdminRoles } from "../api";
 import AfterSaleEvidence from "./AfterSaleEvidence.vue";
+import ProductSkuQuickEditor from "./ProductSkuQuickEditor.vue";
 
 type Row = Record<string, any>;
 type TagType = "primary" | "success" | "warning" | "info" | "danger";
@@ -46,7 +47,7 @@ watch(() => props.resource, () => {
 });
 
 const descriptions: Record<string, string> = {
-  "commerce-products": "管理本地商品与ERP同步商品。本地商品可维护规格、售价和库存；ERP商品的规格与库存由聚水潭同步。",
+  "commerce-products": "管理本地商品与ERP同步商品。详情中可快速调整售价和库存；ERP商品再次同步时可能覆盖手工值。",
   "commerce-categories": "按层级维护商城分类、图标、排序和启用状态；分类停用后不会出现在商城分类入口。",
   "commerce-banners": "管理商城首页轮播图片、跳转目标、排序和启用状态，图片与目标地址均由商城前端读取。",
   "commerce-business-configs": "集中维护购物、配送、发票等业务参数；支付密钥和外部平台凭据仍在集成中心配置。",
@@ -229,6 +230,11 @@ function categoryName(row: Row): string {
 function openDetail(row: Row): void {
   detailRow.value = row;
   detailVisible.value = true;
+}
+
+function productSkusSaved(product: Row): void {
+  detailRow.value = product;
+  emit("refresh");
 }
 
 function jsonText(value: unknown): string {
@@ -439,7 +445,7 @@ function changeStatus(value: unknown): void {
         <el-descriptions-item v-if="detailRow.updatedAt" label="更新时间">{{ dateTime(detailRow.updatedAt) }}</el-descriptions-item>
       </el-descriptions>
       <section v-if="detailRow.items?.length" class="detail-section"><h3>商品清单</h3><el-table :data="detailRow.items" border><el-table-column prop="nameSnapshot" label="商品" min-width="170" /><el-table-column prop="specificationSnapshot" label="规格" min-width="130" /><el-table-column prop="quantity" label="数量" width="70" /><el-table-column label="小计" width="110"><template #default="scope">{{ money(scope.row.totalCents) }}</template></el-table-column></el-table></section>
-      <section v-if="detailRow.skus?.length" class="detail-section"><h3>SKU 与库存</h3><el-table :data="detailRow.skus" border><el-table-column prop="erpSkuId" label="ERP SKU" min-width="150" /><el-table-column prop="specification" label="规格" min-width="130" /><el-table-column label="售价" width="110"><template #default="scope">{{ money(scope.row.salePriceCents) }}</template></el-table-column><el-table-column prop="stock" label="库存" width="80" /></el-table></section>
+      <ProductSkuQuickEditor v-if="detailRow.skus?.length" :key="detailRow.id" :product="detailRow" :can-edit="canEdit" @saved="productSkusSaved" />
       <section v-if="detailRow.shipments?.length" class="detail-section"><h3>物流包裹</h3><el-table :data="detailRow.shipments" border><el-table-column prop="logisticsCompany" label="物流公司" /><el-table-column prop="trackingNo" label="物流单号" /><el-table-column label="发货时间"><template #default="scope">{{ dateTime(scope.row.shippedAt) }}</template></el-table-column></el-table></section>
       <section v-if="detailRow.refunds?.length" class="detail-section"><h3>退款记录</h3><el-table :data="detailRow.refunds" border><el-table-column prop="refundNo" label="退款单" /><el-table-column label="金额"><template #default="scope">{{ money(scope.row.amountCents) }}</template></el-table-column><el-table-column label="状态"><template #default="scope">{{ statusLabel(scope.row.status) }}</template></el-table-column></el-table></section>
       <section v-if="detailRow.wallet" class="detail-section"><h3>钱包摘要</h3><el-descriptions :column="1" border><el-descriptions-item label="冻结">{{ money(detailRow.wallet.frozenCents) }}</el-descriptions-item><el-descriptions-item label="可用">{{ money(detailRow.wallet.availableCents) }}</el-descriptions-item><el-descriptions-item label="提现中">{{ money(detailRow.wallet.withdrawingCents) }}</el-descriptions-item><el-descriptions-item label="累计已付">{{ money(detailRow.wallet.totalPaidCents) }}</el-descriptions-item></el-descriptions></section>

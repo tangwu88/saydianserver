@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **320 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **321 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -252,7 +252,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（92）
+## 管理后台接口（93）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -293,6 +293,7 @@
 | `GET /api/saydian-app/admin/v1/commerce-products` | 总后台商品列表 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:search?，query:page?，query:status?；search可查商品名或ERP编号；page默认1 | 主库商品、SKU及ERP库存快照；不直接改权威库存 | 主库商城/聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products` | 拒绝手工新增ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 请先通过聚水潭商品同步建立商品和SKU | HTTP 400；不会创建第二套库存 | 聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products/batch` | 商品批量上下架与归档 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {ids:商品UUID数组,action:PUBLISH/DISABLE/ARCHIVE}；ERP和自建商品保留各自库存权威 | 批量处理结果 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `PATCH /api/saydian-app/admin/v1/commerce-products/:id/skus` | 快速修改商品SKU售价与库存 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数}]}；每次1至100条 | 原子更新并返回商品；版本过期409且不部分保存；ERP商品后续同步可能覆盖手工值 | 主库商城/聚水潭 |
 | `PATCH /api/saydian-app/admin/v1/commerce-products/:id` | 编辑商品展示资料 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?} | 展示资料；ERP编号、内部名称、SKU和库存不会被覆盖 | 主库商城/聚水潭 |
 | `GET /api/saydian-app/admin/v1/commerce-categories` | 商城分类 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | 无请求体 | 分类树平铺数据 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/commerce-categories` | 新增商城分类 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {name,parentId?,iconUrl?,sort?,enabled?} | 分类 | 核心服务 |

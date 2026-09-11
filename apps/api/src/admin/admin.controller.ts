@@ -255,6 +255,12 @@ export class AdminController {
     return this.admin.batchCommerceProducts(input);
   }
 
+  @Patch("commerce-products/:id/skus")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  quickUpdateCommerceProductSkus(@Param("id") id: string, @Body() input: unknown) {
+    return this.admin.quickUpdateCommerceProductSkus(id, input);
+  }
+
   @Patch("commerce-products/:id")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
   updateCommerceProduct(@Param("id") id: string, @Body() input: unknown) {

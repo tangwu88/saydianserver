@@ -735,6 +735,60 @@ export class AdminService {
     });
   }
 
+  async quickUpdateCommerceProductSkus(productId: string, input: unknown) {
+    const body = safeObject(input);
+    if (!Array.isArray(body.skus) || body.skus.length === 0 || body.skus.length > 100) {
+      throw new BadRequestException("请选择1至100个需要修改的SKU");
+    }
+    const product = await this.prisma.commerceProduct.findUnique({
+      where: { id: productId },
+      include: { skus: true },
+    });
+    if (!product) throw new NotFoundException("商品不存在");
+
+    const productSkuIds = new Set(product.skus.map((sku) => sku.id));
+    const requestedIds = new Set<string>();
+    const adjustments = body.skus.map((raw) => {
+      const sku = safeObject(raw);
+      const id = String(sku.id ?? "").trim();
+      if (!id || !productSkuIds.has(id)) throw new BadRequestException("SKU不属于当前商品，请刷新后重试");
+      if (requestedIds.has(id)) throw new BadRequestException("同一个SKU不能重复提交");
+      requestedIds.add(id);
+      const expectedUpdatedAt = new Date(String(sku.updatedAt ?? ""));
+      if (Number.isNaN(expectedUpdatedAt.valueOf())) throw new BadRequestException("SKU版本无效，请刷新后重试");
+      return {
+        id,
+        expectedUpdatedAt,
+        salePriceCents: integerCents(sku.salePriceCents, "销售价格", 1),
+        stock: integerCents(sku.stock, "库存"),
+      };
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      for (const adjustment of adjustments) {
+        const result = await tx.commerceSku.updateMany({
+          where: {
+            id: adjustment.id,
+            productId,
+            updatedAt: adjustment.expectedUpdatedAt,
+          },
+          data: {
+            salePriceCents: adjustment.salePriceCents,
+            stock: adjustment.stock,
+          },
+        });
+        if (result.count !== 1) {
+          throw new ConflictException("SKU价格或库存已被更新，请刷新后重新修改");
+        }
+      }
+      await tx.commerceProduct.update({ where: { id: productId }, data: { updatedAt: new Date() } });
+      return tx.commerceProduct.findUniqueOrThrow({
+        where: { id: productId },
+        include: { skus: { orderBy: { createdAt: "asc" } }, category: true },
+      });
+    });
+  }
+
   commerceCategories() {
     return this.prisma.commerceCategory.findMany({
       include: { parent: { select: { id: true, name: true } } },

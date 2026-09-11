@@ -8,6 +8,48 @@ describe("commerce administration", () => {
     await expect(service.saveCommerceProduct("p", { skus: [{ salePriceCents: 1 }] })).rejects.toThrow("ERP");
     await expect(service.saveCommerceProduct(undefined, { source: "ERP" })).rejects.toThrow("同步");
   });
+  it("quick-updates selected SKU prices and stock with stale-write protection", async () => {
+    const updatedAt = new Date("2026-09-11T08:00:00.000Z");
+    const product = { id: "p", source: "ERP", skus: [{ id: "s", updatedAt }] };
+    const saved = { ...product, skus: [{ id: "s", salePriceCents: 149800, stock: 20, updatedAt: new Date() }] };
+    const tx = {
+      commerceSku: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      commerceProduct: { update: vi.fn().mockResolvedValue(product), findUniqueOrThrow: vi.fn().mockResolvedValue(saved) },
+    };
+    const prisma = {
+      commerceProduct: { findUnique: vi.fn().mockResolvedValue(product) },
+      $transaction: vi.fn().mockImplementation(async (run) => run(tx)),
+    };
+    const result = await new AdminService(prisma as any, {} as any).quickUpdateCommerceProductSkus("p", {
+      skus: [{ id: "s", updatedAt: updatedAt.toISOString(), salePriceCents: 149800, stock: 20 }],
+    });
+    expect(tx.commerceSku.updateMany).toHaveBeenCalledWith({
+      where: { id: "s", productId: "p", updatedAt },
+      data: { salePriceCents: 149800, stock: 20 },
+    });
+    expect(tx.commerceProduct.update).toHaveBeenCalledWith({ where: { id: "p" }, data: { updatedAt: expect.any(Date) } });
+    expect(result).toBe(saved);
+  });
+  it("rejects foreign, duplicate, invalid and stale SKU adjustments", async () => {
+    const updatedAt = new Date("2026-09-11T08:00:00.000Z");
+    const product = { id: "p", source: "ERP", skus: [{ id: "s", updatedAt }] };
+    const tx = {
+      commerceSku: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      commerceProduct: { update: vi.fn(), findUniqueOrThrow: vi.fn() },
+    };
+    const prisma = {
+      commerceProduct: { findUnique: vi.fn().mockResolvedValue(product) },
+      $transaction: vi.fn().mockImplementation(async (run) => run(tx)),
+    };
+    const service = new AdminService(prisma as any, {} as any);
+    const valid = { id: "s", updatedAt: updatedAt.toISOString(), salePriceCents: 100, stock: 0 };
+    await expect(service.quickUpdateCommerceProductSkus("p", { skus: [{ ...valid, id: "foreign" }] })).rejects.toThrow("不属于");
+    await expect(service.quickUpdateCommerceProductSkus("p", { skus: [valid, valid] })).rejects.toThrow("重复");
+    await expect(service.quickUpdateCommerceProductSkus("p", { skus: [{ ...valid, salePriceCents: 0 }] })).rejects.toThrow("销售价格");
+    await expect(service.quickUpdateCommerceProductSkus("p", { skus: [valid] })).rejects.toThrow("已被更新");
+    expect(tx.commerceProduct.update).not.toHaveBeenCalled();
+    expect(tx.commerceProduct.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
   it("rejects stale order edits instead of silently overwriting a newer remark", async () => {
     const prisma = { commerceOrder: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) } };
     const service = new AdminService(prisma as any, {} as any);

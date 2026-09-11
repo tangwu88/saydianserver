@@ -229,6 +229,7 @@ export const notes = {
   "AdminController.updateSetting": entry("保存客服或更新设置", "key=support/app_update；{value:非空JSON对象,public?:boolean}；app_update 必须通过 DownloadManifest v1 校验", "设置对象；结构约定见调用手册"),
   "AdminController.commerceProducts": entry("总后台商品列表", "search可查商品名或ERP编号；page默认1", "主库商品、SKU及ERP库存快照；不直接改权威库存", "主库商城/聚水潭"),
   "AdminController.createCommerceProduct": entry("拒绝手工新增ERP商品", "请先通过聚水潭商品同步建立商品和SKU", "HTTP 400；不会创建第二套库存", "聚水潭"),
+  "AdminController.quickUpdateCommerceProductSkus": entry("快速修改商品SKU售价与库存", "id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数}]}；每次1至100条", "原子更新并返回商品；版本过期409且不部分保存；ERP商品后续同步可能覆盖手工值", "主库商城/聚水潭"),
   "AdminController.updateCommerceProduct": entry("编辑商品展示资料", "id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?}", "展示资料；ERP编号、内部名称、SKU和库存不会被覆盖", "主库商城/聚水潭"),
   "AdminController.commerceCategories": entry("商城分类", "无请求体", "分类树平铺数据"),
   "AdminController.createCommerceCategory": entry("新增商城分类", "{name,parentId?,iconUrl?,sort?,enabled?}", "分类"),
