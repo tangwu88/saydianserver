@@ -22,6 +22,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
     currency: "CNY",
     version: 2,
     paidAt: null,
+    paymentIntents: [] as Array<{ channel: string; status: string }>,
   };
   const props = { resource: "commerce-orders", rows: [order], meta: {}, loading: false, createable: false, search: "" };
   const emit = vi.fn();
@@ -45,7 +46,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
   };
   const state = new Function(
     ...Object.keys(deps),
-    `${code}\nreturn { detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel };`,
+    `${code}\nreturn { detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel, hasActiveOnlinePayment };`,
   )(...Object.values(deps));
   return { ...state, order, api, emit, ElMessage, confirm };
 }
@@ -77,6 +78,15 @@ describe("commerce order super-admin payment controls", () => {
     expect(h.manualOrderVisible.value).toBe(false);
   });
 
+  it.each(["CREATED", "PENDING"])("does not open a form while an online payment is %s", status => {
+    const h = harness();
+    h.order.paymentIntents = [{ channel: "WECHAT_JSAPI", status }];
+    h.openDetail(h.order); h.openManualOrder(h.order);
+    expect(h.hasActiveOnlinePayment(h.order)).toBe(true);
+    expect(h.manualOrderVisible.value).toBe(false);
+    expect(h.api.post).not.toHaveBeenCalled();
+  });
+
   it("requires a meaningful note and keeps the form open on a server conflict", async () => {
     const h = harness(); h.openDetail(h.order); h.openManualOrder(h.order);
     h.manualOrderForm.value.note = "x"; await h.saveManualOrder();
@@ -94,6 +104,8 @@ describe("commerce order super-admin payment controls", () => {
     expect(h.paymentChannelLabel("OFFLINE_MANUAL")).toBe("线下收款");
     const source = readFileSync(new URL("./components/CommerceWorkspace.vue", import.meta.url), "utf8");
     expect(source).toContain("已有渠道支付处理中时服务端会拒绝操作");
+    expect(source).toContain("在线支付处理中");
+    expect(source).toContain("请先确认渠道结果或完成关单");
     expect(source).toContain("处理备注");
   });
 });

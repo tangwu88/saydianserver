@@ -253,8 +253,13 @@ function paymentChannelLabel(channel: unknown): string {
   return labels[String(channel)] ?? String(channel ?? "—");
 }
 
+function hasActiveOnlinePayment(row: Row): boolean {
+  return Array.isArray(row.paymentIntents)
+    && row.paymentIntents.some((intent: Row) => ["CREATED", "PENDING"].includes(String(intent.status)));
+}
+
 function openManualOrder(row: Row): void {
-  if (!canManuallySettleOrder.value || row.status !== "PENDING_PAYMENT" || row.paidAt || row.executionOwner !== "NEW_SYSTEM") return;
+  if (!canManuallySettleOrder.value || row.status !== "PENDING_PAYMENT" || row.paidAt || row.executionOwner !== "NEW_SYSTEM" || hasActiveOnlinePayment(row)) return;
   manualOrderForm.value = {
     action: "ADJUST_PRICE",
     payableYuan: Number(row.payableCents ?? 0) / 100,
@@ -513,7 +518,8 @@ function changeStatus(value: unknown): void {
         <el-descriptions-item v-if="detailRow.updatedAt" label="更新时间">{{ dateTime(detailRow.updatedAt) }}</el-descriptions-item>
       </el-descriptions>
       <section v-if="resource === 'commerce-orders'" class="detail-section">
-        <div class="section-heading"><h3>金额与收款</h3><el-button v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && !detailRow.paidAt && detailRow.executionOwner === 'NEW_SYSTEM'" type="primary" plain size="small" @click="openManualOrder(detailRow)">调价 / 线下收款</el-button></div>
+        <div class="section-heading"><h3>金额与收款</h3><el-button v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && !detailRow.paidAt && detailRow.executionOwner === 'NEW_SYSTEM'" type="primary" plain size="small" :disabled="hasActiveOnlinePayment(detailRow)" :title="hasActiveOnlinePayment(detailRow) ? '请先确认在线渠道结果或完成关单' : ''" @click="openManualOrder(detailRow)">{{ hasActiveOnlinePayment(detailRow) ? "在线支付处理中" : "调价 / 线下收款" }}</el-button></div>
+        <el-alert v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && hasActiveOnlinePayment(detailRow)" title="该订单已有在线支付处理中记录，请先确认渠道结果或完成关单，再调价或登记线下收款。" type="warning" :closable="false" show-icon style="margin-bottom: 12px" />
         <el-descriptions :column="1" border>
           <el-descriptions-item label="商品金额">{{ money(detailRow.subtotalCents, detailRow.currency) }}</el-descriptions-item>
           <el-descriptions-item label="优惠金额">-{{ money(detailRow.discountCents, detailRow.currency) }}</el-descriptions-item>
