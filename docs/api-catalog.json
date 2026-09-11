@@ -316,8 +316,8 @@
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "超级管理员编辑会员资料",
-      "request": "id=会员UUID；{nickname,avatarUrl?,gender:MALE|FEMALE|UNSPECIFIED,birthday?:YYYY-MM-DD,heightCm?:50..250,weightKg?:10..500,mobile?,email?,status:ACTIVE|DISABLED,mobileVerified,emailVerified,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项",
-      "response": "原子更新 App 基本资料和联系方式验证状态；联系方式、验证或账号状态变化会注销会员现有会话，单独修改基本资料不会；重复联系方式409、过期版本409、注销流程会员409；专门审计只保存变更字段名，不保存资料值或完整联系方式",
+      "request": "id=会员UUID；{nickname,avatarUrl?,gender:MALE|FEMALE|UNSPECIFIED,birthday?:YYYY-MM-DD,heightCm?:50..250,weightKg?:10..500,mobile?,email?,status:ACTIVE|DISABLED,mobileVerified,emailVerified,newPassword?:8至72字节,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项",
+      "response": "原子更新 App 基本资料、联系方式验证状态及可选新密码；联系方式、验证、账号状态或密码变化会注销会员现有会话，单独修改基本资料不会；重复联系方式409、过期版本409、注销流程会员409；专门审计只保存变更字段名和密码是否变更，不保存资料值、完整联系方式或密码",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {

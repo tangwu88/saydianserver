@@ -1,25 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import {
-  AdminRole,
-  AfterSaleStatus,
-  BusinessType,
-  CommerceJobStatus,
-  CommerceOrderStatus,
-  CouponStatus,
-  FeedbackStatus,
-  Gender,
-  IntegrationState,
-  NotificationCampaignStatus,
-  NotificationType,
-  OutboxStatus,
-  PaymentChannel,
-  PaymentStatus,
-  Prisma,
-  ProductStatus,
-  ReportEntitlementType,
-  ReportStatus,
-  UserStatus,
-} from "@prisma/client";
+import { AdminRole, AfterSaleStatus, BusinessType, CommerceJobStatus, CommerceOrderStatus, CouponStatus, FeedbackStatus, Gender, IntegrationState, NotificationCampaignStatus, NotificationType, OutboxStatus, PaymentChannel, PaymentStatus, Prisma, ProductStatus, ReportEntitlementType, ReportStatus, UserStatus } from "@prisma/client";
 import { hash } from "bcryptjs";
 import { parseDownloadManifest } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
@@ -66,22 +46,7 @@ export class AdminService {
     }
   }
 
-  private memberProfileFields(item: {
-    id: string;
-    compatibilityId: number;
-    mobile: string | null;
-    mobileVerifiedAt: Date | null;
-    email: string | null;
-    emailVerifiedAt: Date | null;
-    nickname: string;
-    avatarUrl: string | null;
-    gender: Gender;
-    birthday: Date | null;
-    heightCm: { toNumber(): number } | null;
-    weightKg: { toNumber(): number } | null;
-    status: UserStatus;
-    updatedAt: Date;
-  }) {
+  private memberProfileFields(item: { id: string; compatibilityId: number; mobile: string | null; mobileVerifiedAt: Date | null; email: string | null; emailVerifiedAt: Date | null; nickname: string; avatarUrl: string | null; gender: Gender; birthday: Date | null; heightCm: { toNumber(): number } | null; weightKg: { toNumber(): number } | null; status: UserStatus; updatedAt: Date }) {
     return {
       id: item.id,
       memberNo: String(item.compatibilityId),
@@ -102,15 +67,7 @@ export class AdminService {
     };
   }
 
-  private memberVerificationFields(item: {
-    id: string;
-    compatibilityId: number;
-    mobile: string | null;
-    mobileVerifiedAt: Date | null;
-    email: string | null;
-    emailVerifiedAt: Date | null;
-    updatedAt: Date;
-  }) {
+  private memberVerificationFields(item: { id: string; compatibilityId: number; mobile: string | null; mobileVerifiedAt: Date | null; email: string | null; emailVerifiedAt: Date | null; updatedAt: Date }) {
     const mobileVerified = Boolean(item.mobile && item.mobileVerifiedAt);
     const emailVerified = Boolean(item.email && item.emailVerifiedAt);
     return {
@@ -120,46 +77,41 @@ export class AdminService {
       mobileVerified,
       mobileVerificationStatus: !item.mobile ? "NOT_PROVIDED" : mobileVerified ? "VERIFIED" : "UNVERIFIED",
       mobileVerifiedAt: mobileVerified ? item.mobileVerifiedAt!.toISOString() : null,
-      ...(isGlobalRealm() ? {
-        emailMasked: item.email ? maskedIdentifier("email", item.email) : null,
-        emailVerified,
-        emailVerificationStatus: !item.email ? "NOT_PROVIDED" : emailVerified ? "VERIFIED" : "UNVERIFIED",
-        emailVerifiedAt: emailVerified ? item.emailVerifiedAt!.toISOString() : null,
-      } : {}),
+      ...(isGlobalRealm()
+        ? {
+            emailMasked: item.email ? maskedIdentifier("email", item.email) : null,
+            emailVerified,
+            emailVerificationStatus: !item.email ? "NOT_PROVIDED" : emailVerified ? "VERIFIED" : "UNVERIFIED",
+            emailVerifiedAt: emailVerified ? item.emailVerifiedAt!.toISOString() : null,
+          }
+        : {}),
       verificationVersion: item.updatedAt.toISOString(),
     };
   }
 
   async dashboard() {
-    const [
-      members,
-      records,
-      care,
-      warnings,
-      feedback,
-      outboxPending,
-      products,
-      commerceOrders,
-      paidCents,
-      reports,
-      paymentFailures,
-    ] =
-      await this.prisma.$transaction([
-        this.prisma.user.count({ where: { status: "ACTIVE" } }),
-        this.prisma.healthRecord.count(),
-        this.prisma.careRelationship.count({ where: { status: "ACTIVE" } }),
-        this.prisma.healthWarningEvent.count(),
-        this.prisma.feedback.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } } }),
-        this.prisma.outboxEvent.count({ where: { status: { in: ["PENDING", "FAILED"] } } }),
-        this.prisma.commerceProduct.count({ where: { localArchived: false } }),
-        this.prisma.commerceOrder.count(),
-        this.prisma.paymentIntent.aggregate({
-          where: { status: PaymentStatus.SUCCEEDED },
-          _sum: { amountCents: true },
-        }),
-        this.prisma.healthReport.count(),
-        this.prisma.paymentIntent.count({ where: { status: PaymentStatus.FAILED } }),
-      ]);
+    const [members, records, care, warnings, feedback, outboxPending, products, commerceOrders, paidCents, reports, paymentFailures] = await this.prisma.$transaction([
+      this.prisma.user.count({ where: { status: "ACTIVE" } }),
+      this.prisma.healthRecord.count(),
+      this.prisma.careRelationship.count({ where: { status: "ACTIVE" } }),
+      this.prisma.healthWarningEvent.count(),
+      this.prisma.feedback.count({
+        where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
+      }),
+      this.prisma.outboxEvent.count({
+        where: { status: { in: ["PENDING", "FAILED"] } },
+      }),
+      this.prisma.commerceProduct.count({ where: { localArchived: false } }),
+      this.prisma.commerceOrder.count(),
+      this.prisma.paymentIntent.aggregate({
+        where: { status: PaymentStatus.SUCCEEDED },
+        _sum: { amountCents: true },
+      }),
+      this.prisma.healthReport.count(),
+      this.prisma.paymentIntent.count({
+        where: { status: PaymentStatus.FAILED },
+      }),
+    ]);
     return {
       members,
       healthRecords: records,
@@ -182,13 +134,7 @@ export class AdminService {
     const memberNo = /^[1-9]\d{0,9}$/.test(search) && Number(search) <= 2_147_483_647 ? Number(search) : null;
     const where = search
       ? {
-          OR: [
-            { nickname: { contains: search, mode: "insensitive" as const } },
-            { mobile: { contains: search } },
-            { legacyMemberId: { contains: search } },
-            ...(isGlobalRealm() ? [{ email: { contains: search, mode: "insensitive" as const } }] : []),
-            ...(memberNo !== null ? [{ compatibilityId: memberNo }] : []),
-          ],
+          OR: [{ nickname: { contains: search, mode: "insensitive" as const } }, { mobile: { contains: search } }, { legacyMemberId: { contains: search } }, ...(isGlobalRealm() ? [{ email: { contains: search, mode: "insensitive" as const } }] : []), ...(memberNo !== null ? [{ compatibilityId: memberNo }] : [])],
         }
       : {};
     const [items, total] = await this.prisma.$transaction([
@@ -218,20 +164,27 @@ export class AdminService {
     };
   }
 
-  async memberProfile(
-    current: { id: string; role: string; roles?: string[] },
-    userId: string,
-    requestId: string,
-  ) {
+  async memberProfile(current: { id: string; role: string; roles?: string[] }, userId: string, requestId: string) {
     this.assertGlobalMemberAdministrator(current);
     if (!isUuid(userId)) throw new BadRequestException("会员编号无效");
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
         where: { id: userId },
         select: {
-          id: true, compatibilityId: true, mobile: true, mobileVerifiedAt: true,
-          email: true, emailVerifiedAt: true, nickname: true, avatarUrl: true, gender: true,
-          birthday: true, heightCm: true, weightKg: true, status: true, updatedAt: true,
+          id: true,
+          compatibilityId: true,
+          mobile: true,
+          mobileVerifiedAt: true,
+          email: true,
+          emailVerifiedAt: true,
+          nickname: true,
+          avatarUrl: true,
+          gender: true,
+          birthday: true,
+          heightCm: true,
+          weightKg: true,
+          status: true,
+          updatedAt: true,
         },
       });
       if (!user) throw new NotFoundException("会员不存在");
@@ -254,23 +207,20 @@ export class AdminService {
     });
   }
 
-  async updateMemberProfile(
-    current: { id: string; role: string; roles?: string[] },
-    userId: string,
-    requestId: string,
-    input: Record<string, unknown>,
-  ) {
+  async updateMemberProfile(current: { id: string; role: string; roles?: string[] }, userId: string, requestId: string, input: Record<string, unknown>) {
     this.assertGlobalMemberAdministrator(current);
     if (!isUuid(userId)) throw new BadRequestException("会员编号无效");
-    const allowedFields = new Set([
-      "nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg",
-      "mobile", "email", "status", "mobileVerified", "emailVerified", "expectedUpdatedAt",
-    ]);
+    const allowedFields = new Set(["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "mobileVerified", "emailVerified", "newPassword", "expectedUpdatedAt"]);
     if (Object.keys(input).some((field) => !allowedFields.has(field))) {
       throw new BadRequestException("会员资料包含不支持的字段");
     }
     const nickname = String(input.nickname ?? "").trim();
     if (!nickname || nickname.length > 40) throw new BadRequestException("昵称须为1至40个字符");
+    const newPassword = String(input.newPassword ?? "");
+    if (newPassword && (newPassword.length < 8 || Buffer.byteLength(newPassword, "utf8") > 72)) {
+      throw new BadRequestException("新密码须至少8位且不能超过72字节");
+    }
+    const newPasswordHash = newPassword ? await hash(newPassword, 12) : undefined;
 
     const hasField = (field: string) => Object.prototype.hasOwnProperty.call(input, field);
     const avatarUrlInput = hasField("avatarUrl") ? String(input.avatarUrl ?? "").trim() || null : undefined;
@@ -287,10 +237,7 @@ export class AdminService {
       birthdayInput = null;
       if (birthdayText) {
         const birthday = new Date(`${birthdayText}T00:00:00.000Z`);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdayText)
-          || Number.isNaN(birthday.getTime())
-          || birthday.toISOString().slice(0, 10) !== birthdayText
-          || birthday >= new Date()) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdayText) || Number.isNaN(birthday.getTime()) || birthday.toISOString().slice(0, 10) !== birthdayText || birthday >= new Date()) {
           throw new BadRequestException("出生日期不正确");
         }
         birthdayInput = birthday;
@@ -311,7 +258,7 @@ export class AdminService {
 
     const mobileInput = String(input.mobile ?? "").trim();
     const emailInput = String(input.email ?? "").trim();
-    const mobile = mobileInput ? internationalPhone(mobileInput)?.identifier ?? "" : null;
+    const mobile = mobileInput ? (internationalPhone(mobileInput)?.identifier ?? "") : null;
     const email = emailInput ? normalizedEmail(emailInput) : null;
     if (mobileInput && !mobile) throw new BadRequestException("手机号格式不正确，请填写带国家区号的号码");
     if (emailInput && !email) throw new BadRequestException("邮箱地址格式不正确");
@@ -335,9 +282,20 @@ export class AdminService {
         const user = await tx.user.findUnique({
           where: { id: userId },
           select: {
-            id: true, compatibilityId: true, mobile: true, mobileVerifiedAt: true,
-            email: true, emailVerifiedAt: true, nickname: true, avatarUrl: true, gender: true,
-            birthday: true, heightCm: true, weightKg: true, status: true, updatedAt: true,
+            id: true,
+            compatibilityId: true,
+            mobile: true,
+            mobileVerifiedAt: true,
+            email: true,
+            emailVerifiedAt: true,
+            nickname: true,
+            avatarUrl: true,
+            gender: true,
+            birthday: true,
+            heightCm: true,
+            weightKg: true,
+            status: true,
+            updatedAt: true,
           },
         });
         if (!user) throw new NotFoundException("会员不存在");
@@ -350,10 +308,7 @@ export class AdminService {
         const conflict = await tx.user.findFirst({
           where: {
             id: { not: userId },
-            OR: [
-              ...(mobile ? [{ mobile }] : []),
-              ...(email ? [{ email }] : []),
-            ],
+            OR: [...(mobile ? [{ mobile }] : []), ...(email ? [{ email }] : [])],
           },
           select: { id: true },
         });
@@ -362,33 +317,18 @@ export class AdminService {
         const changedAt = new Date();
         const mobileChanged = user.mobile !== mobile;
         const emailChanged = user.email !== email;
-        const nextMobileVerifiedAt = mobile && input.mobileVerified
-          ? (!mobileChanged && user.mobileVerifiedAt ? user.mobileVerifiedAt : changedAt)
-          : null;
-        const nextEmailVerifiedAt = email && input.emailVerified
-          ? (!emailChanged && user.emailVerifiedAt ? user.emailVerifiedAt : changedAt)
-          : null;
-        const verificationChanged = Boolean(user.mobileVerifiedAt) !== Boolean(nextMobileVerifiedAt)
-          || Boolean(user.emailVerifiedAt) !== Boolean(nextEmailVerifiedAt);
+        const nextMobileVerifiedAt = mobile && input.mobileVerified ? (!mobileChanged && user.mobileVerifiedAt ? user.mobileVerifiedAt : changedAt) : null;
+        const nextEmailVerifiedAt = email && input.emailVerified ? (!emailChanged && user.emailVerifiedAt ? user.emailVerifiedAt : changedAt) : null;
+        const verificationChanged = Boolean(user.mobileVerifiedAt) !== Boolean(nextMobileVerifiedAt) || Boolean(user.emailVerifiedAt) !== Boolean(nextEmailVerifiedAt);
         const statusChanged = user.status !== status;
+        const passwordChanged = Boolean(newPasswordHash);
         const avatarUrl = avatarUrlInput === undefined ? user.avatarUrl : avatarUrlInput;
-        const gender = genderInput === undefined ? user.gender : genderInput as Gender;
+        const gender = genderInput === undefined ? user.gender : (genderInput as Gender);
         const birthday = birthdayInput === undefined ? user.birthday : birthdayInput;
-        const heightCm = heightCmInput === undefined
-          ? user.heightCm
-          : heightCmInput === null ? null : new Prisma.Decimal(heightCmInput);
-        const weightKg = weightKgInput === undefined
-          ? user.weightKg
-          : weightKgInput === null ? null : new Prisma.Decimal(weightKgInput);
-        const profileFieldsChanged = [
-          ...(user.nickname !== nickname ? ["nickname"] : []),
-          ...(user.avatarUrl !== avatarUrl ? ["avatarUrl"] : []),
-          ...(user.gender !== gender ? ["gender"] : []),
-          ...((user.birthday?.toISOString().slice(0, 10) ?? null) !== (birthday?.toISOString().slice(0, 10) ?? null) ? ["birthday"] : []),
-          ...((user.heightCm?.toNumber() ?? null) !== (heightCm?.toNumber() ?? null) ? ["heightCm"] : []),
-          ...((user.weightKg?.toNumber() ?? null) !== (weightKg?.toNumber() ?? null) ? ["weightKg"] : []),
-        ];
-        if (!mobileChanged && !emailChanged && !verificationChanged && !statusChanged && !profileFieldsChanged.length) {
+        const heightCm = heightCmInput === undefined ? user.heightCm : heightCmInput === null ? null : new Prisma.Decimal(heightCmInput);
+        const weightKg = weightKgInput === undefined ? user.weightKg : weightKgInput === null ? null : new Prisma.Decimal(weightKgInput);
+        const profileFieldsChanged = [...(user.nickname !== nickname ? ["nickname"] : []), ...(user.avatarUrl !== avatarUrl ? ["avatarUrl"] : []), ...(user.gender !== gender ? ["gender"] : []), ...((user.birthday?.toISOString().slice(0, 10) ?? null) !== (birthday?.toISOString().slice(0, 10) ?? null) ? ["birthday"] : []), ...((user.heightCm?.toNumber() ?? null) !== (heightCm?.toNumber() ?? null) ? ["heightCm"] : []), ...((user.weightKg?.toNumber() ?? null) !== (weightKg?.toNumber() ?? null) ? ["weightKg"] : [])];
+        if (!mobileChanged && !emailChanged && !verificationChanged && !statusChanged && !passwordChanged && !profileFieldsChanged.length) {
           return this.memberProfileFields(user);
         }
 
@@ -406,11 +346,12 @@ export class AdminService {
             email,
             emailVerifiedAt: nextEmailVerifiedAt,
             status: status as UserStatus,
+            ...(newPasswordHash ? { passwordHash: newPasswordHash } : {}),
             updatedAt: changedAt,
           },
         });
         if (result.count !== 1) throw new ConflictException("会员信息已发生变化，请刷新后重试");
-        if (mobileChanged || emailChanged || verificationChanged || statusChanged) {
+        if (mobileChanged || emailChanged || verificationChanged || statusChanged || passwordChanged) {
           await tx.userSession.updateMany({
             where: { userId, revokedAt: null },
             data: { revokedAt: changedAt },
@@ -425,14 +366,25 @@ export class AdminService {
             entityId: userId,
             requestId,
             beforeJson: {
-              mobilePresent: Boolean(user.mobile), mobileVerified: Boolean(user.mobileVerifiedAt),
-              emailPresent: Boolean(user.email), emailVerified: Boolean(user.emailVerifiedAt),
-              status: user.status, profileFieldsChanged,
+              mobilePresent: Boolean(user.mobile),
+              mobileVerified: Boolean(user.mobileVerifiedAt),
+              emailPresent: Boolean(user.email),
+              emailVerified: Boolean(user.emailVerifiedAt),
+              status: user.status,
+              profileFieldsChanged,
+              passwordChanged: false,
             },
             afterJson: {
-              mobilePresent: Boolean(mobile), mobileVerified: Boolean(nextMobileVerifiedAt), mobileChanged,
-              emailPresent: Boolean(email), emailVerified: Boolean(nextEmailVerifiedAt), emailChanged,
-              status, profileFieldsChanged, source: "SUPER_ADMIN_PROFILE_EDITOR",
+              mobilePresent: Boolean(mobile),
+              mobileVerified: Boolean(nextMobileVerifiedAt),
+              mobileChanged,
+              emailPresent: Boolean(email),
+              emailVerified: Boolean(nextEmailVerifiedAt),
+              emailChanged,
+              status,
+              profileFieldsChanged,
+              passwordChanged,
+              source: "SUPER_ADMIN_PROFILE_EDITOR",
             },
           },
         });
@@ -460,12 +412,7 @@ export class AdminService {
     }
   }
 
-  async updateMemberVerification(
-    current: { id: string; role: string; roles?: string[] },
-    userId: string,
-    requestId: string,
-    input: Record<string, unknown>,
-  ) {
+  async updateMemberVerification(current: { id: string; role: string; roles?: string[] }, userId: string, requestId: string, input: Record<string, unknown>) {
     this.assertGlobalMemberAdministrator(current);
     const channel = String(input.channel ?? "").trim();
     if (channel !== "mobile" && channel !== "email") {
@@ -483,8 +430,13 @@ export class AdminService {
       const user = await tx.user.findUnique({
         where: { id: userId },
         select: {
-          id: true, compatibilityId: true, mobile: true, mobileVerifiedAt: true,
-          email: true, emailVerifiedAt: true, updatedAt: true,
+          id: true,
+          compatibilityId: true,
+          mobile: true,
+          mobileVerifiedAt: true,
+          email: true,
+          emailVerifiedAt: true,
+          updatedAt: true,
         },
       });
       if (!user) throw new NotFoundException("会员不存在");
@@ -512,8 +464,17 @@ export class AdminService {
           entityType: "USER_CONTACT_VERIFICATION",
           entityId: userId,
           requestId,
-          beforeJson: { channel, verified: Boolean(previouslyVerifiedAt), verifiedAt: previouslyVerifiedAt?.toISOString() ?? null },
-          afterJson: { channel, verified, verifiedAt: nextVerifiedAt?.toISOString() ?? null, source: "SUPER_ADMIN_MANUAL" },
+          beforeJson: {
+            channel,
+            verified: Boolean(previouslyVerifiedAt),
+            verifiedAt: previouslyVerifiedAt?.toISOString() ?? null,
+          },
+          afterJson: {
+            channel,
+            verified,
+            verifiedAt: nextVerifiedAt?.toISOString() ?? null,
+            source: "SUPER_ADMIN_MANUAL",
+          },
         },
       });
       return this.memberVerificationFields({
@@ -540,16 +501,10 @@ export class AdminService {
     }));
   }
 
-  async rawHealth(
-    current: { id: string; role: string; roles?: string[] },
-    userId: string,
-    requestId: string,
-    reason: string,
-    limitInput = 100,
-  ) {
+  async rawHealth(current: { id: string; role: string; roles?: string[] }, userId: string, requestId: string, reason: string, limitInput = 100) {
     // Roles come from AdminAuthGuard's current database session, never query params.
     const roles = current.roles?.length ? current.roles : [current.role];
-    if (!roles.some(role => role === AdminRole.SUPER_ADMIN || role === AdminRole.HEALTH_AUDITOR)) {
+    if (!roles.some((role) => role === AdminRole.SUPER_ADMIN || role === AdminRole.HEALTH_AUDITOR)) {
       throw new ForbiddenException("当前账号无权查看原始健康记录");
     }
     const normalizedReason = reason.trim();
@@ -574,7 +529,11 @@ export class AdminService {
         afterJson: {
           recordCount: records.length,
           reason: reasonExempt ? "超级管理员直接查看（免填原因）" : normalizedReason,
-          ...(isGlobalRealm() ? { reasonSource: reasonExempt ? "SUPER_ADMIN_EXEMPTION" : "PROVIDED" } : {}),
+          ...(isGlobalRealm()
+            ? {
+                reasonSource: reasonExempt ? "SUPER_ADMIN_EXEMPTION" : "PROVIDED",
+              }
+            : {}),
         },
       },
     });
@@ -629,7 +588,10 @@ export class AdminService {
     }
     return this.prisma.feedback.update({
       where: { id },
-      data: { status, assignedTo: body.assignedTo ? String(body.assignedTo) : null },
+      data: {
+        status,
+        assignedTo: body.assignedTo ? String(body.assignedTo) : null,
+      },
     });
   }
 
@@ -665,16 +627,12 @@ export class AdminService {
       throw new BadRequestException("分类不能作为自己的上级");
     }
     if (isGlobalRealm()) {
-      return this.prisma.$transaction(async tx => {
-        const category = id
-          ? await tx.articleCategory.update({ where: { id }, data })
-          : await tx.articleCategory.create({ data });
+      return this.prisma.$transaction(async (tx) => {
+        const category = id ? await tx.articleCategory.update({ where: { id }, data }) : await tx.articleCategory.create({ data });
         return (await withCategoryNumbers(tx, [category]))[0]!;
       });
     }
-    return id
-      ? this.prisma.articleCategory.update({ where: { id }, data })
-      : this.prisma.articleCategory.create({ data });
+    return id ? this.prisma.articleCategory.update({ where: { id }, data }) : this.prisma.articleCategory.create({ data });
   }
 
   async saveArticle(id: string | undefined, input: unknown) {
@@ -698,9 +656,7 @@ export class AdminService {
     if (data.status === "PUBLISHED" && !data.publishedAt) {
       data.publishedAt = new Date();
     }
-    return id
-      ? this.prisma.article.update({ where: { id }, data })
-      : this.prisma.article.create({ data });
+    return id ? this.prisma.article.update({ where: { id }, data }) : this.prisma.article.create({ data });
   }
 
   async integrations() {
@@ -719,16 +675,7 @@ export class AdminService {
     return rows.map(({ secret, ...row }) => ({
       ...row,
       hasSecret: Boolean(secret),
-      verificationStatus:
-        row.state === IntegrationState.DISABLED
-          ? "DISABLED"
-          : row.state === IntegrationState.CONFIGURED &&
-              row.lastCheckedAt &&
-              !row.lastError
-            ? "VERIFIED"
-            : row.state === IntegrationState.CONFIGURED
-              ? "PENDING"
-              : row.state,
+      verificationStatus: row.state === IntegrationState.DISABLED ? "DISABLED" : row.state === IntegrationState.CONFIGURED && row.lastCheckedAt && !row.lastError ? "VERIFIED" : row.state === IntegrationState.CONFIGURED ? "PENDING" : row.state,
     }));
   }
 
@@ -780,12 +727,7 @@ export class AdminService {
     return {
       ...saved,
       hasSecret: Boolean(secret),
-      verificationStatus:
-        state === IntegrationState.DISABLED
-          ? "DISABLED"
-          : state === IntegrationState.CONFIGURED
-            ? "PENDING"
-            : state,
+      verificationStatus: state === IntegrationState.DISABLED ? "DISABLED" : state === IntegrationState.CONFIGURED ? "PENDING" : state,
     };
   }
 
@@ -835,7 +777,10 @@ export class AdminService {
   }
 
   legalDocuments() {
-    if (isGlobalRealm()) return this.prisma.globalLegalDocument.findMany({ orderBy: [{ locale: "asc" }, { documentType: "asc" }, { publishedAt: "desc" }] });
+    if (isGlobalRealm())
+      return this.prisma.globalLegalDocument.findMany({
+        orderBy: [{ locale: "asc" }, { documentType: "asc" }, { publishedAt: "desc" }],
+      });
     return this.prisma.legalDocument.findMany({
       orderBy: [{ documentType: "asc" }, { publishedAt: "desc" }],
     });
@@ -849,9 +794,7 @@ export class AdminService {
       title: String(body.title ?? "").trim(),
       contentHtml: String(body.contentHtml ?? "").trim(),
       active: body.active === true,
-      publishedAt: body.publishedAt
-        ? new Date(String(body.publishedAt))
-        : new Date(),
+      publishedAt: body.publishedAt ? new Date(String(body.publishedAt)) : new Date(),
     };
     if (!data.documentType || !data.version || !data.title || !data.contentHtml) {
       throw new BadRequestException("协议内容不完整");
@@ -864,21 +807,37 @@ export class AdminService {
       const reviewed = body.reviewed === true;
       if (data.active && !reviewed) throw new BadRequestException("Review the global document before publishing it.");
       if (!["user_agreement", "privacy_policy", "health_ai_analysis"].includes(data.documentType)) throw new BadRequestException("Unsupported global legal document type.");
-      return this.prisma.$transaction(async tx => {
-        if (data.active) await tx.globalLegalDocument.updateMany({ where: { documentType: data.documentType, locale, ...(id ? { id: { not: id } } : {}) }, data: { active: false } });
-        return id ? tx.globalLegalDocument.update({ where: { id }, data: { ...data, locale, reviewed } }) : tx.globalLegalDocument.create({ data: { ...data, locale, reviewed } });
+      return this.prisma.$transaction(async (tx) => {
+        if (data.active)
+          await tx.globalLegalDocument.updateMany({
+            where: {
+              documentType: data.documentType,
+              locale,
+              ...(id ? { id: { not: id } } : {}),
+            },
+            data: { active: false },
+          });
+        return id
+          ? tx.globalLegalDocument.update({
+              where: { id },
+              data: { ...data, locale, reviewed },
+            })
+          : tx.globalLegalDocument.create({
+              data: { ...data, locale, reviewed },
+            });
       });
     }
     return this.prisma.$transaction(async (tx) => {
       if (data.active) {
         await tx.legalDocument.updateMany({
-          where: { documentType: data.documentType, ...(id ? { id: { not: id } } : {}) },
+          where: {
+            documentType: data.documentType,
+            ...(id ? { id: { not: id } } : {}),
+          },
           data: { active: false },
         });
       }
-      return id
-        ? tx.legalDocument.update({ where: { id }, data })
-        : tx.legalDocument.create({ data });
+      return id ? tx.legalDocument.update({ where: { id }, data }) : tx.legalDocument.create({ data });
     });
   }
 
@@ -936,51 +895,62 @@ export class AdminService {
   async updateAdmin(id: string, input: unknown) {
     const body = safeObject(input);
     if (body.active !== undefined && typeof body.active !== "boolean") throw new BadRequestException("启用状态必须为布尔值");
-    const roles = body.roles !== undefined || body.role !== undefined
-      ? normalizeAdminRoles(body.roles ?? [body.role]) : undefined;
+    const roles = body.roles !== undefined || body.role !== undefined ? normalizeAdminRoles(body.roles ?? [body.role]) : undefined;
     const role = roles?.[0];
-    return this.prisma.$transaction(async tx => {
-    await protectLastSuperAdmin(tx, id, { ...(roles ? { roles } : {}), ...(body.active !== undefined ? { active: body.active as boolean } : {}) });
-    return tx.adminUser.update({
-      where: { id },
-      data: {
-        ...(role ? { role, roles } : {}),
-        ...(body.active !== undefined ? { active: body.active === true } : {}),
-        ...(body.displayName
-          ? { displayName: String(body.displayName).trim().slice(0, 50) }
-          : {}),
-      },
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        role: true,
-        roles: true,
-        active: true,
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      await protectLastSuperAdmin(tx, id, {
+        ...(roles ? { roles } : {}),
+        ...(body.active !== undefined ? { active: body.active as boolean } : {}),
+      });
+      return tx.adminUser.update({
+        where: { id },
+        data: {
+          ...(role ? { role, roles } : {}),
+          ...(body.active !== undefined ? { active: body.active === true } : {}),
+          ...(body.displayName ? { displayName: String(body.displayName).trim().slice(0, 50) } : {}),
+        },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          role: true,
+          roles: true,
+          active: true,
+        },
+      });
     });
   }
 
   deletionRequests() {
-    return this.prisma.accountDeletionRequest.findMany({
-      include: {
-        user: {
-          select: { id: true, compatibilityId: true, mobile: true, nickname: true },
+    return this.prisma.accountDeletionRequest
+      .findMany({
+        include: {
+          user: {
+            select: {
+              id: true,
+              compatibilityId: true,
+              mobile: true,
+              nickname: true,
+            },
+          },
         },
-      },
-      orderBy: { requestedAt: "desc" },
-    }).then((items) =>
-      items.map((item) => ({
-        ...item,
-        user: { ...item.user, mobile: maskMobile(item.user.mobile) },
-      })),
-    );
+        orderBy: { requestedAt: "desc" },
+      })
+      .then((items) =>
+        items.map((item) => ({
+          ...item,
+          user: { ...item.user, mobile: maskMobile(item.user.mobile) },
+        })),
+      );
   }
 
   settings() {
     return this.prisma.appSetting.findMany({
-      where: { key: { in: isGlobalRealm() ? ["global_support", "global_app_update"] : ["support", "app_update", "legacy_app_update"] } },
+      where: {
+        key: {
+          in: isGlobalRealm() ? ["global_support", "global_app_update"] : ["support", "app_update", "legacy_app_update"],
+        },
+      },
       orderBy: { key: "asc" },
     });
   }
@@ -1005,24 +975,37 @@ export class AdminService {
     if (key === "legacy_app_update") value = parseLegacyAppUpdate(value) as unknown as Record<string, unknown>;
     return this.prisma.appSetting.upsert({
       where: { key },
-      create: { key, value: value as Prisma.InputJsonValue, public: body.public !== false },
-      update: { value: value as Prisma.InputJsonValue, public: body.public !== false },
+      create: {
+        key,
+        value: value as Prisma.InputJsonValue,
+        public: body.public !== false,
+      },
+      update: {
+        value: value as Prisma.InputJsonValue,
+        public: body.public !== false,
+      },
     });
   }
 
   async commerceProducts(search = "", pageInput = 1, statusInput = "") {
     const page = Math.max(Number(pageInput) || 1, 1);
     const where: Prisma.CommerceProductWhereInput = {
-      ...(statusInput === "ARCHIVED" ? { localArchived: true }
-        : statusInput === "OUT_OF_STOCK" ? { localArchived: false, skus: { none: { enabled: true, stock: { gt: 0 } } } }
-        : statusInput ? { localArchived: false, status: enumValue(ProductStatus, statusInput, "商品状态") } : {}),
+      ...(statusInput === "ARCHIVED"
+        ? { localArchived: true }
+        : statusInput === "OUT_OF_STOCK"
+          ? {
+              localArchived: false,
+              skus: { none: { enabled: true, stock: { gt: 0 } } },
+            }
+          : statusInput
+            ? {
+                localArchived: false,
+                status: enumValue(ProductStatus, statusInput, "商品状态"),
+              }
+            : {}),
       ...(search
         ? {
-            OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { displayName: { contains: search, mode: "insensitive" } },
-              { erpItemId: { contains: search } },
-            ],
+            OR: [{ name: { contains: search, mode: "insensitive" } }, { displayName: { contains: search, mode: "insensitive" } }, { erpItemId: { contains: search } }],
           }
         : {}),
     };
@@ -1044,24 +1027,24 @@ export class AdminService {
 
   async saveCommerceProduct(id: string | undefined, input: unknown) {
     const body = safeObject(input);
-    const existing = id ? await this.prisma.commerceProduct.findUnique({ where: { id }, include: { skus: true } }) : null;
+    const existing = id
+      ? await this.prisma.commerceProduct.findUnique({
+          where: { id },
+          include: { skus: true },
+        })
+      : null;
     if (id && !existing) throw new NotFoundException("商品不存在");
     if (!id && body.source && body.source !== "LOCAL") throw new BadRequestException("ERP商品应从聚水潭同步创建");
     if (existing && body.source !== undefined && body.source !== existing.source) throw new BadRequestException("商品来源不能修改");
     const local = !existing || existing.source === "LOCAL";
-    if (!local && (body.skus !== undefined || (body.name !== undefined && body.name !== existing!.name) ||
-      (body.erpItemId !== undefined && body.erpItemId !== existing!.erpItemId))) {
+    if (!local && (body.skus !== undefined || (body.name !== undefined && body.name !== existing!.name) || (body.erpItemId !== undefined && body.erpItemId !== existing!.erpItemId))) {
       throw new BadRequestException("ERP商品的名称、编码、SKU、售价和库存由ERP同步维护");
     }
     const name = String(body.name ?? existing?.name ?? "").trim();
     if (!name) throw new BadRequestException("商品名称不能为空");
     const erpItemId = String(body.erpItemId ?? existing?.erpItemId ?? `LOCAL-${randomUUID()}`).trim();
     if (!erpItemId) throw new BadRequestException("商品编码不能为空");
-    const status = enumValue(
-      ProductStatus,
-      body.status ?? existing?.status ?? ProductStatus.DRAFT,
-      "商品状态",
-    );
+    const status = enumValue(ProductStatus, body.status ?? existing?.status ?? ProductStatus.DRAFT, "商品状态");
     const data = {
       ...(local ? { name, erpItemId } : {}),
       displayName: nullableText(body.displayName ?? existing?.displayName),
@@ -1073,16 +1056,16 @@ export class AdminService {
       tags: stringList(body.tags ?? existing?.tags, 30),
       categoryId: nullableText(body.categoryId ?? existing?.categoryId),
       status,
-      featured: body.featured === undefined ? existing?.featured ?? false : body.featured === true,
+      featured: body.featured === undefined ? (existing?.featured ?? false) : body.featured === true,
       sort: Math.trunc(Number(body.sort ?? existing?.sort ?? 0)) || 0,
-      localArchived:
-        body.localArchived === undefined
-          ? existing?.localArchived ?? false
-          : body.localArchived === true,
+      localArchived: body.localArchived === undefined ? (existing?.localArchived ?? false) : body.localArchived === true,
     };
     return this.prisma.$transaction(async (tx) => {
-      const saved = id ? await tx.commerceProduct.update({ where: { id }, data })
-        : await tx.commerceProduct.create({ data: { ...data, name, erpItemId, source: "LOCAL" } });
+      const saved = id
+        ? await tx.commerceProduct.update({ where: { id }, data })
+        : await tx.commerceProduct.create({
+            data: { ...data, name, erpItemId, source: "LOCAL" },
+          });
       if (local && (body.skus !== undefined || !id)) {
         if (!Array.isArray(body.skus) || !body.skus.length) throw new BadRequestException("至少添加一个商品规格");
         const retained: string[] = [];
@@ -1094,7 +1077,8 @@ export class AdminService {
           const skuData = {
             erpItemId,
             erpSkuId: String(sku.erpSkuId ?? current?.erpSkuId ?? `${erpItemId}-${index + 1}`).trim(),
-            specification: nullableText(sku.specification), image: nullableText(sku.image),
+            specification: nullableText(sku.specification),
+            image: nullableText(sku.image),
             barcode: nullableText(sku.barcode),
             salePriceCents: integerCents(sku.salePriceCents ?? current?.salePriceCents, "销售价格", 1),
             marketPriceCents: sku.marketPriceCents == null ? null : integerCents(sku.marketPriceCents, "市场价"),
@@ -1102,14 +1086,30 @@ export class AdminService {
             enabled: sku.enabled !== false,
           };
           if (!skuData.erpSkuId) throw new BadRequestException("SKU编码不能为空");
-          const result = current ? await tx.commerceSku.update({ where: { id: current.id }, data: skuData })
-            : await tx.commerceSku.create({ data: { ...skuData, productId: saved.id } });
+          const result = current
+            ? await tx.commerceSku.update({
+                where: { id: current.id },
+                data: skuData,
+              })
+            : await tx.commerceSku.create({
+                data: { ...skuData, productId: saved.id },
+              });
           retained.push(result.id);
         }
-        await tx.commerceSku.updateMany({ where: { productId: saved.id, id: { notIn: retained } }, data: { enabled: false } });
+        await tx.commerceSku.updateMany({
+          where: { productId: saved.id, id: { notIn: retained } },
+          data: { enabled: false },
+        });
       }
-      if (saved.localArchived) await tx.commerceSku.updateMany({ where: { productId: saved.id }, data: { enabled: false } });
-      return tx.commerceProduct.findUniqueOrThrow({ where: { id: saved.id }, include: { skus: true, category: true } });
+      if (saved.localArchived)
+        await tx.commerceSku.updateMany({
+          where: { productId: saved.id },
+          data: { enabled: false },
+        });
+      return tx.commerceProduct.findUniqueOrThrow({
+        where: { id: saved.id },
+        include: { skus: true, category: true },
+      });
     });
   }
 
@@ -1119,11 +1119,20 @@ export class AdminService {
     const action = String(body.action ?? "");
     if (!ids.length || !["PUBLISH", "DISABLE", "ARCHIVE"].includes(action)) throw new BadRequestException("请选择商品与有效操作");
     return this.prisma.$transaction(async (tx) => {
-      const result = await tx.commerceProduct.updateMany({ where: { id: { in: ids }, localArchived: false },
-        data: action === "ARCHIVE" ? { localArchived: true, status: ProductStatus.OFF_SHELF }
-          : { status: action === "PUBLISH" ? ProductStatus.PUBLISHED : ProductStatus.OFF_SHELF },
+      const result = await tx.commerceProduct.updateMany({
+        where: { id: { in: ids }, localArchived: false },
+        data:
+          action === "ARCHIVE"
+            ? { localArchived: true, status: ProductStatus.OFF_SHELF }
+            : {
+                status: action === "PUBLISH" ? ProductStatus.PUBLISHED : ProductStatus.OFF_SHELF,
+              },
       });
-      if (action === "ARCHIVE") await tx.commerceSku.updateMany({ where: { productId: { in: ids } }, data: { enabled: false } });
+      if (action === "ARCHIVE")
+        await tx.commerceSku.updateMany({
+          where: { productId: { in: ids } },
+          data: { enabled: false },
+        });
       return result;
     });
   }
@@ -1174,7 +1183,10 @@ export class AdminService {
           throw new ConflictException("SKU价格或库存已被更新，请刷新后重新修改");
         }
       }
-      await tx.commerceProduct.update({ where: { id: productId }, data: { updatedAt: new Date() } });
+      await tx.commerceProduct.update({
+        where: { id: productId },
+        data: { updatedAt: new Date() },
+      });
       return tx.commerceProduct.findUniqueOrThrow({
         where: { id: productId },
         include: { skus: { orderBy: { createdAt: "asc" } }, category: true },
@@ -1191,9 +1203,7 @@ export class AdminService {
 
   async saveCommerceCategory(id: string | undefined, input: unknown) {
     const body = safeObject(input);
-    const existing = id
-      ? await this.prisma.commerceCategory.findUnique({ where: { id } })
-      : null;
+    const existing = id ? await this.prisma.commerceCategory.findUnique({ where: { id } }) : null;
     const name = String(body.name ?? existing?.name ?? "").trim();
     if (!name) throw new BadRequestException("分类名称不能为空");
     const parentId = nullableText(body.parentId ?? existing?.parentId);
@@ -1203,11 +1213,9 @@ export class AdminService {
       iconUrl: nullableText(body.iconUrl ?? existing?.iconUrl),
       parentId,
       sort: Math.trunc(Number(body.sort ?? existing?.sort ?? 0)) || 0,
-      enabled: body.enabled === undefined ? existing?.enabled ?? true : body.enabled === true,
+      enabled: body.enabled === undefined ? (existing?.enabled ?? true) : body.enabled === true,
     };
-    return id
-      ? this.prisma.commerceCategory.update({ where: { id }, data })
-      : this.prisma.commerceCategory.create({ data });
+    return id ? this.prisma.commerceCategory.update({ where: { id }, data }) : this.prisma.commerceCategory.create({ data });
   }
 
   commerceBanners() {
@@ -1219,9 +1227,7 @@ export class AdminService {
 
   async saveCommerceBanner(id: string | undefined, input: unknown) {
     const body = safeObject(input);
-    const existing = id
-      ? await this.prisma.commerceBanner.findUnique({ where: { id } })
-      : null;
+    const existing = id ? await this.prisma.commerceBanner.findUnique({ where: { id } }) : null;
     if (id && !existing) throw new NotFoundException("轮播图不存在");
     const title = String(body.title ?? existing?.title ?? "").trim();
     const imageUrl = String(body.imageUrl ?? existing?.imageUrl ?? "").trim();
@@ -1233,11 +1239,9 @@ export class AdminService {
       imageUrl,
       targetUrl: nullableText(body.targetUrl ?? existing?.targetUrl),
       sort: Math.trunc(Number(body.sort ?? existing?.sort ?? 0)) || 0,
-      enabled: body.enabled === undefined ? existing?.enabled ?? true : body.enabled === true,
+      enabled: body.enabled === undefined ? (existing?.enabled ?? true) : body.enabled === true,
     };
-    return id
-      ? this.prisma.commerceBanner.update({ where: { id }, data })
-      : this.prisma.commerceBanner.create({ data });
+    return id ? this.prisma.commerceBanner.update({ where: { id }, data }) : this.prisma.commerceBanner.create({ data });
   }
 
   commerceBusinessConfigs() {
@@ -1250,9 +1254,7 @@ export class AdminService {
     const body = safeObject(input);
     const label = String(body.label ?? key).trim();
     if (!key.trim() || !label) throw new BadRequestException("配置项不正确");
-    const value = body.value === null || body.value === undefined
-      ? Prisma.DbNull
-      : (body.value as Prisma.InputJsonValue);
+    const value = body.value === null || body.value === undefined ? Prisma.DbNull : (body.value as Prisma.InputJsonValue);
     return this.prisma.commerceBusinessConfig.upsert({
       where: { key },
       create: { key, label, value, enabled: body.enabled === true },
@@ -1265,18 +1267,22 @@ export class AdminService {
   }
 
   commerceReviews() {
-    return this.prisma.commerceReview.findMany({
-      include: {
-        user: { select: { id: true, nickname: true, mobile: true } },
-        product: { select: { id: true, name: true, displayName: true } },
-        orderItem: { select: { id: true, orderId: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 500,
-    }).then((rows) => rows.map((row) => ({
-      ...row,
-      user: { ...row.user, mobile: maskMobile(row.user.mobile) },
-    })));
+    return this.prisma.commerceReview
+      .findMany({
+        include: {
+          user: { select: { id: true, nickname: true, mobile: true } },
+          product: { select: { id: true, name: true, displayName: true } },
+          orderItem: { select: { id: true, orderId: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      })
+      .then((rows) =>
+        rows.map((row) => ({
+          ...row,
+          user: { ...row.user, mobile: maskMobile(row.user.mobile) },
+        })),
+      );
   }
 
   updateCommerceReview(id: string, input: unknown) {
@@ -1292,19 +1298,15 @@ export class AdminService {
 
   async commerceOrders(statusInput?: string, pageInput = 1, searchInput = "") {
     const page = Math.max(Number(pageInput) || 1, 1);
-    const status = statusInput
-      ? enumValue(CommerceOrderStatus, statusInput, "订单状态")
-      : undefined;
+    const status = statusInput ? enumValue(CommerceOrderStatus, statusInput, "订单状态") : undefined;
     const search = searchInput.trim().slice(0, 200);
     const where: Prisma.CommerceOrderWhereInput = {
       ...(status ? { status } : {}),
-      ...(search ? { OR: [
-        { orderNo: { contains: search, mode: "insensitive" } },
-        { recipientName: { contains: search, mode: "insensitive" } },
-        { recipientMobile: { contains: search } },
-        { user: { nickname: { contains: search, mode: "insensitive" } } },
-        { user: { mobile: { contains: search } } },
-      ] } : {}),
+      ...(search
+        ? {
+            OR: [{ orderNo: { contains: search, mode: "insensitive" } }, { recipientName: { contains: search, mode: "insensitive" } }, { recipientMobile: { contains: search } }, { user: { nickname: { contains: search, mode: "insensitive" } } }, { user: { mobile: { contains: search } } }],
+          }
+        : {}),
     };
     const [items, total, statusCounts, amounts] = await this.prisma.$transaction([
       this.prisma.commerceOrder.findMany({
@@ -1321,8 +1323,16 @@ export class AdminService {
         take: 50,
       }),
       this.prisma.commerceOrder.count({ where }),
-      this.prisma.commerceOrder.groupBy({ by: ["status"], where, orderBy: { status: "asc" }, _count: true }),
-      this.prisma.commerceOrder.aggregate({ where: { ...where, paidAt: { not: null } }, _sum: { payableCents: true } }),
+      this.prisma.commerceOrder.groupBy({
+        by: ["status"],
+        where,
+        orderBy: { status: "asc" },
+        _count: true,
+      }),
+      this.prisma.commerceOrder.aggregate({
+        where: { ...where, paidAt: { not: null } },
+        _sum: { payableCents: true },
+      }),
     ]);
     return {
       items: items.map((order) => ({
@@ -1333,7 +1343,10 @@ export class AdminService {
       total,
       page,
       pageSize: 50,
-      stats: { statusCounts: Object.fromEntries(statusCounts.map((row) => [row.status, row._count])), paidOrderCents: amounts._sum.payableCents ?? 0 },
+      stats: {
+        statusCounts: Object.fromEntries(statusCounts.map((row) => [row.status, row._count])),
+        paidOrderCents: amounts._sum.payableCents ?? 0,
+      },
     };
   }
 
@@ -1352,18 +1365,13 @@ export class AdminService {
     return this.prisma.commerceOrder.findUniqueOrThrow({ where: { id } });
   }
 
-  async manuallySettleCommerceOrder(
-    id: string,
-    input: unknown,
-    current: { id: string; role: string; roles?: string[] },
-    requestId?: string,
-  ) {
+  async manuallySettleCommerceOrder(id: string, input: unknown, current: { id: string; role: string; roles?: string[] }, requestId?: string) {
     const roles = current.roles?.length ? current.roles : [current.role];
     if (!isGlobalRealm()) throw new NotFoundException("此功能仅供国际版后台使用");
     if (!current.id || !roles.includes(AdminRole.SUPER_ADMIN)) throw new ForbiddenException("只有超级管理员可以调价或确认线下收款");
     if (!isUuid(id)) throw new BadRequestException("订单编号不正确");
     const body = safeObject(input);
-    if (Object.keys(body).some(field => !["action", "payableCents", "note", "orderVersion", "idempotencyKey"].includes(field))) {
+    if (Object.keys(body).some((field) => !["action", "payableCents", "note", "orderVersion", "idempotencyKey"].includes(field))) {
       throw new BadRequestException("订单人工处理包含不支持的字段");
     }
     const action = String(body.action ?? "").trim();
@@ -1375,126 +1383,209 @@ export class AdminService {
     const idempotencyKey = String(body.idempotencyKey ?? "").trim();
     if (idempotencyKey.length < 8 || idempotencyKey.length > 120) throw new BadRequestException("请提供有效的操作请求编号");
     const scope = "admin_order_manual_payment_v1";
-    const requestHash = sha256(JSON.stringify({ id, action, payableCents, note, orderVersion, actorId: current.id }));
+    const requestHash = sha256(
+      JSON.stringify({
+        id,
+        action,
+        payableCents,
+        note,
+        orderVersion,
+        actorId: current.id,
+      }),
+    );
 
-    return this.prisma.$transaction(async tx => {
-      await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${id}::uuid FOR UPDATE`;
-      const order = await tx.commerceOrder.findUnique({
-        where: { id },
-        include: { items: true, paymentIntents: { select: adminOrderPaymentSelect } },
-      });
-      if (!order) throw new NotFoundException("订单不存在");
-      requireCommerceOwner(order.executionOwner);
-      const previousRequest = await tx.idempotencyRecord.findUnique({
-        where: { userId_scope_key: { userId: order.userId, scope, key: idempotencyKey } },
-      });
-      if (previousRequest) {
-        if (previousRequest.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
-        const saved = await tx.commerceOrder.findUniqueOrThrow({
-          where: { id }, include: { items: true, paymentIntents: { select: adminOrderPaymentSelect }, shipments: { include: { items: true } }, afterSales: true },
-        });
-        return { ...saved, recipientMobile: maskMobile(saved.recipientMobile), reused: true };
-      }
-      if (order.version !== orderVersion) throw new ConflictException("订单已更新，请刷新后重试");
-      if (order.status !== CommerceOrderStatus.PENDING_PAYMENT || order.paidAt) {
-        throw new ConflictException("只有待付款订单可以调价或确认线下收款，已支付状态不能手工倒退");
-      }
-      if (order.paymentIntents.some(intent => ([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status))) {
-        throw new ConflictException("订单存在支付处理中记录，请先等待渠道结果或完成关单后再操作");
-      }
-      if (order.paymentIntents.some(intent => ([PaymentStatus.SUCCEEDED, PaymentStatus.REFUNDING, PaymentStatus.PARTIAL_REFUNDED, PaymentStatus.REFUNDED] as PaymentStatus[]).includes(intent.status))) {
-        throw new ConflictException("订单已有成功支付或退款记录，请先完成资金对账");
-      }
-      const merchandiseCashCents = payableCents - order.shippingCents;
-      const discountCents = order.subtotalCents - order.pointDiscountCents - merchandiseCashCents;
-      if (merchandiseCashCents < 0 || discountCents < 0) {
-        throw new BadRequestException(`应付金额须在${Math.max(1, order.shippingCents)}分至${order.subtotalCents - order.pointDiscountCents + order.shippingCents}分之间`);
-      }
-      const quote = priceOrder({
-        items: order.items.map(item => ({ skuId: item.skuId, quantity: item.quantity, unitPriceCents: item.unitPriceCents })),
-        couponDiscountCents: discountCents,
-        pointDiscountCents: order.pointDiscountCents,
-        shippingCents: order.shippingCents,
-        availablePointCents: order.pointDiscountCents,
-      });
-      if (quote.subtotalCents !== order.subtotalCents || quote.payableCents !== payableCents) {
-        throw new ConflictException("订单金额无法保持一致，请先核验商品和优惠快照");
-      }
-      for (const item of order.items) {
-        const allocation = quote.lines.find(line => line.skuId === item.skuId);
-        if (!allocation) throw new ConflictException("订单商品分摊不完整，请先核验");
-        await tx.commerceOrderItem.update({
-          where: { id: item.id },
-          data: {
-            couponDiscountCentsSnapshot: allocation.couponDiscountCentsSnapshot,
-            pointDiscountCentsSnapshot: allocation.pointDiscountCentsSnapshot,
-            cashPaidCentsSnapshot: allocation.cashPaidCentsSnapshot,
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${id}::uuid FOR UPDATE`;
+        const order = await tx.commerceOrder.findUnique({
+          where: { id },
+          include: {
+            items: true,
+            paymentIntents: { select: adminOrderPaymentSelect },
           },
         });
-      }
-      const changedAt = new Date();
-      const paid = action === "CONFIRM_OFFLINE_PAID";
-      const remarkPrefix = paid ? "线下收款" : "后台调价";
-      const adminRemark = [order.adminRemark, `[${remarkPrefix} ${changedAt.toISOString()}] ${note}`].filter(Boolean).join("\n");
-      const changed = await tx.commerceOrder.updateMany({
-        where: { id, version: orderVersion, status: CommerceOrderStatus.PENDING_PAYMENT, paidAt: null, executionOwner: "NEW_SYSTEM" },
-        data: {
-          discountCents: quote.couponDiscountCents,
-          payableCents,
-          pricingVersion: quote.pricingVersion,
-          pricingVerifiedAt: changedAt,
-          adminRemark,
-          ...(paid ? { status: CommerceOrderStatus.PAID, paidAt: changedAt } : {}),
-          version: { increment: 1 },
-        },
-      });
-      if (!changed.count) throw new ConflictException("订单已更新，请刷新后重试");
-      if (paid) {
-        const paymentDigest = sha256(`${id}:${idempotencyKey}`);
-        await tx.paymentIntent.create({ data: {
-          paymentNo: `OFFLINE-${paymentDigest.slice(0, 24).toUpperCase()}`,
-          userId: order.userId,
-          businessType: BusinessType.COMMERCE_ORDER,
-          businessId: id,
-          commerceOrderId: id,
-          channel: PaymentChannel.OFFLINE_MANUAL,
-          status: PaymentStatus.SUCCEEDED,
-          amountCents: payableCents,
-          currency: order.currency,
-          description: `后台确认线下收款：${order.orderNo}`,
-          idempotencyKey: `admin-offline:${paymentDigest}`,
-          providerTransactionId: `OFFLINE-${paymentDigest.toUpperCase()}`,
-          providerPayload: { source: "SUPER_ADMIN_OFFLINE_CONFIRMATION", adminId: current.id } as Prisma.InputJsonValue,
-          paidAt: changedAt,
-        } });
-        await onCommerceOrderPaid(tx, id);
-        const erpItems = await tx.commerceOrderItem.count({ where: { orderId: id, product: { source: "ERP" } } });
-        if (erpItems) {
-          await tx.commerceIntegrationJob.upsert({
-            where: { idempotencyKey: `jushuitan-order:${id}` },
-            create: {
-              type: "JUSHUITAN_ORDER_PUSH", idempotencyKey: `jushuitan-order:${id}`,
-              aggregateType: "commerce_order", aggregateId: id, payload: { orderId: id },
+        if (!order) throw new NotFoundException("订单不存在");
+        requireCommerceOwner(order.executionOwner);
+        const previousRequest = await tx.idempotencyRecord.findUnique({
+          where: {
+            userId_scope_key: {
+              userId: order.userId,
+              scope,
+              key: idempotencyKey,
             },
-            update: {},
+          },
+        });
+        if (previousRequest) {
+          if (previousRequest.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
+          const saved = await tx.commerceOrder.findUniqueOrThrow({
+            where: { id },
+            include: {
+              items: true,
+              paymentIntents: { select: adminOrderPaymentSelect },
+              shipments: { include: { items: true } },
+              afterSales: true,
+            },
+          });
+          return {
+            ...saved,
+            recipientMobile: maskMobile(saved.recipientMobile),
+            reused: true,
+          };
+        }
+        if (order.version !== orderVersion) throw new ConflictException("订单已更新，请刷新后重试");
+        if (order.status !== CommerceOrderStatus.PENDING_PAYMENT || order.paidAt) {
+          throw new ConflictException("只有待付款订单可以调价或确认线下收款，已支付状态不能手工倒退");
+        }
+        if (order.paymentIntents.some((intent) => ([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status))) {
+          throw new ConflictException("订单存在支付处理中记录，请先等待渠道结果或完成关单后再操作");
+        }
+        if (order.paymentIntents.some((intent) => ([PaymentStatus.SUCCEEDED, PaymentStatus.REFUNDING, PaymentStatus.PARTIAL_REFUNDED, PaymentStatus.REFUNDED] as PaymentStatus[]).includes(intent.status))) {
+          throw new ConflictException("订单已有成功支付或退款记录，请先完成资金对账");
+        }
+        const merchandiseCashCents = payableCents - order.shippingCents;
+        const discountCents = order.subtotalCents - order.pointDiscountCents - merchandiseCashCents;
+        if (merchandiseCashCents < 0 || discountCents < 0) {
+          throw new BadRequestException(`应付金额须在${Math.max(1, order.shippingCents)}分至${order.subtotalCents - order.pointDiscountCents + order.shippingCents}分之间`);
+        }
+        const quote = priceOrder({
+          items: order.items.map((item) => ({
+            skuId: item.skuId,
+            quantity: item.quantity,
+            unitPriceCents: item.unitPriceCents,
+          })),
+          couponDiscountCents: discountCents,
+          pointDiscountCents: order.pointDiscountCents,
+          shippingCents: order.shippingCents,
+          availablePointCents: order.pointDiscountCents,
+        });
+        if (quote.subtotalCents !== order.subtotalCents || quote.payableCents !== payableCents) {
+          throw new ConflictException("订单金额无法保持一致，请先核验商品和优惠快照");
+        }
+        for (const item of order.items) {
+          const allocation = quote.lines.find((line) => line.skuId === item.skuId);
+          if (!allocation) throw new ConflictException("订单商品分摊不完整，请先核验");
+          await tx.commerceOrderItem.update({
+            where: { id: item.id },
+            data: {
+              couponDiscountCentsSnapshot: allocation.couponDiscountCentsSnapshot,
+              pointDiscountCentsSnapshot: allocation.pointDiscountCentsSnapshot,
+              cashPaidCentsSnapshot: allocation.cashPaidCentsSnapshot,
+            },
           });
         }
-      }
-      await tx.auditLog.create({ data: {
-        actorType: "ADMIN", actorId: current.id, action: paid ? "COMMERCE_ORDER_OFFLINE_PAYMENT_CONFIRMED" : "COMMERCE_ORDER_PRICE_ADJUSTED",
-        entityType: "COMMERCE_ORDER", entityId: id, requestId: requestId ?? null,
-        beforeJson: { status: order.status, payableCents: order.payableCents, version: order.version },
-        afterJson: { status: paid ? CommerceOrderStatus.PAID : CommerceOrderStatus.PENDING_PAYMENT, payableCents, note, version: order.version + 1 },
-      } });
-      await tx.idempotencyRecord.create({ data: {
-        userId: order.userId, scope, key: idempotencyKey, requestHash, responseCode: 201,
-        responseBody: { orderId: id, action }, expiresAt: new Date(changedAt.valueOf() + 30 * 86_400_000),
-      } });
-      const saved = await tx.commerceOrder.findUniqueOrThrow({
-        where: { id }, include: { items: true, paymentIntents: { select: adminOrderPaymentSelect }, shipments: { include: { items: true } }, afterSales: true },
-      });
-      return { ...saved, recipientMobile: maskMobile(saved.recipientMobile), reused: false };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        const changedAt = new Date();
+        const paid = action === "CONFIRM_OFFLINE_PAID";
+        const remarkPrefix = paid ? "线下收款" : "后台调价";
+        const adminRemark = [order.adminRemark, `[${remarkPrefix} ${changedAt.toISOString()}] ${note}`].filter(Boolean).join("\n");
+        const changed = await tx.commerceOrder.updateMany({
+          where: {
+            id,
+            version: orderVersion,
+            status: CommerceOrderStatus.PENDING_PAYMENT,
+            paidAt: null,
+            executionOwner: "NEW_SYSTEM",
+          },
+          data: {
+            discountCents: quote.couponDiscountCents,
+            payableCents,
+            pricingVersion: quote.pricingVersion,
+            pricingVerifiedAt: changedAt,
+            adminRemark,
+            ...(paid ? { status: CommerceOrderStatus.PAID, paidAt: changedAt } : {}),
+            version: { increment: 1 },
+          },
+        });
+        if (!changed.count) throw new ConflictException("订单已更新，请刷新后重试");
+        if (paid) {
+          const paymentDigest = sha256(`${id}:${idempotencyKey}`);
+          await tx.paymentIntent.create({
+            data: {
+              paymentNo: `OFFLINE-${paymentDigest.slice(0, 24).toUpperCase()}`,
+              userId: order.userId,
+              businessType: BusinessType.COMMERCE_ORDER,
+              businessId: id,
+              commerceOrderId: id,
+              channel: PaymentChannel.OFFLINE_MANUAL,
+              status: PaymentStatus.SUCCEEDED,
+              amountCents: payableCents,
+              currency: order.currency,
+              description: `后台确认线下收款：${order.orderNo}`,
+              idempotencyKey: `admin-offline:${paymentDigest}`,
+              providerTransactionId: `OFFLINE-${paymentDigest.toUpperCase()}`,
+              providerPayload: {
+                source: "SUPER_ADMIN_OFFLINE_CONFIRMATION",
+                adminId: current.id,
+              } as Prisma.InputJsonValue,
+              paidAt: changedAt,
+            },
+          });
+          await onCommerceOrderPaid(tx, id);
+          const erpItems = await tx.commerceOrderItem.count({
+            where: { orderId: id, product: { source: "ERP" } },
+          });
+          if (erpItems) {
+            await tx.commerceIntegrationJob.upsert({
+              where: { idempotencyKey: `jushuitan-order:${id}` },
+              create: {
+                type: "JUSHUITAN_ORDER_PUSH",
+                idempotencyKey: `jushuitan-order:${id}`,
+                aggregateType: "commerce_order",
+                aggregateId: id,
+                payload: { orderId: id },
+              },
+              update: {},
+            });
+          }
+        }
+        await tx.auditLog.create({
+          data: {
+            actorType: "ADMIN",
+            actorId: current.id,
+            action: paid ? "COMMERCE_ORDER_OFFLINE_PAYMENT_CONFIRMED" : "COMMERCE_ORDER_PRICE_ADJUSTED",
+            entityType: "COMMERCE_ORDER",
+            entityId: id,
+            requestId: requestId ?? null,
+            beforeJson: {
+              status: order.status,
+              payableCents: order.payableCents,
+              version: order.version,
+            },
+            afterJson: {
+              status: paid ? CommerceOrderStatus.PAID : CommerceOrderStatus.PENDING_PAYMENT,
+              payableCents,
+              note,
+              version: order.version + 1,
+            },
+          },
+        });
+        await tx.idempotencyRecord.create({
+          data: {
+            userId: order.userId,
+            scope,
+            key: idempotencyKey,
+            requestHash,
+            responseCode: 201,
+            responseBody: { orderId: id, action },
+            expiresAt: new Date(changedAt.valueOf() + 30 * 86_400_000),
+          },
+        });
+        const saved = await tx.commerceOrder.findUniqueOrThrow({
+          where: { id },
+          include: {
+            items: true,
+            paymentIntents: { select: adminOrderPaymentSelect },
+            shipments: { include: { items: true } },
+            afterSales: true,
+          },
+        });
+        return {
+          ...saved,
+          recipientMobile: maskMobile(saved.recipientMobile),
+          reused: false,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   commerceFulfillmentPreview(orderId: string, current: { id: string; role: string; roles?: string[] }) {
@@ -1502,7 +1593,7 @@ export class AdminService {
   }
 
   createCommerceShipment(orderId: string, input: unknown, current: { id: string; role: string; roles?: string[] }) {
-    return this.prisma.$transaction(tx => createLocalShipment(tx, orderId, input, current));
+    return this.prisma.$transaction((tx) => createLocalShipment(tx, orderId, input, current));
   }
 
   async shippingRefundPreview(orderId: string) {
@@ -1512,52 +1603,87 @@ export class AdminService {
 
   async createShippingRefund(orderId: string, input: unknown, current: { id: string; role: string; roles?: string[] }) {
     requireShippingFinance(current);
-    const body = safeObject(input), amountCents = integerCents(body.amountCents, "退运费", 1);
-    const reason = String(body.reason ?? "").trim(), rawKey = String(body.requestKey ?? "").trim();
+    const body = safeObject(input),
+      amountCents = integerCents(body.amountCents, "退运费", 1);
+    const reason = String(body.reason ?? "").trim(),
+      rawKey = String(body.requestKey ?? "").trim();
     if (reason.length < 2 || reason.length > 256) throw new BadRequestException("请填写2至256字的退运费原因");
     if (rawKey.length < 8 || rawKey.length > 120) throw new BadRequestException("请提供有效申请编号");
-    const requestKey = "shipping:" + rawKey, version = expectedVersion(body.orderVersion);
-    return this.prisma.$transaction(async tx => {
-      await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${orderId}::uuid FOR UPDATE`;
-      const existing = await tx.commerceAfterSale.findUnique({ where: { requestKey } });
-      if (existing) {
-        if (existing.orderId !== orderId || existing.requestedCents !== amountCents || existing.reason !== reason || existing.requestedByAdminId !== current.id) throw new ConflictException("申请编号已被不同参数使用");
-        return existing;
-      }
-      const { order, maximumCents, pricingVersion } = await shippingRefundCapacity(tx, orderId);
-      if (order.version !== version) throw new ConflictException("订单已更新，请刷新运费报价");
-      if (["PENDING_PAYMENT", "CANCELLED", "CLOSED"].includes(order.status)) throw new ConflictException("当前订单不可退运费");
-      if (amountCents > maximumCents) throw new ConflictException("退运费超过剩余运费或现金额度");
-      const created = await tx.commerceAfterSale.create({ data: {
-        afterSaleNo: "AS-SHIP-" + randomUUID(), orderId, type: "SHIPPING_ONLY", status: "APPLIED",
-        pricingVersion, pointReturnCents: 0, shippingRefundCents: amountCents, requestedCents: amountCents,
-        reason, requestKey, requestedByAdminId: current.id, evidenceImages: [],
-      } });
-      await tx.commerceOrder.update({ where: { id: orderId }, data: { status: "AFTER_SALE", version: { increment: 1 } } });
-      return created;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    const requestKey = "shipping:" + rawKey,
+      version = expectedVersion(body.orderVersion);
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${orderId}::uuid FOR UPDATE`;
+        const existing = await tx.commerceAfterSale.findUnique({
+          where: { requestKey },
+        });
+        if (existing) {
+          if (existing.orderId !== orderId || existing.requestedCents !== amountCents || existing.reason !== reason || existing.requestedByAdminId !== current.id) throw new ConflictException("申请编号已被不同参数使用");
+          return existing;
+        }
+        const { order, maximumCents, pricingVersion } = await shippingRefundCapacity(tx, orderId);
+        if (order.version !== version) throw new ConflictException("订单已更新，请刷新运费报价");
+        if (["PENDING_PAYMENT", "CANCELLED", "CLOSED"].includes(order.status)) throw new ConflictException("当前订单不可退运费");
+        if (amountCents > maximumCents) throw new ConflictException("退运费超过剩余运费或现金额度");
+        const created = await tx.commerceAfterSale.create({
+          data: {
+            afterSaleNo: "AS-SHIP-" + randomUUID(),
+            orderId,
+            type: "SHIPPING_ONLY",
+            status: "APPLIED",
+            pricingVersion,
+            pointReturnCents: 0,
+            shippingRefundCents: amountCents,
+            requestedCents: amountCents,
+            reason,
+            requestKey,
+            requestedByAdminId: current.id,
+            evidenceImages: [],
+          },
+        });
+        await tx.commerceOrder.update({
+          where: { id: orderId },
+          data: { status: "AFTER_SALE", version: { increment: 1 } },
+        });
+        return created;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   commerceAfterSales(statusInput?: string) {
-    const status = statusInput
-      ? enumValue(AfterSaleStatus, statusInput, "售后状态")
-      : undefined;
-    return this.prisma.commerceAfterSale.findMany({
-      where: status ? { status } : {},
-      include: {
-        order: {
-          select: { id: true, orderNo: true, userId: true, payableCents: true },
+    const status = statusInput ? enumValue(AfterSaleStatus, statusInput, "售后状态") : undefined;
+    return this.prisma.commerceAfterSale
+      .findMany({
+        where: status ? { status } : {},
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNo: true,
+              userId: true,
+              payableCents: true,
+            },
+          },
+          refunds: {
+            select: {
+              id: true,
+              refundNo: true,
+              status: true,
+              amountCents: true,
+            },
+          },
+          items: { include: { orderItem: true } },
         },
-        refunds: {
-          select: { id: true, refundNo: true, status: true, amountCents: true },
-        },
-        items: { include: { orderItem: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 500,
-    }).then((rows) => rows.map((row) => ({ ...row, allowedTransitions: row.type === "SHIPPING_ONLY"
-      ? shippingAfterSaleTransitions[row.status] ?? []
-      : (afterSaleTransitions[row.status] ?? []).filter(next => row.type !== "REFUND_ONLY" || !["WAITING_RETURN", "RETURNED"].includes(next)) })));
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      })
+      .then((rows) =>
+        rows.map((row) => ({
+          ...row,
+          allowedTransitions: row.type === "SHIPPING_ONLY" ? (shippingAfterSaleTransitions[row.status] ?? []) : (afterSaleTransitions[row.status] ?? []).filter((next) => row.type !== "REFUND_ONLY" || !["WAITING_RETURN", "RETURNED"].includes(next)),
+        })),
+      );
   }
 
   async updateCommerceAfterSale(id: string, input: unknown, current?: { id: string; role: string; roles?: string[] }) {
@@ -1565,72 +1691,109 @@ export class AdminService {
     const status = enumValue(AfterSaleStatus, body.status, "售后状态");
     const version = expectedVersion(body.version);
     return this.prisma.$transaction(async (tx) => {
-    const reference = await tx.commerceAfterSale.findUnique({ where: { id }, select: { orderId: true } });
-    if (!reference) throw new NotFoundException("售后单不存在");
-    await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${reference.orderId}::uuid FOR UPDATE`;
-    const existing = await tx.commerceAfterSale.findUnique({ where: { id }, include: { order: { include: { items: { include: { product: { select: { source: true } } } } } } } });
-    if (!existing) throw new NotFoundException("售后单不存在");
-    requireCommerceOwner(existing.executionOwner);
-    requireCommerceOwner(existing.order.executionOwner);
-    if (existing.type === "SHIPPING_ONLY") {
-      requireShippingFinance(current);
-      if (!["APPLIED", "REVIEWING", "APPROVED", "REJECTED", "CANCELLED"].includes(status)) throw new BadRequestException("运费申请不适用退货状态，资金完成由渠道确认");
-      if (existing.status !== status && !(shippingAfterSaleTransitions[existing.status] ?? []).includes(status)) throw new ConflictException("当前运费申请不可转为该状态");
-      if (status === AfterSaleStatus.CANCELLED) {
-        const occupied = await tx.paymentRefund.count({ where: { afterSaleId: id, status: { in: ["CREATED", "PROCESSING", "SUCCEEDED"] } } });
-        if (occupied) throw new ConflictException("运费退款已有资金占用，不能取消");
-      }
-      if (status === AfterSaleStatus.APPROVED) {
-        const capacity = await shippingRefundCapacity(tx, existing.orderId, id);
-        if (existing.requestedCents > capacity.maximumCents) throw new ConflictException("运费额度已变动，请先核验");
-      }
-    }
-    if (existing.type !== "SHIPPING_ONLY") {
-      if (existing.type === "REFUND_ONLY" && ["WAITING_RETURN", "RETURNED"].includes(status)) throw new BadRequestException("仅退款不适用退货物流状态");
-      assertAfterSaleTransition(existing.status, status);
-    }
-    const changed = await tx.commerceAfterSale.updateMany({
-      where: { id, version, status: existing.status },
-      data: {
-        status,
-        version: { increment: 1 },
-        ...(existing.type === "SHIPPING_ONLY" && ["APPROVED", "REJECTED"].includes(status)
-          ? { reviewedByAdminId: current!.id, reviewedAt: new Date() } : {}),
-        ...(body.returnLogisticsCompany !== undefined
-          ? { returnLogisticsCompany: nullableText(body.returnLogisticsCompany) }
-          : {}),
-        ...(body.returnTrackingNo !== undefined
-          ? { returnTrackingNo: nullableText(body.returnTrackingNo) }
-          : {}),
-      },
-    });
-    if (!changed.count) throw new ConflictException("售后单已更新，请刷新后重试");
-    if (status === AfterSaleStatus.APPROVED && existing.status !== status && existing.type !== "SHIPPING_ONLY"
-      && existing.order.items.some(item => item.product.source === "ERP")) {
-      await tx.commerceIntegrationJob.upsert({
-        where: { idempotencyKey: `jushuitan-after-sale:${id}` },
-        create: {
-          type: "JUSHUITAN_AFTER_SALE_PUSH",
-          aggregateType: "commerce_after_sale",
-          aggregateId: id,
-          idempotencyKey: `jushuitan-after-sale:${id}`,
-          payload: { afterSaleId: id },
-        },
-        update: {},
+      const reference = await tx.commerceAfterSale.findUnique({
+        where: { id },
+        select: { orderId: true },
       });
-    }
-    if ([AfterSaleStatus.CANCELLED, AfterSaleStatus.REJECTED].includes(status as "CANCELLED" | "REJECTED")) {
-      const active = await tx.commerceAfterSale.count({ where: { orderId: existing.orderId,
-        status: { notIn: [AfterSaleStatus.CANCELLED, AfterSaleStatus.REJECTED, AfterSaleStatus.COMPLETED] },
-      } });
-      if (!active) {
-        const order = await tx.commerceOrder.findUniqueOrThrow({ where: { id: existing.orderId }, include: { items: true, shipments: { include: { items: true } }, afterSales: { include: { items: true } } } });
-        await tx.commerceOrder.updateMany({ where: { id: existing.orderId, status: CommerceOrderStatus.AFTER_SALE }, data: {
-          ...orderFulfillmentState(order), version: { increment: 1 },
-        } });
+      if (!reference) throw new NotFoundException("售后单不存在");
+      await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${reference.orderId}::uuid FOR UPDATE`;
+      const existing = await tx.commerceAfterSale.findUnique({
+        where: { id },
+        include: {
+          order: {
+            include: {
+              items: { include: { product: { select: { source: true } } } },
+            },
+          },
+        },
+      });
+      if (!existing) throw new NotFoundException("售后单不存在");
+      requireCommerceOwner(existing.executionOwner);
+      requireCommerceOwner(existing.order.executionOwner);
+      if (existing.type === "SHIPPING_ONLY") {
+        requireShippingFinance(current);
+        if (!["APPLIED", "REVIEWING", "APPROVED", "REJECTED", "CANCELLED"].includes(status)) throw new BadRequestException("运费申请不适用退货状态，资金完成由渠道确认");
+        if (existing.status !== status && !(shippingAfterSaleTransitions[existing.status] ?? []).includes(status)) throw new ConflictException("当前运费申请不可转为该状态");
+        if (status === AfterSaleStatus.CANCELLED) {
+          const occupied = await tx.paymentRefund.count({
+            where: {
+              afterSaleId: id,
+              status: { in: ["CREATED", "PROCESSING", "SUCCEEDED"] },
+            },
+          });
+          if (occupied) throw new ConflictException("运费退款已有资金占用，不能取消");
+        }
+        if (status === AfterSaleStatus.APPROVED) {
+          const capacity = await shippingRefundCapacity(tx, existing.orderId, id);
+          if (existing.requestedCents > capacity.maximumCents) throw new ConflictException("运费额度已变动，请先核验");
+        }
       }
-    }
-    return tx.commerceAfterSale.findUniqueOrThrow({ where: { id }, include: { items: true } });
+      if (existing.type !== "SHIPPING_ONLY") {
+        if (existing.type === "REFUND_ONLY" && ["WAITING_RETURN", "RETURNED"].includes(status)) throw new BadRequestException("仅退款不适用退货物流状态");
+        assertAfterSaleTransition(existing.status, status);
+      }
+      const changed = await tx.commerceAfterSale.updateMany({
+        where: { id, version, status: existing.status },
+        data: {
+          status,
+          version: { increment: 1 },
+          ...(existing.type === "SHIPPING_ONLY" && ["APPROVED", "REJECTED"].includes(status) ? { reviewedByAdminId: current!.id, reviewedAt: new Date() } : {}),
+          ...(body.returnLogisticsCompany !== undefined
+            ? {
+                returnLogisticsCompany: nullableText(body.returnLogisticsCompany),
+              }
+            : {}),
+          ...(body.returnTrackingNo !== undefined ? { returnTrackingNo: nullableText(body.returnTrackingNo) } : {}),
+        },
+      });
+      if (!changed.count) throw new ConflictException("售后单已更新，请刷新后重试");
+      if (status === AfterSaleStatus.APPROVED && existing.status !== status && existing.type !== "SHIPPING_ONLY" && existing.order.items.some((item) => item.product.source === "ERP")) {
+        await tx.commerceIntegrationJob.upsert({
+          where: { idempotencyKey: `jushuitan-after-sale:${id}` },
+          create: {
+            type: "JUSHUITAN_AFTER_SALE_PUSH",
+            aggregateType: "commerce_after_sale",
+            aggregateId: id,
+            idempotencyKey: `jushuitan-after-sale:${id}`,
+            payload: { afterSaleId: id },
+          },
+          update: {},
+        });
+      }
+      if ([AfterSaleStatus.CANCELLED, AfterSaleStatus.REJECTED].includes(status as "CANCELLED" | "REJECTED")) {
+        const active = await tx.commerceAfterSale.count({
+          where: {
+            orderId: existing.orderId,
+            status: {
+              notIn: [AfterSaleStatus.CANCELLED, AfterSaleStatus.REJECTED, AfterSaleStatus.COMPLETED],
+            },
+          },
+        });
+        if (!active) {
+          const order = await tx.commerceOrder.findUniqueOrThrow({
+            where: { id: existing.orderId },
+            include: {
+              items: true,
+              shipments: { include: { items: true } },
+              afterSales: { include: { items: true } },
+            },
+          });
+          await tx.commerceOrder.updateMany({
+            where: {
+              id: existing.orderId,
+              status: CommerceOrderStatus.AFTER_SALE,
+            },
+            data: {
+              ...orderFulfillmentState(order),
+              version: { increment: 1 },
+            },
+          });
+        }
+      }
+      return tx.commerceAfterSale.findUniqueOrThrow({
+        where: { id },
+        include: { items: true },
+      });
     });
   }
 
@@ -1648,17 +1811,18 @@ export class AdminService {
 
   async saveCommerceCoupon(id: string | undefined, input: unknown) {
     const body = safeObject(input);
-    const existing = id
-      ? await this.prisma.commerceCoupon.findUnique({ where: { id } })
-      : null;
+    const existing = id ? await this.prisma.commerceCoupon.findUnique({ where: { id } }) : null;
     const name = String(body.name ?? existing?.name ?? "").trim();
     if (!name) throw new BadRequestException("优惠券名称不能为空");
     const validFrom = dateValue(body.validFrom ?? existing?.validFrom, "生效时间");
     const validUntil = dateValue(body.validUntil ?? existing?.validUntil, "失效时间");
     if (validFrom >= validUntil) throw new BadRequestException("优惠券失效时间必须晚于生效时间");
-    const redemptionCode = body.redemptionCode === undefined
-      ? existing?.legacyId ?? null
-      : String(body.redemptionCode ?? "").trim().toUpperCase() || null;
+    const redemptionCode =
+      body.redemptionCode === undefined
+        ? (existing?.legacyId ?? null)
+        : String(body.redemptionCode ?? "")
+            .trim()
+            .toUpperCase() || null;
     if (redemptionCode && !/^[A-Z0-9_-]{4,32}$/.test(redemptionCode)) {
       throw new BadRequestException("优惠码须为 4 至 32 位字母、数字、下划线或连字符");
     }
@@ -1668,28 +1832,14 @@ export class AdminService {
       type: "CASH" as const,
       status: enumValue(CouponStatus, body.status ?? existing?.status ?? "DRAFT", "优惠券状态"),
       value: positiveInteger(body.value ?? existing?.value, "优惠金额"),
-      minimumSpendCents: nonNegativeInteger(
-        body.minimumSpendCents ?? existing?.minimumSpendCents,
-        "最低消费金额",
-      ),
-      totalQuantity:
-        body.totalQuantity === null
-          ? null
-          : positiveInteger(body.totalQuantity ?? existing?.totalQuantity ?? 1, "发行数量"),
+      minimumSpendCents: nonNegativeInteger(body.minimumSpendCents ?? existing?.minimumSpendCents, "最低消费金额"),
+      totalQuantity: body.totalQuantity === null ? null : positiveInteger(body.totalQuantity ?? existing?.totalQuantity ?? 1, "发行数量"),
       validFrom,
       validUntil,
-      employeeDistributable:
-        body.employeeDistributable === undefined
-          ? existing?.employeeDistributable ?? false
-          : body.employeeDistributable === true,
-      perEmployeeLimit: nonNegativeInteger(
-        body.perEmployeeLimit ?? existing?.perEmployeeLimit ?? 0,
-        "员工领取上限",
-      ),
+      employeeDistributable: body.employeeDistributable === undefined ? (existing?.employeeDistributable ?? false) : body.employeeDistributable === true,
+      perEmployeeLimit: nonNegativeInteger(body.perEmployeeLimit ?? existing?.perEmployeeLimit ?? 0, "员工领取上限"),
     };
-    return id
-      ? this.prisma.commerceCoupon.update({ where: { id }, data })
-      : this.prisma.commerceCoupon.create({ data });
+    return id ? this.prisma.commerceCoupon.update({ where: { id }, data }) : this.prisma.commerceCoupon.create({ data });
   }
 
   async commerceEmployees() {
@@ -1706,7 +1856,9 @@ export class AdminService {
 
   async commerceCommissions() {
     const [plan, accruals, ledger] = await Promise.all([
-      this.prisma.commerceCommissionPlan.findUnique({ where: { id: "default" } }),
+      this.prisma.commerceCommissionPlan.findUnique({
+        where: { id: "default" },
+      }),
       this.prisma.commerceCommissionAccrual.findMany({
         include: {
           employee: { select: { id: true, name: true, referralCode: true } },
@@ -1728,28 +1880,37 @@ export class AdminService {
     const rateBps = integerCents(body.rateBps, "奖金比例");
     const settlementDays = integerCents(body.settlementDays, "结算等待天数");
     if (rateBps > 10_000 || settlementDays > 3650) throw new BadRequestException("奖金比例应为0至10000基点，结算等待应在0至3650天内");
-    const minimumWithdrawCents = body.minimumWithdrawCents === null || body.minimumWithdrawCents === undefined
-      ? null : integerCents(body.minimumWithdrawCents, "最低提现金额", 1);
-    const dailyWithdrawLimitCents = body.dailyWithdrawLimitCents === null || body.dailyWithdrawLimitCents === undefined
-      ? null : integerCents(body.dailyWithdrawLimitCents, "每日提现额度", 1);
+    const minimumWithdrawCents = body.minimumWithdrawCents === null || body.minimumWithdrawCents === undefined ? null : integerCents(body.minimumWithdrawCents, "最低提现金额", 1);
+    const dailyWithdrawLimitCents = body.dailyWithdrawLimitCents === null || body.dailyWithdrawLimitCents === undefined ? null : integerCents(body.dailyWithdrawLimitCents, "每日提现额度", 1);
     if (body.withdrawalEnabled === true && minimumWithdrawCents === null) throw new BadRequestException("启用提现前必须配置最低提现金额");
     if (dailyWithdrawLimitCents !== null && minimumWithdrawCents !== null && dailyWithdrawLimitCents < minimumWithdrawCents) {
       throw new BadRequestException("每日提现额度不能低于单次最低金额");
     }
     if (body.reviewRequired !== true) throw new BadRequestException("当前提现必须保留人工审核，不能启用自动付款");
     return this.prisma.$transaction(async (tx) => {
-      const current = await tx.commerceCommissionPlan.findUnique({ where: { id: "default" } });
-      const data = { enabled: body.enabled === true, rateBps, settlementDays,
-        withdrawalEnabled: body.withdrawalEnabled === true, minimumWithdrawCents, dailyWithdrawLimitCents, reviewRequired: true,
-        enabledAt: body.enabled === true && !current?.enabled ? new Date() : current?.enabledAt ?? null };
-      return tx.commerceCommissionPlan.upsert({ where: { id: "default" }, create: { id: "default", ...data }, update: data });
+      const current = await tx.commerceCommissionPlan.findUnique({
+        where: { id: "default" },
+      });
+      const data = {
+        enabled: body.enabled === true,
+        rateBps,
+        settlementDays,
+        withdrawalEnabled: body.withdrawalEnabled === true,
+        minimumWithdrawCents,
+        dailyWithdrawLimitCents,
+        reviewRequired: true,
+        enabledAt: body.enabled === true && !current?.enabled ? new Date() : (current?.enabledAt ?? null),
+      };
+      return tx.commerceCommissionPlan.upsert({
+        where: { id: "default" },
+        create: { id: "default", ...data },
+        update: data,
+      });
     });
   }
 
   commerceJobs(statusInput?: string) {
-    const status = statusInput
-      ? enumValue(CommerceJobStatus, statusInput, "任务状态")
-      : undefined;
+    const status = statusInput ? enumValue(CommerceJobStatus, statusInput, "任务状态") : undefined;
     return this.prisma.commerceIntegrationJob.findMany({
       where: status ? { status } : {},
       orderBy: { createdAt: "desc" },
@@ -1761,7 +1922,9 @@ export class AdminService {
     const changed = await this.prisma.commerceIntegrationJob.updateMany({
       where: {
         id,
-        status: { in: [CommerceJobStatus.FAILED, CommerceJobStatus.DEAD_LETTER] },
+        status: {
+          in: [CommerceJobStatus.FAILED, CommerceJobStatus.DEAD_LETTER],
+        },
       },
       data: {
         status: CommerceJobStatus.PENDING,
@@ -1773,19 +1936,16 @@ export class AdminService {
       },
     });
     if (!changed.count) throw new BadRequestException("当前任务不需要重试");
-    return this.prisma.commerceIntegrationJob.findUniqueOrThrow({ where: { id } });
+    return this.prisma.commerceIntegrationJob.findUniqueOrThrow({
+      where: { id },
+    });
   }
 
   async queueCommerceProductSync(input: unknown) {
     const body = safeObject(input);
     const modifiedEnd = optionalDate(body.modifiedEnd) ?? new Date();
-    const modifiedBegin = optionalDate(body.modifiedBegin) ?? new Date(
-      modifiedEnd.valueOf() - 24 * 3_600_000,
-    );
-    if (
-      modifiedBegin >= modifiedEnd ||
-      modifiedEnd.valueOf() - modifiedBegin.valueOf() > 31 * 86_400_000
-    ) {
+    const modifiedBegin = optionalDate(body.modifiedBegin) ?? new Date(modifiedEnd.valueOf() - 24 * 3_600_000);
+    if (modifiedBegin >= modifiedEnd || modifiedEnd.valueOf() - modifiedBegin.valueOf() > 31 * 86_400_000) {
       throw new BadRequestException("商品同步时间范围应在1到31天内");
     }
     const slot = `${modifiedBegin.toISOString()}:${modifiedEnd.toISOString()}`;
@@ -1820,9 +1980,7 @@ export class AdminService {
 
   payments(statusInput?: string, pageInput = 1) {
     const page = Math.max(Number(pageInput) || 1, 1);
-    const status = statusInput
-      ? enumValue(PaymentStatus, statusInput, "支付状态")
-      : undefined;
+    const status = statusInput ? enumValue(PaymentStatus, statusInput, "支付状态") : undefined;
     return this.prisma.paymentIntent.findMany({
       where: status ? { status } : {},
       select: {
@@ -1846,9 +2004,7 @@ export class AdminService {
   }
 
   healthReports(statusInput?: string) {
-    const status = statusInput
-      ? enumValue(ReportStatus, statusInput, "报告状态")
-      : undefined;
+    const status = statusInput ? enumValue(ReportStatus, statusInput, "报告状态") : undefined;
     return this.prisma.healthReport.findMany({
       where: status ? { status } : {},
       select: {
@@ -1913,9 +2069,7 @@ export class AdminService {
 
   async saveHealthReportOffer(id: string | undefined, input: unknown) {
     const body = safeObject(input);
-    const previous = id
-      ? await this.prisma.healthReportOffer.findUnique({ where: { id } })
-      : null;
+    const previous = id ? await this.prisma.healthReportOffer.findUnique({ where: { id } }) : null;
     if (id && !previous) throw new NotFoundException("报告方案不存在");
     const offerKey = String(body.offerKey ?? previous?.offerKey ?? "").trim();
     const title = String(body.title ?? previous?.title ?? "").trim();
@@ -1923,20 +2077,11 @@ export class AdminService {
     if (!/^[a-z0-9-]{3,60}$/.test(offerKey) || !title || !description) {
       throw new BadRequestException("方案标识、标题或说明不正确");
     }
-    const entitlement = enumValue(
-      ReportEntitlementType,
-      body.entitlement ?? previous?.entitlement,
-      "权益类型",
-    );
+    const entitlement = enumValue(ReportEntitlementType, body.entitlement ?? previous?.entitlement, "权益类型");
     const priceCents = positiveInteger(body.priceCents ?? previous?.priceCents, "价格");
     const creditCount = positiveInteger(body.creditCount ?? previous?.creditCount, "报告次数");
-    const durationDays =
-      entitlement === ReportEntitlementType.MEMBERSHIP
-        ? positiveInteger(body.durationDays ?? previous?.durationDays ?? 30, "有效天数")
-        : null;
-    const platforms = stringList(body.platforms ?? previous?.platforms, 8).filter((item) =>
-      ["android", "ios", "h5", "mini_program", "web"].includes(item),
-    );
+    const durationDays = entitlement === ReportEntitlementType.MEMBERSHIP ? positiveInteger(body.durationDays ?? previous?.durationDays ?? 30, "有效天数") : null;
+    const platforms = stringList(body.platforms ?? previous?.platforms, 8).filter((item) => ["android", "ios", "h5", "mini_program", "web"].includes(item));
     if (!platforms.length) throw new BadRequestException("请至少选择一个客户端平台");
     const latest = await this.prisma.healthReportOffer.findFirst({
       where: { offerKey },
@@ -1987,15 +2132,9 @@ export class AdminService {
     });
   }
 
-  async saveNotificationCampaign(
-    adminId: string,
-    id: string | undefined,
-    input: unknown,
-  ) {
+  async saveNotificationCampaign(adminId: string, id: string | undefined, input: unknown) {
     const body = safeObject(input);
-    const previous = id
-      ? await this.prisma.notificationCampaign.findUnique({ where: { id } })
-      : null;
+    const previous = id ? await this.prisma.notificationCampaign.findUnique({ where: { id } }) : null;
     if (previous && previous.status !== NotificationCampaignStatus.DRAFT) {
       throw new BadRequestException("只有草稿通知可以修改");
     }
@@ -2028,7 +2167,9 @@ export class AdminService {
   }
 
   async scheduleNotificationCampaign(id: string) {
-    const campaign = await this.prisma.notificationCampaign.findUnique({ where: { id } });
+    const campaign = await this.prisma.notificationCampaign.findUnique({
+      where: { id },
+    });
     if (!campaign) throw new NotFoundException("通知任务不存在");
     if (campaign.status !== NotificationCampaignStatus.DRAFT) {
       throw new BadRequestException("当前通知任务不能重复安排");
@@ -2054,12 +2195,10 @@ export class AdminService {
   }
 }
 
-function enumValue<T extends Record<string, string>>(
-  values: T,
-  input: unknown,
-  label: string,
-): T[keyof T] {
-  const value = String(input ?? "").trim().toUpperCase();
+function enumValue<T extends Record<string, string>>(values: T, input: unknown, label: string): T[keyof T] {
+  const value = String(input ?? "")
+    .trim()
+    .toUpperCase();
   if (!Object.values(values).includes(value)) {
     throw new BadRequestException(`${label}不正确`);
   }
@@ -2072,15 +2211,8 @@ function nullableText(value: unknown): string | null {
 }
 
 function stringList(value: unknown, maximum: number): string[] {
-  const items = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.split(/[,，\n]/)
-      : [];
-  return [...new Set(items.map((item) => String(item).trim()).filter(Boolean))].slice(
-    0,
-    maximum,
-  );
+  const items = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[,，\n]/) : [];
+  return [...new Set(items.map((item) => String(item).trim()).filter(Boolean))].slice(0, maximum);
 }
 
 function dateValue(value: unknown, label: string): Date {
@@ -2103,12 +2235,17 @@ function positiveInteger(value: unknown, label: string): number {
 }
 
 const shippingAfterSaleTransitions: Record<string, readonly string[]> = {
-  APPLIED: ["REVIEWING", "APPROVED", "REJECTED", "CANCELLED"], REVIEWING: ["APPROVED", "REJECTED", "CANCELLED"],
-  APPROVED: ["CANCELLED"], REFUNDING: [], COMPLETED: [], REJECTED: [], CANCELLED: [],
+  APPLIED: ["REVIEWING", "APPROVED", "REJECTED", "CANCELLED"],
+  REVIEWING: ["APPROVED", "REJECTED", "CANCELLED"],
+  APPROVED: ["CANCELLED"],
+  REFUNDING: [],
+  COMPLETED: [],
+  REJECTED: [],
+  CANCELLED: [],
 };
 
 function requireShippingFinance(current?: { id: string; role: string; roles?: string[] }): asserts current is { id: string; role: string; roles?: string[] } {
-  if (!current?.id || ![current.role, ...(current.roles ?? [])].some(role => ["SUPER_ADMIN", "FINANCE"].includes(role))) throw new ForbiddenException("单独退运费必须由财务审核处理");
+  if (!current?.id || ![current.role, ...(current.roles ?? [])].some((role) => ["SUPER_ADMIN", "FINANCE"].includes(role))) throw new ForbiddenException("单独退运费必须由财务审核处理");
 }
 
 function normalizeAdminRoles(value: unknown): AdminRole[] {

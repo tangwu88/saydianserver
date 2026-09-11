@@ -1,7 +1,14 @@
 /** Only curated user messages reach the screen; provider/config diagnostics stay out of the UI. */
-export function authUiError(message: string) { return Object.assign(new Error(message), { userFacing: true }); }
+export function authUiError(message: string) {
+  return Object.assign(new Error(message), { userFacing: true });
+}
 export function authErrorMessage(cause: unknown, fallback = "暂时无法完成，请稍后重试。") {
-  const error = cause as { errorKey?: string; status?: number; message?: string; userFacing?: boolean } | null;
+  const error = cause as {
+    errorKey?: string;
+    status?: number;
+    message?: string;
+    userFacing?: boolean;
+  } | null;
   const messages: Record<string, string> = {
     invalid_credentials: "账号或密码不正确，请重新输入。",
     account_verification_required: "请先完成手机号确认，再登录账号。",
@@ -10,6 +17,11 @@ export function authErrorMessage(cause: unknown, fallback = "暂时无法完成�
     identity_conflict: "无法关联此手机号，请使用账号密码登录或联系客服。",
     invalid_phone: "请检查国家区号和手机号。",
     invalid_email: "请输入正确的邮箱地址。",
+    invalid_password: "请设置至少8位密码。",
+    account_exists: "该账号已注册，请直接登录。",
+    registration_unavailable: "注册暂时不可用，请稍后再试。",
+    verification_unavailable: "当前方式暂时无法获取验证码。",
+    verification_delivery_failed: "验证码发送失败，请稍后重试。",
     verification_invalid: "验证码不正确，请重新输入。",
     verification_used: "验证码已使用，请重新获取。",
     verification_expired: "验证码已过期，请重新获取。",
