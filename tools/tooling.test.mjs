@@ -98,7 +98,7 @@ server {
   const shellBin = process.platform === "win32"
     ? `/${bin[0].toLowerCase()}${bin.slice(2).replaceAll("\\", "/")}`
     : bin;
-  const result = spawnSync(bash, ["-c", `PATH='${shellBin}':\"$PATH\"; export PATH; exec deploy/scripts/configure-shared-gateway.sh`], {
+  const result = spawnSync(bash, ["-c", `PATH='${shellBin}':\"$PATH\"; export PATH; exec bash deploy/scripts/configure-shared-gateway.sh`], {
     cwd: root,
     encoding: "utf8",
     timeout: 60_000,
