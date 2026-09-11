@@ -12,6 +12,7 @@ const request = { memberId, idempotencyKey: "synthetic-request-0001" };
 
 function harness(initialCredits = 1) {
   let state: any = { reports: [], keys: [], credits: initialCredits, ledgers: [], outbox: [], audits: [] };
+  const withMember = (report: any) => report ? { ...report, user: { compatibilityId: 42, nickname: "Synthetic member" } } : report;
   const records = [1, 2, 3].map(day => ({ id: `synthetic-${day}`, metric: "HEART_RATE", observedAt: new Date(Date.now() - day * 86_400_000), timezoneOffsetMinutes: 0, values: { bpm: 65 + day }, quality: "VALID", sourceModel: "TEST", ecgArtifact: null }));
   const db: any = {
     $executeRaw: vi.fn().mockResolvedValue(1),
@@ -29,10 +30,16 @@ function harness(initialCredits = 1) {
     integrationSecret: { findUnique: vi.fn().mockResolvedValue(null) },
     healthReport: {
       findFirst: vi.fn(async ({ where }: any) => [...state.reports].reverse().find((r: any) => (!where.userId || r.userId === where.userId) && (!where.id || r.id === where.id) && (!where.inputDigest || r.inputDigest === where.inputDigest) && (!where.status || where.status.in.includes(r.status)))),
-      findUnique: vi.fn(async ({ where }: any) => state.reports.find((r: any) => r.id === where.id)),
-      findUniqueOrThrow: vi.fn(async ({ where }: any) => state.reports.find((r: any) => r.id === where.id)),
-      create: vi.fn(async ({ data }: any) => { const r = { ...data, id: reportId, status: "AWAITING_PAYMENT", createdAt: new Date(), generatedAt: null, aiGenerated: false }; state.reports.push(r); return r; }),
+      findUnique: vi.fn(async ({ where }: any) => withMember(state.reports.find((r: any) => r.id === where.id))),
+      findUniqueOrThrow: vi.fn(async ({ where }: any) => withMember(state.reports.find((r: any) => r.id === where.id))),
+      create: vi.fn(async ({ data }: any) => { const now = new Date(); const r = { ...data, id: reportId, status: "AWAITING_PAYMENT", createdAt: now, updatedAt: now, generatedAt: null, aiGenerated: false }; state.reports.push(r); return r; }),
       update: vi.fn(async ({ where, data }: any) => Object.assign(state.reports.find((r: any) => r.id === where.id), data)),
+      updateMany: vi.fn(async ({ where, data }: any) => {
+        const report = state.reports.find((row: any) => row.id === where.id && row.status === where.status && row.updatedAt.getTime() === where.updatedAt.getTime());
+        if (!report) return { count: 0 };
+        Object.assign(report, data, { updatedAt: new Date(report.updatedAt.getTime() + 1_000) });
+        return { count: 1 };
+      }),
     },
     idempotencyRecord: {
       findUnique: vi.fn(async ({ where }: any) => state.keys.find((r: any) => r.userId === where.userId_scope_key.userId && r.scope === where.userId_scope_key.scope && r.key === where.userId_scope_key.key)),
@@ -189,10 +196,62 @@ describe("atomic report creation and admin read", () => {
   it("returns audited ready content, never raw evidence or internal failure details", async () => {
     const h = harness(); await h.service.create(request, current);
     Object.assign(h.state.reports[0], { status: "READY", fullContent: { overview: "Synthetic reference only" }, aiGenerated: true });
-    expect(await h.service.detail(reportId, current, "test-read")).toMatchObject({ id: reportId, memberId, status: "ready", content: { overview: "Synthetic reference only" } });
+    expect(await h.service.detail(reportId, current, "test-read")).toMatchObject({ id: reportId, memberId, member: { memberNo: "42", nickname: "Synthetic member" }, status: "ready", content: { overview: "Synthetic reference only" }, updatedAt: expect.any(String) });
     expect(await h.service.detail(reportId, current)).not.toHaveProperty("evidence");
     h.db.auditLog.create.mockRejectedValue(new Error("audit unavailable"));
     await expect(h.service.detail(reportId, current)).rejects.toThrow("audit unavailable");
+  });
+  it("lets only SUPER_ADMIN revise narrative content while preserving evidence and recording hashes", async () => {
+    const h = harness(); await h.service.create(request, current);
+    const existing = {
+      overview: "Synthetic daily health overview",
+      trends: [{ metric: "HEART_RATE", text: "Original trend", evidenceRecordIds: ["synthetic-1", "synthetic-2"] }],
+      suggestions: ["Keep a regular routine"],
+      limitations: ["Only three days are available"],
+    };
+    Object.assign(h.state.reports[0], { status: "READY", fullContent: existing, aiGenerated: true });
+    const expectedUpdatedAt = h.state.reports[0].updatedAt.toISOString();
+    const result = await h.service.update(reportId, {
+      expectedUpdatedAt,
+      content: {
+        overview: "Updated daily health overview",
+        trends: [{ metric: "HEART_RATE", text: "Updated trend explanation" }],
+        suggestions: ["Keep a regular routine", "Review longer-term changes"],
+        limitations: ["Only three days are available"],
+      },
+    }, current, "test-update");
+    expect(result).toMatchObject({
+      id: reportId,
+      member: { memberNo: "42", nickname: "Synthetic member" },
+      content: {
+        overview: "Updated daily health overview",
+        trends: [{ metric: "HEART_RATE", text: "Updated trend explanation", evidenceRecordIds: ["synthetic-1", "synthetic-2"] }],
+        safetyNotice: expect.stringContaining("不用于诊断或治疗"),
+      },
+    });
+    expect(h.state.audits).toContainEqual(expect.objectContaining({
+      action: "HEALTH_REPORT_UPDATE",
+      requestId: "test-update",
+      beforeJson: expect.objectContaining({ contentHash: expect.stringMatching(/^[a-f0-9]{64}$/) }),
+      afterJson: expect.objectContaining({ contentHash: expect.stringMatching(/^[a-f0-9]{64}$/), changedSections: expect.arrayContaining(["overview", "trends", "suggestions"]) }),
+    }));
+    await expect(h.service.update(reportId, { expectedUpdatedAt: result.updatedAt, content: result.content }, auditor)).rejects.toMatchObject({ status: 403 });
+  });
+  it("rejects stale edits and any attempt to change or reorder measured metrics", async () => {
+    const h = harness(); await h.service.create(request, current);
+    Object.assign(h.state.reports[0], {
+      status: "READY",
+      fullContent: {
+        overview: "Synthetic overview",
+        trends: [{ metric: "HEART_RATE", text: "Original trend", evidenceRecordIds: ["synthetic-1"] }],
+        suggestions: [],
+        limitations: ["Synthetic limitation"],
+      },
+    });
+    const content = { overview: "Synthetic overview", trends: [{ metric: "TEMPERATURE", text: "Changed" }], suggestions: [], limitations: ["Synthetic limitation"] };
+    await expect(h.service.update(reportId, { expectedUpdatedAt: new Date(0).toISOString(), content }, current)).rejects.toMatchObject({ status: 409 });
+    await expect(h.service.update(reportId, { expectedUpdatedAt: h.state.reports[0].updatedAt.toISOString(), content }, current)).rejects.toMatchObject({ status: 400 });
+    expect(h.db.healthReport.updateMany).not.toHaveBeenCalled();
   });
   it("keeps report content absent for revoked/failed states and checks authorization", async () => {
     const h = harness(); await h.service.create(request, current);

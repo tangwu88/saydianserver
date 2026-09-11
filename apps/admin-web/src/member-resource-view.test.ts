@@ -68,7 +68,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
     downloadEditorToManifest: globalDownloadEditorToManifest,
     downloadManifestToEditor: globalDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle };")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -203,14 +203,15 @@ describe("international member admin list", () => {
 
   it("renders the member-filled profile fields with friendly Chinese controls", () => {
     const sfc = readFileSync(new URL("./views/ResourceView.vue", import.meta.url), "utf8");
-    for (const label of ["会员填写的基本资料", "姓名/昵称", "出生日期", "身高", "体重", "头像", "修改登录密码", "确认新密码"]) {
+    for (const label of ["会员填写的基本资料", "姓名/昵称", "出生日期", "身高", "体重", "头像", "修改登录密码", "新密码"]) {
       expect(sfc).toContain(label);
     }
+    expect(sfc).not.toContain("确认新密码");
     expect(sfc).toContain('value-format="YYYY-MM-DD"');
     expect(sfc).toContain(':disabled-date="memberBirthdayDisabled"');
   });
 
-  it("submits a confirmed new password without sending the confirmation field", async () => {
+  it("submits a single admin-entered new password after the final safety confirmation", async () => {
     const h = harness();
     h.api.get.mockResolvedValueOnce({
       data: {
@@ -229,7 +230,6 @@ describe("international member admin list", () => {
     });
     await h.openEdit(member);
     h.form.value.newPassword = "Synthetic-new-password-2026";
-    h.form.value.confirmNewPassword = "Synthetic-new-password-2026";
     await h.save();
     expect(h.confirm).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("所有已登录设备都会退出"), "确认修改密码", expect.objectContaining({ confirmButtonText: "确认修改" }));
     expect(h.api.patch).toHaveBeenCalledWith("/members/internal-uuid/profile", expect.objectContaining({ newPassword: "Synthetic-new-password-2026" }));
@@ -237,7 +237,7 @@ describe("international member admin list", () => {
     expect(h.messages.success).toHaveBeenCalledWith("会员资料和密码已保存，原登录已退出");
   });
 
-  it("keeps the member editor open when the two password entries differ", async () => {
+  it("keeps the member editor open when the one-time new password is too short", async () => {
     const h = harness();
     h.api.get.mockResolvedValueOnce({
       data: {
@@ -255,10 +255,10 @@ describe("international member admin list", () => {
       },
     });
     await h.openEdit(member);
-    h.form.value.newPassword = "Synthetic-new-password-2026";
-    h.form.value.confirmNewPassword = "different-password";
+    h.form.value.newPassword = "short";
     await h.save();
     expect(h.api.patch).not.toHaveBeenCalled();
+    expect(h.messages.error).toHaveBeenCalledOnce();
     expect(h.dialogVisible.value).toBe(true);
   });
 
@@ -680,5 +680,50 @@ describe("content category number and association editor", () => {
     expect(h.form.value.id).toBe("second-article");
     expect(h.form.value.categoryId).toBe("other-uuid");
     expect(h.articleCategoryOptions.value).toHaveLength(5);
+  });
+});
+
+describe("administrator commerce and service editor improvements", () => {
+  it("opens a new coupon with a valid 30-day period and blocks missing dates before the API call", async () => {
+    const h = harness();
+    h.route.params.resource = "commerce-coupons";
+    await h.openCreate();
+    const from = new Date(h.form.value.validFrom).getTime();
+    const until = new Date(h.form.value.validUntil).getTime();
+    expect(Number.isFinite(from)).toBe(true);
+    expect(until - from).toBeGreaterThanOrEqual(29 * 24 * 60 * 60 * 1000);
+    h.form.value.name = "测试满减券";
+    h.form.value.validUntil = "";
+    await h.save();
+    expect(h.api.post).not.toHaveBeenCalled();
+    expect(h.messages.error).toHaveBeenCalledOnce();
+    expect(() => h.validateCouponPeriod(h.form.value)).toThrow("请选择优惠券的生效时间和失效时间");
+    expect(h.dialogVisible.value).toBe(true);
+  });
+
+  it("opens member feedback, trims the reply and refreshes after saving", async () => {
+    const h = harness(["CUSTOMER_SERVICE"]);
+    h.route.params.resource = "feedback";
+    h.openFeedback({ id: "feedback-1", memberNo: "10008", content: "测试订单问题", status: "OPEN" });
+    expect(h.feedbackVisible.value).toBe(true);
+    h.feedbackForm.value.replyContent = " 已为您核对订单，请重试 ";
+    h.feedbackForm.value.status = "RESOLVED";
+    await h.saveFeedback();
+    expect(h.api.patch).toHaveBeenCalledWith("/feedback/feedback-1", { status: "RESOLVED", replyContent: "已为您核对订单，请重试" });
+    expect(h.api.get).toHaveBeenCalledWith("/feedback", { params: {} });
+    expect(h.messages.success).toHaveBeenCalledWith("回复已保存，会员可在客服中心查看");
+    expect(h.feedbackVisible.value).toBe(false);
+  });
+
+  it("opens the dedicated health-report viewer and wires article and legal bodies to the rich editor", () => {
+    const h = harness();
+    h.route.params.resource = "health-reports";
+    h.openHealthReport({ id: "report-1", memberNo: "10008" });
+    expect(h.healthReportVisible.value).toBe(true);
+    expect(h.healthReportRow.value).toMatchObject({ id: "report-1" });
+    const sfc = readFileSync(new URL("./views/ResourceView.vue", import.meta.url), "utf8");
+    expect(sfc).toContain('<ContentImageField v-model="form.coverUrl"');
+    expect(sfc.match(/<RichTextEditor v-model="form\.contentHtml"/g)).toHaveLength(2);
+    expect(sfc).toContain("填写后，会员可在 H5 客服中心查看回复");
   });
 });

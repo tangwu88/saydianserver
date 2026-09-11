@@ -570,27 +570,41 @@ export class AdminService {
     });
   }
 
-  feedback(status?: string) {
+  async feedback(status?: string) {
     const normalized = status?.toUpperCase() as FeedbackStatus | undefined;
-    return this.prisma.feedback.findMany({
+    const rows = await this.prisma.feedback.findMany({
       where: normalized && Object.values(FeedbackStatus).includes(normalized) ? { status: normalized } : {},
-      include: { user: { select: { id: true, nickname: true } } },
+      include: { user: { select: { compatibilityId: true, nickname: true } } },
       orderBy: { createdAt: "desc" },
       take: 500,
     });
+    return rows.map(({ user, ...row }) => ({
+      ...row,
+      memberNo: user ? String(user.compatibilityId) : null,
+      memberNickname: user?.nickname ?? null,
+    }));
   }
 
-  async updateFeedback(id: string, input: unknown) {
+  async updateFeedback(id: string, input: unknown, current: { id: string }) {
     const body = safeObject(input);
+    if (Object.keys(body).some(field => !["status", "assignedTo", "replyContent"].includes(field))) {
+      throw new BadRequestException("反馈处理包含不支持的字段");
+    }
     const status = String(body.status ?? "").toUpperCase() as FeedbackStatus;
     if (!Object.values(FeedbackStatus).includes(status)) {
       throw new BadRequestException("反馈状态不正确");
+    }
+    const hasReply = Object.prototype.hasOwnProperty.call(body, "replyContent");
+    const replyContent = hasReply ? String(body.replyContent ?? "").replace(/[\u0000-\u001f]+/g, " ").trim() : "";
+    if (hasReply && (replyContent.length < 2 || replyContent.length > 2_000)) {
+      throw new BadRequestException("回复内容需为2至2000字");
     }
     return this.prisma.feedback.update({
       where: { id },
       data: {
         status,
-        assignedTo: body.assignedTo ? String(body.assignedTo) : null,
+        ...(Object.prototype.hasOwnProperty.call(body, "assignedTo") ? { assignedTo: body.assignedTo ? String(body.assignedTo) : null } : {}),
+        ...(hasReply ? { replyContent, repliedAt: new Date(), repliedBy: current.id } : {}),
       },
     });
   }
@@ -2003,13 +2017,14 @@ export class AdminService {
     });
   }
 
-  healthReports(statusInput?: string) {
+  async healthReports(statusInput?: string) {
     const status = statusInput ? enumValue(ReportStatus, statusInput, "报告状态") : undefined;
-    return this.prisma.healthReport.findMany({
+    const rows = await this.prisma.healthReport.findMany({
       where: status ? { status } : {},
       select: {
         id: true,
         userId: true,
+        user: { select: { compatibilityId: true, nickname: true } },
         status: true,
         windowStart: true,
         windowEnd: true,
@@ -2027,6 +2042,11 @@ export class AdminService {
       orderBy: { createdAt: "desc" },
       take: 500,
     });
+    return rows.map(({ user, ...report }) => ({
+      ...report,
+      memberNo: String(user.compatibilityId),
+      memberNickname: user.nickname,
+    }));
   }
 
   async retryHealthReport(id: string) {

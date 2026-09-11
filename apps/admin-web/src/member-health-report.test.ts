@@ -17,7 +17,7 @@ function harness() {
   const confirm = vi.fn(async (..._args: any[]): Promise<any> => true);
   let key = 0;
   const deps = { computed, ref, onBeforeUnmount, watch, defineProps: () => props, api, ElMessageBox: { confirm }, responseData: (r: any) => r.data.data, readableError: (e: any) => e.message ?? "请求失败", crypto: { randomUUID: () => `key-${++key}` } };
-  const h = new Function(...Object.keys(deps), code + "\nreturn {checkAvailability,generateReport,readReport,reset,availability,report,checking,generating,errorMessage,pausedPolling,reportStatus};")(...Object.values(deps));
+  const h = new Function(...Object.keys(deps), code + "\nreturn {checkAvailability,generateReport,readReport,openPreview,reset,availability,report,previewReport,previewVisible,previewing,checking,generating,errorMessage,pausedPolling,reportStatus};")(...Object.values(deps));
   return { ...h, props, api, confirm, onBeforeUnmount, watch };
 }
 afterEach(() => vi.useRealTimers());
@@ -57,6 +57,18 @@ describe("member AI health report panel", () => {
     const h = harness(); h.report.value = queued; h.api.get.mockResolvedValueOnce(response({ ...queued, memberId: "other-member", content: { overview: "must-not-display" } }));
     await h.readReport(); expect(h.report.value.content).toBeUndefined(); expect(h.errorMessage.value).toContain("归属不匹配");
   });
+  it("opens an audited full-report preview only after reloading ready content", async () => {
+    const h = harness(); h.report.value = { ...queued, status: "ready", content: { overview: "已生成" } };
+    h.api.get.mockResolvedValueOnce(response({ ...queued, status: "ready", generatedAt: "2026-09-10T08:00:00Z", period: ready.period, content: { overview: "健康概览", trends: [{ metric: "heart_rate", text: "趋势平稳" }], suggestions: ["保持规律作息"], limitations: ["数据有限"] }, limitations: ["仅供参考"] }));
+    await h.openPreview();
+    expect(h.api.get).toHaveBeenCalledWith("/health-reports/report-1");
+    expect(h.previewVisible.value).toBe(true); expect(h.previewReport.value.content.overview).toBe("健康概览");
+  });
+  it("does not open a preview for unfinished or mismatched reports", async () => {
+    const h = harness(); h.report.value = queued; await h.openPreview(); expect(h.api.get).not.toHaveBeenCalled();
+    h.report.value = { ...queued, status: "ready" }; h.api.get.mockResolvedValueOnce(response({ ...queued, memberId: "other-member", status: "ready", content: { overview: "不得显示" } }));
+    await h.openPreview(); expect(h.previewVisible.value).toBe(false); expect(h.previewReport.value).toBeNull(); expect(h.errorMessage.value).toContain("归属不匹配");
+  });
   it("does not start another report while a previous report read is pending", async () => {
     const h = harness(); await h.checkAvailability(); h.report.value = { ...queued, status: "ready" };
     const pending = deferred<any>(); h.api.get.mockImplementationOnce(() => pending.promise);
@@ -78,5 +90,7 @@ describe("member AI health report panel", () => {
     const source = readFileSync(new URL("./components/MemberHealthReportPanel.vue", import.meta.url), "utf8");
     expect(source).not.toContain("需要会员本人同意健康分析");
     expect(source).toContain("每次生成和查看都会写入审计记录");
+    expect(source).toContain("预览完整报告");
+    expect(source).toContain("AI 健康报告预览");
   });
 });

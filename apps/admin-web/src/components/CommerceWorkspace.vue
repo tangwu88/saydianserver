@@ -235,6 +235,11 @@ function orderItemsSummary(row: Row): string {
   return `${first.nameSnapshot || "商品"} × ${first.quantity ?? 1}${more}`;
 }
 
+function storefrontProductUrl(productId: unknown): string {
+  const id = String(productId ?? "").trim();
+  return id ? `/global/saidian-mall/#/pages/product/index?id=${encodeURIComponent(id)}` : "";
+}
+
 function categoryName(row: Row): string {
   return String(row.category?.name || "未分类");
 }
@@ -399,7 +404,7 @@ function changeStatus(value: unknown): void {
 
     <el-table v-else-if="resource === 'commerce-orders'" v-loading="loading" :data="visibleRows" border stripe empty-text="暂无订单">
       <el-table-column label="订单信息" min-width="220"><template #default="scope"><strong>{{ scope.row.orderNo }}</strong><small>{{ dateTime(scope.row.createdAt) }}</small></template></el-table-column>
-      <el-table-column label="商品清单" min-width="240"><template #default="scope">{{ orderItemsSummary(scope.row) }}</template></el-table-column>
+      <el-table-column label="商品清单" min-width="240"><template #default="scope"><a v-if="storefrontProductUrl(scope.row.items?.[0]?.productId)" class="product-link" :href="storefrontProductUrl(scope.row.items[0].productId)" target="_blank" rel="noopener noreferrer">{{ orderItemsSummary(scope.row) }}</a><template v-else>{{ orderItemsSummary(scope.row) }}</template></template></el-table-column>
       <el-table-column label="金额" width="145"><template #default="scope"><strong>{{ money(scope.row.payableCents, scope.row.currency) }}</strong><small>运费 {{ money(scope.row.shippingCents, scope.row.currency) }}</small></template></el-table-column>
       <el-table-column label="收货信息" min-width="190"><template #default="scope"><strong>{{ scope.row.recipientName }}</strong><small>{{ scope.row.recipientMobile }}</small><small>{{ scope.row.province }} {{ scope.row.city }} {{ scope.row.district }}</small></template></el-table-column>
       <el-table-column label="买家" min-width="135"><template #default="scope">{{ scope.row.user?.nickname || "未命名会员" }}<small>{{ scope.row.user?.mobile }}</small></template></el-table-column>
@@ -534,7 +539,7 @@ function changeStatus(value: unknown): void {
           <el-table-column label="时间" min-width="160"><template #default="scope">{{ dateTime(scope.row.paidAt || scope.row.createdAt) }}</template></el-table-column>
         </el-table>
       </section>
-      <section v-if="detailRow.items?.length" class="detail-section"><h3>商品清单</h3><el-table :data="detailRow.items" border><el-table-column prop="nameSnapshot" label="商品" min-width="170" /><el-table-column prop="specificationSnapshot" label="规格" min-width="130" /><el-table-column prop="quantity" label="数量" width="70" /><el-table-column label="小计" width="110"><template #default="scope">{{ money(scope.row.totalCents) }}</template></el-table-column></el-table></section>
+      <section v-if="detailRow.items?.length" class="detail-section"><h3>商品清单</h3><el-table :data="detailRow.items" border><el-table-column label="商品" min-width="170"><template #default="scope"><a v-if="storefrontProductUrl(scope.row.productId)" class="product-link" :href="storefrontProductUrl(scope.row.productId)" target="_blank" rel="noopener noreferrer">{{ scope.row.nameSnapshot }}</a><template v-else>{{ scope.row.nameSnapshot }}</template></template></el-table-column><el-table-column prop="specificationSnapshot" label="规格" min-width="130" /><el-table-column prop="quantity" label="数量" width="70" /><el-table-column label="小计" width="110"><template #default="scope">{{ money(scope.row.totalCents) }}</template></el-table-column></el-table></section>
       <ProductSkuQuickEditor v-if="detailRow.skus?.length" :key="detailRow.id" :product="detailRow" :can-edit="canEdit" @saved="productSkusSaved" />
       <section v-if="detailRow.shipments?.length" class="detail-section"><h3>物流包裹</h3><el-table :data="detailRow.shipments" border><el-table-column prop="logisticsCompany" label="物流公司" /><el-table-column prop="trackingNo" label="物流单号" /><el-table-column label="发货时间"><template #default="scope">{{ dateTime(scope.row.shippedAt) }}</template></el-table-column></el-table></section>
       <section v-if="detailRow.refunds?.length" class="detail-section"><h3>退款记录</h3><el-table :data="detailRow.refunds" border><el-table-column prop="refundNo" label="退款单" /><el-table-column label="金额"><template #default="scope">{{ money(scope.row.amountCents) }}</template></el-table-column><el-table-column label="状态"><template #default="scope">{{ statusLabel(scope.row.status) }}</template></el-table-column></el-table></section>
@@ -580,6 +585,8 @@ small { display: block; margin-top: 5px; color: #768396; line-height: 1.45; }
 .review-images { display: flex; gap: 6px; margin-top: 8px; }
 .review-image { width: 44px; height: 44px; border-radius: 6px; }
 .money-text { color: #d94f2b; font-size: 16px; }
+.product-link { color: #1769aa; font-weight: 600; line-height: 1.55; text-decoration: none; }
+.product-link:hover { color: #0b4f87; text-decoration: underline; }
 .danger-text { color: #d92d20; }
 code { color: #344054; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
 .json-preview { max-height: 70px; margin: 0; overflow: hidden; color: #475467; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; white-space: pre-wrap; }

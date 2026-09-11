@@ -733,6 +733,9 @@ model Feedback {
   attachments Json?
   status      FeedbackStatus @default(OPEN)
   assignedTo  String?
+  replyContent String?
+  repliedAt    DateTime?
+  repliedBy    String?        @db.Uuid
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   user        User?          @relation(fields: [userId], references: [id], onDelete: SetNull)

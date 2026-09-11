@@ -107,6 +107,46 @@
       }
     },
     {
+      "key": "AdminHealthReportsController.update",
+      "method": "PATCH",
+      "path": "/api/saydian-app/admin/v1/health-reports/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-reports.controller.ts",
+      "summary": "超级管理员复核并编辑已生成健康报告",
+      "request": "id=报告UUID；仅SUPER_ADMIN；{content:{overview,trends:[{metric,text}],suggestions,limitations},expectedUpdatedAt}；指标、顺序和证据ID不可修改",
+      "response": "更新后的报告正文；使用乐观锁，版本冲突返回409；HEALTH_REPORT_UPDATE审计只保存内容散列和变更章节，不保存报告正文",
+      "dependency": "已生成READY报告；内容仅供日常健康管理参考",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-health-reports.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminLoginController.login",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/auth/login",
@@ -134,6 +174,41 @@
         "responseSchema": null,
         "responseExample": null,
         "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.uploadContentImage",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/content-images",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CONTENT_EDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "上传后台文章或协议图片",
+      "request": "multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR",
+      "response": "{id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥",
+      "dependency": "已配置对象存储",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
         "source": "apps/api/src/admin/admin.controller.ts",
         "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
@@ -518,7 +593,7 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "反馈工单",
       "request": "status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选",
-      "response": "最多500条",
+      "response": "最多500条；含会员编号、昵称、问题内容、处理状态以及已发送给会员的客服回复",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -558,9 +633,9 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
-      "summary": "更新反馈处理状态",
-      "request": "{status,assignedTo?}",
-      "response": "反馈记录",
+      "summary": "更新反馈状态并回复会员",
+      "request": "{status,assignedTo?,replyContent?:2–2000字}；回复内容非空时记录当前管理员和回复时间",
+      "response": "反馈记录；会员端只可读取自己的反馈及回复，不返回后台管理员身份",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -9729,6 +9804,63 @@
             "required": false
           }
         }
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.feedback",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/storefront/feedback",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "商城会员读取自己的反馈与客服回复",
+      "request": "会员Bearer会话",
+      "response": "最多100条，仅按当前登录userId返回；含问题、状态、replyContent和repliedAt，不返回后台管理员身份",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.submitFeedback",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/feedback",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "商城会员提交问题反馈",
+      "request": "{category,content:5–2000字,contact?:联系方式,attachments?:本人有效文件UUID数组}",
+      "response": "{id,status}；服务端绑定当前登录会员，不能代替他人提交",
+      "dependency": "主库客服反馈",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
     },
     {

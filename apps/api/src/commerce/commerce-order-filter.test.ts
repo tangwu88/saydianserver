@@ -53,7 +53,7 @@ describe("order list query compatibility", () => {
     const commerce = { orders: vi.fn().mockResolvedValue([]) };
     const user = { id: "member", sessionId: "session" };
     await new CommerceController(commerce as any).orders(user, undefined, "after_sales");
-    await new CommerceCompatibilityController({} as any, commerce as any, {} as any, {} as any, {} as any).orders(user, undefined, "pending_shipment");
+    await new CommerceCompatibilityController({} as any, commerce as any, {} as any, {} as any, {} as any, {} as any).orders(user, undefined, "pending_shipment");
     expect(commerce.orders.mock.calls).toEqual([["member", undefined, "after_sales"], ["member", undefined, "pending_shipment"]]);
   });
   it("internal commerce GET forwards group without filtering an already-loaded page", async () => {

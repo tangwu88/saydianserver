@@ -58,7 +58,7 @@ describe("raw health access without a manual super-admin reason", () => {
 
   it("takes authorization roles only from the authenticated context, not request query claims", () => {
     const admin = { rawHealth: vi.fn() };
-    const controller = new AdminController(admin as any, {} as any);
+    const controller = new AdminController(admin as any, {} as any, {} as any);
     controller.rawHealth(auditor, "member-id", { requestId: "r", query: { role: "SUPER_ADMIN", reasonExempt: "true" } } as any);
     expect(admin.rawHealth).toHaveBeenCalledExactlyOnceWith(auditor, "member-id", "r", "", 100);
   });

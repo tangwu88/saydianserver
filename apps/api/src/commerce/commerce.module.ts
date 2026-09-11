@@ -10,9 +10,10 @@ import { EmployeeAuthGuard } from "./employee-auth.guard";
 import { EmployeePromotionService } from "./employee-promotion.service";
 import { CommerceCapabilitiesService } from "./commerce-capabilities.service";
 import { CommerceWithdrawalService } from "./commerce-withdrawal.service";
+import { SupportModule } from "../support/support.module";
 
 @Module({
-  imports: [AuthModule, BillingModule],
+  imports: [AuthModule, BillingModule, SupportModule],
   controllers: [
     CommerceController,
     CommerceCompatibilityController,

@@ -26,6 +26,7 @@ export function globalApiAllowed(path: string, method = "GET") {
   if (route === "/payments/create") return method === "POST";
   if (route === "/storefront/coupons/available") return method === "GET";
   if (route === "/storefront/coupons/code/claim") return method === "POST";
+  if (route === "/storefront/feedback") return method === "GET" || method === "POST";
   if (route === "/storefront/orders/preview") return method === "POST";
   if (method === "GET") return /^\/storefront\/(bootstrap|capabilities|categories|markets|products(?:\/[A-Za-z0-9_-]+)?|cart|addresses|orders(?:\/[A-Za-z0-9_-]+(?:\/logistics)?)?|favorites|coupons|points)$/.test(route) || /^\/payments\/[A-Za-z0-9_-]+$/.test(route);
   if (method === "POST") return /^\/storefront\/(cart\/items|addresses|orders(?:\/[A-Za-z0-9_-]+\/(cancel|receipt|after-sales(?:\/preview|\/[A-Za-z0-9_-]+\/return-logistics)?))?|favorites\/[A-Za-z0-9_-]+|coupons\/[A-Za-z0-9_-]+\/claim|reviews)$/.test(route);

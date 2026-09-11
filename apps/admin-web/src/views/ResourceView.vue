@@ -8,6 +8,8 @@ import CommerceWorkspace from "../components/CommerceWorkspace.vue";
 import RichTextEditor from "../components/RichTextEditor.vue";
 import MemberHealthData from "../components/MemberHealthData.vue";
 import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
+import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
+import ContentImageField from "../components/ContentImageField.vue";
 import { globalDownloadEditorToManifest as downloadEditorToManifest, globalDownloadManifestToEditor as downloadManifestToEditor, createGlobalDownloadDraft, type DownloadManifestEditor } from "../global-download-setting";
 
 type Row = Record<string, any>;
@@ -42,6 +44,11 @@ const shipmentForm = ref({
   trackingNo: "",
   quantities: {} as Record<string, number>,
 });
+const healthReportVisible = ref(false);
+const healthReportRow = ref<Row | null>(null);
+const feedbackVisible = ref(false);
+const feedbackSaving = ref(false);
+const feedbackForm = ref<Row>({});
 const downloadPlatformOptions = [
   { key: "android", label: "Android", packageLabel: "APK" },
   { key: "ios", label: "iPhone", packageLabel: "TestFlight / App Store" },
@@ -100,6 +107,12 @@ const fieldLabels: Record<string, string> = {
   active: "启用",
   category: "分类",
   content: "内容",
+  memberNickname: "会员昵称",
+  distinctDays: "覆盖天数",
+  validRecordCount: "有效记录数",
+  generatedAt: "生成时间",
+  replyContent: "客服回复",
+  repliedAt: "回复时间",
   assignedTo: "负责人",
   key: "集成项",
   state: "配置状态",
@@ -163,6 +176,7 @@ const isCommerceResource = computed(() => commerceResources.includes(resource.va
 const canWrite = computed(() => canAdminResource(getAdminRoles(), resource.value, "write"));
 const canReadRawHealth = computed(() => getAdminRoles().some((role) => ["SUPER_ADMIN", "HEALTH_AUDITOR"].includes(role)));
 const canManageMemberVerification = computed(() => getAdminRoles().includes("SUPER_ADMIN"));
+const canEditHealthReport = computed(() => getAdminRoles().includes("SUPER_ADMIN"));
 const editable = computed(() => (resource.value === "members" ? canManageMemberVerification.value : ["articles", "article-categories", "legal-documents", "settings", "integrations", "admin-users", "commerce-products", "commerce-categories", "commerce-orders", "commerce-after-sales", "commerce-banners", "commerce-business-configs", "commerce-reviews", "commerce-coupons", "health-report-offers", "notification-campaigns"].includes(resource.value) && canAdminResource(getAdminRoles(), resource.value, "write")));
 const createable = computed(() => ["articles", "article-categories", "legal-documents", "admin-users", "commerce-categories", "commerce-banners", "commerce-business-configs", "commerce-coupons", "health-report-offers", "notification-campaigns", "commerce-products"].includes(resource.value) && canAdminResource(getAdminRoles(), resource.value, "write"));
 const searchable = computed(() => ["members", "commerce-products", "commerce-orders"].includes(resource.value));
@@ -170,6 +184,8 @@ const paginatedResources = ["members", "commerce-products", "commerce-orders", "
 const serverStatusResources = ["commerce-products", "commerce-orders", "commerce-after-sales", "commerce-jobs", "payments"];
 const columns = computed(() => {
   if (resource.value === "members") return memberColumns;
+  if (resource.value === "health-reports") return ["memberNo", "memberNickname", "status", "distinctDays", "validRecordCount", "generatedAt", "createdAt"];
+  if (resource.value === "feedback") return ["memberNo", "memberNickname", "category", "content", "status", "replyContent", "createdAt"];
   if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
   if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
   const first = rows.value[0];
@@ -348,6 +364,10 @@ async function openCreate(): Promise<void> {
       minimumSpendCents: 0,
       totalQuantity: 100,
       redemptionCode: "",
+      validFrom: new Date().toISOString(),
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      employeeDistributable: false,
+      perEmployeeLimit: 0,
     },
     "health-report-offers": {
       entitlement: "SINGLE_REPORT",
@@ -390,7 +410,6 @@ async function openEdit(row: Row): Promise<void> {
         _originalMobileVerified: profile.mobileVerified === true,
         _originalEmailVerified: profile.emailVerified === true,
         newPassword: "",
-        confirmNewPassword: "",
       };
       dialogVisible.value = true;
     } catch (error) {
@@ -438,6 +457,10 @@ async function loadArticleCategories(requestedResource: string, requestId: numbe
   articleCategoryEditorResource.value = "";
   articleCategoryOptions.value = [];
   dialogVisible.value = false;
+  healthReportVisible.value = false;
+  healthReportRow.value = null;
+  feedbackVisible.value = false;
+  feedbackForm.value = {};
   form.value = {};
   const isCurrent = () => requestId === editorRequestId && requestedResource === resource.value;
   try {
@@ -468,6 +491,15 @@ function articleCategorySelectionValid(): boolean {
   return selectedId === originalArticleCategoryId.value && !articleCategoryOptions.value.some((item) => item.id === selectedId);
 }
 
+function validateCouponPeriod(source: Row): void {
+  const validFrom = new Date(String(source.validFrom ?? ""));
+  const validUntil = new Date(String(source.validUntil ?? ""));
+  if (!Number.isFinite(validFrom.getTime()) || !Number.isFinite(validUntil.getTime())) {
+    throw new Error("请选择优惠券的生效时间和失效时间");
+  }
+  if (validUntil.getTime() <= validFrom.getTime()) throw new Error("失效时间必须晚于生效时间");
+}
+
 async function ensureCommerceCategories(): Promise<void> {
   if (categoryOptions.value.length) return;
   try {
@@ -490,6 +522,7 @@ async function save(): Promise<void> {
   saving.value = true;
   try {
     const id = String(form.value.id ?? "");
+    if (resource.value === "commerce-coupons") validateCouponPeriod(form.value);
     let payload: Row = payloadForResource(resource.value, form.value);
     if (resource.value === "members") {
       if (!canManageMemberVerification.value || !id) throw new Error("当前账号无权编辑会员资料");
@@ -504,10 +537,8 @@ async function save(): Promise<void> {
         });
       }
       const newPassword = String(form.value.newPassword ?? "");
-      const confirmNewPassword = String(form.value.confirmNewPassword ?? "");
-      if (newPassword || confirmNewPassword) {
+      if (newPassword) {
         if (newPassword.length < 8) throw new Error("新密码至少需要8位");
-        if (newPassword !== confirmNewPassword) throw new Error("两次输入的新密码不一致");
         await ElMessageBox.confirm("确认修改该会员的登录密码？保存后该会员所有已登录设备都会退出，需要使用新密码重新登录。", "确认修改密码", {
           type: "warning",
           confirmButtonText: "确认修改",
@@ -652,16 +683,38 @@ function pick(source: Row, fields: string[]): Row {
   return Object.fromEntries(fields.filter((field) => source[field] !== undefined).map((field) => [field, source[field]]));
 }
 
-async function updateFeedback(row: Row, status: string): Promise<void> {
+function openFeedback(row: Row): void {
+  feedbackForm.value = { ...row, replyContent: String(row.replyContent ?? ""), status: String(row.status ?? "OPEN") };
+  feedbackVisible.value = true;
+}
+
+async function saveFeedback(): Promise<void> {
+  if (feedbackSaving.value || !feedbackForm.value.id) return;
+  const replyContent = String(feedbackForm.value.replyContent ?? "").trim();
+  if (replyContent && replyContent.length < 2) {
+    ElMessage.error("回复内容至少需要2个字");
+    return;
+  }
+  feedbackSaving.value = true;
   try {
-    await api.patch(`/feedback/${encodeURIComponent(String(row.id))}`, {
-      status,
+    await api.patch(`/feedback/${encodeURIComponent(String(feedbackForm.value.id))}`, {
+      status: feedbackForm.value.status,
+      ...(replyContent ? { replyContent } : {}),
     });
-    row.status = status;
-    ElMessage.success("反馈状态已更新");
+    ElMessage.success(replyContent ? "回复已保存，会员可在客服中心查看" : "反馈状态已更新");
+    feedbackVisible.value = false;
+    await load();
   } catch (error) {
     ElMessage.error(readableError(error));
+  } finally {
+    feedbackSaving.value = false;
   }
+}
+
+function openHealthReport(row: Row): void {
+  if (!canReadRawHealth.value) return;
+  healthReportRow.value = row;
+  healthReportVisible.value = true;
 }
 
 async function viewHealth(row: Row, raw: boolean): Promise<void> {
@@ -900,14 +953,15 @@ onBeforeUnmount(() => {
               <el-button v-if="canReadRawHealth" size="small" type="warning" plain @click="viewHealth(scope.row, true)">原始记录</el-button>
             </template>
           </el-table-column>
-          <el-table-column v-if="canWrite && resource === 'feedback'" label="处理" width="170" fixed="right">
+          <el-table-column v-if="canWrite && resource === 'feedback'" label="处理" width="110" fixed="right">
             <template #default="scope">
-              <el-select :model-value="scope.row.status" size="small" @change="(value: string) => updateFeedback(scope.row, value)"> <el-option label="待处理" value="OPEN" /><el-option label="处理中" value="IN_PROGRESS" /> <el-option label="已解决" value="RESOLVED" /><el-option label="已关闭" value="CLOSED" /> </el-select>
+              <el-button size="small" type="primary" plain @click="openFeedback(scope.row)">{{ scope.row.replyContent ? "查看 / 回复" : "处理 / 回复" }}</el-button>
             </template>
           </el-table-column>
           <el-table-column v-if="editable || (canWrite && resource === 'health-reports')" label="操作" min-width="110" fixed="right">
             <template #default="scope">
               <el-button v-if="editable" size="small" :disabled="resource === 'members' && ['DELETION_PENDING', 'DELETED'].includes(scope.row.status)" @click="openEdit(scope.row)">编辑</el-button>
+              <el-button v-if="resource === 'health-reports' && canReadRawHealth" size="small" type="primary" plain @click="openHealthReport(scope.row)">查看</el-button>
               <el-button v-if="canWrite && resource === 'health-reports' && scope.row.status === 'FAILED'" size="small" type="warning" @click="runAction(`/health-reports/${scope.row.id}/retry`, '报告已重新排队')">重试</el-button>
               <el-button v-if="canWrite && resource === 'notification-campaigns' && scope.row.status === 'DRAFT'" size="small" type="primary" @click="runAction(`/notification-campaigns/${scope.row.id}/schedule`, '通知已安排发送')">安排发送</el-button>
             </template>
@@ -942,7 +996,22 @@ onBeforeUnmount(() => {
       </el-form>
       <template #footer><el-button :disabled="shipmentBusy" @click="shipmentVisible = false">关闭</el-button><el-button type="primary" :loading="shipmentBusy" :disabled="!!shipmentPreview.unavailableReason" @click="saveShipment">登记包裹</el-button></template>
     </el-dialog>
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="dialogMode === 'health' ? 'min(960px, 94vw)' : resource === 'settings' && form.key === 'global_app_update' ? '980px' : '720px'" destroy-on-close>
+    <AdminHealthReportDialog v-model="healthReportVisible" :row="healthReportRow" :can-edit="canEditHealthReport" @saved="load" />
+    <el-dialog v-model="feedbackVisible" title="处理会员反馈" width="min(680px, 94vw)" :close-on-click-modal="false" destroy-on-close>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="会员">{{ feedbackForm.memberNickname || "未填写昵称" }}{{ feedbackForm.memberNo ? ` · 会员 ${feedbackForm.memberNo}` : "" }}</el-descriptions-item>
+        <el-descriptions-item label="问题分类">{{ render(feedbackForm.category) }}</el-descriptions-item>
+        <el-descriptions-item label="提交时间">{{ render(feedbackForm.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item label="反馈内容"><div style="white-space: pre-wrap; overflow-wrap: anywhere">{{ feedbackForm.content }}</div></el-descriptions-item>
+        <el-descriptions-item v-if="feedbackForm.contact" label="联系方式">{{ feedbackForm.contact }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="90px" style="margin-top: 18px">
+        <el-form-item label="处理状态"><el-select v-model="feedbackForm.status" style="width: 100%"><el-option label="待处理" value="OPEN" /><el-option label="处理中" value="IN_PROGRESS" /><el-option label="已解决" value="RESOLVED" /><el-option label="已关闭" value="CLOSED" /></el-select></el-form-item>
+        <el-form-item label="回复会员"><el-input v-model="feedbackForm.replyContent" type="textarea" :rows="6" maxlength="2000" show-word-limit placeholder="填写后，会员可在 H5 客服中心查看回复" /></el-form-item>
+      </el-form>
+      <template #footer><el-button :disabled="feedbackSaving" @click="feedbackVisible = false">关闭</el-button><el-button type="primary" :loading="feedbackSaving" @click="saveFeedback">保存处理结果</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="dialogMode === 'health' ? 'min(960px, 94vw)' : resource === 'settings' && form.key === 'global_app_update' ? '980px' : ['articles', 'legal-documents'].includes(resource) ? 'min(980px, 94vw)' : '720px'" destroy-on-close>
       <div v-if="dialogMode === 'health'">
         <MemberHealthData :mode="healthMode" :rows="detailRows" :member-no="healthMember.memberNo" />
         <MemberHealthReportPanel v-if="dialogVisible && healthMode === 'summary' && canReadRawHealth" :key="healthMember.id" :member-id="healthMember.id" />
@@ -985,7 +1054,6 @@ onBeforeUnmount(() => {
           </el-form-item>
           <el-divider content-position="left">修改登录密码</el-divider>
           <el-form-item label="新密码"><el-input v-model="form.newPassword" type="password" show-password maxlength="72" autocomplete="new-password" placeholder="留空则不修改；至少8位" /></el-form-item>
-          <el-form-item label="确认新密码"><el-input v-model="form.confirmNewPassword" type="password" show-password maxlength="72" autocomplete="new-password" placeholder="再次输入新密码" /></el-form-item>
           <p class="muted">后台不能查看原密码。修改密码后，该会员所有已登录设备都会退出。保存操作会记录管理员、时间和变更字段，审计日志不会保存密码、完整手机号、邮箱或会员资料值。</p>
         </template>
         <template v-else-if="resource === 'commerce-commissions'">
@@ -999,15 +1067,16 @@ onBeforeUnmount(() => {
           <el-form-item label="人工审核"><el-switch v-model="form.reviewRequired" disabled /></el-form-item>
         </template>
         <template v-else-if="resource === 'articles'">
-          <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
-          <el-form-item label="摘要"><el-input v-model="form.summary" type="textarea" /></el-form-item>
+          <el-alert title="封面和正文图片可直接上传；正文会按安全 HTML 保存，发布前请预览排版与链接。" type="info" :closable="false" show-icon />
+          <el-form-item label="标题"><el-input v-model="form.title" maxlength="200" show-word-limit /></el-form-item>
+          <el-form-item label="摘要"><el-input v-model="form.summary" type="textarea" :rows="3" maxlength="500" show-word-limit /></el-form-item>
           <el-form-item label="内容分类">
             <el-select v-model="form.categoryId" clearable filterable placeholder="请选择分类；可留空">
               <el-option v-if="form.categoryId && !articleCategoryOptions.some((item) => item.id === form.categoryId)" :value="form.categoryId" label="原分类（当前不可用，可清除或重新选择）" disabled />
               <el-option v-for="item in selectableArticleCategories" :key="item.id" :value="item.id" :label="articleCategoryLabel(item)" :disabled="item.enabled === false && item.id !== originalArticleCategoryId" />
             </el-select>
           </el-form-item>
-          <el-form-item label="封面地址"><el-input v-model="form.coverUrl" /></el-form-item>
+          <el-form-item label="封面图片"><ContentImageField v-model="form.coverUrl" /></el-form-item>
           <el-form-item label="正文"><RichTextEditor v-model="form.contentHtml" /></el-form-item>
           <el-form-item label="状态"
             ><el-select v-model="form.status"><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select
@@ -1026,10 +1095,11 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
         </template>
         <template v-else-if="resource === 'legal-documents'">
+          <el-alert title="协议正文支持在线排版和插图；保存时会移除脚本、事件属性和不安全链接。" type="info" :closable="false" show-icon />
           <el-form-item label="协议类型"><el-input v-model="form.documentType" /></el-form-item>
           <el-form-item label="版本"><el-input v-model="form.version" /></el-form-item>
           <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
-          <el-form-item label="正文"><el-input v-model="form.contentHtml" type="textarea" :rows="10" /></el-form-item>
+          <el-form-item label="正文"><RichTextEditor v-model="form.contentHtml" /></el-form-item>
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
         <template v-else-if="resource === 'commerce-products'">
@@ -1155,8 +1225,8 @@ onBeforeUnmount(() => {
           <el-form-item label="优惠金额（分）"><el-input-number v-model="form.value" :min="1" /></el-form-item>
           <el-form-item label="最低消费（分）"><el-input-number v-model="form.minimumSpendCents" :min="0" /></el-form-item>
           <el-form-item label="发行数量"><el-input-number v-model="form.totalQuantity" :min="1" /></el-form-item>
-          <el-form-item label="生效时间"><el-date-picker v-model="form.validFrom" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.SSSZ" /></el-form-item>
-          <el-form-item label="失效时间"><el-date-picker v-model="form.validUntil" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.SSSZ" /></el-form-item>
+          <el-form-item label="生效时间" required><el-date-picker v-model="form.validFrom" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.SSSZ" placeholder="请选择生效时间" style="width: 100%" /></el-form-item>
+          <el-form-item label="失效时间" required><el-date-picker v-model="form.validUntil" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss.SSSZ" placeholder="请选择失效时间" style="width: 100%" /></el-form-item>
           <el-form-item label="状态"
             ><el-select v-model="form.status"><el-option label="草稿" value="DRAFT" /><el-option label="启用" value="ACTIVE" /><el-option label="暂停" value="PAUSED" /><el-option label="已过期" value="EXPIRED" /></el-select
           ></el-form-item>

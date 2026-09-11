@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Param, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, Param, Query, Req, UseGuards } from "@nestjs/common";
 import { AdminRole } from "@prisma/client";
 import { ApiTags } from "@nestjs/swagger";
 import { CurrentAdmin, type RequestWithContext } from "../common/request-context";
@@ -25,5 +25,11 @@ export class AdminHealthReportsController {
   @Get(":id")
   detail(@Param("id") id: string, @CurrentAdmin() current: { id: string; role: string; roles?: string[] }, @Req() request: RequestWithContext) {
     return this.reports.detail(id, current, request.requestId);
+  }
+
+  @Patch(":id")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  update(@Param("id") id: string, @Body() input: unknown, @CurrentAdmin() current: { id: string; role: string; roles?: string[] }, @Req() request: RequestWithContext) {
+    return this.reports.update(id, input, current, request.requestId);
   }
 }

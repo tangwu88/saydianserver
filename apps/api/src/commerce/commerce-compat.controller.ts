@@ -29,6 +29,7 @@ import {
 import { UserAuthGuard } from "../common/user-auth.guard";
 import { CommerceService } from "./commerce.service";
 import { isGlobalRealm } from "../common/deployment-realm";
+import { SupportService } from "../support/support.service";
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 
@@ -47,6 +48,7 @@ export class CommerceCompatibilityController {
     private readonly billing: BillingService,
     private readonly wechatH5: WechatH5AuthService,
     private readonly capabilities: CommerceCapabilitiesService,
+    private readonly support: SupportService,
   ) {}
 
   @Post("auth/password/login")
@@ -169,6 +171,18 @@ export class CommerceCompatibilityController {
     const suffix = referralCode ? `?referralCode=${encodeURIComponent(referralCode)}` : "";
     const [storefront, capabilities] = await Promise.all([this.commerce.publicGet(`/storefront/bootstrap${suffix}`), this.capabilities.publicCapabilities()]);
     return { ...storefront, capabilities };
+  }
+
+  @Get("storefront/feedback")
+  @UseGuards(UserAuthGuard)
+  feedback(@CurrentUser() user: AuthenticatedUser) {
+    return this.support.listFeedback(user.id);
+  }
+
+  @Post("storefront/feedback")
+  @UseGuards(UserAuthGuard)
+  submitFeedback(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    return this.support.createFeedback(user.id, input);
   }
 
   @Get("storefront/products")

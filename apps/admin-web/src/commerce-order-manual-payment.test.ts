@@ -108,4 +108,13 @@ describe("commerce order super-admin payment controls", () => {
     expect(source).toContain("请先确认渠道结果或完成关单");
     expect(source).toContain("处理备注");
   });
+
+  it("opens an order product in the H5 storefront without replacing the admin page", () => {
+    const source = readFileSync(new URL("./components/CommerceWorkspace.vue", import.meta.url), "utf8");
+    expect(source).toContain("/global/saidian-mall/#/pages/product/index?id=");
+    expect(source).toContain('target="_blank"');
+    expect(source).toContain('rel="noopener noreferrer"');
+    expect(source).toContain("scope.row.items?.[0]?.productId");
+    expect(source).toContain("scope.row.productId");
+  });
 });

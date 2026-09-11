@@ -29,3 +29,23 @@ describe("private after-sale image evidence",()=>{
   it("admin reader enforces resource READ, linked after-sale, actual file owner, and writes audit",async()=>{const h=fixture();await h.service.uploadCommerceEvidence("member-a",image());await expect(h.service.adminCommerceEvidence({id:"admin",role:"CONTENT_EDITOR"},saleId,fileId)).rejects.toThrow("无权");await h.service.adminCommerceEvidence({id:"admin",role:"READ_ONLY"},saleId,fileId,"test-request");expect(h.db.commerceAfterSale.findFirst).toHaveBeenCalledWith(expect.objectContaining({where:{id:saleId,evidenceImages:{has:`file:${fileId}`}}}));expect(h.db.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({action:"COMMERCE_EVIDENCE_READ",actorId:"admin",entityId:saleId})}));h.db.commerceAfterSale.findFirst.mockResolvedValue(null as any);await expect(h.service.adminCommerceEvidence({id:"admin",role:"SUPER_ADMIN"},saleId,fileId)).rejects.toThrow("不存在");});
   it("controllers preserve auth guards and send private no-store/nosniff binary responses",async()=>{expect(Reflect.getMetadata("__guards__",CommerceEvidenceController)).toContain(UserAuthGuard);expect(Reflect.getMetadata("__guards__",AdminCommerceEvidenceController)).toContain(AdminAuthGuard);const body={on:vi.fn(),pipe:vi.fn()},response={setHeader:vi.fn(),destroy:vi.fn()},controller=new CommerceEvidenceController({commerceEvidence:vi.fn(async()=>({body,contentType:"image/png",byteSize:png.length}))} as any);await controller.image({id:"member-a",sessionId:"session"},fileId,response as any);expect(response.setHeader).toHaveBeenCalledWith("cache-control","private, no-store");expect(response.setHeader).toHaveBeenCalledWith("x-content-type-options","nosniff");expect(body.pipe).toHaveBeenCalledWith(response);});
 });
+
+describe("administrator content images",()=>{
+  it("stores a validated image under the public content purpose and returns its canonical file URL",async()=>{
+    const h=fixture();
+    const result=await h.service.uploadAdminContentImage("admin-1",image());
+    expect(result).toMatchObject({id:fileId,sha256:expect.stringMatching(/^[a-f0-9]{64}$/),byteSize:png.length});
+    expect(result.url).toBe(`http://localhost:8080/api/saydian-app/v2/files/${fileId}`);
+    expect(h.rows[0]).toMatchObject({ownerUserId:null,purpose:"admin-content",contentType:"image/png"});
+    expect(h.send.mock.calls[0]![0].input.Key).toMatch(/^admin-content\/admin-1\//);
+    expect((await h.service.publicFile(fileId)).contentType).toBe("image/png");
+  });
+
+  it("rejects disguised or oversized content images before object storage",async()=>{
+    const h=fixture();
+    await expect(h.service.uploadAdminContentImage("admin-1",image(Buffer.from("not an image")))).rejects.toThrow();
+    await expect(h.service.uploadAdminContentImage("admin-1",image(Buffer.alloc(10*1024*1024+1)))).rejects.toThrow();
+    expect(h.send).not.toHaveBeenCalled();
+    expect(h.db.fileObject.create).not.toHaveBeenCalled();
+  });
+});

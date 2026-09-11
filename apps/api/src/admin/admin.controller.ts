@@ -7,9 +7,11 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { AdminRole } from "@prisma/client";
 import { ApiTags } from "@nestjs/swagger";
 import { safeObject } from "../common/crypto";
@@ -24,6 +26,7 @@ import {
 } from "./admin-auth";
 import { AdminService } from "./admin.service";
 import { AdminAuditInterceptor } from "./admin-audit.interceptor";
+import { SupportService } from "../support/support.service";
 
 @ApiTags("admin-auth")
 @Controller("api/saydian-app/admin/v1/auth")
@@ -45,7 +48,15 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly auth: AdminAuthService,
+    private readonly support: SupportService,
   ) {}
+
+  @Post("content-images")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_EDITOR)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
+  uploadContentImage(@CurrentAdmin() current: { id: string }, @UploadedFile() file: Express.Multer.File) {
+    return this.support.uploadAdminContentImage(current.id, file);
+  }
 
   @Post("auth/logout")
   async logout(@CurrentAdmin() current: { sessionId: string }) {
@@ -148,8 +159,8 @@ export class AdminController {
     AdminRole.APP_OPERATIONS,
     AdminRole.CUSTOMER_SERVICE,
   )
-  updateFeedback(@Param("id") id: string, @Body() input: unknown) {
-    return this.admin.updateFeedback(id, input);
+  updateFeedback(@Param("id") id: string, @Body() input: unknown, @CurrentAdmin() current: NonNullable<RequestWithContext["authAdmin"]>) {
+    return this.admin.updateFeedback(id, input, current);
   }
 
   @Get("articles")

@@ -59,6 +59,25 @@ export class SupportService {
     return { id: feedback.id, status: feedback.status.toLowerCase() };
   }
 
+  async listFeedback(userId: string) {
+    const rows = await this.prisma.feedback.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        category: true,
+        content: true,
+        status: true,
+        replyContent: true,
+        repliedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    return rows.map(row => ({ ...row, status: row.status.toLowerCase() }));
+  }
+
   async supportConfig() {
     // Read only the explicitly published support record; do not load private JSON.
     const setting = await this.prisma.appSetting.findFirst({
@@ -134,6 +153,39 @@ export class SupportService {
       sha256: digest,
       byteSize: file.size,
     };
+  }
+
+  async uploadAdminContentImage(adminId: string, file: Express.Multer.File) {
+    const contentType = validateEvidenceImage(file);
+    const extension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+    const digest = sha256(file.buffer);
+    const objectKey = `admin-content/${adminId}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.${extension}`;
+    const storage = await this.storage();
+    try {
+      await storage.s3.send(new PutObjectCommand({
+        Bucket: storage.bucket,
+        Key: objectKey,
+        Body: file.buffer,
+        ContentType: contentType,
+        Metadata: { sha256: digest, purpose: "admin-content" },
+      }));
+      await markIntegrationVerified(this.prisma, "object_storage");
+    } catch {
+      throw new ServiceUnavailableException("图片暂时无法上传，请稍后再试");
+    }
+    const stored = await this.prisma.fileObject.create({
+      data: {
+        ownerUserId: null,
+        objectKey,
+        originalName: String(file.originalname || "content-image").slice(0, 255),
+        contentType,
+        byteSize: file.buffer.length,
+        sha256: digest,
+        purpose: "admin-content",
+      },
+    });
+    const publicBase = env("PUBLIC_BASE_URL", "http://localhost:8080").replace(/\/$/, "");
+    return { id: stored.id, url: `${publicBase}/api/saydian-app/v2/files/${stored.id}`, sha256: digest, byteSize: stored.byteSize };
   }
 
   async commerceEvidenceCapability() {
@@ -294,7 +346,7 @@ export class SupportService {
 
   async publicFile(id: string) {
     const file = await this.prisma.fileObject.findUnique({ where: { id } });
-    if (!file || file.status !== "ACTIVE" || file.purpose !== "avatar") {
+    if (!file || file.status !== "ACTIVE" || !["avatar", "admin-content"].includes(file.purpose)) {
       throw new NotFoundException("文件不存在");
     }
     const storage = await this.storage();

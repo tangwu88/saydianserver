@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **326 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **330 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -88,7 +88,7 @@
 | `POST /api/v1/site/refresh` | 旧版刷新 | public | 表单 refresh_token | LegacySession | 核心服务 |
 | `POST /api/v1/site/logout` | 旧版退出 | member | 无请求体 | {logged_out:true} | 核心服务 |
 
-## 商城 H5/小程序兼容接口（60）
+## 商城 H5/小程序兼容接口（62）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -110,6 +110,8 @@
 | `POST /api/saidian-mall/v1/auth/refresh` | 轮换商城刷新令牌 | public | {refreshToken} | 新商城兼容会话 | 核心服务 |
 | `POST /api/saidian-mall/v1/auth/referral` | 锁定商城推荐关系 | member | {referralCode} | 推荐关系；已有关系不覆盖 | 核心服务 |
 | `GET /api/saidian-mall/v1/storefront/bootstrap` | 商城首页初始化 | public | query:ref?；ref=员工推荐号，可选 | 轮播、分类、精选商品、公开客服配置与capabilities | 主库商城 |
+| `GET /api/saidian-mall/v1/storefront/feedback` | 商城会员读取自己的反馈与客服回复 | member | 会员Bearer会话 | 最多100条，仅按当前登录userId返回；含问题、状态、replyContent和repliedAt，不返回后台管理员身份 | 核心服务 |
+| `POST /api/saidian-mall/v1/storefront/feedback` | 商城会员提交问题反馈 | member | {category,content:5–2000字,contact?:联系方式,attachments?:本人有效文件UUID数组} | {id,status}；服务端绑定当前登录会员，不能代替他人提交 | 主库客服反馈 |
 | `GET /api/saidian-mall/v1/storefront/products` | 商城商品列表 | public | query:*；page、pageSize、keyword、categoryId | 可售商品分页 | 主库商城 |
 | `GET /api/saidian-mall/v1/storefront/products/:id` | 商城商品详情 | public | path:id；id=商品UUID | 商品、SKU和展示资料 | 主库商城/聚水潭库存快照 |
 | `GET /api/saidian-mall/v1/storefront/cart` | 商城购物车 | member | 无请求体 | 本人购物车 | 核心服务 |
@@ -253,14 +255,16 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（97）
+## 管理后台接口（99）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
 | `GET /api/saydian-app/admin/v1/health-reports/availability` | 检查会员AI健康报告生成条件 | admin: SUPER_ADMIN, HEALTH_AUDITOR | query:memberId；memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR | {canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,memberConsentBypass,availableCredits,latestReport}；SUPER_ADMIN后台生成不以会员App同意为前置，HEALTH_AUDITOR仍须当前同意；未知条件不伪装可用；不返回密钥，不探测外部服务 | 有效数据、报告次数、已配置AI和未暂停Worker；审核员另需会员当前同意 |
 | `POST /api/saydian-app/admin/v1/health-reports` | 后台申请生成或复用AI健康报告 | admin: SUPER_ADMIN, HEALTH_AUDITOR | {memberId:UUID,idempotencyKey:8–160字符}；不创建付款；每次请求服务端复核条件 | {report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；SUPER_ADMIN可绕过会员App同意且审计memberConsentBypassed=true，HEALTH_AUDITOR不可绕过；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable | 已满足availability条件；第三方真实运行需独立验收 |
 | `GET /api/saydian-app/admin/v1/health-reports/:id` | 后台查看健康报告进度和结果 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id；id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR | 报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文 | 报告队列与读取审计；AI结果仅供健康管理参考 |
+| `PATCH /api/saydian-app/admin/v1/health-reports/:id` | 超级管理员复核并编辑已生成健康报告 | admin: SUPER_ADMIN | path:id；id=报告UUID；仅SUPER_ADMIN；{content:{overview,trends:[{metric,text}],suggestions,limitations},expectedUpdatedAt}；指标、顺序和证据ID不可修改 | 更新后的报告正文；使用乐观锁，版本冲突返回409；HEALTH_REPORT_UPDATE审计只保存内容散列和变更章节，不保存报告正文 | 已生成READY报告；内容仅供日常健康管理参考 |
 | `POST /api/saydian-app/admin/v1/auth/login` | 后台登录 | public | JSON {username,password} | AdminSession；不能与 App Token 混用 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/content-images` | 上传后台文章或协议图片 | admin: SUPER_ADMIN, CONTENT_EDITOR | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR | {id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量 | 核心服务 |
@@ -272,8 +276,8 @@
 | `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/care` | 后台关爱关系 | admin | 无请求体 | 最多500条，双方昵称和指标权限；尚无分页 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/devices` | 后台设备快照 | admin | 无请求体 | 最多500条；尚无分页 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/feedback` | 反馈工单 | admin | query:status?；status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选 | 最多500条 | 核心服务 |
-| `PATCH /api/saydian-app/admin/v1/feedback/:id` | 更新反馈处理状态 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；{status,assignedTo?} | 反馈记录 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/feedback` | 反馈工单 | admin | query:status?；status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选 | 最多500条；含会员编号、昵称、问题内容、处理状态以及已发送给会员的客服回复 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/feedback/:id` | 更新反馈状态并回复会员 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；{status,assignedTo?,replyContent?:2–2000字}；回复内容非空时记录当前管理员和回复时间 | 反馈记录；会员端只可读取自己的反馈及回复，不返回后台管理员身份 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/articles` | 后台文章含草稿 | admin | 无请求体 | 最多500条，含分类 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/article-categories` | 后台文章分类 | admin | 无请求体 | 分类数组；国际版含固定数字字符串categoryNo（如12），id/parentId仍为UUID，编号不随排序变化 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/article-categories` | 新增分类 | admin: SUPER_ADMIN, CONTENT_EDITOR | {name,parentId?,sort?,enabled?}；parentId 使用分类 UUID | 分类记录；国际版含只读categoryNo，数据库自动分配，不接收客户端自选号 | 核心服务 |

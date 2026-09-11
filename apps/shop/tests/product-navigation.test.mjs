@@ -149,9 +149,9 @@ test("real images replace the placeholder and multiple unique thumbnails update 
   assert.equal(nodes(tree).find(node => node.type === "image" && node.props.class === "main-image").props.src, second);
 });
 
-function orderPage(name, apiHandler) {
-  const { script, render } = compilePage(name), navigations = [], requests = [];
-  const uni = { getStorageSync() {}, setStorageSync() {}, removeStorageSync() {}, getStorageInfoSync: () => ({ keys: [] }),
+function orderPage(name, apiHandler, paymentOverrides = {}) {
+  const { script, render } = compilePage(name), navigations = [], requests = [], storage = new Map(); let cleared = 0;
+  const uni = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value), removeStorageSync: key => storage.delete(key), getStorageInfoSync: () => ({ keys: [...storage.keys()] }),
     redirectTo: value => navigations.push(value.url), navigateTo: value => navigations.push(value.url), showToast() {}, getSystemInfoSync: () => ({ windowWidth: 390 }) };
   const { realm } = realmTestModules(uni);
   const model = evaluate(readFileSync(new URL("../src/commerce-model.ts", import.meta.url), "utf8"), {});
@@ -161,12 +161,12 @@ function orderPage(name, apiHandler) {
     "../../commerce-model": model,
     "../../components/ImageEvidencePicker.vue": { default: { render: () => null } },
     "../../api": { api: async (...args) => { requests.push(args); if (apiHandler) return apiHandler(...args); throw new Error("Unexpected API call"); }, money: cents => `¥${(cents ?? 0) / 100}`,
-      toast() {}, requireLogin: () => true, withMallCheckoutLock: callback => callback(), mallSessionStamp: () => "test-session", clearCheckoutState() {} },
+      toast() {}, requireLogin: () => true, withMallCheckoutLock: callback => callback(), mallSessionStamp: () => "test-session", clearCheckoutState() { cleared++; } },
     "../../payments": { confirmPayment() { throw new Error("Unexpected payment query"); }, createOrderPayment() { throw new Error("Unexpected payment creation"); },
-      invokePayment() { throw new Error("Unexpected payment invocation"); }, paymentEnvironment: () => "wechat", paymentLabels: { wechat_jsapi: "微信支付" } },
-  }, { uni }).default;
+      invokePayment() { throw new Error("Unexpected payment invocation"); }, paymentEnvironment: () => "wechat", paymentLabels: { wechat_jsapi: "微信支付" }, ...paymentOverrides },
+  }, { uni, setTimeout, setInterval, clearInterval }).default;
   const state = component.setup({}, { expose() {} }), ui = vue.proxyRefs(state);
-  return { state, navigations, requests, tree: () => render({}, [], {}, ui, {}, {}) };
+  return { state, navigations, requests, storage: realm.mallStorage, cleared: () => cleared, tree: () => render({}, [], {}, ui, {}, {}) };
 }
 
 test("a refreshed order has an orders-list exit and unavailable payments never expose provider details", () => {
@@ -183,13 +183,16 @@ test("a refreshed order has an orders-list exit and unavailable payments never e
   assert.equal(button(tree, "查看全部订单").props.disabled, true);
 });
 
-test("checkout CTA describes no-payment saving and retains loading, recovery and maintenance guards", () => {
+test("checkout CTA starts payment directly and retains loading, recovery and maintenance guards", () => {
   const h = orderPage("checkout"), s = h.state;
   s.capabilities.value = { payments: [{ channel: "wechat_jsapi", enabled: false }], maintenance: { readOnly: false } };
-  s.address.value = { id: "synthetic-address", name: "测试收货人" }; s.quote.value = { payableCents: 1000, lines: [] };
+  s.address.value = { id: "synthetic-address", name: "测试收货人" }; s.quote.value = { subtotalCents: 1000, couponDiscountCents: 0, pointDiscountCents: 0, shippingCents: 0, payableCents: 1000, lines: [] };
   const cta = () => nodes(h.tree()).find(node => node.type === "button" && node.props.class === "primary-btn");
-  assert.equal(text(cta()), "保存待付款订单"); assert.equal(cta().props.disabled, false);
-  assert.ok(text(h.tree()).includes("支付暂不可用，可先保存订单"));
+  assert.equal(text(cta()), "立即付款"); assert.equal(cta().props.disabled, true);
+  assert.ok(text(h.tree()).includes("支付暂不可用，请稍后再试"));
+  const visibleMoneyLines = nodes(h.tree()).filter(node => node.props?.class === "money-line" || node.props?.class === "money-line total").map(text);
+  assert.equal(visibleMoneyLines.some(line => line.includes("优惠券") || line.includes("积分抵扣") || line.includes("运费")), false);
+  assert.equal(text(h.tree()).includes("重新获取报价"), false);
   for (const field of ["submitting", "quoting"]) {
     s[field].value = true; assert.equal(cta().props.disabled, true); assert.equal(cta().props.loading, true); s[field].value = false;
   }
@@ -197,12 +200,12 @@ test("checkout CTA describes no-payment saving and retains loading, recovery and
   s.quote.value = null; assert.equal(cta().props.disabled, true); s.quote.value = quote;
   s.address.value = null; assert.equal(cta().props.disabled, true); s.address.value = address;
   s.capabilities.value.maintenance.readOnly = true; assert.equal(cta().props.disabled, true); s.capabilities.value.maintenance.readOnly = false;
-  s.quoteNeedsConfirmation.value = true; assert.equal(text(cta()), "确认新金额并提交");
+  s.quoteNeedsConfirmation.value = true; assert.equal(text(cta()), "确认金额并付款");
   s.uncertain.value = true; s.quote.value = null; s.address.value = null;
-  assert.equal(text(cta()), "查询并恢复上次下单"); assert.equal(cta().props.disabled, false);
+  assert.equal(text(cta()), "查询并继续付款"); assert.equal(cta().props.disabled, false);
   s.uncertain.value = false; s.quoteNeedsConfirmation.value = false; s.quote.value = quote; s.address.value = address;
   s.capabilities.value.payments[0].enabled = true;
-  assert.equal(text(cta()), "提交订单，前往支付"); assert.equal(cta().props.disabled, false);
+  assert.equal(text(cta()), "立即付款"); assert.equal(cta().props.disabled, false);
   assert.equal(nodes(h.tree()).some(node => node.type === "input" && node.props.placeholder?.includes("配送要求")), false);
   assert.equal(s.showBenefits.value, false);
   nodes(h.tree()).find(node => node.type === "button" && node.props.class === "benefits-toggle").props.onClick();
@@ -234,20 +237,40 @@ test("checkout keeps optional benefits collapsed and redeems only a server-confi
   assert.equal(h.requests[2][1].data.couponClaimId, "claim-1"); assert.equal("couponCode" in h.requests[2][1].data, false);
 });
 
+test("checkout creates an order, launches payment immediately and returns to the order list after confirmation", async () => {
+  const fingerprint = "q1:" + "b".repeat(64);
+  const quote = { fingerprint, pricingVersion: 1, lines: [], subtotalCents: 1000, couponDiscountCents: 0, pointDiscountCents: 0, shippingCents: 0, payableCents: 1000 };
+  const payments = { createOrderPayment: async (...args) => { payments.created.push(args); return { id: "payment-1", status: "pending", invoke: { channel: "wechat_jsapi" } }; },
+    invokePayment: async (...args) => { payments.invoked.push(args); return {}; }, confirmPayment: async (...args) => { payments.confirmed.push(args); return { paid: true }; },
+    created: [], invoked: [], confirmed: [] };
+  const h = orderPage("checkout", async (path) => {
+    if (path === "/storefront/orders/preview") return { quote };
+    if (path === "/storefront/orders") return { id: "order-1" };
+    throw new Error(`Unexpected API call ${path}`);
+  }, payments), s = h.state;
+  h.storage.set("saidian-user", { id: "member-1" }); h.storage.set("checkout-owner", "member-1");
+  s.items.value = [{ skuId: "sku-1", quantity: 1 }]; s.address.value = { id: "address-1" }; s.quote.value = quote;
+  s.capabilities.value = { checkout: { enabled: true }, maintenance: { readOnly: false }, payments: [{ channel: "wechat_jsapi", enabled: true }] };
+  await s.submit();
+  assert.deepEqual(h.requests.map(row => row[0]), ["/storefront/orders/preview", "/storefront/orders"]);
+  assert.deepEqual(payments.created, [["order-1", "wechat_jsapi"]]); assert.equal(payments.invoked.length, 1); assert.deepEqual(payments.confirmed, [["payment-1"]]);
+  assert.deepEqual(h.navigations, ["/pages/orders/index"]); assert.equal(h.cleared(), 1);
+});
+
 test("checkout only offers payment for the current browser and honors an explicitly closed market", async () => {
   const h = orderPage("checkout"), s = h.state;
   s.address.value = { id: "synthetic-address" }; s.quote.value = { payableCents: 100, lines: [] };
   s.capabilities.value = { checkout: { enabled: true }, payments: [{ channel: "wechat_h5", enabled: true }] };
-  assert.ok(button(h.tree(), "保存待付款订单"));
+  assert.equal(button(h.tree(), "立即付款").props.disabled, true);
   s.capabilities.value.payments.push({ channel: "wechat_jsapi", enabled: true });
-  assert.ok(button(h.tree(), "提交订单，前往支付"));
+  assert.equal(Boolean(button(h.tree(), "立即付款").props.disabled), false);
   s.capabilities.value.checkout.enabled = false;
-  assert.equal(button(h.tree(), "提交订单，前往支付").props.disabled, true);
+  assert.equal(button(h.tree(), "立即付款").props.disabled, true);
   await s.submit(); assert.deepEqual(h.requests, []);
   s.uncertain.value = true; s.quote.value = null; s.address.value = null;
-  assert.equal(Boolean(button(h.tree(), "查询并恢复上次下单").props.disabled), false);
+  assert.equal(Boolean(button(h.tree(), "查询并继续付款").props.disabled), false);
   s.capabilities.value.maintenance = { readOnly: true };
-  assert.equal(button(h.tree(), "查询并恢复上次下单").props.disabled, true);
+  assert.equal(button(h.tree(), "查询并继续付款").props.disabled, true);
 });
 
 async function addressPage(realmName, existing) {
