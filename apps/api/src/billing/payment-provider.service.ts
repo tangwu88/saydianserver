@@ -35,6 +35,12 @@ type IntentForProvider = {
   channel: PaymentChannel;
 };
 
+type WechatPaymentForQuery = {
+  paymentNo: string;
+  channel: PaymentChannel;
+  providerMerchantId: string | null;
+};
+
 /** Validate before reserving a new intent and again immediately before dispatch. */
 export function assertGlobalPaymentSupported(intent: { channel: PaymentChannel; businessType?: string; currency: string }) {
   assertGlobalPaymentScope(intent);
@@ -163,6 +169,32 @@ export class PaymentProviderService {
     }
     if (refund.channel.startsWith("WECHAT")) return this.refundWechat(refund);
     return this.refundAlipay(refund);
+  }
+
+  async queryWechatPayment(
+    intent: WechatPaymentForQuery,
+  ): Promise<Record<string, unknown>> {
+    if (!intent.channel.startsWith("WECHAT")) {
+      throw new BadRequestException("当前支付记录不是微信支付");
+    }
+    await this.assertConfigured("wechat_pay");
+    const secrets = await this.wechatSecrets();
+    const merchantId = secrets.merchantId ?? "";
+    const serialNo = secrets.serialNo ?? "";
+    const privateKeyPem = secrets.privateKeyPem ?? "";
+    if (!merchantId || !serialNo || !privateKeyPem) {
+      throw new ServiceUnavailableException("微信支付暂时无法查询，请稍后再试");
+    }
+    if (!intent.providerMerchantId || intent.providerMerchantId !== merchantId) {
+      throw new BadRequestException("原交易商户与当前微信支付配置不一致");
+    }
+    const paymentNo = providerText(intent.paymentNo, "微信支付单号");
+    const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(paymentNo)}?mchid=${encodeURIComponent(merchantId)}`;
+    return this.wechatRequest("GET", path, undefined, {
+      merchantId,
+      serialNo,
+      privateKeyPem,
+    });
   }
 
   async decodeWechatNotification(
@@ -544,28 +576,29 @@ export class PaymentProviderService {
   private async wechatRequest(
     method: string,
     path: string,
-    body: unknown,
+    body: unknown | undefined,
     credentials: { merchantId: string; serialNo: string; privateKeyPem: string },
   ): Promise<Record<string, unknown>> {
     const responseVerification = await this.wechatSecrets();
     if (!responseVerification.platformPublicKeyPem || !responseVerification.platformSerialNo) {
       throw new ServiceUnavailableException("微信响应验签配置缺失，不能发起交易请求");
     }
-    const bodyText = JSON.stringify(body);
+    const bodyText = body === undefined ? "" : JSON.stringify(body);
     const timestamp = String(Math.floor(Date.now() / 1_000));
     const nonce = randomBytes(16).toString("hex");
     const message = `${method}\n${path}\n${timestamp}\n${nonce}\n${bodyText}\n`;
     const authorization = `WECHATPAY2-SHA256-RSA2048 mchid="${credentials.merchantId}",nonce_str="${nonce}",timestamp="${timestamp}",serial_no="${credentials.serialNo}",signature="${rsaSign(message, credentials.privateKeyPem)}"`;
-    const response = await fetch(`https://api.mch.weixin.qq.com${path}`, {
+    const request: RequestInit = {
       method,
       headers: {
-        "content-type": "application/json",
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
         accept: "application/json",
         authorization,
       },
-      body: bodyText,
       signal: AbortSignal.timeout(20_000),
-    });
+    };
+    if (body !== undefined) request.body = bodyText;
+    const response = await fetch(`https://api.mch.weixin.qq.com${path}`, request);
     const raw = await response.text();
     if (!response.ok) {
       throw new ServiceUnavailableException("微信支付暂时无法使用，请稍后再试");

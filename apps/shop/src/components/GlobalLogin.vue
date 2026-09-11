@@ -44,7 +44,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import DesktopHeader from "./DesktopHeader.vue";
 import BrandIdentity from "./BrandIdentity.vue";
 import { api, mallOAuthSessionStamp, saveMallSession } from "../api";
-import { mallStorage } from "../realm";
+import { mallConfig, mallStorage } from "../realm";
 import { globalPageAllowed } from "../realm-config";
 import { safeMallRoute } from "../commerce-model";
 import { OAUTH_CONTEXT_KEY, OAUTH_TTL, OAUTH_CALLBACK_PATH, normalizeGlobalPhone, validGlobalIdentifier, validOAuthContext, type OAuthContext } from "../global-auth-model";
@@ -65,6 +65,7 @@ const phoneMode = computed(() => !!bindTicket.value || contactMode.value === "sm
 const temporaryPhoneCode = computed(() => bindingEnabled.value && capabilities.value?.login?.wechatBinding?.phoneCodeMode === "test");
 let active = true, timer: ReturnType<typeof setInterval> | undefined, resendAt = 0;
 let bindingSession = "";
+let oauthDocumentEntry = false;
 onBeforeUnmount(() => { active = false; if (timer) clearInterval(timer); password.value = ""; code.value = ""; bindTicket.value = ""; });
 onMounted(() => { void initialize(true); });
 async function loadCapabilities() {
@@ -90,6 +91,7 @@ async function initialize(handleCallback: boolean) {
     const context = callback.context;
     if (!legalReady.value || context.consentVersion !== consent.value.version || context.locale !== consent.value.locale) throw authUiError("协议已更新，请阅读并同意后重新微信登录。");
     if (context.sessionStamp !== mallOAuthSessionStamp()) throw authUiError("账号已切换，请重新登录。");
+    oauthDocumentEntry = true;
     accepted.value = true; busy.value = true;
     const response: any = await api("/auth/wechat/h5/login", { method: "POST", data: { code: callback.code, state: context.state, codeVerifier: context.verifier, consentVersion: context.consentVersion, locale: context.locale } });
     if (!active) return;
@@ -200,7 +202,13 @@ async function save(response: any) {
   const target = safeMallRoute(response.returnTo || mallStorage.get("saidian-post-login-route"));
   mallStorage.remove("saidian-post-login-route"); sessionStorage.removeItem(OAUTH_CONTEXT_KEY);
   password.value = ""; code.value = ""; bindTicket.value = "";
-  uni.reLaunch({ url: globalPageAllowed(target) ? target : "/pages/profile/index" });
+  const destination = globalPageAllowed(target) ? target : "/pages/profile/index";
+  if (oauthDocumentEntry) {
+    oauthDocumentEntry = false;
+    location.replace(`${mallConfig.publicBase}#${destination}`);
+    return;
+  }
+  uni.reLaunch({ url: destination });
 }
 async function showError(cause: unknown) {
   if (!active) return;
@@ -213,7 +221,7 @@ async function showError(cause: unknown) {
   }
   if (active) error.value = message;
 }
-function cancelBinding() { bindTicket.value = ""; bindExpiresAt.value = 0; bindingSession = ""; resetChallenge(); identifier.value = ""; accepted.value = false; error.value = ""; }
+function cancelBinding() { bindTicket.value = ""; bindExpiresAt.value = 0; bindingSession = ""; oauthDocumentEntry = false; resetChallenge(); identifier.value = ""; accepted.value = false; error.value = ""; }
 function forgotPassword() { uni.showModal({ title: "找回密码", content: "请打开 Saydian App，在登录页选择“忘记密码”找回。", showCancel: false }); }
 function browse() { uni.switchTab({ url: "/pages/home/index" }); }
 </script>

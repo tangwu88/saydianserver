@@ -10,6 +10,7 @@ const keys = generateKeyPairSync("rsa", { modulusLength: 2048,
   privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 const request: RefundForProvider = { refundNo: "REF-partial-1", paymentNo: "PAY-original-1", providerTransactionId: "provider-original-1",
   amountCents: 101, totalCents: 1000, currency: "CNY", reason: "测试退款", channel: PaymentChannel.WECHAT_APP };
+const paymentQuery = { paymentNo: "PAY-query-1", channel: PaymentChannel.WECHAT_JSAPI, providerMerchantId: "merchant-1" };
 const wechat = (extra: Record<string, unknown> = {}) => ({ status: "SUCCESS", refund_id: "wx-refund-1", out_refund_no: request.refundNo,
   out_trade_no: request.paymentNo, transaction_id: request.providerTransactionId, amount: { total: 1000, refund: 101, currency: "CNY" }, ...extra });
 const alipay = (extra: Record<string, unknown> = {}) => ({ code: "10000", trade_no: request.providerTransactionId,
@@ -81,6 +82,23 @@ describe("provider refund response contract", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await expect(fixture({ platformPublicKeyPem: undefined }).refund(request)).rejects.toThrow("不能发起交易请求");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("queries WeChat by the original merchant payment number without a GET body and verifies the response signature", async () => {
+    const result = { appid: "official-app", mchid: "merchant-1", out_trade_no: paymentQuery.paymentNo,
+      transaction_id: "wechat-transaction-1", trade_state: "SUCCESS", amount: { total: 980, currency: "CNY" } };
+    const raw = JSON.stringify(result);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(raw, { status: 200, headers: signedWechat(raw) }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fixture().queryWechatPayment(paymentQuery)).resolves.toEqual(result);
+    const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no/PAY-query-1?mchid=merchant-1");
+    expect(options.method).toBe("GET");
+    expect(options.body).toBeUndefined();
+  });
+  it("does not query WeChat with a different current merchant", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    await expect(fixture().queryWechatPayment({ ...paymentQuery, providerMerchantId: "another-merchant" })).rejects.toThrow("商户");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
   it("public Alipay refund path validates signed actual amount before returning completion", async () => {
     const result = alipay(); const content = JSON.stringify(result);

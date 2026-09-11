@@ -12,7 +12,7 @@ const vue = nodeRequire("vue"), { parse, compileScript, compileTemplate } = node
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
 function harness({ realm = "global", storage = new Map(), url = "https://app.saydian.cn/global/saidian-mall/", request } = {}) {
   const requests = [], events = {}, session = new Map(), mounted = [], unmounted = [];
-  const location = { href: url, assign(value) { this.href = value; } };
+  const location = { href: url, replacedWith: "", assign(value) { this.href = value; }, replace(value) { this.href = new URL(value, this.href).href; this.replacedWith = this.href; } };
   Object.defineProperties(location, { pathname: { get: () => new URL(location.href).pathname }, hash: { get: () => new URL(location.href).hash } });
   const sessionStorage = { getItem: key => session.get(key) ?? null, removeItem: key => session.delete(key), setItem: (key, value) => session.set(key, String(value)) };
   const uni = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value), removeStorageSync: key => storage.delete(key),
@@ -259,6 +259,14 @@ test("temporary phone registration directly accepts six digits with the default 
   assert.equal(codeCalls.length, 1); assert.equal(codeCalls[0].data.identifier, "+8613812345678"); assert.equal(codeCalls[0].data.expectedMode, "test");
   assert.equal(bindCalls.length, 1); assert.equal(bindCalls[0].data.code, "000000");
   assert.equal(h.storage.get("saydian-global-mall:saidian-user").phoneVerificationStatus, "pending"); assert.doesNotMatch(h.ui.codeNote.value, /已发送/);
+});
+
+test("OAuth phone binding finishes with a clean full-page storefront navigation for WeChat JSAPI", async t => {
+  const h = phoneLoginHarness(t); await settle(() => !h.ui.loading.value);
+  h.ui.identifier.value = "13812345678"; h.ui.code.value = "123456"; await h.ui.login();
+  assert.equal(h.location.replacedWith, "https://app.saydian.cn/global/saidian-mall/#/pages/profile/index");
+  assert.equal(new URL(h.location.href).pathname, "/global/saidian-mall/");
+  assert.equal(new URL(h.location.href).search, "");
 });
 
 test("phone password login uses +86 local input and preserves pasted full international numbers", async t => {

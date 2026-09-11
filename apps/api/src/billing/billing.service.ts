@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -64,6 +65,8 @@ const paymentChannelMap: Record<PaymentChannelContract, PaymentChannel> = {
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly providers: PaymentProviderService,
@@ -266,6 +269,45 @@ export class BillingService {
       where: { id, userId },
     });
     if (!intent) throw new NotFoundException("支付记录不存在");
+    if (
+      ([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status) &&
+      intent.channel.startsWith("WECHAT") &&
+      intent.providerMerchantId &&
+      intent.providerAppId
+    ) {
+      try {
+        assertPaymentOutboundEnabled();
+        const payload = await this.providers.queryWechatPayment(intent);
+        if (payload.trade_state === "SUCCESS") {
+          const amount = safeObject(payload.amount);
+          const transactionId = String(payload.transaction_id ?? "");
+          const paidCents = amount.total;
+          if (
+            String(payload.out_trade_no ?? "") !== intent.paymentNo ||
+            String(payload.mchid ?? "") !== intent.providerMerchantId ||
+            String(payload.appid ?? "") !== intent.providerAppId ||
+            amount.currency !== intent.currency ||
+            typeof paidCents !== "number" ||
+            !Number.isSafeInteger(paidCents) ||
+            paidCents !== intent.amountCents ||
+            !transactionId ||
+            transactionId.length > 256 ||
+            /\s/.test(transactionId)
+          ) {
+            throw new BadRequestException("微信查单结果与原支付记录不匹配");
+          }
+          await this.markPaid(intent.paymentNo, transactionId, paidCents, payload);
+          const refreshed = await this.prisma.paymentIntent.findFirst({
+            where: { id, userId },
+          });
+          if (refreshed) return serializePayment(refreshed);
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Wechat payment reconciliation failed for ${intent.id}: ${sanitizeError(error)}`,
+        );
+      }
+    }
     return serializePayment(intent);
   }
 
