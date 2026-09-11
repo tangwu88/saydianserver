@@ -59,13 +59,72 @@ test("HTTP fixture registers members only after test OTP verification", () => {
   assert.doesNotMatch(fixture, /const a = \(await request\(v2 \+ "\/auth\/register"/);
 });
 test("deployment shell syntax and receiver rejection", () => {
-  for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh"]) {
+  for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh", "configure-shared-gateway.sh"]) {
     const result = run(bash, ["-n", `deploy/scripts/${script}`]);
     assert.equal(result.status, 0, result.output);
   }
   const denied = run(bash, ["deploy/scripts/ci-receiver.sh", "release ../not-a-sha"]);
   assert.notEqual(denied.status, 0);
   assert.match(denied.output, /Only release SHA or status/);
+});
+
+test("shared gateway rebuild preserves only an explicitly marked global route block", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "saydian-gateway-test-"));
+  const bin = path.join(temporary, "bin");
+  const deployRoot = path.join(temporary, "deploy-root");
+  const gatewayConfig = path.join(temporary, "gateway-nginx.conf");
+  const dockerLog = path.join(temporary, "docker.log");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, "docker"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$DOCKER_LOG\"\n");
+  fs.writeFileSync(path.join(bin, "certbot"), "#!/bin/sh\nexit 0\n");
+  fs.writeFileSync(path.join(bin, "install"), "#!/bin/sh\nfor target do :; done\nmkdir -p \"$target\"\n");
+  fs.chmodSync(path.join(bin, "docker"), 0o755);
+  fs.chmodSync(path.join(bin, "certbot"), 0o755);
+  fs.chmodSync(path.join(bin, "install"), 0o755);
+  fs.writeFileSync(gatewayConfig, `# unrelated gateway config
+# BEGIN SAYDIAN APP HTTP app.saydian.cn
+old http block
+# END SAYDIAN APP HTTP app.saydian.cn
+# BEGIN SAYDIAN APP HTTPS app.saydian.cn
+server {
+  # BEGIN SAYDIAN GLOBAL ROUTES
+  location = /global/health { proxy_pass http://global-api:8080/health/ready; }
+  location = /global/saidian-mall { return 308 /global/saidian-mall/; }
+  # END SAYDIAN GLOBAL ROUTES
+  location / { proxy_pass http://old-api; }
+}
+# END SAYDIAN APP HTTPS app.saydian.cn
+`);
+  const shellBin = process.platform === "win32"
+    ? `/${bin[0].toLowerCase()}${bin.slice(2).replaceAll("\\", "/")}`
+    : bin;
+  const result = spawnSync(bash, ["-c", `PATH='${shellBin}':\"$PATH\"; export PATH; exec deploy/scripts/configure-shared-gateway.sh`], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 60_000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      APP_DOMAIN: "app.saydian.cn",
+      DEPLOY_ROOT: deployRoot,
+      DEPLOY_SOURCE_DIR: path.join(root, "deploy"),
+      GATEWAY_CONTAINER: "saydian-gateway-1",
+      GATEWAY_CONFIG_PATH: gatewayConfig,
+      DOCKER_LOG: dockerLog,
+    },
+  });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  assert.equal(result.status, 0, output);
+  const configured = fs.readFileSync(gatewayConfig, "utf8");
+  assert.equal(configured.match(/# BEGIN SAYDIAN GLOBAL ROUTES/g)?.length, 1);
+  assert.equal(configured.match(/location = \/global\/health/g)?.length, 1);
+  assert.equal(configured.match(/location = \/global\/saidian-mall/g)?.length, 1);
+  assert.doesNotMatch(configured, /__SAYDIAN_GLOBAL_ROUTES__/);
+  assert.match(configured, /proxy_pass http:\/\/saydianapp-api:8080/);
+  const dockerCalls = fs.readFileSync(dockerLog, "utf8");
+  assert.match(dockerCalls, /exec saydian-gateway-1 nginx -t/);
+  assert.match(dockerCalls, /exec saydian-gateway-1 nginx -s reload/);
+  fs.rmSync(temporary, { recursive: true, force: true });
 });
 test("production Redis expands the configured password in its container shell", () => {
   const compose = fs.readFileSync(path.join(root, "deploy/compose.production.yaml"), "utf8");
@@ -109,9 +168,12 @@ test("download page stays public, immutable and outside Git artifacts", () => {
   assert.match(adminNginx, /location \/down\/files\//);
   assert.match(adminNginx, /max-age=31536000, immutable/);
   assert.match(gateway, /location = \/down/);
+  assert.match(gateway, /__SAYDIAN_GLOBAL_ROUTES__/);
   assert.match(caddy, /handle \/down/);
   assert.match(compose, /\.\/downloads:\/usr\/share\/nginx\/html\/down\/files:ro/);
   assert.match(configure, /awk/);
+  assert.match(configure, /BEGIN SAYDIAN GLOBAL ROUTES/);
+  assert.match(configure, /preserved_global_routes/);
   assert.doesNotMatch(configure, /grep -Fq "\$marker"/);
 });
 

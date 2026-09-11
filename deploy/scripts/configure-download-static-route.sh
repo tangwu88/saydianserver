@@ -3,7 +3,7 @@
 set -euo pipefail
 
 GATEWAY_CONFIG="${GATEWAY_CONFIG:-/opt/saydian/config/gateway-nginx.conf}"
-GATEWAY_CONTAINER="${GATEWAY_CONTAINER:-saidian-gateway-1}"
+GATEWAY_CONTAINER="${GATEWAY_CONTAINER:-saydian-gateway-1}"
 DOWNLOAD_UPSTREAM="${DOWNLOAD_UPSTREAM:-saydianapp-production-download-1}"
 
 if [[ ! -f "$GATEWAY_CONFIG" ]]; then

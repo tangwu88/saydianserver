@@ -40,10 +40,41 @@ fi
 temporary_dir=$(mktemp -d)
 trap 'rm -rf -- "$temporary_dir"' EXIT
 candidate="$temporary_dir/gateway-nginx.conf"
+preserved_global_routes="$temporary_dir/global-routes.conf"
 http_begin="# BEGIN SAYDIAN APP HTTP $app_domain"
 http_end="# END SAYDIAN APP HTTP $app_domain"
 https_begin="# BEGIN SAYDIAN APP HTTPS $app_domain"
 https_end="# END SAYDIAN APP HTTPS $app_domain"
+global_begin="  # BEGIN SAYDIAN GLOBAL ROUTES"
+global_end="  # END SAYDIAN GLOBAL ROUTES"
+
+# The independently deployed international routes live inside the managed TLS
+# server block. Preserve that explicitly marked block when this script rebuilds
+# the domestic routes; do not create international routes on installations that
+# do not already have them.
+awk \
+  -v https_begin="$https_begin" -v https_end="$https_end" \
+  -v global_begin="$global_begin" -v global_end="$global_end" '
+  $0 == https_begin { in_https = 1 }
+  $0 == global_begin {
+    if (!in_https || seen || capture) exit 42
+    seen = 1
+    capture = 1
+  }
+  capture { print }
+  $0 == global_end {
+    if (!capture) exit 43
+    capture = 0
+    closed = 1
+  }
+  $0 == https_end {
+    if (capture) exit 44
+    in_https = 0
+  }
+  END {
+    if (capture || seen != closed) exit 45
+  }
+' "$gateway_config" > "$preserved_global_routes"
 
 awk \
   -v http_begin="$http_begin" -v http_end="$http_end" \
@@ -56,7 +87,22 @@ awk \
 printf '\n' >> "$candidate"
 sed "s/__APP_DOMAIN__/$app_domain/g" "$http_template" >> "$candidate"
 printf '\n' >> "$candidate"
-sed "s/__APP_DOMAIN__/$app_domain/g" "$https_template" >> "$candidate"
+awk \
+  -v app_domain="$app_domain" \
+  -v placeholder="  __SAYDIAN_GLOBAL_ROUTES__" \
+  -v routes_file="$preserved_global_routes" '
+  {
+    gsub(/__APP_DOMAIN__/, app_domain)
+    if ($0 == placeholder) {
+      while ((getline route < routes_file) > 0) print route
+      close(routes_file)
+      placeholders++
+      next
+    }
+    print
+  }
+  END { if (placeholders != 1) exit 46 }
+' "$https_template" >> "$candidate"
 cp "$candidate" "$gateway_config"
 if ! docker exec "$gateway_container" nginx -t; then
   restore_gateway

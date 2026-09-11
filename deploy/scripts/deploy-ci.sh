@@ -79,7 +79,7 @@ publish_app_update() {
 reload_gateway() {
   local gateway
   gateway=$(sed -n 's/^GATEWAY_CONTAINER=//p' "$env_file" | tail -n 1)
-  [[ -n "$gateway" ]] || gateway=saidian-gateway-1
+  [[ -n "$gateway" ]] || gateway=saydian-gateway-1
   if grep -qx 'USE_SHARED_GATEWAY=true' "$env_file"; then
     docker exec "$gateway" nginx -t
     docker exec "$gateway" nginx -s reload
@@ -91,7 +91,7 @@ configure_gateway() {
   domain=$(sed -n 's/^APP_DOMAIN=//p' "$env_file" | tail -n 1)
   gateway=$(sed -n 's/^GATEWAY_CONTAINER=//p' "$env_file" | tail -n 1)
   gateway_config=$(sed -n 's/^GATEWAY_CONFIG_PATH=//p' "$env_file" | tail -n 1)
-  [[ -n "$gateway" ]] || gateway=saidian-gateway-1
+  [[ -n "$gateway" ]] || gateway=saydian-gateway-1
   [[ -n "$gateway_config" ]] || gateway_config=/opt/saydian/config/gateway-nginx.conf
   APP_DOMAIN="$domain" GATEWAY_CONTAINER="$gateway" GATEWAY_CONFIG_PATH="$gateway_config" \
     DEPLOY_ROOT="$root_dir" DEPLOY_SOURCE_DIR="$source_dir/deploy" \
