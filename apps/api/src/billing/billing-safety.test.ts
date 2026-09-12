@@ -57,6 +57,12 @@ describe("transaction ownership and money request safety", () => {
     expect(() => assertProviderResultIdentity(identity, { mchid: "m1", appid: "a2" })).toThrow(/应用/);
     expect(() => assertProviderResultIdentity(identity, { mchid: "m1", appid: "a1", amount: { currency: "USD" } })).toThrow(/币种/);
   });
+  it("requires the Alipay app in callbacks but accepts the app already bound to a signed query", () => {
+    const identity = { channel: PaymentChannel.ALIPAY_WAP, currency: "CNY", providerMerchantId: null, providerAppId: "alipay-app" };
+    expect(() => assertProviderResultIdentity(identity, {})).toThrow(/应用/);
+    expect(() => assertProviderResultIdentity(identity, { app_id: "another-app" })).toThrow(/应用/);
+    expect(() => assertProviderResultIdentity(identity, {}, false, { alipayAppId: "alipay-app" })).not.toThrow();
+  });
   it("never resends an existing processing refund", async () => {
     const existing = { id: "r1", paymentIntentId: id, amountCents: 100, afterSaleId: null, status: RefundStatus.PROCESSING };
     const { service, providers, tx } = harness(existing);

@@ -128,6 +128,7 @@ export const notes = {
   "BillingController.offers": entry("健康报告购买方案", "platform=android/ios/h5/mini_program/web，可选", "后台启用且当前有效的版本化价格方案"),
   "BillingController.entitlements": entry("健康报告权益", "无请求体", "可用次数及30天会员到期时间"),
   "BillingController.createPayment": entry("创建统一支付单", "{businessType,businessId,offerId?,channel,platform,idempotencyKey}；金额和权益由服务端确定", "PaymentIntent及渠道调用参数；不等于付款成功；global仅CNY商城订单的wechat_jsapi/wechat_h5/wechat_native/alipay_wap/alipay_page；StoreKit沿用原规则", "未配置或出站暂停返回503；global其他业务/币种/原生App或小程序支付503 payment_unavailable，创建资金关系前拒绝；同键同单已有支付优先返回"),
+  "BillingController.alipayReturn": entry("支付宝网页支付返回商城", "orderId=商城订单UUID；第三方追加的查询参数不进入前端片段路由", "303跳转到固定商城订单详情页", "不据回跳本身确认付款；订单页只接受服务端验签通知或签名查单结果"),
   "BillingController.payment": entry("查询支付结果", "id=PaymentIntent UUID", "本人支付状态；客户端应以服务端状态为准"),
   "BillingController.verifyApple": entry("验证StoreKit交易", "{paymentIntentId,signedTransactionInfo}", "验证成功后的支付与权益", "Apple App Store Server；未配置返回503"),
   "BillingController.appleNotification": entry("接收App Store Server Notifications V2", "{signedPayload}；外层和内层JWS均须通过Apple证书链验证", "{received:true}；退款或撤销会收回对应报告权益", "Apple App Store Server"),

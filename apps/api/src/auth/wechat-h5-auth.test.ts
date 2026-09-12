@@ -6,7 +6,7 @@ import { sha256 } from "../common/crypto";
 import { AuthService } from "./auth.service";
 import { WechatH5AuthService, officialRedirectUri, safeH5ReturnTo } from "./wechat-h5-auth.service";
 import { CommerceCapabilitiesService } from "../commerce/commerce-capabilities.service";
-import { PaymentProviderService, trustedPaymentUrl, commercePaymentReturnUrl } from "../billing/payment-provider.service";
+import { PaymentProviderService, trustedPaymentUrl, commerceAlipayReturnUrl, commercePaymentReturnUrl } from "../billing/payment-provider.service";
 
 const verifier = "v".repeat(64);
 const stateText = "a".repeat(64);
@@ -190,11 +190,13 @@ describe("scoped JSAPI payer", () => {
   });
   it("rejects arbitrary payment redirects and fixes the commerce return route", () => {
     vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("PUBLIC_BASE_URL", "http://127.0.0.1:8081/global");
     vi.stubEnv("COMMERCE_STOREFRONT_URL", "http://127.0.0.1:5174/saidian-mall");
     expect(trustedPaymentUrl("https://wx.tenpay.com/cgi-bin/mmpayweb-bin/checkmweb?prepay_id=fake", "wechat").hostname).toBe("wx.tenpay.com");
     expect(() => trustedPaymentUrl("https://evil.invalid/gateway.do", "alipay")).toThrow();
     expect(() => trustedPaymentUrl("https://openapi.alipay.com@evil.invalid/gateway.do", "alipay")).toThrow();
     expect(commercePaymentReturnUrl("order-1")).toBe("http://127.0.0.1:5174/saidian-mall/#/pages/order-detail/index?id=order-1");
+    expect(commerceAlipayReturnUrl("order-1")).toBe("http://127.0.0.1:8081/global/api/saydian-app/v2/billing/payments/alipay/return/order-1");
   });
   it("looks up the current user plus official appId, never an unscoped legacy field", async () => {
     const lookup = vi.fn().mockResolvedValue({ openId: "official-openid", user: { status: "ACTIVE", mobileVerifiedAt: new Date() } });

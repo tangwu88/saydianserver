@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **330 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **331 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -155,7 +155,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（95）
+## V2 App 接口（96）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -175,6 +175,7 @@
 | `POST /api/saydian-app/v2/billing/payments/wechat/refund-notify` | 微信退款结果回调 | public | header:*；微信支付API v3加密通知；必须校验平台签名并解密 | SUCCESS确认；处理中、关闭或异常不伪报退款成功 | 微信支付 |
 | `GET /api/saydian-app/v2/billing/entitlements` | 健康报告权益 | member | 无请求体 | 可用次数及30天会员到期时间 | 核心服务 |
 | `POST /api/saydian-app/v2/billing/payments` | 创建统一支付单 | member | {businessType,businessId,offerId?,channel,platform,idempotencyKey}；金额和权益由服务端确定 | PaymentIntent及渠道调用参数；不等于付款成功；global仅CNY商城订单的wechat_jsapi/wechat_h5/wechat_native/alipay_wap/alipay_page；StoreKit沿用原规则 | 未配置或出站暂停返回503；global其他业务/币种/原生App或小程序支付503 payment_unavailable，创建资金关系前拒绝；同键同单已有支付优先返回 |
+| `GET /api/saydian-app/v2/billing/payments/alipay/return/:orderId` | 支付宝网页支付返回商城 | public | path:orderId；orderId=商城订单UUID；第三方追加的查询参数不进入前端片段路由 | 303跳转到固定商城订单详情页 | 不据回跳本身确认付款；订单页只接受服务端验签通知或签名查单结果 |
 | `GET /api/saydian-app/v2/billing/payments/:id` | 查询支付结果 | member | path:id；id=PaymentIntent UUID | 本人支付状态；客户端应以服务端状态为准 | 核心服务 |
 | `POST /api/saydian-app/v2/billing/apple/transactions/verify` | 验证StoreKit交易 | member | {paymentIntentId,signedTransactionInfo} | 验证成功后的支付与权益 | Apple App Store Server；未配置返回503 |
 | `POST /api/saydian-app/v2/billing/apple/notifications` | 接收App Store Server Notifications V2 | public | {signedPayload}；外层和内层JWS均须通过Apple证书链验证 | {received:true}；退款或撤销会收回对应报告权益 | Apple App Store Server |

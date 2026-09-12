@@ -470,7 +470,7 @@ export class PaymentProviderService {
       ),
       return_url: String(
         intent.businessType === "COMMERCE_ORDER"
-          ? commercePaymentReturnUrl(intent.businessId)
+          ? commerceAlipayReturnUrl(intent.businessId)
           : publicConfig.returnUrl ?? `${env("STOREFRONT_URL", requiredEnv("PUBLIC_BASE_URL"))}/#/orders`,
       ),
       biz_content: JSON.stringify({
@@ -740,6 +740,17 @@ export function commercePaymentReturnUrl(orderId: string): string {
     url.hash = `/pages/order-detail/index?id=${encodeURIComponent(orderId)}`;
     return url.toString();
   } catch { throw new ServiceUnavailableException("商城支付返回地址未配置"); }
+}
+
+export function commerceAlipayReturnUrl(orderId: string): string {
+  try {
+    const url = new URL(requiredEnv("PUBLIC_BASE_URL"));
+    const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if (url.username || url.password || url.search || url.hash || (url.protocol !== "https:" &&
+        !(process.env.NODE_ENV !== "production" && local && url.protocol === "http:"))) throw new Error("untrusted");
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/api/saydian-app/v2/billing/payments/alipay/return/${encodeURIComponent(orderId)}`;
+    return url.toString();
+  } catch { throw new ServiceUnavailableException("支付宝支付返回地址未配置"); }
 }
 
 function assertNativeCodeUrl(value: string): void {

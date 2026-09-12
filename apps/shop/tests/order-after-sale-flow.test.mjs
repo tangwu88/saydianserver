@@ -85,8 +85,13 @@ test('order product image opens its current product detail without triggering an
 });
 test('confirmed payment clears the frozen checkout and returns directly to the order list',async()=>{
   const h=page('order-detail',path=>path==='/storefront/capabilities'?{payments:[{channel:'wechat_jsapi',enabled:true}]}:order({status:'PENDING_PAYMENT',allowedActions:['PAY'],paymentIntents:[{id:'payment-a',status:'PENDING'}]}),{confirmPayment:()=>Promise.resolve({paid:true})});
-  h.storage.set('checkout-pending',{userId:'member-a',orderId:'order-a'});h.storage.set('checkout-owner','member-a');h.storage.set('checkout-items',[{skuId:'sku'}]);await h.show();await h.state.checkPayment();
+  h.storage.set('checkout-pending',{userId:'member-a',orderId:'order-a'});h.storage.set('checkout-owner','member-a');h.storage.set('checkout-items',[{skuId:'sku'}]);await h.show();
   assert.deepEqual(h.navigations,['/pages/orders/index']);assert.equal(h.storage.get('checkout-pending'),undefined);assert.equal(h.storage.get('checkout-items'),undefined);assert.equal(h.storage.get('checkout-owner'),undefined);
+});
+test('returning to a pending order automatically reconciles its existing payment once',async()=>{
+  let queried=0;
+  const h=page('order-detail',path=>path==='/storefront/capabilities'?{payments:[{channel:'alipay_wap',enabled:true}]}:order({status:'PENDING_PAYMENT',allowedActions:['PAY'],paymentIntents:[{id:'payment-a',status:'PENDING'}]}),{confirmPayment:()=>{queried++;return Promise.resolve({paid:false});}});
+  await h.show();assert.equal(queried,1);assert.match(h.state.paymentNote.value,/付款结果确认中/);assert.deepEqual(h.navigations,[]);
 });
 test('order payment redirect never races page unload with an immediate status request',async()=>{
   let queried=0;

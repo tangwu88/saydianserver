@@ -102,7 +102,20 @@ describe("member payment status reconciliation", () => {
 
     await expect(service.payment("member-1", alipayPending.id)).resolves.toMatchObject({ status: "succeeded" });
     expect(providers.queryAlipayPayment).toHaveBeenCalledWith(alipayPending);
-    expect(markPaid).toHaveBeenCalledWith(alipayPending.paymentNo, alipaySuccess.trade_no, alipayPending.amountCents, alipaySuccess);
+    expect(markPaid).toHaveBeenCalledWith(alipayPending.paymentNo, alipaySuccess.trade_no, alipayPending.amountCents, alipaySuccess, { alipayAppId: alipayPending.providerAppId });
+  });
+
+  it("accepts Alipay's signed numeric total_amount response", async () => {
+    const payload = { ...alipaySuccess, total_amount: 9.8 };
+    const prisma = { paymentIntent: { findFirst: vi.fn()
+      .mockResolvedValueOnce(alipayPending)
+      .mockResolvedValueOnce({ ...alipayPending, status: PaymentStatus.SUCCEEDED, providerPayload: payload }) } };
+    const providers = { queryAlipayPayment: vi.fn().mockResolvedValue(payload) };
+    const service = new BillingService(prisma as any, providers as any, {} as any);
+    const markPaid = vi.spyOn(service, "markPaid").mockResolvedValue();
+
+    await expect(service.payment("member-1", alipayPending.id)).resolves.toMatchObject({ status: "succeeded" });
+    expect(markPaid).toHaveBeenCalledWith(alipayPending.paymentNo, alipaySuccess.trade_no, alipayPending.amountCents, payload, { alipayAppId: alipayPending.providerAppId });
   });
 
   it.each([

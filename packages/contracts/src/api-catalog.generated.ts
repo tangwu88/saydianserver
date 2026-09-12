@@ -5384,6 +5384,38 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "BillingController.alipayReturn",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/billing/payments/alipay/return/:orderId",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "orderId",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/billing/billing.controller.ts",
+      "summary": "支付宝网页支付返回商城",
+      "request": "orderId=商城订单UUID；第三方追加的查询参数不进入前端片段路由",
+      "response": "303跳转到固定商城订单详情页",
+      "dependency": "不据回跳本身确认付款；订单页只接受服务端验签通知或签名查单结果",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/billing/billing.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "BillingController.payment",
       "method": "GET",
       "path": "/api/saydian-app/v2/billing/payments/:id",

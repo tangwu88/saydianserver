@@ -342,7 +342,9 @@ export class BillingService {
           ) {
             throw new BadRequestException("支付宝查单结果与原支付记录不匹配");
           }
-          await this.markPaid(intent.paymentNo, transactionId, paidCents, payload);
+          await this.markPaid(intent.paymentNo, transactionId, paidCents, payload, {
+            alipayAppId: intent.providerAppId,
+          });
           const refreshed = await this.prisma.paymentIntent.findFirst({
             where: { id, userId },
           });
@@ -829,13 +831,14 @@ export class BillingService {
     transactionId: string,
     paidCents: number,
     payload: Record<string, unknown>,
+    verification: { alipayAppId?: string | null } = {},
   ): Promise<void> {
     const intent = await this.prisma.paymentIntent.findUnique({
       where: { paymentNo },
     });
     if (!intent) throw new NotFoundException("支付记录不存在");
     assertNewExecutionOwner(intent);
-    assertProviderResultIdentity(intent, payload);
+    assertProviderResultIdentity(intent, payload, false, verification);
     if (!transactionId || !Number.isSafeInteger(paidCents) || paidCents !== intent.amountCents) {
       throw new BadRequestException("支付金额不一致");
     }
@@ -1465,10 +1468,15 @@ function normalizedPlatform(value: unknown): string | null {
 }
 
 function alipayPaymentCents(value: unknown): number {
-  if (typeof value !== "string" || !/^\d{1,12}(?:\.\d{1,2})?$/.test(value)) {
+  if (!(["string", "number"] as string[]).includes(typeof value) ||
+      (typeof value === "number" && !Number.isFinite(value))) {
     throw new BadRequestException("支付宝查单金额格式无效");
   }
-  const [yuan, decimal = ""] = value.split(".");
+  const normalized = String(value);
+  if (!/^\d{1,12}(?:\.\d{1,2})?$/.test(normalized)) {
+    throw new BadRequestException("支付宝查单金额格式无效");
+  }
+  const [yuan, decimal = ""] = normalized.split(".");
   const cents = BigInt(yuan!) * 100n + BigInt(decimal.padEnd(2, "0"));
   if (cents <= 0 || cents > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new BadRequestException("支付宝查单金额超出范围");
@@ -1503,14 +1511,15 @@ export function assertPaymentOutboundEnabled(environment: Record<string, string 
   if (shouldPauseWorkers(environment)) throw new ServiceUnavailableException("交易出站已暂停，原支付及退款关系保留，待恢复后核对");
 }
 
-export function assertProviderResultIdentity(intent: { channel: PaymentChannel; currency: string; providerMerchantId: string | null; providerAppId: string | null }, payload: Record<string, unknown>, refund = false) {
+export function assertProviderResultIdentity(intent: { channel: PaymentChannel; currency: string; providerMerchantId: string | null; providerAppId: string | null }, payload: Record<string, unknown>, refund = false, verification: { alipayAppId?: string | null } = {}) {
   if (intent.channel === PaymentChannel.APPLE_IAP) return;
   const amount = safeObject(payload.amount);
   if (amount.currency && amount.currency !== intent.currency) throw new BadRequestException("渠道回执币种不匹配");
   if (intent.channel.startsWith("WECHAT")) {
     if ((!refund || payload.mchid !== undefined) && intent.providerMerchantId && String(payload.mchid ?? "") !== intent.providerMerchantId) throw new BadRequestException("微信回执商户不匹配");
     if (!refund && intent.providerAppId && String(payload.appid ?? "") !== intent.providerAppId) throw new BadRequestException("微信回执应用不匹配");
-  } else if (!refund && intent.providerAppId && String(payload.app_id ?? "") !== intent.providerAppId) {
+  } else if (!refund && intent.providerAppId &&
+      String(payload.app_id ?? verification.alipayAppId ?? "") !== intent.providerAppId) {
     throw new BadRequestException("支付宝回执应用不匹配");
   }
 }

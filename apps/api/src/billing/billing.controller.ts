@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -23,8 +24,9 @@ import {
   type AuthenticatedUser,
 } from "../common/request-context";
 import { RawResponse } from "../common/raw-response.decorator";
-import { safeObject } from "../common/crypto";
+import { isUuid, safeObject } from "../common/crypto";
 import { BillingService } from "./billing.service";
+import { commercePaymentReturnUrl } from "./payment-provider.service";
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 
@@ -69,6 +71,17 @@ export class BillingController {
         ? { clientUserAgent: request.headers["user-agent"] }
         : {}),
     });
+  }
+
+  @Get("payments/alipay/return/:orderId")
+  @RawResponse()
+  alipayReturn(
+    @Param("orderId") orderId: string,
+    @Res() response: Response,
+  ) {
+    if (!isUuid(orderId)) throw new BadRequestException("订单编号不正确");
+    response.setHeader("cache-control", "no-store");
+    response.redirect(303, commercePaymentReturnUrl(orderId));
   }
 
   @Get("payments/:id")

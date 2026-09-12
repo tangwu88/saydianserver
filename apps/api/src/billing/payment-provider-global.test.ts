@@ -8,7 +8,7 @@ const keys = generateKeyPairSync("rsa", { modulusLength: 2048,
   privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 
 beforeEach(() => {
-  for (const [key, value] of Object.entries({ APP_REALM: "global", NODE_ENV: "production", WORKER_OUTBOUND_PAUSED: "false", BUSINESS_WRITES_PAUSED: "false", MAINTENANCE_READ_ONLY: "false", GLOBAL_WECHAT_H5_ENABLED: "true", H5_DEMO_ENABLED: "false", COMMERCE_STOREFRONT_URL: "https://demo.invalid/global/saidian-mall/" })) vi.stubEnv(key, value);
+  for (const [key, value] of Object.entries({ APP_REALM: "global", NODE_ENV: "production", WORKER_OUTBOUND_PAUSED: "false", BUSINESS_WRITES_PAUSED: "false", MAINTENANCE_READ_ONLY: "false", GLOBAL_WECHAT_H5_ENABLED: "true", H5_DEMO_ENABLED: "false", PUBLIC_BASE_URL: "https://demo.invalid/global", COMMERCE_STOREFRONT_URL: "https://demo.invalid/global/saidian-mall/" })) vi.stubEnv(key, value);
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("No provider network in tests")));
 });
 afterEach(() => { expect(fetch).not.toHaveBeenCalled(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -26,6 +26,12 @@ function providerFixture(ready = false) {
   return { db, secrets, config, credentials, service: new PaymentProviderService(db as any, secrets as any) };
 }
 describe("global payment adapter boundary", () => {
+  it("signs Alipay browser payments with a fragment-free same-site return landing", async () => {
+    const invoke = await providerFixture(true).service.create(intent(PaymentChannel.ALIPAY_WAP), {}) as any;
+    expect(invoke.type).toBe("FORM");
+    expect(invoke.fields.return_url).toBe("https://demo.invalid/global/api/saydian-app/v2/billing/payments/alipay/return/order");
+    expect(new URL(invoke.fields.return_url).hash).toBe("");
+  });
   it.each([PaymentChannel.WECHAT_JSAPI, PaymentChannel.ALIPAY_WAP, PaymentChannel.ALIPAY_PAGE])("dispatches an allowed CNY commerce %s only to its existing adapter", async channel => {
     const h = providerFixture(true), wechat = vi.spyOn(h.service as any, "createWechat").mockResolvedValue({ type: "SYNTHETIC_WECHAT" }), alipay = vi.spyOn(h.service as any, "createAlipay").mockResolvedValue({ type: "SYNTHETIC_ALIPAY" });
     await h.service.create(intent(channel), {});
