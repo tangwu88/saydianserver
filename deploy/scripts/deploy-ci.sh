@@ -157,7 +157,21 @@ else
   printf '\nAPP_REVISION=%s\n' "$revision" >> "$env_file"
 fi
 compose config --quiet
-compose pull api worker admin
+# Pull one image at a time and suppress Docker's high-frequency progress stream.
+# The production host can have a slow route to GHCR; bounded retries make a
+# transient registry interruption recoverable without touching live containers.
+for service in api worker admin; do
+  pulled=false
+  for attempt in 1 2 3; do
+    if COMPOSE_PARALLEL_LIMIT=1 compose pull --quiet "$service"; then
+      pulled=true
+      break
+    fi
+    echo "Image pull failed for $service (attempt $attempt/3)." >&2
+    sleep $((attempt * 10))
+  done
+  [[ "$pulled" == true ]]
+done
 # Stop on pending or failed schema migration. Existing API image startup only reapplies already-completed migrations.
 compose run --rm --no-deps api ./node_modules/.bin/prisma migrate status
 containers_changed=true

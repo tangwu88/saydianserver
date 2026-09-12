@@ -138,6 +138,8 @@ test("automatic release preserves maintenance and rejects schema changes", () =>
   assert.doesNotMatch(script, /prisma migrate deploy|MAINTENANCE_READ_ONLY=false|compose down|docker.*prune/);
   assert.match(script, /trap 'rollback \$\?' ERR/);
   assert.match(script, /images\.yaml/);
+  assert.match(script, /COMPOSE_PARALLEL_LIMIT=1 compose pull --quiet "\$service"/);
+  assert.match(script, /for attempt in 1 2 3/);
   assert.match(script, /for page in admin down/);
   assert.match(script, /sha256sum --strict --check SHA256SUMS/);
   assert.match(script, /if \[\[ -f "\$source_downloads\/SHA256SUMS" \]\]/);
