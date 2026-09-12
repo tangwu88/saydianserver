@@ -32,6 +32,7 @@ import {
 import { authAudience, authIssuer, isGlobalRealm } from "../common/deployment-realm";
 import { globalError, globalLocale, internationalPhone, maskedIdentifier, normalizedEmail } from "./global-identity";
 import { GLOBAL_WECHAT_CALLBACK_PATH, H5_PHONE_TEST_SESSION_PREFIX, isH5PhoneTestSession, requireGlobalWechatPhoneTest } from "./global-wechat-policy";
+import { isOwnPromoter } from "../common/member-promoter-identity";
 
 const accessLifetimeSeconds = 15 * 60;
 const refreshLifetimeMs = 30 * 24 * 60 * 60 * 1000;
@@ -498,10 +499,19 @@ export class AuthService {
   async bindReferral(userId: string, referralCodeInput: string) {
     const referralCode = referralCodeInput.trim();
     if (!referralCode) return { bound: false };
-    const employee = await this.prisma.commerceEmployee.findFirst({
-      where: { referralCode, active: true },
-    });
-    if (!employee) return { bound: false };
+    const [employee, member] = await Promise.all([
+      this.prisma.commerceEmployee.findFirst({
+        where: { referralCode, active: true },
+        select: { id: true, name: true, wecomUserId: true, mobile: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, mobile: true, mobileVerifiedAt: true },
+      }),
+    ]);
+    if (!employee || !member || isOwnPromoter(member, employee)) {
+      return { bound: false };
+    }
     const changed = await this.prisma.user.updateMany({
       where: { id: userId, referralEmployeeId: null },
       data: { referralEmployeeId: employee.id },

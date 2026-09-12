@@ -35,6 +35,8 @@ test("realm fixture executes storage isolation with scoped customer and employee
   assert.equal(domestic.realm.isGlobalMall, false); assert.equal(global.realm.isGlobalMall, true);
   assert.equal(global.config.globalApiAllowed("/storefront/orders", "POST"), true); assert.equal(global.config.globalPageAllowed("/pages/checkout/index"), true);
   assert.equal(global.config.globalApiAllowed("/wecom/oauth", "POST"), true); assert.equal(global.config.globalPageAllowed("/pages/employee/index"), true);
+  assert.equal(global.config.globalApiAllowed("/storefront/promoter/dashboard?range=30d", "GET"), true);
+  assert.equal(global.config.globalApiAllowed("/storefront/promoter/withdrawals", "POST"), true);
   assert.equal(global.config.globalApiAllowed("/auth/referral", "POST"), true); assert.equal(global.config.globalApiAllowed("/wecom/oauth", "GET"), false);
 });
 

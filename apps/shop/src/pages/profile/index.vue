@@ -65,9 +65,8 @@ const menus = [
   { icon: "藏", label: "我的收藏", url: "/pages/favorites/index" },
   { icon: "券", label: "优惠券", url: "/pages/coupons/index" },
   { icon: "分", label: "积分与流水", url: "/pages/points/index" },
-  { icon: "票", label: "发票信息", url: "/pages/help/index?section=invoice" },
   { icon: "服", label: "客服与帮助", url: "/pages/help/index" },
-  { icon: "推", label: "员工推广中心", url: "/pages/employee/index" },
+  { icon: "推", label: "推广与奖金", url: "/pages/employee/index" },
 ];
 onShow(loadAccount);
 onHide(() => { accountGeneration++; });

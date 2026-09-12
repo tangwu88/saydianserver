@@ -26,7 +26,8 @@ function couponFixture() {
     commerceCoupon: {
       findFirst: vi.fn().mockImplementation(async ({ where }: any) => {
         events.push("eligibility");
-        return where.id === coupon.id && where.status === coupon.status && where.employeeDistributable === coupon.employeeDistributable &&
+        const distributionAllowed = where.employeeDistributable === undefined || where.employeeDistributable === coupon.employeeDistributable;
+        return where.id === coupon.id && where.status === coupon.status && distributionAllowed &&
           coupon.validFrom <= where.validFrom.lte && coupon.validUntil >= where.validUntil.gte ? { ...coupon } : null;
       }),
       update: vi.fn().mockImplementation(async ({ data }: any) => {
@@ -135,9 +136,18 @@ describe("customer public coupon assets", () => {
     expect(h.events).toEqual(["lock", "existing", "eligibility", "claim", "increment"]);
   });
 
+  it("redeems a configured customer code even when employees may distribute the same coupon", async () => {
+    const h = couponFixture(); h.coupon.employeeDistributable = true;
+    const claim = await h.service.claimCouponByCode(member, { code: "save10" });
+    expect(claim).toMatchObject({ userId: member, couponId: h.coupon.id });
+    expect(h.tx.commerceCoupon.findFirst.mock.calls[0]![0].where).not.toHaveProperty("employeeDistributable");
+    expect(h.coupon.claimedQuantity).toBe(1);
+  });
+
   it.each(["", "abc", "not valid", "missing-code"])("does not reveal coupon details for invalid or unavailable code %s", async code => {
     const h = couponFixture();
-    await expect(h.service.claimCouponByCode(member, { code })).rejects.toMatchObject({ status: 400 });
+    await expect(h.service.claimCouponByCode(member, { code })).rejects.toMatchObject({ status: 400,
+      response: expect.objectContaining({ errorKey: expect.stringMatching(/^coupon_code_/) }) });
     expect(h.claims).toEqual([]); expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
 

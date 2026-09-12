@@ -66,7 +66,7 @@ export class CommerceWithdrawalService {
         return publicWithdrawal(existing);
       }
       const plan = await tx.commerceCommissionPlan.findUnique({ where: { id: "default" } });
-      if (!plan?.enabled || !plan.withdrawalEnabled) throw new ServiceUnavailableException("员工提现尚未启用");
+      if (!plan?.enabled || !plan.withdrawalEnabled) throw new ServiceUnavailableException("奖金提现尚未启用");
       if (!Number.isSafeInteger(plan.minimumWithdrawCents) || plan.minimumWithdrawCents === null || plan.minimumWithdrawCents <= 0) throw new ServiceUnavailableException("最低提现金额尚未配置");
       if (amountCents < plan.minimumWithdrawCents) throw new BadRequestException("提现金额低于最低限额");
       if (await tx.commerceWithdrawal.count({ where: { employeeId, status: { in: pending } } })) throw new ConflictException("已有提现处理中，请等待原提现完成");
@@ -78,7 +78,7 @@ export class CommerceWithdrawalService {
         if ((used._sum.amountCents ?? 0) + amountCents > plan.dailyWithdrawLimitCents) throw new BadRequestException("超过当日提现限额（北京时间）");
       }
       const employee = await tx.commerceEmployee.findUnique({ where: { id: employeeId } });
-      if (!employee?.active) throw new ConflictException("员工状态不可申请提现");
+      if (!employee?.active) throw new ConflictException("推广账户当前不可申请提现");
       if (wallet.debtCents !== 0) throw new ConflictException("存在退款欠款，结清后才能申请提现");
       if (wallet.availableCents < amountCents) throw new ConflictException("可提现余额不足");
       if (wallet.withdrawingCents + amountCents > 2_147_483_647) throw new ConflictException("提现累计金额超过当前账本范围，请联系财务核验");

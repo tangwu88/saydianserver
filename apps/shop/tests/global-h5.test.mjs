@@ -183,6 +183,8 @@ test("global customer shopping and employee promotion pages allow only exact end
     for (const path of paths) assert.equal(globalApiAllowed(path, method), true, `${method} ${path}`);
   assert.equal(globalApiAllowed("/storefront/coupons/code/claim", "POST"), true);
   assert.equal(globalApiAllowed("/auth/referral", "POST"), true);
+  for (const path of ["/storefront/promoter/dashboard?range=30d", "/storefront/promoter/promotion", "/storefront/promoter/coupons", "/storefront/promoter/withdrawals"]) assert.equal(globalApiAllowed(path, "GET"), true, path);
+  for (const path of ["/storefront/promoter/coupons/coupon-1/claim", "/storefront/promoter/withdrawals"]) assert.equal(globalApiAllowed(path, "POST"), true, path);
   for (const path of ["/wecom/authorize-url?redirectUri=https%3A%2F%2Fapp.saydian.cn", "/wecom/me/dashboard?range=30d", "/wecom/me/promotion", "/wecom/me/coupons", "/wecom/me/withdrawals"]) assert.equal(globalApiAllowed(path, "GET"), true, path);
   for (const path of ["/wecom/oauth", "/wecom/me/coupons/coupon-1/claim", "/wecom/me/withdrawals"]) assert.equal(globalApiAllowed(path, "POST"), true, path);
   for (const [method, path] of [
@@ -1201,7 +1203,7 @@ function renderedText(node) {
 }
 const renderedButton = (tree, label) => renderNodes(tree).find((node) => node.type === "button" && renderedText(node).replace(/›$/, "").trim() === label);
 
-test("global account renders customer orders plus the employee promotion entry and retains temporary verification notices", () => {
+test("global account removes the redundant order shortcuts but keeps member promotion and verification notices", () => {
   const h = harness(),
     navigations = [];
   h.uni.navigateTo = (value) => navigations.push(value.url);
@@ -1217,10 +1219,6 @@ test("global account renders customer orders plus the employee promotion entry a
   });
   let tree = component.tree();
   const expected = {
-    全部订单: "/pages/orders/index",
-    待付款: "/pages/orders/index?status=PENDING_PAYMENT",
-    待收货: "/pages/orders/index?status=SHIPPED",
-    售后: "/pages/orders/index?status=AFTER_SALE",
     收货地址: "/pages/addresses/index",
     我的收藏: "/pages/favorites/index",
     优惠券: "/pages/coupons/index",
@@ -1232,6 +1230,9 @@ test("global account renders customer orders plus the employee promotion entry a
     assert.ok(button, label);
     button.props.onClick();
     assert.equal(navigations.at(-1), route);
+  }
+  for (const label of ["全部订单", "待付款", "待收货", "售后"]) {
+    assert.equal(renderedButton(tree, label), undefined, label);
   }
   assert.match(renderedText(tree), /待验证/);
   assert.match(renderedText(tree), /购买前需验证账号/);
@@ -1249,6 +1250,14 @@ test("global account renders customer orders plus the employee promotion entry a
   assert.doesNotMatch(renderedText(tree), /待验证|购买前需验证账号/);
   assert.match(renderedText(tree), /会员 ID：456/);
   assert.equal(h.requests.length, 0);
+});
+
+test("storefront help and profile source no longer expose invoice navigation", () => {
+  const help = readFileSync(resolve(source, "pages/help/index.vue"), "utf8");
+  const profile = readFileSync(resolve(source, "pages/profile/index.vue"), "utf8");
+  assert.doesNotMatch(help, /发票信息|section=invoice/);
+  assert.doesNotMatch(profile, /发票信息|section=invoice/);
+  assert.match(profile, /推广与奖金/);
 });
 
 test("global account shows three recent orders and opens the selected order detail", () => {

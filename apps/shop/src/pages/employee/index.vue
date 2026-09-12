@@ -1,19 +1,21 @@
 <template>
   <DesktopHeader /><view class="page"
     ><view class="container"
-      ><view v-if="!token" class="card employee-login"
-        ><view class="logo">企</view><text>赛电商城推广中心</text
+      ><h1 class="page-title">{{ memberMode ? '推广与奖金' : '员工推广中心' }}</h1
+      ><view v-if="!authorized" class="card employee-login"
+        ><view class="logo">{{ memberMode ? '奖' : '企' }}</view><text>{{ memberMode ? '会员推广与奖金' : '赛电商城推广中心' }}</text
         ><text class="small"
           >{{ loginMessage }}</text>
-          <view v-if="demo" class="demo-login"><text class="small">隔离演示：使用本机私有运行目录的员工测试会话，不连接企业微信。</text><input v-model="demoToken" password class="input" placeholder="粘贴本地员工测试会话"/><button class="primary-btn" @click="useDemoSession">进入测试工作台</button></view>
+          <button v-if="memberMode" class="primary-btn" @click="openLogin">登录会员账号</button>
+          <view v-if="!memberMode && demo" class="demo-login"><text class="small">隔离演示：使用本机私有运行目录的员工测试会话，不连接企业微信。</text><input v-model="demoToken" password class="input" placeholder="粘贴本地员工测试会话"/><button class="primary-btn" @click="useDemoSession">进入测试工作台</button></view>
         </view
       ><template v-else-if="data"
-        ><view class="card filters"><picker :range="ranges.map(x=>x.label)" :value="rangeIndex" @change="rangeIndex=Number($event.detail.value);page=1;load()"><view>业绩范围：{{ ranges[rangeIndex]?.label }} ▾</view></picker><template v-if="ranges[rangeIndex]?.key==='custom'"><picker mode="date" :value="from" @change="from=String($event.detail.value)"><view>开始：{{ from || '选择日期' }}</view></picker><picker mode="date" :value="to" @change="to=String($event.detail.value)"><view>结束：{{ to || '选择日期' }}</view></picker><button size="mini" @click="page=1;load()">查询</button></template><button size="mini" @click="logout">退出员工账号</button></view><view class="employee-head card"
+        ><view class="card filters"><picker :range="ranges.map(x=>x.label)" :value="rangeIndex" @change="rangeIndex=Number($event.detail.value);page=1;load()"><view>业绩范围：{{ ranges[rangeIndex]?.label }} ▾</view></picker><template v-if="ranges[rangeIndex]?.key==='custom'"><picker mode="date" :value="from" @change="from=String($event.detail.value)"><view>开始：{{ from || '选择日期' }}</view></picker><picker mode="date" :value="to" @change="to=String($event.detail.value)"><view>结束：{{ to || '选择日期' }}</view></picker><button size="mini" @click="page=1;load()">查询</button></template><button v-if="memberMode" size="mini" @click="backToProfile">返回会员中心</button><button v-else size="mini" @click="logout">退出员工账号</button></view><view class="employee-head card"
           ><view
             ><text class="small">所选期间净销售额</text
             ><text>{{ money(data.netSalesCents) }}</text
             ><b
-              >{{ data.employee.name }} · 推荐号
+              >{{ data.employee.name }} · 推广码
               {{ data.employee.referralCode }}</b
             ></view
           ><view v-if="data.promotion" class="qr"
@@ -34,7 +36,7 @@
             ><b>{{ money(data.refundCents) }}</b></view
           ></view
         ><view class="card wallet-card"
-          ><view class="section-title">推荐奖金</view
+          ><view class="section-title">推广奖金明细</view
           ><view class="wallet-grid"
             ><view><text class="small">冻结奖金</text><b>{{ money(data.bonus.wallet?.frozenCents) }}</b></view
             ><view><text class="small">可提现</text><b>{{ money(data.bonus.wallet?.availableCents) }}</b></view
@@ -46,8 +48,8 @@
           ><view v-for="item in data.bonus.recentWithdrawals" :key="item.id" class="withdraw-item"
             ><view><b>{{ money(item.amountCents) }}</b><text class="small">{{ withdrawalStatus(item.status) }}</text></view></view
         ></view
-        ><EmployeeWithdrawalPanel :employee-id="data.employee.id" /><view class="card coupon-card"
-          ><view class="section-title">员工优惠券</view
+        ><EmployeeWithdrawalPanel :employee-id="data.employee.id" :member-mode="memberMode" /><view class="card coupon-card"
+          ><view class="section-title">推广优惠券</view
           ><view v-for="coupon in coupons" :key="coupon.id" class="coupon-line"
             ><view><b>{{ coupon.name }}</b><text class="small">剩余可领 {{ coupon.remainingEmployeeQuota }} 张</text></view
             ><view class="outline-btn" @click="claimCoupon(coupon.id)">领取券码</view
@@ -57,7 +59,7 @@
               ><view v-if="gift.qrDataUrl" class="mini-btn" @click="previewQr(gift.qrDataUrl)">二维码</view
               ><text v-if="!gift.linkUrl" class="small">链接仅在领取时展示</text></view
           ></view
-          ><view v-if="!coupons.length" class="empty">暂无可领取的员工优惠券</view
+          ><view v-if="!coupons.length" class="empty">暂无可领取的推广优惠券</view
         ></view
         ><view v-if="data.promotion" class="card assets"
           ><view class="section-title">推广素材</view
@@ -90,6 +92,7 @@
             >暂无推广订单</view>
           <view class="pagination"><button size="mini" :disabled="page<=1 || busy" @click="page--;load()">上一页</button><text>第 {{ page }} 页 · 共 {{ data.pagination?.total ?? '未获取' }} 单</text><button size="mini" :disabled="!data.pagination?.hasMore || busy" @click="page++;load()">下一页</button></view><text class="small tip">销售按付款时间、退款按完成时间、订单列表按创建时间筛选；北京时间。{{ data.trendReason || '' }}</text></view
         ></template
+      ><view v-else-if="authorized" class="card loading-state"><text>{{ loadError || '正在加载推广与奖金…' }}</text><button v-if="loadError" class="outline-btn" :disabled="busy" @click="load">重新加载</button></view
       ></view
     ></view
   >
@@ -100,18 +103,48 @@ import { onLoad, onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import EmployeeWithdrawalPanel from "../../components/EmployeeWithdrawalPanel.vue";
-import { api, money, toast, API_BASE } from "../../api";
+import { api, money, toast, API_BASE, requireLogin } from "../../api";
 const token = ref(String(mallStorage.get("employee-token") || "")),
+  memberMode = ref(Boolean(mallStorage.get("saidian-token")) || !token.value),
+  authorized = ref(Boolean(mallStorage.get("saidian-token")) || Boolean(token.value)),
   data = ref<any>(),
   coupons = ref<any[]>([]),
-  loginMessage = ref("正在识别企业微信员工身份…");
+  loginMessage = ref("请登录会员账号后查看自己的推广与奖金明细。"),
+  loadError = ref("");
 const demo=ref(false),demoToken=ref(''),busy=ref(false),page=ref(1),rangeIndex=ref(3),from=ref(''),to=ref(''),products=ref<any[]>([]),productIndex=ref(0);
 const ranges=[{key:'today',label:'今天'},{key:'7d',label:'近7天'},{key:'30d',label:'近30天'},{key:'month',label:'本月'},{key:'custom',label:'自定义'}];
-onShow(()=>{if(data.value)void load();});
+let initialized = false;
+onShow(()=>{
+  if (!initialized) return;
+  const hasMemberSession = Boolean(mallStorage.get("saidian-token"));
+  if (hasMemberSession && !memberMode.value) {
+    memberMode.value = true;
+    token.value = "";
+    authorized.value = true;
+    void load();
+    return;
+  }
+  if (hasMemberSession && memberMode.value && !data.value) {
+    authorized.value = true;
+    void load();
+    return;
+  }
+  if (data.value) void load();
+});
 onLoad(async () => {
-  try{const caps:any=await api('/storefront/capabilities');demo.value=!!caps.demo;}catch{/* Login still reports its own failure. */}
   const oauthCode = queryValue("code");
-  if (oauthCode && !token.value) {
+  const hasMemberSession = Boolean(mallStorage.get("saidian-token"));
+  const enterpriseEntry = !hasMemberSession && Boolean(
+    oauthCode || token.value || (typeof navigator !== "undefined" && /wxwork/i.test(navigator.userAgent)),
+  );
+  memberMode.value = !enterpriseEntry;
+  authorized.value = memberMode.value ? hasMemberSession : Boolean(token.value);
+  uni.setNavigationBarTitle({ title: memberMode.value ? "推广与奖金" : "员工推广中心" });
+  initialized = true;
+  if (!memberMode.value) {
+    try{const caps:any=await api('/storefront/capabilities');demo.value=!!caps.demo;}catch{/* Login still reports its own failure. */}
+  }
+  if (!memberMode.value && oauthCode && !token.value) {
     try {
       const state = queryValue('state');
       if (typeof sessionStorage === 'undefined' || !state || sessionStorage.getItem('saidian-wecom-state') !== state) throw new Error('员工授权校验已失效，请重新从企业微信进入。');
@@ -121,6 +154,7 @@ onLoad(async () => {
         data: { code: oauthCode },
       });
       token.value = r.token;
+      authorized.value = true;
       mallStorage.set("employee-token", r.token);
       cleanOAuthQuery();
     } catch (e) {
@@ -128,7 +162,18 @@ onLoad(async () => {
       toast(e);
     }
   }
+  if (memberMode.value) {
+    if (!hasMemberSession) {
+      authorized.value = false;
+      requireLogin("/pages/employee/index");
+      return;
+    }
+    authorized.value = true;
+    await load();
+    return;
+  }
   if (token.value) {
+    authorized.value = true;
     await load();
     return;
   }
@@ -137,13 +182,14 @@ onLoad(async () => {
 async function load() {
   if (busy.value) return;
   busy.value=true;
+  loadError.value="";
   try {
     const range=ranges[rangeIndex.value]!.key;
     if(range==='custom' && (!from.value||!to.value))return;
     const query=new URLSearchParams({range,page:String(page.value),pageSize:'10',...(range==='custom'?{from:from.value,to:to.value}:{})});
     const [dashboard, couponRows] = await Promise.all([
-      employeeApi('/wecom/me/dashboard?'+query),
-      employeeApi("/wecom/me/coupons"),
+      promoterApi('/dashboard?'+query),
+      promoterApi("/coupons"),
     ]);
     data.value = dashboard;
     coupons.value = couponRows;
@@ -151,10 +197,22 @@ async function load() {
     productIndex.value=0;
   } catch (e) {
     data.value=null;
+    loadError.value=errorMessage(e);
     toast(e);
   } finally {
     busy.value=false;
   }
+}
+function promoterApi(path: string, method = "GET", body?: any, headers?: Record<string,string>) {
+  if (memberMode.value) {
+    return api(`/storefront/promoter${path}`, {
+      method: method as any,
+      auth: true,
+      ...(body === undefined ? {} : { data: body }),
+      ...(headers ? { headers } : {}),
+    });
+  }
+  return employeeApi(`/wecom/me${path}`, method, body, headers);
 }
 function employeeApi(path: string, method = "GET", body?: any, headers?: Record<string,string>) {
   return new Promise<any>((resolve, reject) =>
@@ -165,7 +223,7 @@ function employeeApi(path: string, method = "GET", body?: any, headers?: Record<
       header: { authorization: `Bearer ${token.value}`, ...(headers || {}) },
       timeout:15000,
       success: (r) => {
-        if(r.statusCode===401){token.value='';data.value=null;coupons.value=[];mallStorage.remove('employee-token');loginMessage.value='员工会话已过期，请重新从企业微信进入。';}
+        if(r.statusCode===401){token.value='';authorized.value=false;data.value=null;coupons.value=[];mallStorage.remove('employee-token');loginMessage.value='员工会话已过期，请重新从企业微信进入。';}
         r.statusCode < 300 ? resolve(r.data) : reject(new Error((r.data as any)?.message || '员工请求失败'));
       },
       fail: reject,
@@ -175,15 +233,17 @@ function employeeApi(path: string, method = "GET", body?: any, headers?: Record<
 async function claimCoupon(id: string) {
   if(busy.value)return;
   try {
-    const rows = await employeeApi(`/wecom/me/coupons/${id}/claim`, "POST", { quantity: 1 });
+    const rows = await promoterApi(`/coupons/${id}/claim`, "POST", { quantity: 1 });
     if (rows?.[0]?.linkUrl) copy(rows[0].linkUrl);
     await load();
     uni.showToast({ title: "券码已领取，链接已复制", icon: "none" });
   } catch (e) { toast(e); }
 }
-async function useDemoSession(){if(!demo.value||!demoToken.value.trim())return;token.value=demoToken.value.trim();demoToken.value='';mallStorage.set('employee-token',token.value);await load();}
-function logout(){token.value='';data.value=null;coupons.value=[];products.value=[];mallStorage.remove('employee-token');loginMessage.value='员工账号已退出，顾客账号不受影响。';}
-async function productPromotion(){try{const selected=products.value[productIndex.value-1];data.value.promotion=await employeeApi('/wecom/me/promotion'+(selected?'?productId='+encodeURIComponent(selected.id):''));}catch(e){toast(e);}}
+async function useDemoSession(){if(!demo.value||!demoToken.value.trim())return;memberMode.value=false;token.value=demoToken.value.trim();authorized.value=true;demoToken.value='';mallStorage.set('employee-token',token.value);await load();}
+function logout(){token.value='';authorized.value=false;data.value=null;coupons.value=[];products.value=[];mallStorage.remove('employee-token');loginMessage.value='员工账号已退出，会员账号不受影响。';}
+async function productPromotion(){try{const selected=products.value[productIndex.value-1];data.value.promotion=await promoterApi('/promotion'+(selected?'?productId='+encodeURIComponent(selected.id):''));}catch(e){toast(e);}}
+function openLogin(){ requireLogin("/pages/employee/index"); }
+function backToProfile(){ uni.navigateBack({ fail: () => uni.reLaunch({ url: "/pages/profile/index" }) }); }
 async function authorize() {
   try {
     if (typeof location === "undefined") return;
@@ -245,6 +305,7 @@ function withdrawalStatus(value: string) {
 }
 </script>
 <style scoped lang="scss">
+.page-title{margin:0 0 20rpx;font-size:42rpx}.loading-state{display:grid;gap:20rpx;text-align:center}.loading-state .outline-btn{margin:0 auto;min-width:220rpx}
 .filters,.pagination{display:flex;align-items:center;flex-wrap:wrap;gap:16px;margin-bottom:18px;font-size:14px}.filters button,.pagination button{margin:0}.demo-login{display:grid;gap:16px;margin-top:24px}.demo-login .input{max-width:100%;font-size:14px}
 .employee-login {
   max-width: 700rpx;

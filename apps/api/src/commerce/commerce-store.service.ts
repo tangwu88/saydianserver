@@ -741,6 +741,10 @@ export class CommerceStoreService {
   }
 
   async claimCoupon(userId: string, couponId: string) {
+    return this.claimCouponRecord(userId, couponId, false);
+  }
+
+  private async claimCouponRecord(userId: string, couponId: string, allowEmployeeDistributable: boolean) {
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "CommerceCoupon" WHERE id = ${couponId}::uuid FOR UPDATE`;
       // A lost response must be recoverable even when the final coupon has now
@@ -752,7 +756,7 @@ export class CommerceStoreService {
         where: {
           id: couponId,
           status: CouponStatus.ACTIVE,
-          employeeDistributable: false,
+          ...(allowEmployeeDistributable ? {} : { employeeDistributable: false }),
           validFrom: { lte: now },
           validUntil: { gte: now },
         },
@@ -775,18 +779,20 @@ export class CommerceStoreService {
   async claimCouponByCode(userId: string, input: unknown) {
     const code = String(safeObject(input).code ?? "").trim().toUpperCase();
     if (!/^[A-Z0-9_-]{4,32}$/.test(code)) {
-      throw new BadRequestException("请输入 4 至 32 位有效优惠码");
+      throw globalError(400, "coupon_code_invalid", "请输入 4 至 32 位有效优惠码");
     }
     const coupon = await this.prisma.commerceCoupon.findUnique({
       where: { legacyId: code },
       select: { id: true },
     });
-    if (!coupon) throw new BadRequestException("优惠码不存在、已失效或已领完");
+    if (!coupon) throw globalError(400, "coupon_code_unavailable", "优惠码不存在、已失效或已领完");
     try {
-      return await this.claimCoupon(userId, coupon.id);
+      // A configured redemption code is a customer-facing entry point even
+      // when the same coupon is also available for employee distribution.
+      return await this.claimCouponRecord(userId, coupon.id, true);
     } catch (error) {
       if (error instanceof BadRequestException) {
-        throw new BadRequestException("优惠码不存在、已失效或已领完");
+        throw globalError(400, "coupon_code_unavailable", "优惠码不存在、已失效或已领完");
       }
       throw error;
     }

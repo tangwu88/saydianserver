@@ -380,6 +380,11 @@ h5FieldContracts["CommerceEmployeeController.dashboard"].query = {
   page: { schema: { type: "integer", minimum: 1, maximum: 1000000 }, example: 1, required: false },
   pageSize: { schema: { type: "integer", minimum: 1, maximum: 100 }, example: 20, required: false },
 };
+h5FieldContracts["CommerceEmployeeController.memberDashboard"] = {
+  ...h5FieldContracts["CommerceEmployeeController.dashboard"],
+  query: { ...h5FieldContracts["CommerceEmployeeController.dashboard"].query },
+  notes: "只接受当前会员Bearer会话并解析该会员自己的稳定推广账户；不接受客户端employeeId。返回结构与员工工作台一致，但普通会员不需要企业微信登录。提现仍要求后台启用、可用余额和已核验收款身份。",
+};
 const shippingSchema = obj({ orderId: id, orderVersion: count, pricingVersion: count, shippingReservedCents: cents, cashReservedCents: cents,
   shippingRemainingCents: cents, cashRemainingCents: cents, maximumCents: cents });
 const shippingExample = { orderId: sid(7), orderVersion: 6, pricingVersion: 1, shippingReservedCents: 0, cashReservedCents: 58799,

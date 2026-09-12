@@ -20,12 +20,16 @@ import { safeObject } from "../common/crypto";
 import { EmployeeAuthGuard } from "./employee-auth.guard";
 import { EmployeePromotionService } from "./employee-promotion.service";
 import type { EmployeeDashboardQuery } from "./employee-dashboard-query";
+import { CommerceWithdrawalService } from "./commerce-withdrawal.service";
 
 @ApiTags("commerce-employee-compatibility")
 @Controller("api/saidian-mall/v1")
 @RawResponse()
 export class CommerceEmployeeController {
-  constructor(private readonly employees: EmployeePromotionService) {}
+  constructor(
+    private readonly employees: EmployeePromotionService,
+    private readonly withdrawals: CommerceWithdrawalService,
+  ) {}
 
   @Get("wecom/authorize-url")
   authorizeUrl(@Query("redirectUri") redirectUri: string) {
@@ -73,6 +77,65 @@ export class CommerceEmployeeController {
       id,
       safeObject(input).quantity,
     );
+  }
+
+  @Get("storefront/promoter/dashboard")
+  @UseGuards(UserAuthGuard)
+  async memberDashboard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: EmployeeDashboardQuery,
+  ) {
+    const promoter = await this.employees.memberPromoter(user.id);
+    return this.employees.dashboard(promoter.id, query);
+  }
+
+  @Get("storefront/promoter/promotion")
+  @UseGuards(UserAuthGuard)
+  async memberPromotion(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("productId") productId?: string,
+  ) {
+    const promoter = await this.employees.memberPromoter(user.id);
+    return this.employees.promotion(promoter.id, productId);
+  }
+
+  @Get("storefront/promoter/coupons")
+  @UseGuards(UserAuthGuard)
+  async memberCoupons(@CurrentUser() user: AuthenticatedUser) {
+    const promoter = await this.employees.memberPromoter(user.id);
+    return this.employees.employeeCoupons(promoter.id);
+  }
+
+  @Post("storefront/promoter/coupons/:id/claim")
+  @UseGuards(UserAuthGuard)
+  async memberClaimCoupons(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() input: unknown,
+  ) {
+    const promoter = await this.employees.memberPromoter(user.id);
+    return this.employees.claimCoupons(
+      promoter.id,
+      id,
+      safeObject(input).quantity,
+    );
+  }
+
+  @Get("storefront/promoter/withdrawals")
+  @UseGuards(UserAuthGuard)
+  async memberWithdrawals(@CurrentUser() user: AuthenticatedUser) {
+    const promoter = await this.employees.memberPromoter(user.id);
+    return this.withdrawals.employeeSummary(promoter.id);
+  }
+
+  @Post("storefront/promoter/withdrawals")
+  @UseGuards(UserAuthGuard)
+  async memberApplyWithdrawal(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: unknown,
+  ) {
+    const promoter = await this.employees.memberPromoter(user.id);
+    return this.withdrawals.apply(promoter.id, input);
   }
 
   @Get("storefront/coupon-gifts/:token")
