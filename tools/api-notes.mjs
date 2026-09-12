@@ -330,7 +330,7 @@ export const notes = {
   "CommerceCompatibilityController.coupons": entry("商城优惠券", "无请求体", "本人可用及历史券"),
   "CommerceCompatibilityController.availableCoupons": entry("商城领券中心", "page=页码，默认1，每页20；会员鉴权", "公开有效券、本人是否已领、是否还有额度；不暴露员工赠券库存"),
   "CommerceCompatibilityController.claimCoupon": entry("领取优惠券", "id=优惠券UUID", "领取记录；重复领取幂等"),
-  "CommerceCompatibilityController.claimCouponByCode": entry("输入优惠码领取优惠券", "{code:4-32位字母、数字、_或-；服务端统一转大写}", "本人领取记录；仅匹配后台启用且有效的唯一优惠码，错误不泄露券状态"),
+  "CommerceCompatibilityController.claimCouponByCode": entry("输入优惠码领取优惠券", "{code:4-32位字母、数字、_或-；服务端统一转大写}", "本人领取记录；仅匹配后台启用且有效的唯一优惠码；员工可分发不影响顾客凭码领取，错误不泄露券状态"),
   "CommerceCompatibilityController.feedback": entry("商城会员读取自己的反馈与客服回复", "会员Bearer会话", "最多100条，仅按当前登录userId返回；含问题、状态、replyContent和repliedAt，不返回后台管理员身份"),
   "CommerceCompatibilityController.submitFeedback": entry("商城会员提交问题反馈", "{category,content:5–2000字,contact?:联系方式,attachments?:本人有效文件UUID数组}", "{id,status}；服务端绑定当前登录会员，不能代替他人提交", "主库客服反馈"),
   "CommerceCompatibilityController.review": entry("商城商品评价", "{orderItemId,rating,content,images?}", "评价记录"),

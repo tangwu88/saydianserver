@@ -13392,7 +13392,7 @@
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "输入优惠码领取优惠券",
       "request": "{code:4-32位字母、数字、_或-；服务端统一转大写}",
-      "response": "本人领取记录；仅匹配后台启用且有效的唯一优惠码，错误不泄露券状态",
+      "response": "本人领取记录；仅匹配后台启用且有效的唯一优惠码；员工可分发不影响顾客凭码领取，错误不泄露券状态",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
