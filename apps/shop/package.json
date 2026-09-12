@@ -20,6 +20,7 @@
     "@dcloudio/uni-ui": "1.5.12",
     "@vant/area-data": "2.2.0",
     "dijkstrajs": "1.0.3",
+    "libphonenumber-js": "1.12.31",
     "pinia": "^2.3.1",
     "qrcode": "^1.5.4",
     "vue": "3.4.21"

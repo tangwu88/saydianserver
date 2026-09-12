@@ -10,7 +10,8 @@ function fixture() {
   let config: any = null, saved: any;
   const db: any = {
     $queryRaw: vi.fn().mockResolvedValue([{ acquired: true }]),
-    user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "member" }) },
+    user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "member", referralEmployeeId: "employee-a", referralEmployee: { id: "employee-a", name: "Promoter A", referralCode: "TEAM-A", active: true } }) },
+    commerceEmployee: { findFirst: vi.fn().mockResolvedValue(null) },
     commerceAddress: { findFirst: vi.fn().mockResolvedValue(address) },
     commerceSku: { findMany: vi.fn().mockResolvedValue([sku]), update: vi.fn() },
     commerceBusinessConfig: { findUnique: vi.fn(async ({ where }: any) => where.key === "global.markets" ? config : { enabled: true, value: { amountCents: 50 } }) },
@@ -55,5 +56,55 @@ describe("global CN/CNY checkout", () => {
     h.db.commerceAddress.findFirst.mockResolvedValue(null);
     await expect(h.service.previewOrder("member", { ...h.input, addressId: "" })).rejects.toMatchObject({ status: 400, response: { errorKey: "delivery_address_required" } });
     for (const write of h.writes) expect(write).not.toHaveBeenCalled();
+  });
+
+  it("uses a valid current link for this order and otherwise keeps the member default", async () => {
+    const h = fixture();
+    const accountPreview = await h.service.previewOrder("member", h.input);
+    expect(accountPreview.referral).toEqual({
+      employeeId: "employee-a",
+      name: "Promoter A",
+      referralCode: "TEAM-A",
+      source: "ACCOUNT",
+    });
+    h.db.commerceEmployee.findFirst.mockResolvedValue({ id: "employee-b", name: "Promoter B", referralCode: "TEAM-B", active: true });
+    const linkInput = { ...h.input, referralCode: "TEAM-B" };
+    const linkPreview = await h.service.previewOrder("member", linkInput);
+    expect(linkPreview.referral).toEqual({
+      employeeId: "employee-b",
+      name: "Promoter B",
+      referralCode: "TEAM-B",
+      source: "LINK",
+    });
+    const order = await h.service.createOrder("member", {
+      ...linkInput,
+      expectedQuote: linkPreview.quote.fingerprint,
+    });
+    expect(order).toMatchObject({
+      referralEmployeeId: "employee-b",
+      referralCodeSnapshot: "TEAM-B",
+    });
+    expect(h.db.user.findUniqueOrThrow).toHaveBeenCalled();
+  });
+
+  it("rejects an explicit inactive or unknown referral and binds the idempotency key to a valid code", async () => {
+    const invalid = fixture();
+    await expect(invalid.service.previewOrder("member", { ...invalid.input, referralCode: "STOPPED" })).rejects.toMatchObject({
+      status: 400,
+      response: { errorKey: "referral_code_invalid" },
+    });
+    for (const write of invalid.writes) expect(write).not.toHaveBeenCalled();
+
+    const h = fixture();
+    h.db.commerceEmployee.findFirst.mockImplementation(async ({ where }: any) => ({
+      id: where.referralCode === "TEAM-B" ? "employee-b" : "employee-c",
+      name: "Promoter",
+      referralCode: where.referralCode,
+      active: true,
+    }));
+    const preview = await h.service.previewOrder("member", { ...h.input, referralCode: "TEAM-B" });
+    const created = await h.service.createOrder("member", { ...h.input, referralCode: "TEAM-B", expectedQuote: preview.quote.fingerprint });
+    expect(created.referralCodeSnapshot).toBe("TEAM-B");
+    await expect(h.service.createOrder("member", { ...h.input, referralCode: "TEAM-C", expectedQuote: preview.quote.fingerprint })).rejects.toThrow("不同结算参数");
   });
 });

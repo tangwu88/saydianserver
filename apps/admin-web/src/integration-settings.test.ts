@@ -7,7 +7,7 @@ const definition = (key: string) => integrationDefinitions.find(row => row.key =
 const row = (key = 'sms', extra: Partial<IntegrationRow> = {}): IntegrationRow => ({ key, state: 'UNCONFIGURED', publicConfig: {}, ...extra });
 describe('plain-language integration settings', () => {
   it('covers all twelve built-in services without conflating official and native WeChat', () => {
-    expect(new Set(integrationDefinitions.map(d => d.key)).size).toBe(12);
+    expect(new Set(integrationDefinitions.map(d => d.key)).size).toBe(14);
     expect(definition('wechat_official').fields.some(f => f.key === 'redirectUri')).toBe(true);
     expect(definition('wechat_login').fields.some(f => f.key === 'redirectUri')).toBe(false);
   });
@@ -134,7 +134,23 @@ describe('plain-language integration settings', () => {
   it('requires a WeChat payment channel and checks key length without echoing credentials', () => {
     const original = row('wechat_pay'), draft = draftFor(original, definition('wechat_pay')); draft.replaceSecrets = true; draft.values.apiV3Key = 'synthetic-short';
     const errors = validateIntegrationDraft(original, definition('wechat_pay'), draft); expect(errors.appIdOfficial).toBeTruthy(); expect(errors.apiV3Key).toContain('32'); expect(JSON.stringify(errors)).not.toContain('synthetic-short');
-    for (const key of ['appIdApp', 'appIdMini', 'appIdOfficial', 'appSecretMini']) expect(definition('wechat_pay').fields.find(f => f.key === key)?.secret).toBe(true);
+    for (const key of ['appIdMini', 'appIdOfficial', 'appSecretMini']) expect(definition('wechat_pay').fields.find(f => f.key === key)?.secret).toBe(true);
+    expect(definition('wechat_pay').fields.find(f => f.key === 'appIdApp')?.advanced).toBe(true);
+    expect(definition('wechat_pay_app').fields.find(f => f.key === 'appIdApp')?.secret).toBe(true);
+    expect(definition('alipay_app').note).toContain('不回退');
+  });
+  it('accepts an Alipay App ID without applying the WeChat wx-prefix rule', () => {
+    const original = row('alipay_app');
+    const draft = draftFor(original, definition('alipay_app'));
+    draft.replaceSecrets = true;
+    draft.values.appId = '2026000000000000';
+    expect(validateIntegrationDraft(original, definition('alipay_app'), draft).appId).toBeUndefined();
+
+    const wechat = row('wechat_pay_app');
+    const wechatDraft = draftFor(wechat, definition('wechat_pay_app'));
+    wechatDraft.replaceSecrets = true;
+    wechatDraft.values.appIdApp = '2026000000000000';
+    expect(validateIntegrationDraft(wechat, definition('wechat_pay_app'), wechatDraft).appIdApp).toContain('wx');
   });
   it('does not accept public/private PEM fields interchanged', () => {
     const original = row('alipay'), draft = draftFor(original, definition('alipay')); draft.replaceSecrets = true;

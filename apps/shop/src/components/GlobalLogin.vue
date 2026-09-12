@@ -19,7 +19,7 @@
         <button v-if="!loading && (!capabilities || !legalReady)" class="text-button retry" :disabled="busy" @click="initialize(false)">重新加载</button>
         <view v-if="!bindTicket" class="contact-tabs"><button :class="{ active: contactMode === 'email' }" :disabled="busy || (registering && registrationCapabilities && !registrationCapabilities.registration?.email)" @click="changeContact('email')">邮箱</button><button :class="{ active: contactMode === 'sms' }" :disabled="busy || (registering && registrationCapabilities && !registrationCapabilities.registration?.sms)" @click="changeContact('sms')">手机号</button></view>
         <label class="field-label" :for="bindTicket ? 'bind-phone' : 'login-contact'">{{ bindTicket || contactMode === "sms" ? "手机号" : "邮箱" }}</label>
-        <view :class="{ 'phone-fields': phoneMode }"><input v-if="phoneMode" id="country-code" v-model="countryCode" :disabled="busy" class="input country-code" maxlength="4" placeholder="+86" aria-label="国家区号，可修改" @input="resetChallenge" /><input :id="bindTicket ? 'bind-phone' : 'login-contact'" v-model="identifier" :disabled="busy" class="input" :maxlength="phoneMode ? 16 : 254" :placeholder="phoneMode ? '请输入手机号' : '请输入邮箱'" @input="resetChallenge" /></view>
+        <view :class="{ 'phone-fields': phoneMode }"><CountryCallingCodePicker v-if="phoneMode" v-model="phoneCountry" :disabled="busy" compact @update:model-value="resetChallenge" /><input :id="bindTicket ? 'bind-phone' : 'login-contact'" v-model="identifier" :disabled="busy" class="input" :maxlength="phoneMode ? 32 : 254" :placeholder="phoneMode ? '请输入手机号' : '请输入邮箱'" @input="resetChallenge" /></view>
         <template v-if="bindTicket">
           <view class="code-row" :class="{ 'code-row-direct': temporaryPhoneCode }"
             ><input id="phone-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码" /><button v-if="!temporaryPhoneCode" class="text-button code-button" :disabled="busy || loading || countdown > 0 || !bindingEnabled" @click="sendCode">
@@ -29,16 +29,15 @@
           <text v-if="codeNote || temporaryPhoneCode" class="muted code-note">{{ codeNote || "填写6位验证码后继续。" }}</text>
           <text v-if="!loading && !bindingEnabled" class="muted code-note">暂时无法获取验证码，请稍后再试。</text>
         </template>
-        <template v-else-if="registering">
-          <view class="code-row" :class="{ 'code-row-direct': !registrationVerificationRequired }"
-            ><input id="registration-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码" /><button v-if="registrationVerificationRequired" class="text-button code-button" :disabled="busy || countdown > 0 || !registrationEnabled" @click="sendRegistrationCode">
+        <template v-else-if="registering && registrationVerificationRequired">
+          <view class="code-row"
+            ><input id="registration-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码" /><button class="text-button code-button" :disabled="busy || countdown > 0 || !registrationEnabled" @click="sendRegistrationCode">
               {{ countdown > 0 ? countdown + "秒后重试" : "获取验证码" }}
             </button></view
           >
           <text v-if="codeNote" class="muted code-note">{{ codeNote }}</text>
-          <text v-else-if="!registrationVerificationRequired" class="muted code-note">填写任意6位数字后继续。</text>
-          <text v-if="!registrationEnabled" class="muted code-note">当前方式暂时无法注册，请选择其他方式。</text>
         </template>
+        <text v-if="registering && !registrationEnabled" class="muted code-note">当前方式暂时无法注册，请选择其他方式。</text>
         <template v-if="!bindTicket || passwordRequired">
           <label class="field-label" for="account-password">{{ bindTicket ? "原账号密码" : "密码" }}</label>
           <view class="password-field"
@@ -72,14 +71,16 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import DesktopHeader from "./DesktopHeader.vue";
 import BrandIdentity from "./BrandIdentity.vue";
+import CountryCallingCodePicker from "./CountryCallingCodePicker.vue";
 import { api, mallOAuthSessionStamp, saveMallSession } from "../api";
 import { mallConfig, mallStorage } from "../realm";
 import { globalPageAllowed } from "../realm-config";
 import { safeMallRoute } from "../commerce-model";
-import { OAUTH_CONTEXT_KEY, OAUTH_TTL, OAUTH_CALLBACK_PATH, normalizeGlobalPhone, validGlobalIdentifier, validNewPassword, validOAuthContext, type OAuthContext } from "../global-auth-model";
+import { OAUTH_CONTEXT_KEY, OAUTH_TTL, OAUTH_CALLBACK_PATH, normalizeGlobalPhone, validGlobalIdentifier, validNewPassword, validOAuthContext, type OAuthContext, type PhoneCountryCode } from "../global-auth-model";
 import { takeGlobalOAuthCallback } from "../global-oauth";
 import { loadGlobalLegal, legalPlainText, type GlobalLegalDocument } from "../global-legal";
 import { authErrorMessage, authUiError } from "../friendly-auth";
+import { claimPurchaseReferral } from "../session";
 type DocumentType = "userAgreement" | "privacyPolicy";
 const capabilities = ref<any>(),
   documents = ref<Partial<Record<DocumentType, GlobalLegalDocument>>>({});
@@ -100,7 +101,7 @@ const bindTicket = ref(""),
   obscured = ref(true);
 const registering = ref(false),
   registrationCapabilities = ref<any>();
-const countryCode = ref("+86");
+const phoneCountry = ref<PhoneCountryCode>("CN");
 const consent = ref({ version: "", locale: "en" }),
   challenge = ref<{ id: string; identifier: string; expiresAt: number } | null>(null);
 const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
@@ -229,7 +230,7 @@ async function sendCode() {
   error.value = "";
   try {
     requireBinding();
-    const recipient = normalizeGlobalPhone(identifier.value, countryCode.value);
+    const recipient = normalizeGlobalPhone(identifier.value, phoneCountry.value);
     if (!recipient) throw authUiError("请检查国家区号和手机号。");
     await requestPhoneCode(recipient, temporaryPhoneCode.value);
   } catch (cause) {
@@ -252,7 +253,7 @@ async function requestPhoneCode(recipient: string, testOnly: boolean) {
   });
   if (!active) return;
   requireBinding();
-  if (ticket !== bindTicket.value || recipient !== normalizeGlobalPhone(identifier.value, countryCode.value)) throw authUiError("手机号已变更，请重新填写验证码。");
+  if (ticket !== bindTicket.value || recipient !== normalizeGlobalPhone(identifier.value, phoneCountry.value)) throw authUiError("手机号已变更，请重新填写验证码。");
   if (!response.challengeId || !Number.isFinite(response.expiresIn) || response.expiresIn <= 0 || !Number.isFinite(response.retryAfter) || !["sms", "test"].includes(response.mode) || (testOnly && response.mode !== "test")) throw authUiError("验证码暂时无法使用，请稍后重试。");
   if ((response.mode === "sms" && (response.sent !== true || response.verificationRequired !== true)) || (response.mode === "test" && (response.sent !== false || response.verificationRequired !== false))) throw authUiError("验证码暂时无法使用，请稍后重试。");
   challenge.value = {
@@ -275,7 +276,7 @@ async function startRegistration() {
     if (response.registration.email !== true && response.registration.sms !== true) throw authUiError("注册暂时不可用，请稍后再试。");
     registrationCapabilities.value = response;
     registering.value = true;
-    contactMode.value = response.registration.sms === true ? "sms" : "email";
+    contactMode.value = response.registration.email === true ? "email" : "sms";
     identifier.value = "";
     resetChallenge();
     error.value = "";
@@ -313,7 +314,7 @@ async function sendRegistrationCode() {
   }
 }
 function accountIdentifier() {
-  const recipient = phoneMode.value ? normalizeGlobalPhone(identifier.value, countryCode.value) : identifier.value.trim();
+  const recipient = phoneMode.value ? normalizeGlobalPhone(identifier.value, phoneCountry.value) : identifier.value.trim();
   if (!recipient || !validGlobalIdentifier(recipient, phoneMode.value ? "sms" : "email")) throw authUiError(phoneMode.value ? "请检查国家区号和手机号。" : "请输入正确的邮箱地址。");
   return recipient;
 }
@@ -325,10 +326,10 @@ async function registerMember() {
     if (!accepted.value || !legalReady.value) throw authUiError("请先阅读并同意用户协议与隐私政策。");
     if (!registrationEnabled.value || registrationCapabilities.value?.consentVersion !== consent.value.version) throw authUiError("注册信息已更新，请返回后重试。");
     const recipient = accountIdentifier();
-    if (!/^\d{6}$/.test(code.value)) throw authUiError("请输入6位验证码。");
     if (!validNewPassword(password.value)) throw authUiError("请设置至少8位密码。");
     let response: any;
     if (registrationVerificationRequired.value) {
+      if (!/^\d{6}$/.test(code.value)) throw authUiError("请输入6位验证码。");
       const pending = challenge.value;
       if (!pending || pending.expiresAt <= Date.now() || pending.identifier !== recipient) throw authUiError("请先获取当前账号的验证码。");
       response = await globalAuthRequest("register-with-code", {
@@ -460,6 +461,7 @@ async function save(response: any) {
   if (!active) return;
   await saveMallSession(response);
   if (!active) return;
+  if (response?.user?.id) claimPurchaseReferral(String(response.user.id));
   const target = safeMallRoute(response.returnTo || mallStorage.get("saidian-post-login-route"));
   mallStorage.remove("saidian-post-login-route");
   sessionStorage.removeItem(OAUTH_CONTEXT_KEY);

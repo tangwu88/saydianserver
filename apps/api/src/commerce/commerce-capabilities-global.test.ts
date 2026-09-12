@@ -8,9 +8,11 @@ const appId = "wxSyntheticOfficial1";
 function fixture() {
   const credentials: Record<string, any> = {
     wechat_pay: { merchantId: "synthetic-merchant", serialNo: "synthetic-serial", platformSerialNo: "synthetic-platform", apiV3Key: "x".repeat(32), privateKeyPem: keys.privateKey, platformPublicKeyPem: keys.publicKey, appIdOfficial: appId, appIdMini: "wxSyntheticMini123" },
+    wechat_pay_app: { merchantId: "synthetic-app-merchant", serialNo: "synthetic-app-serial", platformSerialNo: "synthetic-app-platform", apiV3Key: "y".repeat(32), privateKeyPem: keys.privateKey, platformPublicKeyPem: keys.publicKey, appIdApp: "wxSyntheticMobile12" },
     alipay: { appId: "synthetic-alipay", privateKeyPem: keys.privateKey, publicKeyPem: keys.publicKey },
+    alipay_app: { appId: "synthetic-alipay-app", privateKeyPem: keys.privateKey, publicKeyPem: keys.publicKey },
   };
-  const rows = ["wechat_pay", "alipay"].map(key => ({ key, state: "CONFIGURED", publicConfig: { notifyUrl: "https://demo.invalid/global/notify" } }));
+  const rows = ["wechat_pay", "wechat_pay_app", "alipay", "alipay_app"].map(key => ({ key, state: "CONFIGURED", publicConfig: { notifyUrl: "https://demo.invalid/global/notify" } }));
   const db = { integrationConfig: { findMany: vi.fn().mockResolvedValue(rows) }, commerceBusinessConfig: { findUnique: vi.fn().mockResolvedValue(null) } };
   const secrets = { resolve: vi.fn(async (key: string) => credentials[key]) };
   const official = { configured: vi.fn().mockResolvedValue({ appId }), globalCapabilities: vi.fn().mockResolvedValue({ consentVersion: "legal-v1", legal: null, wechatH5: { enabled: true }, wechatBinding: { phoneCodeMode: "test" } }) };
@@ -24,11 +26,20 @@ afterEach(() => { expect(fetch).not.toHaveBeenCalled(); vi.unstubAllGlobals(); v
 describe("global commerce capability readiness", () => {
   it("offers only the container-appropriate global H5 rails without changing global login or leaking credentials", async () => {
     const h = fixture(), result = await h.service.publicCapabilities("en");
-    expect(result).toMatchObject({ realm: "global", checkout: { enabled: true, countryCodes: ["CN"], currency: "CNY", minimumCashCents: 1 }, login: { sms: { enabled: false }, wechatBinding: { phoneCodeMode: "test" } }, demo: false });
+    expect(result).toMatchObject({ realm: "global", checkout: { enabled: true, countryCodes: ["CN"], currency: "CNY", minimumCashCents: 1, points: { requiresVerifiedAccount: false } }, login: { sms: { enabled: false }, wechatBinding: { phoneCodeMode: "test" } }, demo: false });
     expect(result.payments.map(payment => payment.channel)).toEqual(["wechat_jsapi", "alipay_wap", "alipay_page"]);
     expect(result.payments.every(payment => payment.enabled)).toBe(true);
     expect(JSON.stringify(result)).not.toMatch(/privateKey|merchantId|appId|synthetic-merchant/);
     expect(h.secrets.resolve.mock.calls.every(([key]) => key !== "sms")).toBe(true);
+  });
+  it("returns only separately configured native rails to the App client", async () => {
+    const h = fixture();
+    const result = await h.service.publicCapabilities("en", "app");
+    expect(result.payments.map(payment => payment.channel)).toEqual(["wechat_app", "alipay_app"]);
+    expect(result.payments.every(payment => payment.enabled)).toBe(true);
+    h.db.integrationConfig.findMany.mockResolvedValue(h.rows.filter((row: { key: string }) => !row.key.endsWith("_app")));
+    const withoutAppConfig = await h.service.publicCapabilities("en", "app");
+    expect(withoutAppConfig.payments.every(payment => !payment.enabled)).toBe(true);
   });
   it("allows checkout with unconfigured providers without pretending payments work", async () => {
     const h = fixture(); h.db.integrationConfig.findMany.mockResolvedValue([]);

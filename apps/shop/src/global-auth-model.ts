@@ -26,14 +26,6 @@ export function validGlobalIdentifier(value: string, channel?: "email" | "sms") 
   const phone = /^\+[1-9]\d{6,14}$/.test(text);
   return channel === "email" ? email : channel === "sms" ? phone : email || phone;
 }
-export function normalizeGlobalPhone(value: string, countryCode = "+86"): string | null {
-  const phone = value.trim();
-  if (phone.startsWith("+")) return validGlobalIdentifier(phone, "sms") ? phone : null;
-  const prefix = countryCode.trim();
-  if (!/^\+[1-9]\d{0,2}$/.test(prefix) || !/^\d+$/.test(phone)) return null;
-  const result = prefix + phone;
-  return validGlobalIdentifier(result, "sms") ? result : null;
-}
 export function validNewPassword(value: string) { return value.length >= 8 && new TextEncoder().encode(value).length <= 72; }
 export function globalLegalPath(value: unknown): string {
   if (typeof value !== "string" || !/^\/api\/saydian-app\/v2\/content\/legal\/(user_agreement|privacy_policy)\?[^#]*$/.test(value) || /[\\\r\n]/.test(value)) throw new Error("协议暂时无法查看，请稍后重试。");
@@ -41,3 +33,8 @@ export function globalLegalPath(value: unknown): string {
   if (!url.searchParams.get("version") || !url.searchParams.get("locale")) throw new Error("协议已更新，请刷新后重试。");
   return "/global" + value;
 }
+export {
+  normalizeGlobalPhone,
+  splitGlobalPhone,
+  type PhoneCountryCode,
+} from "./country-phone";

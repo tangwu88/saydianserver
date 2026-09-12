@@ -109,10 +109,7 @@ export class AuthService {
     if (
       !user?.passwordHash ||
       user.status !== UserStatus.ACTIVE ||
-      !(await compare(password, user.passwordHash)) ||
-      (isGlobalRealm() &&
-        !(user.emailVerifiedAt || user.mobileVerifiedAt) &&
-        !envBoolean("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED"))
+      !(await compare(password, user.passwordHash))
     ) {
       throw new UnauthorizedException("账号或密码错误");
     }
@@ -148,17 +145,15 @@ export class AuthService {
       if (rotated.count !== 1) throw new UnauthorizedException("登录已失效，请重新登录");
       return this.sessionContract(session.userId, session.id, accessJti, replacement);
     }
-    if (requireVerifiedMall && session && !(session.user.emailVerifiedAt || session.user.mobileVerifiedAt)) {
+    const verifiedMallRequired = requireVerifiedMall && !isGlobalRealm();
+    if (verifiedMallRequired && session && !session.user.mobileVerifiedAt) {
       throw globalError(403, "account_verification_required", "Verify your email address or international phone before using the H5 account.");
     }
     if (
       !session ||
       session.revokedAt ||
       session.expiresAt <= new Date() ||
-      session.user.status !== UserStatus.ACTIVE ||
-      (isGlobalRealm() &&
-        !(session.user.emailVerifiedAt || session.user.mobileVerifiedAt) &&
-        !envBoolean("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED"))
+      session.user.status !== UserStatus.ACTIVE
     ) {
       throw new UnauthorizedException("登录已失效，请重新登录");
     }
@@ -169,7 +164,14 @@ export class AuthService {
         id: session.id,
         refreshTokenHash: tokenHash,
         revokedAt: null,
-        ...(requireVerifiedMall ? { user: { status: UserStatus.ACTIVE, OR: [{ emailVerifiedAt: { not: null } }, { mobileVerifiedAt: { not: null } }] } } : {}),
+        ...(verifiedMallRequired
+          ? {
+              user: {
+                status: UserStatus.ACTIVE,
+                mobileVerifiedAt: { not: null },
+              },
+            }
+          : {}),
       },
       data: {
         accessJti,
@@ -227,8 +229,7 @@ export class AuthService {
 
   async loginForMall(mobile: string, password: string, referralCode?: string) {
     const user = await this.passwordUser(mobile, password);
-    if (!(user.mobileVerifiedAt || (isGlobalRealm() && user.emailVerifiedAt))) {
-      if (isGlobalRealm()) throw globalError(403, "account_verification_required", "Verify your email address or international phone before using the H5 account.");
+    if (!isGlobalRealm() && !user.mobileVerifiedAt) {
       throw new UnauthorizedException("请先使用手机验证码验证后登录商城");
     }
     const session = await this.issueSession(user.id);
@@ -238,7 +239,10 @@ export class AuthService {
 
   async issueMallSession(userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (user.status !== UserStatus.ACTIVE || !(user.mobileVerifiedAt || (isGlobalRealm() && user.emailVerifiedAt))) {
+    if (
+      user.status !== UserStatus.ACTIVE ||
+      (!isGlobalRealm() && !user.mobileVerifiedAt)
+    ) {
       throw new UnauthorizedException("请先完成手机号验证");
     }
     return this.mallSession(await this.issueSession(userId), user.mobile);

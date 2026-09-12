@@ -26,6 +26,7 @@ const articleCategoryOptions = ref<Row[]>([]);
 const articleCategoriesReady = ref(false);
 const articleCategoryEditorResource = ref("");
 const originalArticleCategoryId = ref<string | null>(null);
+const memberReferralOptions = ref<Row[]>([]);
 const search = ref("");
 const commerceStatus = ref("");
 const currentPage = ref(1);
@@ -392,8 +393,22 @@ async function openEdit(row: Row): Promise<void> {
     if (!canManageMemberVerification.value) return;
     dialogVisible.value = false;
     try {
-      const profile = responseData<Row>(await api.get(`/members/${encodeURIComponent(String(row.id))}/profile`));
+      const [profileResponse, employeesResponse] = await Promise.all([
+        api.get(`/members/${encodeURIComponent(String(row.id))}/profile`),
+        api.get("/commerce-employees"),
+      ]);
+      const profile = responseData<Row>(profileResponse);
+      const employeesData = responseData<unknown>(employeesResponse);
+      const employees = Array.isArray(employeesData)
+        ? employeesData
+        : Array.isArray((employeesData as Row | null)?.items)
+          ? (employeesData as Row).items
+          : [];
       if (requestId !== editorRequestId || requestedResource !== resource.value) return;
+      memberReferralOptions.value = employees.filter((item: Row) => item?.id && (item.active === true || item.id === profile.referralEmployeeId));
+      if (profile.referralEmployee?.id && !memberReferralOptions.value.some((item) => item.id === profile.referralEmployee.id)) {
+        memberReferralOptions.value.unshift(profile.referralEmployee);
+      }
       dialogMode.value = "edit";
       dialogTitle.value = `编辑会员 ${profile.memberNo ?? row.memberNo ?? ""}`.trim();
       form.value = {
@@ -409,6 +424,8 @@ async function openEdit(row: Row): Promise<void> {
         _originalEmail: profile.email ?? "",
         _originalMobileVerified: profile.mobileVerified === true,
         _originalEmailVerified: profile.emailVerified === true,
+        referralEmployeeId: profile.referralEmployeeId ?? null,
+        _originalReferralEmployeeId: profile.referralEmployeeId ?? null,
         newPassword: "",
       };
       dialogVisible.value = true;
@@ -557,6 +574,7 @@ async function save(): Promise<void> {
         status: form.value.status,
         mobileVerified: form.value.mobileVerified === true,
         emailVerified: form.value.emailVerified === true,
+        referralEmployeeId: form.value.referralEmployeeId || null,
         ...(newPassword ? { newPassword } : {}),
         expectedUpdatedAt: form.value.verificationVersion,
       };
@@ -1052,7 +1070,20 @@ onBeforeUnmount(() => {
           <el-form-item label="账号状态">
             <el-select v-model="form.status"><el-option label="正常" value="ACTIVE" /><el-option label="停用" value="DISABLED" /></el-select>
           </el-form-item>
-          <el-divider content-position="left">修改登录密码</el-divider>
+          <el-form-item label="推广上级 ID">
+            <div style="width: 100%">
+              <el-select v-model="form.referralEmployeeId" clearable filterable placeholder="可搜索员工姓名、推广码或 ID；留空则清除" style="width: 100%">
+                <el-option
+                  v-for="item in memberReferralOptions"
+                  :key="item.id"
+                  :value="item.id"
+                  :label="`${item.name} · ${item.referralCode} · ${item.id}`"
+                  :disabled="item.active === false && item.id !== form._originalReferralEmployeeId"
+                />
+              </el-select>
+              <span class="muted">关联推广员工，只影响之后未携带有效推广链接的新订单；不会修改历史订单和奖金。</span>
+            </div>
+          </el-form-item>
           <el-form-item label="新密码"><el-input v-model="form.newPassword" type="password" show-password maxlength="72" autocomplete="new-password" placeholder="留空则不修改；至少8位" /></el-form-item>
           <p class="muted">后台不能查看原密码。修改密码后，该会员所有已登录设备都会退出。保存操作会记录管理员、时间和变更字段，审计日志不会保存密码、完整手机号、邮箱或会员资料值。</p>
         </template>

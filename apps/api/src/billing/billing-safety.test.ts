@@ -19,14 +19,14 @@ function harness(existing: unknown = null) {
 
 function refundCallbackHarness(status: RefundStatus = RefundStatus.PROCESSING) {
   const intent = { id, executionOwner: "NEW_SYSTEM", channel: PaymentChannel.WECHAT_APP, amountCents: 100,
-    currency: "CNY", paymentNo: "PAY1", providerTransactionId: "TX1", providerMerchantId: "M1", providerAppId: "APP1", commerceOrderId: null };
+    integrationKey: null as string | null, currency: "CNY", paymentNo: "PAY1", providerTransactionId: "TX1", providerMerchantId: "M1", providerAppId: "APP1", commerceOrderId: null };
   const refund = { id: "r1", refundNo: "REF1", paymentIntentId: id, paymentIntent: intent, executionOwner: "NEW_SYSTEM", amountCents: 100, providerRefundId: "WXREF1", status };
   const tx = { $queryRaw: vi.fn().mockResolvedValue([]),
     paymentRefund: { findUnique: vi.fn().mockResolvedValue(refund), findUniqueOrThrow: vi.fn().mockResolvedValue(refund), updateMany: vi.fn(), aggregate: vi.fn().mockResolvedValue({ _sum: { amountCents: status === RefundStatus.SUCCEEDED ? 100 : 0 } }), count: vi.fn().mockResolvedValue(status === RefundStatus.SUCCEEDED ? 0 : 1) },
     paymentIntent: { findUniqueOrThrow: vi.fn().mockResolvedValue(intent), update: vi.fn() } };
   const prisma = { ...tx, $transaction: vi.fn(async work => work(tx)) };
   const payload = { out_refund_no: "REF1", refund_id: "WXREF1", out_trade_no: "PAY1", transaction_id: "TX1", mchid: "M1", refund_status: "PROCESSING", amount: { refund: 100, currency: "CNY" } };
-  return { service: new BillingService(prisma as any, {} as any, {} as any), prisma, tx, refund, payload };
+  return { service: new BillingService(prisma as any, {} as any, {} as any), prisma, tx, refund, intent, payload };
 }
 
 afterEach(() => vi.unstubAllEnvs());
@@ -91,6 +91,18 @@ describe("transaction ownership and money request safety", () => {
 });
 
 describe("durable verified callback inbox", () => {
+  it("rejects an App refund notification delivered through the H5 integration", async () => {
+    const { service, prisma, intent, payload } = refundCallbackHarness();
+    intent.integrationKey = "wechat_pay_app";
+    await expect(
+      (service as any).applyWechatRefundResult(payload, "wechat_pay"),
+    ).rejects.toThrow(/配置不匹配/);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    await expect(
+      (service as any).applyWechatRefundResult(payload, "wechat_pay_app"),
+    ).resolves.toBeUndefined();
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+  });
   it("non-final refund notifications do not release the reserved amount", async () => {
     const { service, prisma, tx, payload } = refundCallbackHarness();
     await (service as any).applyWechatRefundResult(payload);

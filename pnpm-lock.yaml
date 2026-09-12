@@ -219,6 +219,9 @@ importers:
       dijkstrajs:
         specifier: 1.0.3
         version: 1.0.3
+      libphonenumber-js:
+        specifier: 1.12.31
+        version: 1.12.31
       pinia:
         specifier: ^2.3.1
         version: 2.3.1(typescript@5.9.3)(vue@3.4.21(typescript@5.9.3))

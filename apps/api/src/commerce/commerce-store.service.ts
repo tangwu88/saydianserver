@@ -34,9 +34,18 @@ type CreateOrderInput = {
   buyerRemark?: string;
   invoice?: Record<string, unknown>;
   pointCents?: number;
+  referralCode?: string;
   expectedQuote?: string;
   idempotencyKey: string;
 };
+
+const customerPaymentIntentSelect = {
+  id: true,
+  channel: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.PaymentIntentSelect;
 
 @Injectable()
 export class CommerceStoreService {
@@ -301,7 +310,7 @@ export class CommerceStoreService {
     userId: string,
     input: Omit<CreateOrderInput, "idempotencyKey">,
   ) {
-    const { skus, address, normalized, quote } = await this.readQuote(this.prisma, userId, input);
+    const { skus, address, normalized, quote, referralEmployee } = await this.readQuote(this.prisma, userId, input);
     return {
       address,
       products: skus.map((sku) => ({
@@ -320,13 +329,21 @@ export class CommerceStoreService {
         payable_money: quote.payableCents / 100,
       },
       quote: { ...quote, fingerprint: commerceQuoteFingerprint(quote) },
+      referral: referralEmployee
+        ? {
+            employeeId: referralEmployee.id,
+            name: referralEmployee.name,
+            referralCode: referralEmployee.referralCode,
+            source: input.referralCode ? "LINK" : "ACCOUNT",
+          }
+        : null,
     };
   }
 
   private async readQuote(tx: Prisma.TransactionClient, userId: string, input: Omit<CreateOrderInput, "idempotencyKey">) {
     const global = isGlobalRealm();
     const normalized = normalizeItems(input.items);
-    const [user, address, skus, shippingConfig, account, claim, marketConfig] = await Promise.all([
+    const [user, address, skus, shippingConfig, account, claim, marketConfig, requestedReferral] = await Promise.all([
       tx.user.findUniqueOrThrow({ where: { id: userId }, include: { referralEmployee: true } }),
       input.addressId ? tx.commerceAddress.findFirst({ where: { id: input.addressId, userId } })
         : tx.commerceAddress.findFirst({ where: { userId }, orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }] }),
@@ -335,7 +352,19 @@ export class CommerceStoreService {
       tx.commercePointAccount.findUnique({ where: { userId } }),
       input.couponClaimId ? tx.commerceCouponClaim.findFirst({ where: { id: input.couponClaimId, userId, usedAt: null }, include: { coupon: true } }) : null,
       global ? tx.commerceBusinessConfig.findUnique({ where: { key: "global.markets" } }) : null,
+      input.referralCode
+        ? tx.commerceEmployee.findFirst({
+            where: { referralCode: input.referralCode, active: true },
+            select: { id: true, name: true, referralCode: true, active: true },
+          })
+        : null,
     ]);
+    if (input.referralCode && !requestedReferral) {
+      throw new BadRequestException({
+        errorKey: "referral_code_invalid",
+        message: "该推广链接已失效，请重新获取有效链接后下单",
+      });
+    }
     if (input.addressId && !address) throw new BadRequestException("收货地址不存在");
     if (global) {
       if (!configuredGlobalMarkets(marketConfig).some(market => market.commerceEnabled)) throw globalError(503, "market_checkout_unavailable", "当前尚未开放中国大陆人民币结算。");
@@ -360,6 +389,7 @@ export class CommerceStoreService {
       availablePointCents: account ? account.balanceCents : null,
     });
     return { user, address, skus, normalized, couponClaimId: claim?.id,
+      referralEmployee: requestedReferral ?? user.referralEmployee,
       quote: { ...quote, lines: quote.lines.map(line => {
         const sku = skus.find(item => item.id === line.skuId)!;
         return { ...line, name: sku.product.displayName ?? sku.product.name, image: sku.image ?? sku.product.coverImage, specification: sku.specification };
@@ -376,6 +406,7 @@ export class CommerceStoreService {
       addressId: input.addressId, items: [...normalized].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),
       couponClaimId: input.couponClaimId ?? null, pointCents: input.pointCents ?? 0,
       buyerRemark: input.buyerRemark ?? null, invoice: input.invoice ?? null,
+      ...(input.referralCode ? { referralCode: input.referralCode } : {}),
       ...(expectedQuote === undefined ? {} : { expectedQuote }),
     })).digest("hex");
     const lookup = {
@@ -397,7 +428,7 @@ export class CommerceStoreService {
         if (!locks[0]?.acquired) throw new ServiceUnavailableException({ errorKey: "order_in_progress", message: "订单正在确认，请保留当前订单内容并稍后重试" });
         const committed = await tx.commerceOrder.findUnique(lookup);
         if (committed) { checkRequest(committed); return committed; }
-        const { user, address, skus, couponClaimId, quote } = await this.readQuote(tx, userId, input);
+        const { address, skus, couponClaimId, quote, referralEmployee } = await this.readQuote(tx, userId, input);
         if (!address) throw new BadRequestException("收货地址不存在");
         if (expectedQuote !== undefined && expectedQuote !== commerceQuoteFingerprint(quote)) {
           throw new ConflictException({ errorKey: "quote_changed", message: "订单金额已变更，请重新获取报价并确认后提交" });
@@ -415,8 +446,8 @@ export class CommerceStoreService {
           data: {
             orderNo: commerceNumber("SD"),
             userId,
-            referralEmployeeId: user.referralEmployeeId,
-            referralCodeSnapshot: user.referralEmployee?.referralCode ?? null,
+            referralEmployeeId: referralEmployee?.id ?? null,
+            referralCodeSnapshot: referralEmployee?.referralCode ?? null,
             subtotalCents,
             discountCents,
             pointDiscountCents,
@@ -497,7 +528,7 @@ export class CommerceStoreService {
       where: { userId, ...filter },
       include: {
         items: true,
-        paymentIntents: true,
+        paymentIntents: { select: customerPaymentIntentSelect },
         shipments: { include: { items: true } },
         afterSales: true,
       },
@@ -510,7 +541,7 @@ export class CommerceStoreService {
       where: { id, userId },
       include: {
         items: { include: { review: { select: { id: true, rating: true, content: true, published: true, createdAt: true } } } },
-        paymentIntents: true,
+        paymentIntents: { select: customerPaymentIntentSelect },
         shipments: { include: { items: true } },
         afterSales: { include: { refunds: true, items: true } },
       },

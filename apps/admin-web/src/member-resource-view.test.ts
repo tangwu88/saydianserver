@@ -68,7 +68,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
     downloadEditorToManifest: globalDownloadEditorToManifest,
     downloadManifestToEditor: globalDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -157,7 +157,8 @@ describe("international member admin list", () => {
       },
     });
     await h.openEdit(row);
-    expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/profile");
+    expect(h.api.get).toHaveBeenNthCalledWith(1, "/members/internal-uuid/profile");
+    expect(h.api.get).toHaveBeenNthCalledWith(2, "/commerce-employees");
     expect(h.dialogVisible.value).toBe(true);
     expect(h.dialogTitle.value).toBe("编辑会员 10001");
     expect(h.form.value).toMatchObject({
@@ -188,6 +189,7 @@ describe("international member admin list", () => {
       status: "ACTIVE",
       mobileVerified: true,
       emailVerified: true,
+      referralEmployeeId: null,
       expectedUpdatedAt: "2026-09-11T00:00:00.000Z",
     });
     expect(h.confirm).toHaveBeenCalledOnce();
@@ -203,12 +205,49 @@ describe("international member admin list", () => {
 
   it("renders the member-filled profile fields with friendly Chinese controls", () => {
     const sfc = readFileSync(new URL("./views/ResourceView.vue", import.meta.url), "utf8");
-    for (const label of ["会员填写的基本资料", "姓名/昵称", "出生日期", "身高", "体重", "头像", "修改登录密码", "新密码"]) {
+    for (const label of ["会员填写的基本资料", "姓名/昵称", "出生日期", "身高", "体重", "头像", "推广上级 ID", "新密码"]) {
       expect(sfc).toContain(label);
     }
+    expect(sfc).not.toContain('content-position="left">修改登录密码</el-divider>');
     expect(sfc).not.toContain("确认新密码");
     expect(sfc).toContain('value-format="YYYY-MM-DD"');
     expect(sfc).toContain(':disabled-date="memberBirthdayDisabled"');
+  });
+
+  it("loads active promoter choices and saves the employee ID without forcing a password change", async () => {
+    const h = harness();
+    const employeeId = "00000000-0000-4000-8000-000000000456";
+    h.api.get
+      .mockResolvedValueOnce({
+        data: { data: {
+          id: member.id,
+          memberNo: member.memberNo,
+          nickname: member.nickname,
+          status: "ACTIVE",
+          mobile: "+8613812348888",
+          mobileVerified: false,
+          email: "member@example.invalid",
+          emailVerified: false,
+          referralEmployeeId: null,
+          verificationVersion: member.verificationVersion,
+        } },
+      })
+      .mockResolvedValueOnce({
+        data: { data: [
+          { id: employeeId, name: "Promoter B", referralCode: "TEAM-B", active: true },
+          { id: "00000000-0000-4000-8000-000000000999", name: "Inactive", referralCode: "OLD", active: false },
+        ] },
+      });
+    await h.openEdit(member);
+    expect(h.memberReferralOptions.value).toEqual([
+      expect.objectContaining({ id: employeeId, active: true }),
+    ]);
+    h.form.value.referralEmployeeId = employeeId;
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledWith("/members/internal-uuid/profile", expect.objectContaining({
+      referralEmployeeId: employeeId,
+    }));
+    expect(h.confirm).not.toHaveBeenCalled();
   });
 
   it("submits a single admin-entered new password after the final safety confirmation", async () => {

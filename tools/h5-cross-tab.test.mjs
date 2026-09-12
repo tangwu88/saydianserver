@@ -239,6 +239,10 @@ function checkoutFixture(options = {}) {
         invokePayment: async () => ({}),
         confirmPayment: async () => ({ paid: false }),
       },
+      "../../session": {
+        currentPurchaseReferral: () => "",
+        consumePurchaseReferral() {},
+      },
       "../../api": { ...doc.api, requireLogin: () => true, toast: error => errors.push(String(error)),
         api: async (path, request) => {
           if (path.endsWith("/preview")) return new Promise(resolve => quotes.push({ doc, resolve }));

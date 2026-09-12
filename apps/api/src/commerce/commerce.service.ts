@@ -24,26 +24,68 @@ export class CommerceService {
     const url = parsePath(path);
     if (url.pathname === "/storefront/markets") return this.store.markets();
     if (url.pathname === "/storefront/bootstrap") {
-      return this.store.bootstrap(url.searchParams.get("referralCode") ?? undefined);
+      const [content, market] = await Promise.all([
+        this.store.bootstrap(url.searchParams.get("referralCode") ?? undefined),
+        this.catalogMarket(),
+      ]);
+      return market
+        ? {
+            ...content,
+            featured: content.featured.map((item) => ({ ...item, ...market })),
+          }
+        : content;
     }
     if (url.pathname === "/storefront/products") {
-      return this.store.listProducts({
-        ...(url.searchParams.get("keyword")
-          ? { keyword: url.searchParams.get("keyword")! }
-          : {}),
-        ...(url.searchParams.get("categoryId")
-          ? { categoryId: url.searchParams.get("categoryId")! }
-          : {}),
-        page: Number(url.searchParams.get("page") ?? 1),
-        pageSize: Number(url.searchParams.get("pageSize") ?? 20),
-        ...(url.searchParams.get("sort")
-          ? { sort: url.searchParams.get("sort")! }
-          : {}),
-      });
+      const [content, market] = await Promise.all([
+        this.store.listProducts({
+          ...(url.searchParams.get("keyword")
+            ? { keyword: url.searchParams.get("keyword")! }
+            : {}),
+          ...(url.searchParams.get("categoryId")
+            ? { categoryId: url.searchParams.get("categoryId")! }
+            : {}),
+          page: Number(url.searchParams.get("page") ?? 1),
+          pageSize: Number(url.searchParams.get("pageSize") ?? 20),
+          ...(url.searchParams.get("sort")
+            ? { sort: url.searchParams.get("sort")! }
+            : {}),
+        }),
+        this.catalogMarket(),
+      ]);
+      return market
+        ? {
+            ...content,
+            items: content.items.map((item) => ({ ...item, ...market })),
+          }
+        : content;
     }
     const product = /^\/storefront\/products\/([^/]+)$/.exec(url.pathname);
-    if (product?.[1]) return this.store.product(decodeURIComponent(product[1]));
+    if (product?.[1]) {
+      const [content, market] = await Promise.all([
+        this.store.product(decodeURIComponent(product[1])),
+        this.catalogMarket(),
+      ]);
+      if (!market) return content;
+      return {
+        ...content,
+        priceCents: content.skus[0]?.salePriceCents,
+        ...market,
+        skus: content.skus.map((sku) => ({ ...sku, ...market })),
+      };
+    }
     throw new NotFoundException("商城内容不存在或已下架");
+  }
+
+  private async catalogMarket() {
+    const { markets } = await this.store.markets();
+    const market = markets.find((item) => item.commerceEnabled);
+    return market
+      ? {
+          currency: market.currency,
+          currencyExponent: market.currencyExponent,
+          countryCode: market.countryCode,
+        }
+      : null;
   }
 
   async forUser(
@@ -66,19 +108,30 @@ export class CommerceService {
       const canonical = await this.resolveCanonicalOrder(userId, orderId);
       if (canonical) {
         if (pathname === "/payments") body.orderId = canonical.id;
-        else pathname = pathname.replace(/^\/orders\/[^/]+/, `/orders/${canonical.id}`);
+        else
+          pathname = pathname.replace(
+            /^\/orders\/[^/]+/,
+            `/orders/${canonical.id}`,
+          );
       } else if (method !== "GET") {
-      const legacy = await this.prisma.legacyOrderProjection.findFirst({
-        where: {
-          userId,
-          OR: [...(isUuid(orderId) ? [{ id: orderId }] : []), { legacyOrderId: orderId }],
-        },
-        select: { id: true },
-      });
-      if (legacy) throw new ConflictException("该订单尚未完成明细及资金迁移核验，请稍后重试");
+        const legacy = await this.prisma.legacyOrderProjection.findFirst({
+          where: {
+            userId,
+            OR: [
+              ...(isUuid(orderId) ? [{ id: orderId }] : []),
+              { legacyOrderId: orderId },
+            ],
+          },
+          select: { id: true },
+        });
+        if (legacy)
+          throw new ConflictException(
+            "该订单尚未完成明细及资金迁移核验，请稍后重试",
+          );
       }
     }
-    if (pathname === "/cart" && method === "GET") return this.store.cart(userId);
+    if (pathname === "/cart" && method === "GET")
+      return this.store.cart(userId);
     if (pathname === "/cart/items" && method === "POST") {
       return this.store.putCartItem(
         userId,
@@ -104,10 +157,17 @@ export class CommerceService {
       if (method === "DELETE") return this.store.deleteAddress(userId, id);
     }
     if (pathname === "/orders/preview" && method === "POST") {
-      return this.store.previewOrder(userId, normalizeOrderInput(body, "preview"));
+      return this.store.previewOrder(
+        userId,
+        normalizeOrderInput(body, "preview"),
+      );
     }
     if (pathname === "/orders" && method === "GET") {
-      return this.store.listOrders(userId, url.searchParams.get("status") ?? undefined, url.searchParams.get("group") ?? undefined);
+      return this.store.listOrders(
+        userId,
+        url.searchParams.get("status") ?? undefined,
+        url.searchParams.get("group") ?? undefined,
+      );
     }
     if (pathname === "/orders" && method === "POST") {
       return this.store.createOrder(userId, {
@@ -128,17 +188,38 @@ export class CommerceService {
     if (cancel?.[1] && method === "POST") {
       return this.store.cancelOrder(userId, decodeURIComponent(cancel[1]));
     }
-    const returnLogistics = /^\/orders\/([^/]+)\/after-sales\/([^/]+)\/return-logistics$/.exec(pathname);
+    const returnLogistics =
+      /^\/orders\/([^/]+)\/after-sales\/([^/]+)\/return-logistics$/.exec(
+        pathname,
+      );
     if (returnLogistics?.[1] && returnLogistics[2] && method === "POST") {
-      return this.store.submitReturnLogistics(userId, decodeURIComponent(returnLogistics[1]), decodeURIComponent(returnLogistics[2]), body);
+      return this.store.submitReturnLogistics(
+        userId,
+        decodeURIComponent(returnLogistics[1]),
+        decodeURIComponent(returnLogistics[2]),
+        body,
+      );
     }
-    const previewAfterSale = /^\/orders\/([^/]+)\/after-sales\/preview$/.exec(pathname);
-    if (previewAfterSale?.[1] && method === "POST") return this.store.afterSaleQuote(userId, decodeURIComponent(previewAfterSale[1]), body);
+    const previewAfterSale = /^\/orders\/([^/]+)\/after-sales\/preview$/.exec(
+      pathname,
+    );
+    if (previewAfterSale?.[1] && method === "POST")
+      return this.store.afterSaleQuote(
+        userId,
+        decodeURIComponent(previewAfterSale[1]),
+        body,
+      );
     const afterSale = /^\/orders\/([^/]+)\/after-sales$/.exec(pathname);
     if (afterSale?.[1] && method === "POST") {
-      return this.store.createAfterSale(userId, decodeURIComponent(afterSale[1]), body);
+      return this.store.createAfterSale(
+        userId,
+        decodeURIComponent(afterSale[1]),
+        body,
+      );
     }
-    const itemAfterSale = /^\/order-items\/([^/]+)\/after-sales$/.exec(pathname);
+    const itemAfterSale = /^\/order-items\/([^/]+)\/after-sales$/.exec(
+      pathname,
+    );
     if (itemAfterSale?.[1] && method === "POST") {
       return this.store.createAfterSaleFromOrderItem(
         userId,
@@ -162,7 +243,9 @@ export class CommerceService {
           platform: body.platform ?? platformFromPaymentChannel(channel),
           idempotencyKey:
             idempotencyKey?.trim() ||
-            String(body.idempotencyKey ?? `commerce-payment:${orderId}:${channel}`).trim(),
+            String(
+              body.idempotencyKey ?? `commerce-payment:${orderId}:${channel}`,
+            ).trim(),
         },
         {},
       );
@@ -171,14 +254,36 @@ export class CommerceService {
   }
 
   async points(userId: string, page = 1) {
-    if (!Number.isInteger(page) || page < 1 || page > 100000) throw new BadRequestException("页码不正确");
+    if (!Number.isInteger(page) || page < 1 || page > 100000)
+      throw new BadRequestException("页码不正确");
     const pageSize = 20;
     const [account, items, total] = await this.prisma.$transaction([
-      this.prisma.commercePointAccount.findUnique({ where: { userId }, select: { balanceCents: true, updatedAt: true } }),
-      this.prisma.commercePointLedger.findMany({ where: { userId }, select: { id: true, deltaCents: true, type: true, orderId: true, createdAt: true }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize }),
+      this.prisma.commercePointAccount.findUnique({
+        where: { userId },
+        select: { balanceCents: true, updatedAt: true },
+      }),
+      this.prisma.commercePointLedger.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          deltaCents: true,
+          type: true,
+          orderId: true,
+          createdAt: true,
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
       this.prisma.commercePointLedger.count({ where: { userId } }),
     ]);
-    return { balanceCents: account?.balanceCents ?? null, verified: !!account, reason: account ? null : "积分账户尚未核验", items, pagination: { page, pageSize, total, hasMore: page * pageSize < total } };
+    return {
+      balanceCents: account?.balanceCents ?? null,
+      verified: !!account,
+      reason: account ? null : "积分账户尚未核验",
+      items,
+      pagination: { page, pageSize, total, hasMore: page * pageSize < total },
+    };
   }
 
   async orders(userId: string, status?: string, group?: string) {
@@ -186,25 +291,43 @@ export class CommerceService {
     const [current, legacy] = await Promise.all([
       this.store.listOrders(userId, status, group),
       // A projection status is not evidence of a real after-sale relationship.
-      group === "after_sales" ? [] : this.prisma.legacyOrderProjection.findMany({
-        where: { userId, ...(filter.status ? { status: filter.status } : {}) },
-        orderBy: { legacyCreatedAt: "desc" },
-      }),
+      group === "after_sales"
+        ? []
+        : this.prisma.legacyOrderProjection.findMany({
+            where: {
+              userId,
+              ...(filter.status ? { status: filter.status } : {}),
+            },
+            orderBy: { legacyCreatedAt: "desc" },
+          }),
     ]);
     return [
-      ...current.map((item) => ({ ...item, readOnly: false, source: "commerce" })),
-      ...legacy.filter((item) => !current.some((order) => order.orderNo === item.orderNo || order.legacyId === item.legacyOrderId)).map((item) => ({
-        id: item.id,
-        legacyOrderId: item.legacyOrderId,
-        orderNo: item.orderNo,
-        status: item.status,
-        payableCents: item.payableCents,
-        currency: item.currency,
-        createdAt: item.legacyCreatedAt.toISOString(),
-        snapshot: item.snapshot,
-        readOnly: true,
-        source: "legacy",
+      ...current.map((item) => ({
+        ...item,
+        readOnly: false,
+        source: "commerce",
       })),
+      ...legacy
+        .filter(
+          (item) =>
+            !current.some(
+              (order) =>
+                order.orderNo === item.orderNo ||
+                order.legacyId === item.legacyOrderId,
+            ),
+        )
+        .map((item) => ({
+          id: item.id,
+          legacyOrderId: item.legacyOrderId,
+          orderNo: item.orderNo,
+          status: item.status,
+          payableCents: item.payableCents,
+          currency: item.currency,
+          createdAt: item.legacyCreatedAt.toISOString(),
+          snapshot: item.snapshot,
+          readOnly: true,
+          source: "legacy",
+        })),
     ].sort((left, right) =>
       String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")),
     );
@@ -212,8 +335,12 @@ export class CommerceService {
 
   async orderDetail(userId: string, id: string) {
     const canonical = await this.resolveCanonicalOrder(userId, id);
-    if (canonical) return { ...(await this.store.order(userId, canonical.id)),
-      readOnly: canonical.executionOwner !== "NEW_SYSTEM", source: canonical.sourceSystem };
+    if (canonical)
+      return {
+        ...(await this.store.order(userId, canonical.id)),
+        readOnly: canonical.executionOwner !== "NEW_SYSTEM",
+        source: canonical.sourceSystem,
+      };
     const legacy = await this.prisma.legacyOrderProjection.findFirst({
       where: {
         userId,
@@ -242,17 +369,33 @@ export class CommerceService {
   }
 
   private async resolveCanonicalOrder(userId: string, id: string) {
-    const direct = await this.prisma.commerceOrder.findFirst({ where: { userId,
-      OR: [...(isUuid(id) ? [{ id }] : []), { legacyId: id }, { orderNo: id }],
-    } });
+    const direct = await this.prisma.commerceOrder.findFirst({
+      where: {
+        userId,
+        OR: [
+          ...(isUuid(id) ? [{ id }] : []),
+          { legacyId: id },
+          { orderNo: id },
+        ],
+      },
+    });
     if (direct) return direct;
-    const maps = await this.prisma.legacyIdMap.findMany({ where: {
-      entityType: "mall_order", legacyId: id, sourceSystem: { in: ["legacy_mall", "legacy_app"] },
-    } });
-    const targets = [...new Set(maps.map((map) => map.targetId))].filter(isUuid);
+    const maps = await this.prisma.legacyIdMap.findMany({
+      where: {
+        entityType: "mall_order",
+        legacyId: id,
+        sourceSystem: { in: ["legacy_mall", "legacy_app"] },
+      },
+    });
+    const targets = [...new Set(maps.map((map) => map.targetId))].filter(
+      isUuid,
+    );
     if (!targets.length) return null;
-    const orders = await this.prisma.commerceOrder.findMany({ where: { id: { in: targets }, userId } });
-    if (orders.length > 1) throw new ConflictException("旧订单编号在多个来源重复，请先核验订单映射");
+    const orders = await this.prisma.commerceOrder.findMany({
+      where: { id: { in: targets }, userId },
+    });
+    if (orders.length > 1)
+      throw new ConflictException("旧订单编号在多个来源重复，请先核验订单映射");
     return orders[0] ?? null;
   }
 
@@ -289,7 +432,10 @@ function parsePath(path: string): URL {
   return new URL(path, "https://commerce.internal");
 }
 
-function normalizeOrderInput(body: Record<string, unknown>, mode: "preview" | "create") {
+function normalizeOrderInput(
+  body: Record<string, unknown>,
+  mode: "preview" | "create",
+) {
   const rawItems = Array.isArray(body.items) ? body.items : [];
   const items = rawItems.map((item) => {
     const row = safeObject(item);
@@ -299,13 +445,25 @@ function normalizeOrderInput(body: Record<string, unknown>, mode: "preview" | "c
     };
   });
   const addressId = String(body.addressId ?? body.address_id ?? "").trim();
-  if (!addressId && mode === "create") throw new BadRequestException("请选择收货地址");
-  const expectedQuote = mode === "create" ? optionalExpectedQuote(body.expectedQuote) : undefined;
+  if (!addressId && mode === "create")
+    throw new BadRequestException("请选择收货地址");
+  const expectedQuote =
+    mode === "create" ? optionalExpectedQuote(body.expectedQuote) : undefined;
+  const referralCode = typeof body.referralCode === "string"
+    ? body.referralCode.trim()
+    : "";
+  if (referralCode.length > 128 || /[\s\u0000-\u001f]/.test(referralCode)) {
+    throw new BadRequestException("推广码格式不正确");
+  }
   return {
     addressId,
     items,
-    pointCents: body.point !== undefined ? pointFaceValueCents(body.point) : integerCents(body.pointCents ?? 0, "积分抵扣"),
+    pointCents:
+      body.point !== undefined
+        ? pointFaceValueCents(body.point)
+        : integerCents(body.pointCents ?? 0, "积分抵扣"),
     ...(expectedQuote === undefined ? {} : { expectedQuote }),
+    ...(referralCode ? { referralCode } : {}),
     ...(body.couponClaimId
       ? { couponClaimId: String(body.couponClaimId) }
       : {}),

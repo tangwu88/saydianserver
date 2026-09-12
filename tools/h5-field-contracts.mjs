@@ -299,6 +299,9 @@ const evidenceBinary = { type: "string", format: "binary", description: "原始J
 const evidenceRead = "HTTP200直接返回image/jpeg、image/png或image/webp二进制，禁止按JSON解析。响应Cache-Control: private, no-store；X-Content-Type-Options: nosniff；Referrer-Policy: no-referrer；CSP限制。不存在/不属于本人/用途或状态不符404，存储未配置或读取失败503。浏览器需带Bearer请求后显示Blob，不能将token加入URL。";
 h5FieldContracts["CommerceEvidenceController.image"] = record(null, null, evidenceBinary, null, source.evidence,
   evidenceAuth + "id为专用售后FileObject UUID，只读取当前会员所属ACTIVE文件，不通过公开头像reader或桶URL读取。" + evidenceRead);
+h5FieldContracts["AppCommerceEvidenceController.capabilities"] = h5FieldContracts["CommerceEvidenceController.capabilities"];
+h5FieldContracts["AppCommerceEvidenceController.upload"] = h5FieldContracts["CommerceEvidenceController.upload"];
+h5FieldContracts["AppCommerceEvidenceController.image"] = h5FieldContracts["CommerceEvidenceController.image"];
 h5FieldContracts["AdminCommerceEvidenceController.image"] = record(null, null, evidenceBinary, null, source.evidence,
   "后台Bearer会话与commerce-after-sales/read权限；roles以实时多角色为准，不使用会员或员工令牌。saleId、fileId均为UUID，必须先在该售后evidenceImages中实际存在file:UUID引用，再核验原订单会员文件归属；无权限403、未关联404。成功读取前写COMMERCE_EVIDENCE_READ审计（saleId/fileId/requestId），审计失败不返回图片；不豁免超级管理员审计。" + evidenceRead);
 h5FieldContracts["CommerceCompatibilityController.returnLogistics"] = record(

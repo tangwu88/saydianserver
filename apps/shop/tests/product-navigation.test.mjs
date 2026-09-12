@@ -33,6 +33,11 @@ const chinaArea = evaluate(
   readFileSync(new URL("../src/china-area.ts", import.meta.url), "utf8"),
   { "@vant/area-data": require("@vant/area-data") },
 );
+const countryPhone = evaluate(
+  readFileSync(new URL("../src/country-phone.ts", import.meta.url), "utf8"),
+  { "libphonenumber-js/max": require("libphonenumber-js/max") },
+  { Intl },
+);
 const { script, render } = compilePage("product");
 const product = changes => ({ id: "synthetic-product", name: "测试商品", tags: [], gallery: [], coverImage: null,
   skus: [{ id: "synthetic-sku", stock: 2, salePriceCents: 1000, image: null }], ...changes });
@@ -51,7 +56,10 @@ async function page(realmName, value = product(), options = {}) {
     qrcode: { default: { toDataURL: async value => `data:image/png;base64,${Buffer.from(value).toString('base64')}` } },
     "../../components/ImageEvidencePicker.vue": { default: { render: () => null } },
     "@dcloudio/uni-app": { onLoad: callback => hooks.load = callback, onShow: callback => hooks.show = callback },
-    "../../session": { isLoggedIn: () => !!realm.mallStorage.get("saidian-token") },
+    "../../session": {
+      isLoggedIn: () => !!realm.mallStorage.get("saidian-token"),
+      currentPurchaseReferral: () => String(realm.mallStorage.get("saidian-ref") || ""),
+    },
     "../../api": { api: async (path, input) => { requests.push({ path, input }); if (path === "/storefront/favorites") return []; if (options.productError) throw new Error("Synthetic unavailable product"); return structuredClone(value); }, money: cents => `¥${cents / 100}`, toast: value => notices.push(String(value)), requireLogin() {}, clearCheckoutState() { cleared++; }, mallSessionStamp: () => session },
   }, { uni, navigator: options.navigator || { userAgent: "Synthetic Browser" }, location: options.location || { origin: "https://app.saydian.cn", pathname: "/global/saidian-mall/" } }).default;
   const state = component.setup({}, { expose() {} });
@@ -150,7 +158,7 @@ test("real images replace the placeholder and multiple unique thumbnails update 
 });
 
 function orderPage(name, apiHandler, paymentOverrides = {}) {
-  const { script, render } = compilePage(name), navigations = [], requests = [], storage = new Map(); let cleared = 0;
+  const { script, render } = compilePage(name), navigations = [], requests = [], storage = new Map(), consumedReferrals = []; let cleared = 0;
   const uni = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value), removeStorageSync: key => storage.delete(key), getStorageInfoSync: () => ({ keys: [...storage.keys()] }),
     redirectTo: value => navigations.push(value.url), navigateTo: value => navigations.push(value.url), showToast() {}, getSystemInfoSync: () => ({ windowWidth: 390 }) };
   const { realm } = realmTestModules(uni);
@@ -164,9 +172,13 @@ function orderPage(name, apiHandler, paymentOverrides = {}) {
       toast() {}, requireLogin: () => true, withMallCheckoutLock: callback => callback(), mallSessionStamp: () => "test-session", clearCheckoutState() { cleared++; } },
     "../../payments": { confirmPayment() { throw new Error("Unexpected payment query"); }, createOrderPayment() { throw new Error("Unexpected payment creation"); },
       invokePayment() { throw new Error("Unexpected payment invocation"); }, paymentEnvironment: () => "wechat", paymentLabels: { wechat_jsapi: "微信支付" }, ...paymentOverrides },
+    "../../session": {
+      currentPurchaseReferral: () => String(realm.mallStorage.get("test-purchase-referral") || ""),
+      consumePurchaseReferral: (...args) => consumedReferrals.push(args),
+    },
   }, { uni, setTimeout, setInterval, clearInterval }).default;
   const state = component.setup({}, { expose() {} }), ui = vue.proxyRefs(state);
-  return { state, navigations, requests, storage: realm.mallStorage, cleared: () => cleared, tree: () => render({}, [], {}, ui, {}, {}) };
+  return { state, navigations, requests, consumedReferrals, storage: realm.mallStorage, cleared: () => cleared, tree: () => render({}, [], {}, ui, {}, {}) };
 }
 
 test("a refreshed order has an orders-list exit and unavailable payments never expose provider details", () => {
@@ -257,6 +269,35 @@ test("checkout creates an order, launches payment immediately and returns to the
   assert.deepEqual(h.navigations, ["/pages/orders/index"]); assert.equal(h.cleared(), 1);
 });
 
+test("checkout freezes the tab referral into preview, create and the same idempotent draft, then consumes it only after order creation", async () => {
+  const fingerprint = "q1:" + "d".repeat(64);
+  const quote = { fingerprint, pricingVersion: 1, lines: [], subtotalCents: 1000, couponDiscountCents: 0, pointDiscountCents: 0, shippingCents: 0, payableCents: 1000 };
+  const payments = {
+    createOrderPayment: async () => ({ id: "payment-1", status: "paid" }),
+    confirmPayment: async () => ({ paid: true }),
+    invokePayment: async () => ({}),
+  };
+  const h = orderPage("checkout", async (path) => {
+    if (path === "/storefront/orders/preview") return { quote, referral: { referralCode: "TEAM-B", source: "LINK" } };
+    if (path === "/storefront/orders") return { id: "order-referral" };
+    throw new Error(`Unexpected API call ${path}`);
+  }, payments), s = h.state;
+  h.storage.set("saidian-user", { id: "member-a" });
+  h.storage.set("checkout-owner", "member-a");
+  h.storage.set("test-purchase-referral", "TEAM-B");
+  s.items.value = [{ skuId: "sku-1", quantity: 1 }];
+  s.address.value = { id: "address-1" };
+  s.quote.value = quote;
+  s.capabilities.value = { checkout: { enabled: true }, maintenance: { readOnly: false }, payments: [{ channel: "wechat_jsapi", enabled: true }] };
+  await s.submit();
+  const preview = h.requests.find(row => row[0] === "/storefront/orders/preview");
+  const create = h.requests.find(row => row[0] === "/storefront/orders");
+  assert.equal(preview[1].data.referralCode, "TEAM-B");
+  assert.equal(create[1].data.referralCode, "TEAM-B");
+  assert.match(create[1].headers["idempotency-key"], /^h5-order-/);
+  assert.deepEqual(h.consumedReferrals, [["member-a", "TEAM-B"]]);
+});
+
 test("checkout does not start an API query while a browser payment redirect is unloading the page", async () => {
   let queried = 0;
   const payments = {
@@ -296,6 +337,8 @@ async function addressPage(realmName, existing) {
   const component = evaluate(script.content, { vue, "../../realm": realm,
     "@dcloudio/uni-app": { onLoad: callback => hooks.load = callback },
     "../../china-area": chinaArea,
+    "../../country-phone": countryPhone,
+    "../../components/CountryCallingCodePicker.vue": { default: { render: () => null } },
     "../../api": { api: async (path, input) => { requests.push({ path, input }); return existing ? [existing] : []; }, toast: value => notices.push(value) },
   }, { uni, setTimeout: callback => callback() }).default;
   const state = component.setup({}, { expose() {} });
@@ -328,6 +371,14 @@ test("editing a CN address neither doubles the country prefix nor loses its iden
   const h = await addressPage("global", { ...delivery, id: "address-1", mobile: "+8613800138000", countryCode: "CN" });
   assert.equal(h.state.form.mobile, "13800138000"); await h.state.save();
   assert.equal(h.requests[1].input.data.id, "address-1"); assert.equal(h.requests[1].input.data.mobile, "+8613800138000");
+});
+test("global address keeps an international contact number while delivery remains in mainland China", async () => {
+  const h = await addressPage("global");
+  h.state.phoneCountry.value = "GB";
+  Object.assign(h.state.form, { ...delivery, mobile: "020 7946 0018" });
+  await h.state.save();
+  assert.equal(h.requests[0].input.data.mobile, "+442079460018");
+  assert.equal(h.requests[0].input.data.countryCode, "CN");
 });
 test("editing an unsupported existing delivery country never silently rewrites it to CN", async () => {
   const h = await addressPage("global", { ...delivery, id: "address-us", countryCode: "US", mobile: "+12025550123" });

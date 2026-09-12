@@ -11,16 +11,28 @@ export const integrationDefinitions: IntegrationDefinition[] = [
   { key: 'wechat_login', title: 'App 微信登录', group: '登录与消息', short: '微', purpose: '让手机 App 用户使用微信登录。', prepare: '准备微信开放平台中的移动应用 AppID 和 AppSecret。这里不填写公众号或小程序资料。', fields: appIdentity },
   { key: 'wechat_official', title: '商城微信登录', group: '登录与消息', short: '商', purpose: '在微信内打开商城时使用公众号网页授权。', prepare: '准备公众号 AppID、AppSecret 和授权返回地址；公众号网页授权域名需由维护人员核对。', note: '返回地址须与服务器配置的商城地址同源，不带问号参数或 #。要使用微信内支付，还需与微信支付中的公众号 AppID 一致。', fields: [...appIdentity, url('redirectUri', '授权返回地址', '由维护人员提供的商城授权返回页面地址，不是接口地址。', { required: true })] },
   { key: 'push', title: 'App 消息推送', group: '登录与消息', short: '推', purpose: '通过极光推送向手机发送通知。', prepare: '准备极光推送应用的 AppKey 和 Master Secret，并确认 App 已接入同一推送应用。', note: '保存后需要维护人员重启消息任务服务才能加载新配置。此页不发送测试通知。', fields: [provider('jpush', '极光推送'), s('appKey', '应用标识（AppKey）', '从极光应用资料复制。'), s('masterSecret', '服务端密钥（Master Secret）', '从同一极光应用资料复制，仅在服务器使用。')] },
-  { key: 'wechat_pay', title: '微信支付', group: '支付收款', short: '付', purpose: '接收微信付款并处理退款。', prepare: '准备微信商户号、商户证书序列号、商户私钥、微信平台公钥及编号、API v3 密钥，以及实际使用渠道的 AppID。', note: '这一组同时影响 App、小程序和 H5。更换时要重新填写所有仍在使用的渠道资料。小程序 AppSecret 还用于小程序登录。', fields: [
+  { key: 'wechat_pay', title: '微信支付（H5 / 小程序）', group: '支付收款', short: '付', purpose: '接收商城网页和小程序的微信付款并处理退款。', prepare: '准备微信商户号、商户证书序列号、商户私钥、微信平台公钥及编号、API v3 密钥，以及公众号或小程序 AppID。', note: '此处保留现有 H5、小程序和扫码支付资料，不供手机 App 支付读取。小程序 AppSecret 还用于小程序登录。', fields: [
     s('merchantId', '微信商户号', '商户收款账户编号，不是 AppID。'), s('serialNo', '商户证书序列号', '与下面商户私钥配套的证书序列号。'),
     s('apiV3Key', 'API v3 密钥', '微信商户平台设置的 32 字节密钥，不是商户登录密码。'),
     s('privateKeyPem', '商户私钥', '粘贴完整 PEM 内容，包括 BEGIN / END 两行。', { kind: 'pem' }),
     s('platformSerialNo', '微信平台公钥编号或证书序列号', '须与下面用于验证微信通知的公钥匹配。'), s('platformPublicKeyPem', '微信平台公钥', '不是商户私钥。粘贴完整公钥或平台证书 PEM。', { kind: 'pem' }),
     s('appIdOfficial', '公众号 AppID（微信内 / H5 / 扫码）', '微信内支付应与“商城微信登录”的公众号 AppID 相同。', { required: false }),
-    s('appIdApp', '移动应用 AppID（手机 App）', '需要原生 App 支付时填写。', { required: false }), s('appIdMini', '小程序 AppID', '需要小程序支付或登录时填写，不要填公众号 AppID。', { required: false }), s('appSecretMini', '小程序 AppSecret', '需要小程序微信登录时填写；替换时请保留仍在使用的这项资料。', { required: false }),
+    s('appIdApp', '历史 AppID（仅存量交易）', '只用于迁移前已创建 App 交易的查单、关单和退款；新 App 支付不会读取此项。', { required: false, advanced: true }),
+    s('appIdMini', '小程序 AppID', '需要小程序支付或登录时填写，不要填公众号 AppID。', { required: false }), s('appSecretMini', '小程序 AppSecret', '需要小程序微信登录时填写；替换时请保留仍在使用的这项资料。', { required: false }),
     url('notifyUrl', '付款通知地址', '通常留空，由服务器生成；自定义时请由维护人员核对。', { advanced: true }), url('refundNotifyUrl', '退款通知地址', '通常留空，由服务器生成。', { advanced: true }),
   ] },
-  { key: 'alipay', title: '支付宝支付', group: '支付收款', short: '支', purpose: '支持支付宝付款、退款和支付通知验证。', prepare: '准备支付宝开放平台应用编号、应用私钥和支付宝公钥，确认该应用已开通所需支付产品。', fields: [s('appId', '支付宝应用编号（AppID）', '从支付宝开放平台应用资料复制。'), s('privateKeyPem', '应用私钥', '粘贴完整 PEM 内容；不能填写支付宝公钥。', { kind: 'pem' }), s('publicKeyPem', '支付宝公钥', '用于验证支付宝响应和通知。', { kind: 'pem' }), url('gateway', '支付网关', '通常留空，使用支付宝官方网关；只有沙箱或特殊接入才修改。', { advanced: true }), url('notifyUrl', '付款通知地址', '通常留空，由服务器生成。', { advanced: true }), url('returnUrl', '非商城支付返回地址', '商城订单始终使用服务器的商城返回页面；此项不改变商城返回地址。', { advanced: true })] },
+  { key: 'wechat_pay_app', title: 'App 微信支付', group: '支付收款', short: '微', purpose: '仅接收手机 App 内发起的微信付款并处理退款。', prepare: '准备移动应用对应的微信商户号、移动应用 AppID、商户私钥、平台公钥和 API v3 密钥。', note: '默认未配置，不读取也不回退使用“微信支付（H5 / 小程序）”中的任何凭据。', fields: [
+    s('merchantId', '微信商户号', 'App 收款使用的商户号。'), s('serialNo', '商户证书序列号', '与 App 支付商户私钥配套。'),
+    s('apiV3Key', 'API v3 密钥', 'App 支付商户平台设置的 32 字节密钥。'),
+    s('privateKeyPem', '商户私钥', '粘贴完整 PEM 内容，包括 BEGIN / END 两行。', { kind: 'pem' }),
+    s('platformSerialNo', '微信平台公钥编号或证书序列号', '须与用于验证 App 支付通知的公钥匹配。'),
+    s('platformPublicKeyPem', '微信平台公钥', '用于验证 App 支付响应和回调。', { kind: 'pem' }),
+    s('appIdApp', '移动应用 AppID', '微信开放平台中与当前 App 包名和签名匹配的 AppID。'),
+    url('notifyUrl', 'App 付款通知地址', '通常留空，由服务器生成 App 专用地址。', { advanced: true }),
+    url('refundNotifyUrl', 'App 退款通知地址', '通常留空，由服务器生成 App 专用地址。', { advanced: true }),
+  ] },
+  { key: 'alipay', title: '支付宝支付（H5）', group: '支付收款', short: '支', purpose: '支持商城网页支付宝付款、退款和支付通知验证。', prepare: '准备支付宝开放平台网页应用编号、应用私钥和支付宝公钥，确认已开通网页支付产品。', note: '此处保留现有 H5 支付资料，不供手机 App 支付读取。', fields: [s('appId', '支付宝应用编号（AppID）', '从支付宝开放平台网页应用资料复制。'), s('privateKeyPem', '应用私钥', '粘贴完整 PEM 内容；不能填写支付宝公钥。', { kind: 'pem' }), s('publicKeyPem', '支付宝公钥', '用于验证支付宝响应和通知。', { kind: 'pem' }), url('gateway', '支付网关', '通常留空，使用支付宝官方网关；只有沙箱或特殊接入才修改。', { advanced: true }), url('notifyUrl', '付款通知地址', '通常留空，由服务器生成。', { advanced: true }), url('returnUrl', '非商城支付返回地址', '商城订单始终使用服务器的商城返回页面；此项不改变商城返回地址。', { advanced: true })] },
+  { key: 'alipay_app', title: 'App 支付宝支付', group: '支付收款', short: '应', purpose: '仅接收手机 App 内发起的支付宝付款并处理退款。', prepare: '准备支付宝开放平台移动应用编号、应用私钥和支付宝公钥，确认已开通 App 支付产品。', note: '默认未配置，不读取也不回退使用“支付宝支付（H5）”中的任何凭据。', fields: [s('appId', '移动应用编号（AppID）', '从支付宝开放平台移动应用资料复制。'), s('privateKeyPem', '应用私钥', '粘贴完整 PEM 内容；不能填写支付宝公钥。', { kind: 'pem' }), s('publicKeyPem', '支付宝公钥', '用于验证 App 支付响应和通知。', { kind: 'pem' }), url('gateway', '支付网关', '通常留空，使用支付宝官方网关。', { advanced: true }), url('notifyUrl', 'App 付款通知地址', '通常留空，由服务器生成 App 专用地址。', { advanced: true })] },
   { key: 'apple_iap', title: '苹果应用内购买', group: '支付收款', short: '苹', purpose: '处理 iPhone 的 App Store 应用内购买。', prepare: '请维护人员在服务器配置 App 的 Bundle ID、苹果根证书、验证环境，以及正式环境中的 Apple App ID，然后重启 API。', note: '此页只能保存启用状态。服务器验证资料不能在这里填写；状态开启不代表苹果验证已接通。退款由 App Store 处理。', deployment: true, fields: [] },
   { key: 'wecom', title: '企业微信员工推广', group: '运营与系统', short: '企', purpose: '员工登录、商品推广和推广归属。', prepare: '准备企业 ID、企业微信应用 ID 和应用 Secret，并请企业管理员配置可信域名。这里不是消费者公众号登录，也不是提现打款配置。', note: '服务器已设置商城地址时以服务器为准；保存这里的地址不会覆盖服务器地址。', fields: [s('corpId', '企业 ID', '企业微信管理资料中的 CorpID。'), s('agentId', '应用 ID', '自建应用的 AgentID，通常为数字。'), s('secret', '应用 Secret', '对应自建应用的密钥，不是企业微信登录密码。'), url('storefrontUrl', '商城地址', '填写用户实际访问的商城完整地址。', { required: true }), p('allowedRedirectHosts', '额外允许返回的域名', '一行一个域名，不含 https:// 或页面路径；通常无需额外填写。', { kind: 'list', advanced: true })] },
   { key: 'jushuitan', title: '聚水潭商品与订单', group: '运营与系统', short: '聚', purpose: '同步 ERP 商品、库存、订单、售后及物流。', prepare: '准备聚水潭应用 AppKey、AppSecret、授权访问令牌和店铺编号。请确认已分别取得查询、订单写入和售后写入权限。', note: '令牌到期需要重新授权并替换；系统尚不支持自动续期。填写资料不代表已获得全部业务权限。', fields: [p('shopId', '店铺编号', '订单和售后写入需要准确的聚水潭店铺编号。', { required: true }), s('appKey', '应用 AppKey', '从聚水潭应用资料复制。'), s('appSecret', '应用 AppSecret', '从同一应用资料复制。'), s('accessToken', '授权访问令牌', '店铺授权后取得的 Access Token，不是账号密码。'), url('apiBase', '接口服务器', '通常留空，使用聚水潭官方接口服务器。', { advanced: true }), ...[['sku', '商品查询'], ['inventory', '库存查询'], ['orderUpload', '订单写入'], ['afterSaleUpload', '售后写入'], ['fulfillment', '物流查询']].map(([key, label]) => p(`paths.${key}`, `${label}接口路径`, '通常留空，沿用系统默认；自定义路径必须以 / 开头。', { advanced: true }))] },
@@ -65,12 +77,12 @@ export function validateIntegrationDraft(row: IntegrationRow, definition: Integr
     if (f.key === 'privateKeyPem' && !/BEGIN (?:RSA )?PRIVATE KEY/.test(value)) errors[f.key] = '这里需要私钥，不能填写公钥或证书。';
     if (['publicKeyPem', 'platformPublicKeyPem'].includes(f.key) && /PRIVATE KEY/.test(value)) errors[f.key] = '这里需要公钥或证书，不能填写私钥。';
     if (f.key === 'apiV3Key' && new TextEncoder().encode(value).length !== 32) errors[f.key] = 'API v3 密钥必须为 32 字节。';
-    if ((f.key.startsWith('appId') && definition.key !== 'alipay') && !/^wx[A-Za-z0-9]{8,64}$/.test(value)) errors[f.key] = '请核对以 wx 开头的微信 AppID。';
+    if (f.key.startsWith('appId') && definition.key.startsWith('wechat_') && !/^wx[A-Za-z0-9]{8,64}$/.test(value)) errors[f.key] = '请核对以 wx 开头的微信 AppID。';
     if (f.key === 'agentId' && !/^\d+$/.test(value)) errors[f.key] = '应用 ID 应为数字。';
     if (f.key.startsWith('paths.') && (!/^\/(?!\/)/.test(value) || /[?#\s]/.test(value))) errors[f.key] = '请输入以单个 / 开头、不含域名或参数的接口路径。';
     if (f.kind === 'list' && value.split(/[\n,，]+/).filter(v => v.trim()).some(v => !/^(?:[a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+(?::\d+)?$/.test(v.trim()))) errors[f.key] = '每行填写一个域名，不带协议、路径或通配符。';
   }
-  if (definition.key === 'wechat_pay' && draft.replaceSecrets && !['appIdApp', 'appIdMini', 'appIdOfficial'].some(key => String(draft.values[key] ?? '').trim())) errors.appIdOfficial = '请至少填写一种实际使用渠道的 AppID。';
+  if (definition.key === 'wechat_pay' && draft.replaceSecrets && !['appIdMini', 'appIdOfficial'].some(key => String(draft.values[key] ?? '').trim())) errors.appIdOfficial = '请至少填写公众号或小程序 AppID。';
   return errors;
 }
 export function integrationPayload(row: IntegrationRow, definition: IntegrationDefinition, draft: IntegrationDraft): { state: string; publicConfig: Record<string, unknown>; secrets?: Record<string, string> } {

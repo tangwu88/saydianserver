@@ -115,6 +115,7 @@ function harness({ realm = "global", storage = new Map(), url = "https://app.say
             onMounted: (fn) => mounted.push(fn),
             onBeforeUnmount: (fn) => unmounted.push(fn),
           };
+        if (path === "libphonenumber-js/max") return nodeRequire(path);
         if (path.endsWith(".vue")) return {};
         if (!path.startsWith(".")) throw new Error("Unexpected dependency: " + path);
         return load(resolve(dirname(filename), path));
@@ -203,22 +204,36 @@ test("global customer shopping and employee promotion pages allow only exact end
   assert.equal(globalPageAllowed("/pages/employee/index"), true);
   for (const route of ["/pages/coupon-gift/index?token=employee-token", "//example.invalid", "/pages/login/index#bad"]) assert.equal(globalPageAllowed(route), false);
 });
-test("global promotion links retain and bind the first referral to a verified member", async () => {
+test("global promotion links remain tab-local and belong to the current order instead of rebinding the member", async () => {
   const h = harness({
     url: "https://app.saydian.cn/global/saidian-mall/?ref=TEAM01#/pages/product/index?id=synthetic",
     request(options) { options.success({ statusCode: 200, data: { bound: true } }); },
   });
-  const { captureReferral, bindReferral } = h.load("session");
+  const { PURCHASE_REFERRAL_KEY, captureReferral, bindReferral, claimPurchaseReferral, currentPurchaseReferral } = h.load("session");
   captureReferral();
-  assert.equal(h.storage.get("saydian-global-mall:saidian-ref"), "TEAM01");
+  assert.equal(h.storage.has("saydian-global-mall:saidian-ref"), false);
+  assert.equal(JSON.parse(h.sessionStorage.getItem(PURCHASE_REFERRAL_KEY)).code, "TEAM01");
+  assert.equal(new URL(h.location.href).searchParams.has("ref"), false);
   h.storage.set("saydian-global-mall:saidian-token", "verified-member-token");
   h.storage.set("saydian-global-mall:saidian-user", { id: "member-1", phoneTestMode: false });
+  assert.equal(claimPurchaseReferral("member-1"), "TEAM01");
   await bindReferral();
-  assert.equal(h.requests.length, 1);
-  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/auth/referral");
-  assert.equal(h.requests[0].method, "POST");
-  assert.equal(h.requests[0].data.referralCode, "TEAM01");
-  assert.equal(h.requests[0].header.authorization, "Bearer verified-member-token");
+  assert.equal(h.requests.length, 0);
+  assert.equal(currentPurchaseReferral("member-2"), "");
+  assert.equal(h.sessionStorage.getItem(PURCHASE_REFERRAL_KEY), null);
+});
+test("a new no-referral navigation clears an old tab context while checkout recovery keeps it", () => {
+  const h = harness({ url: "https://app.saydian.cn/global/saidian-mall/?ref=TEAM01#/pages/product/index?id=synthetic" });
+  const session = h.load("session");
+  session.captureReferral();
+  h.location.href = "https://app.saydian.cn/global/saidian-mall/#/pages/home/index";
+  session.captureReferral();
+  assert.equal(h.sessionStorage.getItem(session.PURCHASE_REFERRAL_KEY), null);
+  session.captureReferral("TEAM02");
+  h.storage.set("saydian-global-mall:checkout-draft", { uncertain: true });
+  h.location.href = "https://app.saydian.cn/global/saidian-mall/#/pages/checkout/index";
+  session.captureReferral();
+  assert.equal(session.currentPurchaseReferral(), "TEAM02");
 });
 test("global navigation accepts Uni home-tab alias without permitting other routes", () => {
   const h = harness(),
@@ -323,12 +338,13 @@ test("identifier contracts still require email/E164 and validate passwords", () 
   assert.equal(validNewPassword("1234567"), false);
 });
 
-test("global phone entry defaults to +86, accepts an adjustable prefix and never prefixes full E164 twice", () => {
-  const { normalizeGlobalPhone } = harness().load("global-auth-model");
+test("global phone entry defaults to China, accepts countries and never prefixes full E164 twice", () => {
+  const { normalizeGlobalPhone, splitGlobalPhone } = harness().load("global-auth-model");
   assert.equal(normalizeGlobalPhone("13812345678"), "+8613812345678");
-  assert.equal(normalizeGlobalPhone("4155550123", "+1"), "+14155550123");
-  assert.equal(normalizeGlobalPhone(" +14155550123 ", "+86"), "+14155550123");
-  assert.equal(normalizeGlobalPhone("+8613812345678", "+1"), "+8613812345678");
+  assert.equal(normalizeGlobalPhone("(415) 555-0123", "US"), "+14155550123");
+  assert.equal(normalizeGlobalPhone(" +14155550123 ", "CN"), "+14155550123");
+  assert.equal(normalizeGlobalPhone("+8613812345678", "US"), "+8613812345678");
+  assert.deepEqual(JSON.parse(JSON.stringify(splitGlobalPhone("+442079460018"))), { country: "GB", nationalNumber: "2079460018" });
   for (const [phone, prefix] of [
     ["13812345678", "+0"],
     ["13812345678", "86"],
@@ -336,6 +352,7 @@ test("global phone entry defaults to +86, accepts an adjustable prefix and never
     ["", "+86"],
     ["123abc", "+86"],
     ["+0123456789", "+86"],
+    ["123456789", "+888"],
     ["123456789012345", "+86"],
   ])
     assert.equal(normalizeGlobalPhone(phone, prefix), null);
@@ -688,15 +705,14 @@ function registrationHarness(t, options = {}) {
   t.after(h.unmount);
   return { ...h, ui };
 }
-test("login offers a working member registration entry and temporary registration accepts any six digits", async (t) => {
+test("login offers email-first registration without showing or requiring a fake code", async (t) => {
   const h = registrationHarness(t);
   await settle(() => !h.ui.loading.value);
   await h.ui.startRegistration();
   assert.equal(h.ui.registering.value, true);
-  assert.equal(h.ui.contactMode.value, "sms");
-  assert.equal(h.ui.countryCode.value, "+86");
-  h.ui.identifier.value = "13812345678";
-  h.ui.code.value = "246810";
+  assert.equal(h.ui.contactMode.value, "email");
+  assert.equal(h.ui.phoneCountry.value, "CN");
+  h.ui.identifier.value = "new.member@example.com";
   h.ui.password.value = "synthetic-password";
   h.ui.accepted.value = true;
   await h.ui.submitAccount();
@@ -705,8 +721,8 @@ test("login offers a working member registration entry and temporary registratio
   assert.equal(
     JSON.stringify(request.data),
     JSON.stringify({
-      channel: "sms",
-      identifier: "+8613812345678",
+      channel: "email",
+      identifier: "new.member@example.com",
       password: "synthetic-password",
       consentVersion: "approved-2026-09",
       locale: "en",
@@ -717,11 +733,28 @@ test("login offers a working member registration entry and temporary registratio
     false,
   );
   assert.equal(h.storage.get("saydian-global-mall:saidian-user").memberNo, "10008");
+  assert.doesNotMatch(readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8"), /填写任意6位数字后继续/);
+});
+test("temporary registration accepts a valid international phone without a code", async (t) => {
+  const h = registrationHarness(t);
+  await settle(() => !h.ui.loading.value);
+  await h.ui.startRegistration();
+  h.ui.changeContact("sms");
+  h.ui.phoneCountry.value = "US";
+  h.ui.identifier.value = "(202) 555-0123";
+  h.ui.password.value = "synthetic-password";
+  h.ui.accepted.value = true;
+  await h.ui.submitAccount();
+  const request = h.requests.find((item) => item.url.endsWith("/auth/register"));
+  assert.equal(request.data.identifier, "+12025550123");
+  assert.equal(request.data.channel, "sms");
+  assert.equal(h.requests.some((item) => item.url.endsWith("/auth/verification-code")), false);
 });
 test("verified registration explicitly requests a code and submits its guarded challenge", async (t) => {
   const h = registrationHarness(t, { verificationRequired: true });
   await settle(() => !h.ui.loading.value);
   await h.ui.startRegistration();
+  h.ui.changeContact("sms");
   h.ui.identifier.value = "13812345678";
   await h.ui.sendRegistrationCode();
   h.ui.code.value = "123456";
@@ -763,7 +796,7 @@ test("phone step uses real server challenge; temporary mode never claims SMS sen
 test("temporary phone registration directly accepts six digits with the default +86 and one guarded challenge", async (t) => {
   const h = phoneLoginHarness(t);
   await settle(() => !h.ui.loading.value);
-  assert.equal(h.ui.countryCode.value, "+86");
+  assert.equal(h.ui.phoneCountry.value, "CN");
   assert.equal(h.ui.temporaryPhoneCode.value, true);
   h.ui.identifier.value = "13812345678";
   h.ui.code.value = "000000";
@@ -982,20 +1015,22 @@ test("duplicate code clicks are fenced; changed contact clears challenge without
   );
 });
 
-test("changing country code clears the previous phone challenge, code and original password", async (t) => {
+test("changing phone country clears the previous challenge, code and original password", async (t) => {
   const h = phoneLoginHarness(t);
   await settle(() => !h.ui.loading.value);
+  h.ui.phoneCountry.value = "US";
   h.ui.identifier.value = "4155550123";
   await h.ui.sendCode();
   h.ui.code.value = "123456";
   h.ui.passwordRequired.value = true;
   h.ui.password.value = "old-password";
-  h.ui.countryCode.value = "+1";
+  h.ui.phoneCountry.value = "GB";
   h.ui.resetChallenge();
   assert.equal(h.ui.challenge.value, null);
   assert.equal(h.ui.code.value, "");
   assert.equal(h.ui.password.value, "");
   assert.equal(h.ui.passwordRequired.value, false);
+  h.ui.identifier.value = "020 7946 0018";
   h.ui.code.value = "123456";
   await h.ui.login();
   assert.equal(
@@ -1004,9 +1039,9 @@ test("changing country code clears the previous phone challenge, code and origin
   );
   h.ui.countdown.value = 0;
   await h.ui.login();
-  assert.equal(h.requests.filter((request) => request.url.endsWith("/phone-code"))[1].data.identifier, "+14155550123");
+  assert.equal(h.requests.filter((request) => request.url.endsWith("/phone-code"))[1].data.identifier, "+442079460018");
   const template = readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8");
-  assert.match(template, /id="country-code"[^>]*@input="resetChallenge"/);
+  assert.match(template, /CountryCallingCodePicker[^>]*@update:model-value="resetChallenge"/);
 });
 test("mismatched code response metadata never becomes an accepted challenge", async (t) => {
   const h = phoneLoginHarness(t, {

@@ -14,15 +14,26 @@ import {
 import { ApiTags } from "@nestjs/swagger";
 import { UserAuthGuard } from "../common/user-auth.guard";
 import { CurrentUser, type AuthenticatedUser } from "../common/request-context";
+import { CommerceCapabilitiesService } from "./commerce-capabilities.service";
 import { CommerceService } from "./commerce.service";
 
 @ApiTags("commerce")
 @Controller("api/saydian-app/v2/commerce")
 export class CommerceController {
-  constructor(private readonly commerce: CommerceService) {}
+  constructor(
+    private readonly commerce: CommerceService,
+    private readonly capabilities: CommerceCapabilitiesService,
+  ) {}
+
+  @Get("capabilities")
+  capabilitiesForApp(@Query("locale") locale?: string) {
+    return this.capabilities.publicCapabilities(locale, "app");
+  }
 
   @Get("markets")
-  markets() { return this.commerce.publicGet("/storefront/markets"); }
+  markets() {
+    return this.commerce.publicGet("/storefront/markets");
+  }
 
   @Get("home")
   home() {
@@ -32,12 +43,16 @@ export class CommerceController {
   @Get("products")
   products(@Query() query: Record<string, string>) {
     const params = new URLSearchParams(query).toString();
-    return this.commerce.publicGet(`/storefront/products${params ? `?${params}` : ""}`);
+    return this.commerce.publicGet(
+      `/storefront/products${params ? `?${params}` : ""}`,
+    );
   }
 
   @Get("products/:id")
   product(@Param("id") id: string) {
-    return this.commerce.publicGet(`/storefront/products/${encodeURIComponent(id)}`);
+    return this.commerce.publicGet(
+      `/storefront/products/${encodeURIComponent(id)}`,
+    );
   }
 
   @Get("cart")
@@ -55,7 +70,11 @@ export class CommerceController {
   @Delete("cart/items/:id")
   @UseGuards(UserAuthGuard)
   deleteCart(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
-    return this.commerce.forUser(user.id, "DELETE", `/cart/items/${encodeURIComponent(id)}`);
+    return this.commerce.forUser(
+      user.id,
+      "DELETE",
+      `/cart/items/${encodeURIComponent(id)}`,
+    );
   }
 
   @Get("addresses")
@@ -97,7 +116,10 @@ export class CommerceController {
 
   @Delete("addresses/:id")
   @UseGuards(UserAuthGuard)
-  deleteAddress(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+  deleteAddress(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
     return this.commerce.forUser(
       user.id,
       "DELETE",
@@ -107,16 +129,17 @@ export class CommerceController {
 
   @Get("orders")
   @UseGuards(UserAuthGuard)
-  orders(@CurrentUser() user: AuthenticatedUser, @Query("status") status?: string, @Query("group") group?: string) {
+  orders(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("status") status?: string,
+    @Query("group") group?: string,
+  ) {
     return this.commerce.orders(user.id, status, group);
   }
 
   @Post("orders/preview")
   @UseGuards(UserAuthGuard)
-  previewOrder(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() body: unknown,
-  ) {
+  previewOrder(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     return this.commerce.forUser(user.id, "POST", "/orders/preview", body);
   }
 
@@ -145,7 +168,11 @@ export class CommerceController {
   @Post("orders/:id/receipt")
   @UseGuards(UserAuthGuard)
   receipt(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
-    return this.commerce.forUser(user.id, "POST", `/orders/${encodeURIComponent(id)}/receipt`);
+    return this.commerce.forUser(
+      user.id,
+      "POST",
+      `/orders/${encodeURIComponent(id)}/receipt`,
+    );
   }
 
   @Post("orders/:id/cancel")
@@ -169,6 +196,37 @@ export class CommerceController {
       user.id,
       "POST",
       `/orders/${encodeURIComponent(id)}/after-sales`,
+      body,
+    );
+  }
+
+  @Post("orders/:id/after-sales/preview")
+  @UseGuards(UserAuthGuard)
+  previewAfterSale(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    return this.commerce.forUser(
+      user.id,
+      "POST",
+      `/orders/${encodeURIComponent(id)}/after-sales/preview`,
+      body,
+    );
+  }
+
+  @Post("orders/:id/after-sales/:saleId/return-logistics")
+  @UseGuards(UserAuthGuard)
+  returnLogistics(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Param("saleId") saleId: string,
+    @Body() body: unknown,
+  ) {
+    return this.commerce.forUser(
+      user.id,
+      "POST",
+      `/orders/${encodeURIComponent(id)}/after-sales/${encodeURIComponent(saleId)}/return-logistics`,
       body,
     );
   }
@@ -221,12 +279,27 @@ export class CommerceController {
     return this.commerce.coupons(user.id);
   }
 
+  @Get("coupons/available")
+  @UseGuards(UserAuthGuard)
+  availableCoupons(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("page") page?: string,
+  ) {
+    return this.commerce.availableCoupons(user.id, Number(page ?? 1));
+  }
+
+  @Post("coupons/code/claim")
+  @UseGuards(UserAuthGuard)
+  claimCouponByCode(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+  ) {
+    return this.commerce.claimCouponByCode(user.id, body);
+  }
+
   @Post("coupons/:id/claim")
   @UseGuards(UserAuthGuard)
-  claimCoupon(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param("id") id: string,
-  ) {
+  claimCoupon(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
     return this.commerce.claimCoupon(user.id, id);
   }
 
@@ -234,5 +307,11 @@ export class CommerceController {
   @UseGuards(UserAuthGuard)
   review(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     return this.commerce.createReview(user.id, body);
+  }
+
+  @Get("points")
+  @UseGuards(UserAuthGuard)
+  points(@CurrentUser() user: AuthenticatedUser, @Query("page") page?: string) {
+    return this.commerce.points(user.id, Number(page ?? 1));
   }
 }

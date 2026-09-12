@@ -61,11 +61,11 @@ describe("fixed account deployment isolation", () => {
       await expect(new UserAuthGuard({ userSession: { findFirst } } as any).canActivate({ switchToHttp: () => ({ getRequest: () => request }) } as any)).rejects.toThrow(); expect(findFirst).not.toHaveBeenCalled();
     });
   }
-  it("allows a verified global email identity through the commerce guard without a domestic phone", async () => {
+  it("allows an ordinary global account through the commerce guard without requiring verified contact fields", async () => {
     vi.stubEnv("APP_REALM", "global"); vi.stubEnv("ACCESS_TOKEN_SECRET", "synthetic-test-key-longer-than-thirty-two");
     const token = sign({ sub: "user", sid: "session", jti: "nonce", typ: "access" }, process.env.ACCESS_TOKEN_SECRET!, { issuer: authIssuer(), audience: authAudience() });
     const findFirst = vi.fn(async () => ({ id: "session" })); const request = { path: "/api/saidian-mall/v1/storefront/cart", header: () => `Bearer ${token}` };
     expect(await new UserAuthGuard({ userSession: { findFirst } } as any).canActivate({ switchToHttp: () => ({ getRequest: () => request }) } as any)).toBe(true);
-    expect((findFirst.mock.calls[0] as any)[0].where.user.OR).toContainEqual({ email: { not: null }, emailVerifiedAt: { not: null } });
+    expect((findFirst.mock.calls[0] as any)[0].where.user).toEqual({ status: "ACTIVE" });
   });
 });

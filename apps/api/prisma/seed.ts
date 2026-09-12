@@ -59,11 +59,21 @@ async function main(): Promise<void> {
       { provider: "wechat_pay_v3" },
     ],
     [
+      "wechat_pay_app",
+      IntegrationState.UNCONFIGURED,
+      { provider: "wechat_pay_v3_app" },
+    ],
+    [
       "alipay",
       hasConfiguredAlipay()
         ? IntegrationState.CONFIGURED
         : IntegrationState.UNCONFIGURED,
       { provider: "alipay_open_platform" },
+    ],
+    [
+      "alipay_app",
+      IntegrationState.UNCONFIGURED,
+      { provider: "alipay_open_platform_app" },
     ],
     ["apple_iap", IntegrationState.UNCONFIGURED, { provider: "storekit_2" }],
     [

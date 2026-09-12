@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **333 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **345 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -155,7 +155,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（96）
+## V2 App 接口（108）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -173,6 +173,7 @@
 | `POST /api/saydian-app/v2/auth/delete-account` | 提交账号注销申请 | member | 无请求体 | 注销任务；并非立即删除全部数据 | 核心服务 |
 | `GET /api/saydian-app/v2/billing/offers` | 健康报告购买方案 | public | query:platform?；platform=android/ios/h5/mini_program/web，可选 | 后台启用且当前有效的版本化价格方案 | 核心服务 |
 | `POST /api/saydian-app/v2/billing/payments/wechat/refund-notify` | 微信退款结果回调 | public | header:*；微信支付API v3加密通知；必须校验平台签名并解密 | SUCCESS确认；处理中、关闭或异常不伪报退款成功 | 微信支付 |
+| `POST /api/saydian-app/v2/billing/payments/wechat/app/refund-notify` | App 微信退款结果回调 | public | header:*；微信支付API v3加密通知；仅接受绑定 wechat_pay_app 的支付单 | SUCCESS确认；处理中、关闭或异常不伪报退款成功 | App 微信支付 |
 | `GET /api/saydian-app/v2/billing/entitlements` | 健康报告权益 | member | 无请求体 | 可用次数及30天会员到期时间 | 核心服务 |
 | `POST /api/saydian-app/v2/billing/payments` | 创建统一支付单 | member | {businessType,businessId,offerId?,channel,platform,idempotencyKey}；金额和权益由服务端确定 | PaymentIntent及渠道调用参数；不等于付款成功；global仅CNY商城订单的wechat_jsapi/wechat_h5/wechat_native/alipay_wap/alipay_page；StoreKit沿用原规则 | 未配置或出站暂停返回503；global其他业务/币种/原生App或小程序支付503 payment_unavailable，创建资金关系前拒绝；同键同单已有支付优先返回 |
 | `GET /api/saydian-app/v2/billing/payments/alipay/return/:orderId` | 支付宝网页支付返回商城 | public | path:orderId；orderId=商城订单UUID；第三方追加的查询参数不进入前端片段路由 | 303跳转到固定商城订单详情页 | 不据回跳本身确认付款；订单页只接受服务端验签通知或签名查单结果 |
@@ -180,13 +181,19 @@
 | `POST /api/saydian-app/v2/billing/apple/transactions/verify` | 验证StoreKit交易 | member | {paymentIntentId,signedTransactionInfo} | 验证成功后的支付与权益 | Apple App Store Server；未配置返回503 |
 | `POST /api/saydian-app/v2/billing/apple/notifications` | 接收App Store Server Notifications V2 | public | {signedPayload}；外层和内层JWS均须通过Apple证书链验证 | {received:true}；退款或撤销会收回对应报告权益 | Apple App Store Server |
 | `POST /api/saydian-app/v2/billing/payments/wechat/notify` | 微信支付验签通知 | public | header:*；微信支付V3原始JSON及Wechatpay签名头 | 微信要求的SUCCESS响应；事件幂等 | 微信支付V3 |
+| `POST /api/saydian-app/v2/billing/payments/wechat/app/notify` | App 微信支付验签通知 | public | header:*；微信支付V3原始JSON及Wechatpay签名头；仅接受绑定 wechat_pay_app 的支付单 | 微信要求的SUCCESS响应；事件幂等 | App 微信支付V3 |
 | `POST /api/saydian-app/v2/billing/payments/alipay/notify` | 支付宝验签通知 | public | 支付宝form通知字段 | 支付宝要求的success文本；事件幂等 | 支付宝开放平台 |
+| `POST /api/saydian-app/v2/billing/payments/alipay/app/notify` | App 支付宝验签通知 | public | 支付宝form通知字段；仅接受绑定 alipay_app 的支付单 | 支付宝要求的success文本；事件幂等 | App 支付宝 |
 | `GET /api/saydian-app/v2/care/relationships` | 关爱关系列表 | member | 无请求体 | CareRelationship[]，含 direction、双方昵称、授权指标 | 核心服务 |
 | `POST /api/saydian-app/v2/care/invitations` | 邀请查看对方健康数据 | member | 国内{mobile}；国际{identifier:email/E.164}；仅同部署账号域；不能自邀；已生效返回 409 | CareRelationship；UUID；逐指标授权不变 | 核心服务 |
 | `POST /api/saydian-app/v2/care/relationships/:id/respond` | 接受或拒绝邀请 | member | path:id；id=关系 UUID；{accepted:boolean}；仅收件人可操作 | CareRelationship；接受后仍需逐指标授权 | 核心服务 |
 | `POST /api/saydian-app/v2/care/relationships/:id/permissions` | 共享本人指标 | member | path:id；id=关系 UUID；{metrics:规范指标数组,expiresAt?:ISO8601}；仅数据所属人；[] 撤销全部指标 | CareRelationship | 核心服务 |
 | `DELETE /api/saydian-app/v2/care/relationships/:id` | 撤销关爱关系 | member | path:id；id=关系 UUID；任一参与方可撤销 | CareRelationship；撤销后不能查询 | 核心服务 |
 | `GET /api/saydian-app/v2/care/relationships/:id/health` | 按授权查看健康数据 | member | path:id，query:metric，query:from，query:to；id=关系 UUID；metric 必填；from/to=ISO8601；缺省近 7 天；左闭右开 | HealthRecord[]；逐指标授权并记录审计，拒绝 403 | 核心服务 |
+| `GET /api/saydian-app/v2/commerce/after-sale-images/capabilities` | App检查售后图片上传配置 | member | 国际App V2会员Bearer会话；须真实验证邮箱或手机号 | v2 data包裹{enabled,maxFiles:9,maxBytes:10485760,contentTypes,reason?}；配置缺失返回enabled=false；不代表真实存储回执 | 私有object_storage；仅App V2路由，不回退商城兼容接口 |
+| `POST /api/saydian-app/v2/commerce/after-sale-images` | App上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；国际App V2会员Bearer认证 | HTTP201 v2 data包裹{id,byteSize,contentType,sha256}；只返回本人FileObject UUID；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；上传成功不代表售后申请成功，申请另传evidenceFileIds |
+| `GET /api/saydian-app/v2/commerce/after-sale-images/:id` | App读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；国际App V2会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp；private,no-store及nosniff；他人文件/不存在404，未登录401，存储失败503 | 私有object_storage；不能通过公开地址或兼容头像接口读取 |
+| `GET /api/saydian-app/v2/commerce/capabilities` | App商城可用能力 | public | query:locale?；locale可选；国际App V2公开读取 | 当前真实开放市场、币种小数位、维护状态及可用于android/ios的支付方式；能力缺失不推测可下单 | global.markets与已核验支付配置；不返回密钥 |
 | `GET /api/saydian-app/v2/commerce/markets` | 国际市场可用状态 | public | 无请求体 | {markets:[{countryCode,currency,currencyExponent,commerceEnabled,paymentChannels:[]}]}；未配置默认为CN/CNY且commerceEnabled=true；显式停用保留 | global.markets；仅CN收货/CNY整数分价目可结算；其他币种只读元数据；支付可用性另查capabilities |
 | `GET /api/saydian-app/v2/commerce/home` | 商城首页 | public | 无请求体 | 主库商城首页数据 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `GET /api/saydian-app/v2/commerce/products` | 商城商品列表 | public | query:*；page、pageSize、keyword、categoryId、sort | 主库商品分页 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
@@ -206,13 +213,18 @@
 | `POST /api/saydian-app/v2/commerce/orders/:id/receipt` | 确认收货 | member | path:id；id=主库订单UUID | {received:true}；旧订单拒绝409 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `POST /api/saydian-app/v2/commerce/orders/:id/cancel` | 取消待付款订单 | member | path:id；id=商城订单UUID | 取消结果并恢复本地库存占用；旧订单拒绝409 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `POST /api/saydian-app/v2/commerce/orders/:id/after-sales` | 申请售后 | member | path:id；id=主库订单UUID；{type,reason,requestedCents?,description?,evidenceFileIds?:UUID[],evidenceImages?,idempotencyKey?}；新图片先上传，最多9个不同本人文件ID；global禁非空外部evidenceImages | 主库售后记录，图片引用为file:UUID；旧订单拒绝409；同键原完整请求恢复，不重传或更换图片ID | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/orders/:id/after-sales/preview` | App预览售后金额 | member | path:id；id=主库订单UUID；{type,items:[{orderItemId,quantity}]}；只报价不退款 | 订单版本、商品现金退款、运费、积分返还与现金退款合计；客户端提交时须保留本次报价 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/v2/commerce/orders/:id/after-sales/:saleId/return-logistics` | App登记寄回物流 | member | path:id，path:saleId；id=订单UUID，saleId=售后UUID；{logisticsCompany,trackingNo,version} | 更新后的售后记录；只登记本人等待退货的申请，不自动确认商家收货或退款 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `GET /api/saydian-app/v2/commerce/orders/:id/logistics` | 订单物流 | member | path:id；id=主库订单UUID | 物流轨迹数组 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `POST /api/saydian-app/v2/commerce/payments` | 生成 App 支付参数 | member | header:idempotency-key；{orderId,channel:wechat_app/alipay_app}；金额以商城订单为准；幂等头透传 | {paymentNo,channel,invoke}；不等于付款成功 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `GET /api/saydian-app/v2/commerce/favorites` | 收藏商品列表 | member | 无请求体 | 当前可售商品卡片数组 | 主库商城 |
 | `PUT /api/saydian-app/v2/commerce/products/:id/favorite` | 收藏或取消收藏 | member | path:id；id=商品UUID；{enabled:boolean} | 保存结果 | 主库商城 |
 | `GET /api/saydian-app/v2/commerce/coupons` | 本人优惠券 | member | 无请求体 | 优惠券领取与使用状态 | 主库商城 |
+| `GET /api/saydian-app/v2/commerce/coupons/available` | App领券中心 | member | query:page?；page=页码，默认1，每页20；会员鉴权 | 公开有效券、本人是否已领、可领取状态及分页；不暴露员工赠券库存 | 主库商城 |
+| `POST /api/saydian-app/v2/commerce/coupons/code/claim` | App输入优惠码领券 | member | {code:4-32位字母、数字、_或-} | 本人领取记录；错误不泄露优惠券内部状态 | 主库商城 |
 | `POST /api/saydian-app/v2/commerce/coupons/:id/claim` | 领取优惠券 | member | path:id；id=优惠券UUID | 领取记录；重复领取幂等 | 主库商城 |
 | `POST /api/saydian-app/v2/commerce/reviews` | 评价已收货商品 | member | {orderItemId,rating,content,images?} | 评价记录 | 主库商城 |
+| `GET /api/saydian-app/v2/commerce/points` | App积分余额与流水 | member | query:page?；page=页码，默认1，每页20；会员鉴权 | 本人已核验余额或不可用状态、真实流水与分页；null不转为0 | 主库商城 |
 | `GET /api/saydian-app/v2/content/categories` | 文章分类 | public | query:parentId?，query:locale?，header:accept-language?；parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en | ArticleCategory[]；未翻译不返回其他语言替代 | 核心服务 |
 | `GET /api/saydian-app/v2/content/articles` | 已发布文章 | public | query:categoryId?，query:page?，query:pageSize?，query:locale?，header:accept-language?；categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language | {items,total,page,pageSize}；国际仅已发布的对应语言 | 核心服务 |
 | `GET /api/saydian-app/v2/content/articles/:id` | 文章详情 | public | path:id，query:locale?，header:accept-language?；id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language | Article；未发布/未来发布/国际语言不匹配 404 | 核心服务 |

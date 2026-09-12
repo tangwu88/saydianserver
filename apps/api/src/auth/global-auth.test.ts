@@ -216,7 +216,7 @@ describe("global registration challenges", () => {
     expect(h.auth.login).toHaveBeenNthCalledWith(2, "+12025550123", "Synthetic-only-password!");
     vi.stubEnv("APP_REALM", "domestic"); await expect(h.service.capabilities()).rejects.toThrow("unavailable");
   });
-  it("allows an unverified global password login only while the temporary switch is enabled", async () => {
+  it("allows an existing unverified global account to sign in independently of the registration switch", async () => {
     const password = "Synthetic-only-password!";
     const findUnique = vi.fn(async ({ where }: any) => ({
       id: "unverified-global-user",
@@ -230,7 +230,7 @@ describe("global registration challenges", () => {
     }));
     const auth = new AuthService({ user: { findUnique } } as any, {} as any, {} as any, {} as any);
     vi.spyOn(auth, "issueSession").mockResolvedValue({} as any);
-    await expect(auth.login("+1 202 555 0123", password)).rejects.toThrow("账号或密码错误");
+    await expect(auth.login("+1 202 555 0123", password)).resolves.toEqual({});
     vi.stubEnv("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED", "true");
     await expect(auth.login("+1 202 555 0123", password)).resolves.toEqual({});
     expect(findUnique).toHaveBeenLastCalledWith({ where: { mobile: "+12025550123" } });

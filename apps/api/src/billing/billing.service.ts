@@ -42,7 +42,14 @@ import {
   AppleSignatureVerificationError,
   appleTransactionValidationError,
 } from "./apple-iap.service";
-import { PaymentProviderService, assertGlobalPaymentScope, assertGlobalPaymentSupported } from "./payment-provider.service";
+import {
+  PaymentProviderService,
+  assertGlobalPaymentScope,
+  assertGlobalPaymentSupported,
+  paymentIntegrationKeyForNewIntent,
+  paymentIntegrationKeyForStoredIntent,
+  type PaymentIntegrationKey,
+} from "./payment-provider.service";
 import { onCommerceOrderPaid, onCommerceRefundSucceeded, onCommercePointsRefundSucceeded, afterSaleSettlementSnapshot, settlePointOnlyAfterSale, allItemsReturned } from "../commerce/commerce-finance";
 import { orderFulfillmentState } from "../commerce/commerce-finance";
 import { shouldDeferCallbacks, shouldPauseWorkers } from "@saydian/app-contracts";
@@ -189,7 +196,7 @@ export class BillingService {
     if (
       isGlobalRealm() &&
       businessType === BusinessType.COMMERCE_ORDER &&
-      !globalCommercePaymentChannelAllowedForUserAgent(channel, context.clientUserAgent)
+      !globalCommercePaymentChannelAllowedForUserAgent(channel, context.clientUserAgent, platform)
     ) {
       throw globalError(
         400,
@@ -206,6 +213,7 @@ export class BillingService {
     );
     assertGlobalPaymentSupported({ channel, businessType, currency: resolved.currency });
     const identity = await this.providers.identity(channel);
+    const integrationKey = paymentIntegrationKeyForNewIntent(channel);
     if (channel === PaymentChannel.WECHAT_JSAPI) {
       if (!identity.appId) throw new ServiceUnavailableException("微信公众号支付应用尚未配置");
       // Fail before reserving a pending payment relationship; the provider rechecks at dispatch.
@@ -237,6 +245,7 @@ export class BillingService {
         healthReportId: resolved.healthReportId,
         healthMembershipId: resolved.healthMembershipId,
         channel,
+        integrationKey,
         amountCents: resolved.amountCents,
         currency: resolved.currency,
         providerMerchantId: identity.merchantId,
@@ -312,7 +321,9 @@ export class BillingService {
           ) {
             throw new BadRequestException("微信查单结果与原支付记录不匹配");
           }
-          await this.markPaid(intent.paymentNo, transactionId, paidCents, payload);
+          await this.markPaid(intent.paymentNo, transactionId, paidCents, payload, {
+            integrationKey: paymentIntegrationKeyForStoredIntent(intent),
+          });
           const refreshed = await this.prisma.paymentIntent.findFirst({
             where: { id, userId },
           });
@@ -346,6 +357,7 @@ export class BillingService {
           }
           await this.markPaid(intent.paymentNo, transactionId, paidCents, payload, {
             alipayAppId: intent.providerAppId,
+            integrationKey: paymentIntegrationKeyForStoredIntent(intent),
           });
           const refreshed = await this.prisma.paymentIntent.findFirst({
             where: { id, userId },
@@ -507,18 +519,20 @@ export class BillingService {
     headers: Record<string, string | undefined>,
     payload: unknown,
     rawBody: Buffer,
+    integrationKey: "wechat_pay" | "wechat_pay_app" = "wechat_pay",
   ) {
     const body = safeObject(payload);
     const decrypted = await this.providers.decodeWechatNotification(
       headers,
       body,
       rawBody,
+      integrationKey,
     );
     const eventKey = String(
       body.id ?? decrypted.transaction_id ?? decrypted.out_trade_no ?? "",
     );
     await this.processProviderEvent(
-      "wechat_pay",
+      integrationKey,
       eventKey,
       "PAYMENT_SUCCEEDED",
       decrypted,
@@ -530,17 +544,21 @@ export class BillingService {
           String(decrypted.transaction_id ?? ""),
           Number(amount.total),
           decrypted,
+          { integrationKey },
         );
       },
     );
     return { code: "SUCCESS", message: "成功" };
   }
 
-  async handleAlipayNotification(payload: Record<string, string>) {
-    await this.providers.verifyAlipayNotification(payload);
+  async handleAlipayNotification(
+    payload: Record<string, string>,
+    integrationKey: "alipay" | "alipay_app" = "alipay",
+  ) {
+    await this.providers.verifyAlipayNotification(payload, integrationKey);
     const eventKey = `${payload.notify_id ?? payload.trade_no ?? payload.out_trade_no ?? ""}:${payload.trade_status ?? ""}`;
     await this.processProviderEvent(
-      "alipay",
+      integrationKey,
       eventKey,
       "PAYMENT_STATUS",
       payload,
@@ -551,6 +569,7 @@ export class BillingService {
             payload.trade_no ?? "",
             Math.round(Number(payload.total_amount ?? 0) * 100),
             payload,
+            { alipayAppId: payload.app_id ?? null, integrationKey },
           );
         }
       },
@@ -562,22 +581,24 @@ export class BillingService {
     headers: Record<string, string | undefined>,
     payload: unknown,
     rawBody: Buffer,
+    integrationKey: "wechat_pay" | "wechat_pay_app" = "wechat_pay",
   ) {
     const body = safeObject(payload);
     const decrypted = await this.providers.decodeWechatNotification(
       headers,
       body,
       rawBody,
+      integrationKey,
     );
     const eventKey = String(
       body.id ?? decrypted.refund_id ?? decrypted.out_refund_no ?? "",
     );
     await this.processProviderEvent(
-      "wechat_pay",
+      integrationKey,
       eventKey,
       "REFUND_STATUS",
       decrypted,
-      async () => this.applyWechatRefundResult(decrypted),
+      async () => this.applyWechatRefundResult(decrypted, integrationKey),
     );
     return { code: "SUCCESS", message: "成功" };
   }
@@ -745,6 +766,7 @@ export class BillingService {
         currency: intent.currency,
         reason: refund.reason,
         channel: intent.channel,
+        integrationKey: intent.integrationKey,
       });
       await this.prisma.paymentRefund.updateMany({
         where: { id: refund.id, status: { not: RefundStatus.SUCCEEDED } },
@@ -763,6 +785,7 @@ export class BillingService {
           result.providerRefundId,
           result.amountCents,
           result.payload,
+          paymentIntegrationKeyForStoredIntent(intent),
         );
       }
       return this.prisma.paymentRefund.findUniqueOrThrow({ where: { id: refund.id } });
@@ -975,13 +998,19 @@ export class BillingService {
     transactionId: string,
     paidCents: number,
     payload: Record<string, unknown>,
-    verification: { alipayAppId?: string | null } = {},
+    verification: {
+      alipayAppId?: string | null;
+      integrationKey?: PaymentIntegrationKey | null;
+    } = {},
   ): Promise<void> {
     const intent = await this.prisma.paymentIntent.findUnique({
       where: { paymentNo },
     });
     if (!intent) throw new NotFoundException("支付记录不存在");
     assertNewExecutionOwner(intent);
+    if (verification.integrationKey !== undefined) {
+      assertPaymentIntegrationBinding(intent, verification.integrationKey);
+    }
     assertProviderResultIdentity(intent, payload, false, verification);
     if (!transactionId || !Number.isSafeInteger(paidCents) || paidCents !== intent.amountCents) {
       throw new BadRequestException("支付金额不一致");
@@ -1126,7 +1155,10 @@ export class BillingService {
     };
   }
 
-  private async applyWechatRefundResult(payload: Record<string, unknown>) {
+  private async applyWechatRefundResult(
+    payload: Record<string, unknown>,
+    integrationKey: "wechat_pay" | "wechat_pay_app" = "wechat_pay",
+  ) {
     const refundNo = String(payload.out_refund_no ?? "");
     const status = String(payload.refund_status ?? "").toUpperCase();
     const amount = safeObject(payload.amount);
@@ -1137,6 +1169,7 @@ export class BillingService {
         String(payload.refund_id ?? "") || null,
         amountCents,
         payload,
+        integrationKey,
       );
       return;
     }
@@ -1145,6 +1178,7 @@ export class BillingService {
       include: { paymentIntent: true },
     });
     if (!refund) throw new NotFoundException("退款记录不存在");
+    assertPaymentIntegrationBinding(refund.paymentIntent, integrationKey);
     await this.prisma.$transaction(async tx => {
       if (refund.paymentIntent.commerceOrderId) {
         await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${refund.paymentIntent.commerceOrderId}::uuid FOR UPDATE`;
@@ -1171,12 +1205,16 @@ export class BillingService {
     providerRefundId: string | null,
     amountCents: number,
     payload: Record<string, unknown>,
+    integrationKey?: PaymentIntegrationKey | null,
   ) {
     const refund = await this.prisma.paymentRefund.findUnique({
       where: { refundNo },
       include: { paymentIntent: true },
     });
     if (!refund) throw new NotFoundException("退款记录不存在");
+    if (integrationKey !== undefined) {
+      assertPaymentIntegrationBinding(refund.paymentIntent, integrationKey);
+    }
     assertRefundResultBinding(refund, payload, amountCents, providerRefundId);
     if (refund.status === RefundStatus.SUCCEEDED && refund.completedAt) return;
     await this.prisma.$transaction(async (tx) => {
@@ -1513,15 +1551,15 @@ export class BillingService {
       try {
         const payload = safeObject(event.payload);
         await this.processProviderEvent(event.provider, event.eventKey, event.eventType, payload, async () => {
-          if (event.provider === "wechat_pay") {
-            if (event.eventType === "REFUND_STATUS") return this.applyWechatRefundResult(payload);
+          if (event.provider === "wechat_pay" || event.provider === "wechat_pay_app") {
+            if (event.eventType === "REFUND_STATUS") return this.applyWechatRefundResult(payload, event.provider);
             if (payload.trade_state !== "SUCCESS") throw new ConflictException("微信支付事件不是成功状态");
             const amount = safeObject(payload.amount);
-            return this.markPaid(String(payload.out_trade_no ?? ""), String(payload.transaction_id ?? ""), Number(amount.total), payload);
+            return this.markPaid(String(payload.out_trade_no ?? ""), String(payload.transaction_id ?? ""), Number(amount.total), payload, { integrationKey: event.provider });
           }
-          if (event.provider === "alipay") {
+          if (event.provider === "alipay" || event.provider === "alipay_app") {
             if (["TRADE_SUCCESS", "TRADE_FINISHED"].includes(String(payload.trade_status))) {
-              await this.markPaid(String(payload.out_trade_no ?? ""), String(payload.trade_no ?? ""), Math.round(Number(payload.total_amount) * 100), payload);
+              await this.markPaid(String(payload.out_trade_no ?? ""), String(payload.trade_no ?? ""), Math.round(Number(payload.total_amount) * 100), payload, { alipayAppId: String(payload.app_id ?? "") || null, integrationKey: event.provider });
             }
             return;
           }
@@ -1764,6 +1802,15 @@ function serializePayment(intent: {
         : null,
     createdAt: intent.createdAt.toISOString(),
   };
+}
+
+function assertPaymentIntegrationBinding(
+  intent: { channel: PaymentChannel; integrationKey?: string | null },
+  integrationKey: PaymentIntegrationKey | null,
+): void {
+  if (paymentIntegrationKeyForStoredIntent(intent) !== integrationKey) {
+    throw new BadRequestException("支付通知或退款结果与原交易配置不匹配");
+  }
 }
 
 function sanitizeError(error: unknown): string {

@@ -129,11 +129,12 @@ describe("conditional commerce quotation", () => {
     const store = { createOrder: vi.fn().mockResolvedValue({ id: "order" }), previewOrder: vi.fn().mockResolvedValue({ quote: {} }) };
     const prisma = { commerceOrder: { findFirst: vi.fn().mockResolvedValue(null) }, legacyIdMap: { findMany: vi.fn().mockResolvedValue([]) }, legacyOrderProjection: { findFirst: vi.fn().mockResolvedValue(null) } };
     const service = new CommerceService(prisma as any, store as any, {} as any), expectedQuote = "q1:" + "a".repeat(64);
-    const body = { address_id: "address", items: [{ sku_id: "sku", num: 1 }], expectedQuote };
+    const body = { address_id: "address", items: [{ sku_id: "sku", num: 1 }], expectedQuote, referralCode: "TEAM-B" };
     await service.forUser("member", "POST", "/orders", body, "request-key");
-    expect(store.createOrder).toHaveBeenLastCalledWith("member", expect.objectContaining({ expectedQuote, addressId: "address", items: [{ skuId: "sku", quantity: 1 }] }));
+    expect(store.createOrder).toHaveBeenLastCalledWith("member", expect.objectContaining({ expectedQuote, referralCode: "TEAM-B", addressId: "address", items: [{ skuId: "sku", quantity: 1 }] }));
     await service.forUser("member", "POST", "/orders/preview", body);
     expect(store.previewOrder.mock.calls[0]![1]).not.toHaveProperty("expectedQuote");
     await expect(service.forUser("member", "POST", "/orders", { ...body, expectedQuote: null }, "request-key")).rejects.toMatchObject({ status: 400 });
+    await expect(service.forUser("member", "POST", "/orders", { ...body, referralCode: "bad code" }, "request-key")).rejects.toMatchObject({ status: 400 });
   });
 });

@@ -68,9 +68,11 @@ export class UserAuthGuard implements CanActivate {
           revokedAt: null,
           expiresAt: { gt: new Date() },
           user: { status: UserStatus.ACTIVE,
-            ...(temporary ? { wechatOfficialIdentities: { some: { appId: testAppId! } } } : requiresVerifiedCommerceMobile(path) ? (isGlobalRealm()
-              ? { OR: [{ mobile: { not: null }, mobileVerifiedAt: { not: null } }, { email: { not: null }, emailVerifiedAt: { not: null } }] }
-              : { mobile: { not: null }, mobileVerifiedAt: { not: null } }) : {}),
+            ...(temporary
+              ? { wechatOfficialIdentities: { some: { appId: testAppId! } } }
+              : requiresVerifiedCommerceMobile(path) && !isGlobalRealm()
+                ? { mobile: { not: null }, mobileVerifiedAt: { not: null } }
+                : {}),
           },
         },
         select: { id: true },

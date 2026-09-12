@@ -39,6 +39,31 @@ const adminOrderDetailInclude = {
   afterSales: true,
 } satisfies Prisma.CommerceOrderInclude;
 
+const memberProfileSelect = {
+  id: true,
+  compatibilityId: true,
+  mobile: true,
+  mobileVerifiedAt: true,
+  email: true,
+  emailVerifiedAt: true,
+  nickname: true,
+  avatarUrl: true,
+  gender: true,
+  birthday: true,
+  heightCm: true,
+  weightKg: true,
+  status: true,
+  referralEmployeeId: true,
+  referralEmployee: {
+    select: { id: true, name: true, referralCode: true, active: true },
+  },
+  updatedAt: true,
+} satisfies Prisma.UserSelect;
+
+type MemberProfileRow = Prisma.UserGetPayload<{
+  select: typeof memberProfileSelect;
+}>;
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -56,7 +81,7 @@ export class AdminService {
     }
   }
 
-  private memberProfileFields(item: { id: string; compatibilityId: number; mobile: string | null; mobileVerifiedAt: Date | null; email: string | null; emailVerifiedAt: Date | null; nickname: string; avatarUrl: string | null; gender: Gender; birthday: Date | null; heightCm: { toNumber(): number } | null; weightKg: { toNumber(): number } | null; status: UserStatus; updatedAt: Date }) {
+  private memberProfileFields(item: MemberProfileRow) {
     return {
       id: item.id,
       memberNo: String(item.compatibilityId),
@@ -73,6 +98,8 @@ export class AdminService {
       heightCm: item.heightCm?.toNumber() ?? null,
       weightKg: item.weightKg?.toNumber() ?? null,
       status: item.status,
+      referralEmployeeId: item.referralEmployeeId,
+      referralEmployee: item.referralEmployee,
       verificationVersion: item.updatedAt.toISOString(),
     };
   }
@@ -180,22 +207,7 @@ export class AdminService {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
         where: { id: userId },
-        select: {
-          id: true,
-          compatibilityId: true,
-          mobile: true,
-          mobileVerifiedAt: true,
-          email: true,
-          emailVerifiedAt: true,
-          nickname: true,
-          avatarUrl: true,
-          gender: true,
-          birthday: true,
-          heightCm: true,
-          weightKg: true,
-          status: true,
-          updatedAt: true,
-        },
+        select: memberProfileSelect,
       });
       if (!user) throw new NotFoundException("会员不存在");
       await tx.auditLog.create({
@@ -209,7 +221,7 @@ export class AdminService {
           afterJson: {
             mobilePresent: Boolean(user.mobile),
             emailPresent: Boolean(user.email),
-            fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification"],
+            fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification", "referralEmployeeId"],
           },
         },
       });
@@ -220,7 +232,7 @@ export class AdminService {
   async updateMemberProfile(current: { id: string; role: string; roles?: string[] }, userId: string, requestId: string, input: Record<string, unknown>) {
     this.assertGlobalMemberAdministrator(current);
     if (!isUuid(userId)) throw new BadRequestException("会员编号无效");
-    const allowedFields = new Set(["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "mobileVerified", "emailVerified", "newPassword", "expectedUpdatedAt"]);
+    const allowedFields = new Set(["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "mobileVerified", "emailVerified", "referralEmployeeId", "newPassword", "expectedUpdatedAt"]);
     if (Object.keys(input).some((field) => !allowedFields.has(field))) {
       throw new BadRequestException("会员资料包含不支持的字段");
     }
@@ -265,6 +277,13 @@ export class AdminService {
     };
     const heightCmInput = optionalProfileNumber("heightCm", 50, 250, "身高");
     const weightKgInput = optionalProfileNumber("weightKg", 10, 500, "体重");
+    const hasReferralEmployee = hasField("referralEmployeeId");
+    const referralEmployeeIdInput = hasReferralEmployee
+      ? String(input.referralEmployeeId ?? "").trim() || null
+      : undefined;
+    if (referralEmployeeIdInput && !isUuid(referralEmployeeIdInput)) {
+      throw new BadRequestException("推广上级 ID 无效，请重新选择");
+    }
 
     const mobileInput = String(input.mobile ?? "").trim();
     const emailInput = String(input.email ?? "").trim();
@@ -291,22 +310,7 @@ export class AdminService {
       return await this.prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
           where: { id: userId },
-          select: {
-            id: true,
-            compatibilityId: true,
-            mobile: true,
-            mobileVerifiedAt: true,
-            email: true,
-            emailVerifiedAt: true,
-            nickname: true,
-            avatarUrl: true,
-            gender: true,
-            birthday: true,
-            heightCm: true,
-            weightKg: true,
-            status: true,
-            updatedAt: true,
-          },
+          select: memberProfileSelect,
         });
         if (!user) throw new NotFoundException("会员不存在");
         if (user.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
@@ -314,6 +318,15 @@ export class AdminService {
         }
         if (user.status === UserStatus.DELETION_PENDING || user.status === UserStatus.DELETED) {
           throw new ConflictException("注销流程中的会员不能手工编辑");
+        }
+        const referralEmployee = referralEmployeeIdInput && referralEmployeeIdInput !== user.referralEmployeeId
+          ? await tx.commerceEmployee.findUnique({
+              where: { id: referralEmployeeIdInput },
+              select: { id: true, name: true, referralCode: true, active: true },
+            })
+          : user.referralEmployee;
+        if (referralEmployeeIdInput && referralEmployeeIdInput !== user.referralEmployeeId && (!referralEmployee || !referralEmployee.active)) {
+          throw new BadRequestException("所选推广上级不存在或已停用");
         }
         const conflict = await tx.user.findFirst({
           where: {
@@ -332,13 +345,15 @@ export class AdminService {
         const verificationChanged = Boolean(user.mobileVerifiedAt) !== Boolean(nextMobileVerifiedAt) || Boolean(user.emailVerifiedAt) !== Boolean(nextEmailVerifiedAt);
         const statusChanged = user.status !== status;
         const passwordChanged = Boolean(newPasswordHash);
+        const referralEmployeeId = hasReferralEmployee ? referralEmployeeIdInput! : user.referralEmployeeId;
+        const referralChanged = user.referralEmployeeId !== referralEmployeeId;
         const avatarUrl = avatarUrlInput === undefined ? user.avatarUrl : avatarUrlInput;
         const gender = genderInput === undefined ? user.gender : (genderInput as Gender);
         const birthday = birthdayInput === undefined ? user.birthday : birthdayInput;
         const heightCm = heightCmInput === undefined ? user.heightCm : heightCmInput === null ? null : new Prisma.Decimal(heightCmInput);
         const weightKg = weightKgInput === undefined ? user.weightKg : weightKgInput === null ? null : new Prisma.Decimal(weightKgInput);
         const profileFieldsChanged = [...(user.nickname !== nickname ? ["nickname"] : []), ...(user.avatarUrl !== avatarUrl ? ["avatarUrl"] : []), ...(user.gender !== gender ? ["gender"] : []), ...((user.birthday?.toISOString().slice(0, 10) ?? null) !== (birthday?.toISOString().slice(0, 10) ?? null) ? ["birthday"] : []), ...((user.heightCm?.toNumber() ?? null) !== (heightCm?.toNumber() ?? null) ? ["heightCm"] : []), ...((user.weightKg?.toNumber() ?? null) !== (weightKg?.toNumber() ?? null) ? ["weightKg"] : [])];
-        if (!mobileChanged && !emailChanged && !verificationChanged && !statusChanged && !passwordChanged && !profileFieldsChanged.length) {
+        if (!mobileChanged && !emailChanged && !verificationChanged && !statusChanged && !passwordChanged && !referralChanged && !profileFieldsChanged.length) {
           return this.memberProfileFields(user);
         }
 
@@ -356,6 +371,7 @@ export class AdminService {
             email,
             emailVerifiedAt: nextEmailVerifiedAt,
             status: status as UserStatus,
+            ...(hasReferralEmployee ? { referralEmployeeId } : {}),
             ...(newPasswordHash ? { passwordHash: newPasswordHash } : {}),
             updatedAt: changedAt,
           },
@@ -381,6 +397,7 @@ export class AdminService {
               emailPresent: Boolean(user.email),
               emailVerified: Boolean(user.emailVerifiedAt),
               status: user.status,
+              referralEmployeeId: user.referralEmployeeId,
               profileFieldsChanged,
               passwordChanged: false,
             },
@@ -392,6 +409,8 @@ export class AdminService {
               emailVerified: Boolean(nextEmailVerifiedAt),
               emailChanged,
               status,
+              referralEmployeeId,
+              referralChanged,
               profileFieldsChanged,
               passwordChanged,
               source: "SUPER_ADMIN_PROFILE_EDITOR",
@@ -411,6 +430,8 @@ export class AdminService {
           email,
           emailVerifiedAt: nextEmailVerifiedAt,
           status: status as UserStatus,
+          referralEmployeeId,
+          referralEmployee: referralEmployeeId ? referralEmployee : null,
           updatedAt: changedAt,
         });
       });

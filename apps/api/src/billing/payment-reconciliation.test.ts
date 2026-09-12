@@ -62,7 +62,7 @@ describe("member payment status reconciliation", () => {
     const h = fixture();
     await expect(h.service.payment("member-1", pending.id)).resolves.toMatchObject({ status: "succeeded" });
     expect(h.providers.queryWechatPayment).toHaveBeenCalledWith(pending);
-    expect(h.markPaid).toHaveBeenCalledWith(pending.paymentNo, success.transaction_id, pending.amountCents, success);
+    expect(h.markPaid).toHaveBeenCalledWith(pending.paymentNo, success.transaction_id, pending.amountCents, success, { integrationKey: "wechat_pay" });
     expect(h.prisma.paymentIntent.findFirst).toHaveBeenCalledTimes(2);
   });
 
@@ -102,7 +102,7 @@ describe("member payment status reconciliation", () => {
 
     await expect(service.payment("member-1", alipayPending.id)).resolves.toMatchObject({ status: "succeeded" });
     expect(providers.queryAlipayPayment).toHaveBeenCalledWith(alipayPending);
-    expect(markPaid).toHaveBeenCalledWith(alipayPending.paymentNo, alipaySuccess.trade_no, alipayPending.amountCents, alipaySuccess, { alipayAppId: alipayPending.providerAppId });
+    expect(markPaid).toHaveBeenCalledWith(alipayPending.paymentNo, alipaySuccess.trade_no, alipayPending.amountCents, alipaySuccess, { alipayAppId: alipayPending.providerAppId, integrationKey: "alipay" });
   });
 
   it("accepts Alipay's signed numeric total_amount response", async () => {
@@ -115,7 +115,7 @@ describe("member payment status reconciliation", () => {
     const markPaid = vi.spyOn(service, "markPaid").mockResolvedValue();
 
     await expect(service.payment("member-1", alipayPending.id)).resolves.toMatchObject({ status: "succeeded" });
-    expect(markPaid).toHaveBeenCalledWith(alipayPending.paymentNo, alipaySuccess.trade_no, alipayPending.amountCents, payload, { alipayAppId: alipayPending.providerAppId });
+    expect(markPaid).toHaveBeenCalledWith(alipayPending.paymentNo, alipaySuccess.trade_no, alipayPending.amountCents, payload, { alipayAppId: alipayPending.providerAppId, integrationKey: "alipay" });
   });
 
   it.each([

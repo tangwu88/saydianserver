@@ -10,13 +10,13 @@
       placeholder="请输入姓名"
       @blur="touched.name = true"
     /></view><text v-if="fieldErrors.name" class="field-error">{{ fieldErrors.name }}</text>
-    <view class="field-block"><view class="phone-title"><text class="field-title">手机号</text><text v-if="isGlobalMall">中国大陆 +86</text></view><view class="phone-row"><text v-if="isGlobalMall" class="calling-code">+86</text><input
+    <view class="field-block"><view class="phone-title"><text class="field-title">手机号</text><text v-if="isGlobalMall">区号用于收货联系，当前仅配送中国大陆</text></view><view class="phone-row"><CountryCallingCodePicker v-if="isGlobalMall" v-model="phoneCountry" compact /><input
       v-model="form.mobile"
       class="input"
       name="tel"
       autocomplete="tel"
-      type="number"
-      maxlength="11"
+      type="text"
+      :maxlength="isGlobalMall ? 32 : 11"
       placeholder="用于收货联系"
       @blur="touched.mobile = true"
     /></view></view><text v-if="fieldErrors.mobile" class="field-error">{{ fieldErrors.mobile }}</text>
@@ -50,6 +50,12 @@ import { mallStorage, isGlobalMall } from "../../realm";
 import { onLoad } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
 import { api, toast } from "../../api";
+import CountryCallingCodePicker from "../../components/CountryCallingCodePicker.vue";
+import {
+  normalizeGlobalPhone,
+  splitGlobalPhone,
+  type PhoneCountryCode,
+} from "../../country-phone";
 import {
   constrainMainlandRegionIndexes,
   mainlandCities,
@@ -59,6 +65,7 @@ import {
   mainlandRegionIndexes,
 } from "../../china-area";
 const busy=ref(false),owner=String(mallStorage.get('saidian-user')?.id || '');
+const phoneCountry = ref<PhoneCountryCode>('CN');
 const form = reactive<any>({
   name: "",
   mobile: "",
@@ -81,14 +88,17 @@ const regionColumns = computed(() => [
 const regionText = computed(() =>
   [form.province, form.city, form.district].filter(Boolean).join(" / "),
 );
+const normalizedRecipientPhone = computed(() => isGlobalMall
+  ? normalizeGlobalPhone(String(form.mobile), phoneCountry.value)
+  : (/^1\d{10}$/.test(String(form.mobile)) ? String(form.mobile) : null));
 const readyToSave = computed(() => Boolean(
-  String(form.name).trim() && /^1\d{10}$/.test(String(form.mobile)) &&
+  String(form.name).trim() && normalizedRecipientPhone.value &&
   String(form.province).trim() && String(form.city).trim() &&
   String(form.district).trim() && String(form.detail).trim(),
 ));
 const missingFields = computed(() => [
   !String(form.name).trim() && "收货人",
-  !/^1\d{10}$/.test(String(form.mobile)) && "手机号",
+  !normalizedRecipientPhone.value && "手机号",
   !(String(form.province).trim() && String(form.city).trim() && String(form.district).trim()) && "所在地区",
   !String(form.detail).trim() && "详细地址",
 ].filter(Boolean));
@@ -97,7 +107,9 @@ const formStatus = computed(() => readyToSave.value
   : `还需填写：${missingFields.value.join("、")}`);
 const fieldErrors = computed(() => ({
   name: touched.name && !String(form.name).trim() ? "请填写收货人姓名" : "",
-  mobile: touched.mobile && !/^1\d{10}$/.test(String(form.mobile)) ? "请输入 11 位中国大陆手机号" : "",
+  mobile: touched.mobile && !normalizedRecipientPhone.value
+    ? (isGlobalMall ? "请选择区号并填写有效手机号" : "请输入 11 位中国大陆手机号")
+    : "",
   region: touched.region && !(form.province && form.city && form.district) ? "请选择省、市和区县" : "",
   detail: touched.detail && !String(form.detail).trim() ? "请填写街道、楼栋和门牌号" : "",
 }));
@@ -106,7 +118,13 @@ onLoad(async (o) => {
     try {
       const rows: any[] = await api("/storefront/addresses", { auth: true });
       Object.assign(form, rows.find((x) => x.id === o.id) || {});
-      if (isGlobalMall && /^\+861\d{10}$/.test(form.mobile)) form.mobile = form.mobile.slice(3);
+      if (isGlobalMall) {
+        const phone = splitGlobalPhone(String(form.mobile));
+        if (phone) {
+          phoneCountry.value = phone.country;
+          form.mobile = phone.nationalNumber;
+        }
+      }
       if (!isGlobalMall || form.countryCode === 'CN') regionIndexes.value = mainlandRegionIndexes(form);
     } catch (e) {
       toast(e);
@@ -145,7 +163,7 @@ async function save() {
   if (isGlobalMall && form.countryCode !== 'CN') return toast('当前仅支持中国大陆收货，请新建收货地址');
   Object.assign(touched, { name: true, mobile: true, region: true, detail: true });
   if (!String(form.name).trim()) return toast('请填写收货人姓名');
-  if (!/^1\d{10}$/.test(String(form.mobile))) return toast('请输入 11 位中国大陆手机号');
+  if (!normalizedRecipientPhone.value) return toast(isGlobalMall ? '请选择区号并填写有效手机号' : '请输入 11 位中国大陆手机号');
   if (!String(form.province).trim() || !String(form.city).trim() || !String(form.district).trim()) return toast('请选择省、市和区县');
   if (!String(form.detail).trim()) return toast('请填写街道、楼栋和门牌号');
   busy.value=true;
@@ -153,7 +171,7 @@ async function save() {
     const saved: any = await api("/storefront/addresses", {
       method: "POST",
       auth: true,
-      data: isGlobalMall ? { ...form, countryCode: 'CN', mobile: '+86' + form.mobile } : form,
+      data: isGlobalMall ? { ...form, countryCode: 'CN', mobile: normalizedRecipientPhone.value } : form,
     });
     if (isGlobalMall) mallStorage.set('checkout-last-region', {
       countryCode: 'CN', province: form.province, provinceCode: form.provinceCode,
@@ -177,7 +195,7 @@ async function save() {
 .form-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:8px}.form-intro b{font-size:20px}.form-intro text{font-size:13px;color:var(--muted);text-align:right}
 .field-block{margin-top:8px}.field-title{display:block;margin-bottom:8px;font-size:14px;font-weight:750;color:var(--ink)}
 .phone-title{display:flex;justify-content:space-between;align-items:center}.phone-title>text:last-child{font-size:12px;color:var(--muted)}
-.phone-row{display:flex;align-items:center;border:1px solid var(--line);border-radius:12rpx;background:#fff;overflow:hidden}.phone-row .input{flex:1;min-width:0;border:0}.calling-code{padding-left:16px;font-weight:750;color:var(--ink)}
+.phone-row{display:flex;align-items:center;border:1px solid var(--line);border-radius:12rpx;background:#fff;overflow:hidden}.phone-row .input{flex:1;min-width:0;border:0}
 .picker {
   display: flex;
   align-items: center;

@@ -59,6 +59,10 @@ function fixture(options = {}) {
         invokePayment: async () => ({}),
         confirmPayment: async () => ({ paid: false }),
       },
+      "../../session": {
+        currentPurchaseReferral: () => "",
+        consumePurchaseReferral() {},
+      },
     }).testHandles;
     result.items.value = [{ skuId: "H5-TEST-SKU", quantity: 1 }];
     result.address.value = { id: "H5-TEST-ADDRESS" };

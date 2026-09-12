@@ -5296,6 +5296,44 @@
       }
     },
     {
+      "key": "BillingController.wechatAppRefundNotify",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/billing/payments/wechat/app/refund-notify",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "*",
+          "type": "Record<string, string | undefined>",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/billing/billing.controller.ts",
+      "summary": "App 微信退款结果回调",
+      "request": "微信支付API v3加密通知；仅接受绑定 wechat_pay_app 的支付单",
+      "response": "SUCCESS确认；处理中、关闭或异常不伪报退款成功",
+      "dependency": "App 微信支付",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/billing/billing.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "BillingController.entitlements",
       "method": "GET",
       "path": "/api/saydian-app/v2/billing/entitlements",
@@ -5589,6 +5627,44 @@
       }
     },
     {
+      "key": "BillingController.wechatAppNotify",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/billing/payments/wechat/app/notify",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "*",
+          "type": "Record<string, string | undefined>",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/billing/billing.controller.ts",
+      "summary": "App 微信支付验签通知",
+      "request": "微信支付V3原始JSON及Wechatpay签名头；仅接受绑定 wechat_pay_app 的支付单",
+      "response": "微信要求的SUCCESS响应；事件幂等",
+      "dependency": "App 微信支付V3",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/billing/billing.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "BillingController.alipayNotify",
       "method": "POST",
       "path": "/api/saydian-app/v2/billing/payments/alipay/notify",
@@ -5608,6 +5684,38 @@
       "request": "支付宝form通知字段",
       "response": "支付宝要求的success文本；事件幂等",
       "dependency": "支付宝开放平台",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/billing/billing.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "BillingController.alipayAppNotify",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/billing/payments/alipay/app/notify",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "Record<string, string>",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/billing/billing.controller.ts",
+      "summary": "App 支付宝验签通知",
+      "request": "支付宝form通知字段；仅接受绑定 alipay_app 的支付单",
+      "response": "支付宝要求的success文本；事件幂等",
+      "dependency": "App 支付宝",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -15177,6 +15285,194 @@
       }
     },
     {
+      "key": "AppCommerceEvidenceController.capabilities",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/commerce/after-sale-images/capabilities",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/commerce/commerce-evidence.controller.ts",
+      "summary": "App检查售后图片上传配置",
+      "request": "国际App V2会员Bearer会话；须真实验证邮箱或手机号",
+      "response": "v2 data包裹{enabled,maxFiles:9,maxBytes:10485760,contentTypes,reason?}；配置缺失返回enabled=false；不代表真实存储回执",
+      "dependency": "私有object_storage；仅App V2路由，不回退商城兼容接口",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "maxFiles": {
+              "const": 9
+            },
+            "maxBytes": {
+              "const": 10485760
+            },
+            "contentTypes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "image/jpeg",
+                  "image/png",
+                  "image/webp"
+                ]
+              }
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "enabled",
+            "maxFiles",
+            "maxBytes",
+            "contentTypes"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "enabled": false,
+          "maxFiles": 9,
+          "maxBytes": 10485760,
+          "contentTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+          ],
+          "reason": "图片服务未配置，暂不可上传；您仍可提交文字说明。"
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-evidence.controller.ts; apps/api/src/commerce/commerce-evidence.ts; apps/api/src/support/support.service.ts; apps/api/src/common/user-auth.guard.ts; apps/api/src/admin/admin-auth.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 会员Bearer必须放Authorization请求头，不放查询参数。global须ACTIVE且邮箱或手机号已真实验证；临时h5-phone-test会话、员工令牌或失效会员会话由UserAuthGuard返回401。HTTP200 raw JSON。enabled只代表object_storage状态和必要参数可构造存储客户端，不探测网络，不代表已有真实上传/读取回执。未配置返回enabled=false和reason，不返回密钥、bucket、对象地址。每个申请最多9张，每次上传1张，每张上限10MiB=10485760字节。"
+      }
+    },
+    {
+      "key": "AppCommerceEvidenceController.upload",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/commerce/after-sale-images",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/commerce/commerce-evidence.controller.ts",
+      "summary": "App上传本人售后图片",
+      "request": "multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；国际App V2会员Bearer认证",
+      "response": "HTTP201 v2 data包裹{id,byteSize,contentType,sha256}；只返回本人FileObject UUID；无文件/类型伪装400，超限413，过频429，未配置或存储失败503",
+      "dependency": "私有object_storage；上传成功不代表售后申请成功，申请另传evidenceFileIds",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "format": "binary",
+              "description": "multipart/form-data字段file；仅1个真实JPEG/PNG/WebP文件，实际Buffer≤10485760字节；服务端复核MIME和签名字节，不接受外部URL、SVG、HTML或JSON/base64代替文件。"
+            }
+          },
+          "required": [
+            "file"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "file": "<LOCAL_JPEG_PNG_WEBP_FILE>"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "当前统一系统 UUID，不是旧商城数字ID。"
+            },
+            "byteSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10485760
+            },
+            "contentType": {
+              "enum": [
+                "image/jpeg",
+                "image/png",
+                "image/webp"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "id",
+            "byteSize",
+            "contentType",
+            "sha256"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "id": "00000000-0000-4000-8000-000000000021",
+          "byteSize": 2048,
+          "contentType": "image/jpeg",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/commerce/commerce-evidence.controller.ts; apps/api/src/commerce/commerce-evidence.ts; apps/api/src/support/support.service.ts; apps/api/src/common/user-auth.guard.ts; apps/api/src/admin/admin-auth.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 会员Bearer必须放Authorization请求头，不放查询参数。global须ACTIVE且邮箱或手机号已真实验证；临时h5-phone-test会话、员工令牌或失效会员会话由UserAuthGuard返回401。HTTP201 raw JSON回执仅id/byteSize/contentType/sha256，不含公开URL。示例只是合成回执形状，不证明对象存储已配置或真的上传。multipart须使用file字段；无文件/无效内容/类型伪装400、文件超过10MiB由上传限制拒绝413、每分钟12次超限429；未配置或存储失败503。上传完成后另以evidenceFileIds提交售后；移除选择不删除已存对象。替换curl本地文件占位符时使用正确.jpg/.png/.webp扩展名和对应MIME。"
+      }
+    },
+    {
+      "key": "AppCommerceEvidenceController.image",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/commerce/after-sale-images/:id",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-evidence.controller.ts",
+      "summary": "App读取本人私有售后图片",
+      "request": "id=本人ACTIVE、commerce_after_sale用途文件UUID；国际App V2会员Bearer放请求头，不放URL",
+      "response": "HTTP200原始二进制image/jpeg、image/png或image/webp；private,no-store及nosniff；他人文件/不存在404，未登录401，存储失败503",
+      "dependency": "私有object_storage；不能通过公开地址或兼容头像接口读取",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "string",
+          "format": "binary",
+          "description": "原始JPEG/PNG/WebP文件字节；Content-Type取已存文件类型；不含JSON/data包裹，不返回公开地址。"
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-evidence.controller.ts; apps/api/src/commerce/commerce-evidence.ts; apps/api/src/support/support.service.ts; apps/api/src/common/user-auth.guard.ts; apps/api/src/admin/admin-auth.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 会员Bearer必须放Authorization请求头，不放查询参数。global须ACTIVE且邮箱或手机号已真实验证；临时h5-phone-test会话、员工令牌或失效会员会话由UserAuthGuard返回401。id为专用售后FileObject UUID，只读取当前会员所属ACTIVE文件，不通过公开头像reader或桶URL读取。HTTP200直接返回image/jpeg、image/png或image/webp二进制，禁止按JSON解析。响应Cache-Control: private, no-store；X-Content-Type-Options: nosniff；Referrer-Policy: no-referrer；CSP限制。不存在/不属于本人/用途或状态不符404，存储未配置或读取失败503。浏览器需带Bearer请求后显示Blob，不能将token加入URL。"
+      }
+    },
+    {
       "key": "AdminCommerceEvidenceController.image",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/commerce-after-sales/:saleId/evidence/:fileId",
@@ -15714,6 +16010,38 @@
         "contentType": "application/json",
         "source": "apps/api/src/commerce/commerce-withdrawal.service.ts; apps/api/src/commerce/commerce-withdrawal.test.ts",
         "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "CommerceController.capabilitiesForApp",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/commerce/capabilities",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "locale",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/commerce/commerce.controller.ts",
+      "summary": "App商城可用能力",
+      "request": "locale可选；国际App V2公开读取",
+      "response": "当前真实开放市场、币种小数位、维护状态及可用于android/ios的支付方式；能力缺失不推测可下单",
+      "dependency": "global.markets与已核验支付配置；不返回密钥",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
     },
     {
@@ -17682,6 +18010,88 @@
       }
     },
     {
+      "key": "CommerceController.previewAfterSale",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/commerce/orders/:id/after-sales/preview",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/commerce/commerce.controller.ts",
+      "summary": "App预览售后金额",
+      "request": "id=主库订单UUID；{type,items:[{orderItemId,quantity}]}；只报价不退款",
+      "response": "订单版本、商品现金退款、运费、积分返还与现金退款合计；客户端提交时须保留本次报价",
+      "dependency": "主库商城；支付操作还依赖已验收的支付渠道配置",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceController.returnLogistics",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/commerce/orders/:id/after-sales/:saleId/return-logistics",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "saleId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/commerce/commerce.controller.ts",
+      "summary": "App登记寄回物流",
+      "request": "id=订单UUID，saleId=售后UUID；{logisticsCompany,trackingNo,version}",
+      "response": "更新后的售后记录；只登记本人等待退货的申请，不自动确认商家收货或退款",
+      "dependency": "主库商城；支付操作还依赖已验收的支付渠道配置",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "CommerceController.logistics",
       "method": "GET",
       "path": "/api/saydian-app/v2/commerce/orders/:id/logistics",
@@ -17840,6 +18250,70 @@
       }
     },
     {
+      "key": "CommerceController.availableCoupons",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/commerce/coupons/available",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/commerce/commerce.controller.ts",
+      "summary": "App领券中心",
+      "request": "page=页码，默认1，每页20；会员鉴权",
+      "response": "公开有效券、本人是否已领、可领取状态及分页；不暴露员工赠券库存",
+      "dependency": "主库商城",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceController.claimCouponByCode",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/commerce/coupons/code/claim",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/commerce/commerce.controller.ts",
+      "summary": "App输入优惠码领券",
+      "request": "{code:4-32位字母、数字、_或-}",
+      "response": "本人领取记录；错误不泄露优惠券内部状态",
+      "dependency": "主库商城",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "CommerceController.claimCoupon",
       "method": "POST",
       "path": "/api/saydian-app/v2/commerce/coupons/:id/claim",
@@ -17892,6 +18366,38 @@
       "response": "评价记录",
       "dependency": "主库商城",
       "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceController.points",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/commerce/points",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/commerce/commerce.controller.ts",
+      "summary": "App积分余额与流水",
+      "request": "page=页码，默认1，每页20；会员鉴权",
+      "response": "本人已核验余额或不可用状态、真实流水与分页；null不转为0",
+      "dependency": "主库商城",
+      "successStatus": 200,
       "contract": {
         "status": "unreviewed",
         "requestSchema": null,

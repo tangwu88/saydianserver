@@ -1123,6 +1123,10 @@ model PaymentIntent {
   description                String
   idempotencyKey             String            @unique
   providerTransactionId      String?           @unique
+  // New payments bind to the exact credential set used at creation. Null is
+  // reserved for historical rows and deliberately resolves to the legacy H5
+  // credential set so existing queries, closes and refunds keep working.
+  integrationKey             String?
   providerMerchantId         String?
   providerAppId              String?
   appleOriginalTransactionId String?
@@ -1139,6 +1143,7 @@ model PaymentIntent {
 
   @@index([userId, businessType, createdAt])
   @@index([status, createdAt])
+  @@index([integrationKey, status])
   @@index([appleOriginalTransactionId])
 }
 

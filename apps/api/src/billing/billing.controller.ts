@@ -54,6 +54,23 @@ export class BillingController {
     return this.billing.handleWechatRefundNotification(headers, body, rawBody);
   }
 
+  @Post("payments/wechat/app/refund-notify")
+  @HttpCode(200)
+  @RawResponse()
+  async wechatAppRefundNotify(
+    @Headers() headers: Record<string, string | undefined>,
+    @Body() body: unknown,
+    @Req() request: RequestWithRawBody,
+  ) {
+    const rawBody = request.rawBody ?? Buffer.from(JSON.stringify(body));
+    return this.billing.handleWechatRefundNotification(
+      headers,
+      body,
+      rawBody,
+      "wechat_pay_app",
+    );
+  }
+
   @Get("entitlements")
   @UseGuards(UserAuthGuard)
   entitlements(@CurrentUser() user: AuthenticatedUser) {
@@ -123,6 +140,23 @@ export class BillingController {
     return this.billing.handleWechatNotification(headers, body, rawBody);
   }
 
+  @Post("payments/wechat/app/notify")
+  @HttpCode(200)
+  @RawResponse()
+  async wechatAppNotify(
+    @Headers() headers: Record<string, string | undefined>,
+    @Body() body: unknown,
+    @Req() request: RequestWithRawBody,
+  ) {
+    const rawBody = request.rawBody ?? Buffer.from(JSON.stringify(body));
+    return this.billing.handleWechatNotification(
+      headers,
+      body,
+      rawBody,
+      "wechat_pay_app",
+    );
+  }
+
   @Post("payments/alipay/notify")
   @HttpCode(200)
   @RawResponse()
@@ -134,6 +168,22 @@ export class BillingController {
       Object.fromEntries(
         Object.entries(safeObject(body)).map(([key, value]) => [key, String(value)]),
       ),
+    );
+    response.type("text/plain").send(result);
+  }
+
+  @Post("payments/alipay/app/notify")
+  @HttpCode(200)
+  @RawResponse()
+  async alipayAppNotify(
+    @Body() body: Record<string, string>,
+    @Res() response: Response,
+  ) {
+    const result = await this.billing.handleAlipayNotification(
+      Object.fromEntries(
+        Object.entries(safeObject(body)).map(([key, value]) => [key, String(value)]),
+      ),
+      "alipay_app",
     );
     response.type("text/plain").send(result);
   }

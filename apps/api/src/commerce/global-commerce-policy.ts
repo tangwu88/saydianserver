@@ -20,16 +20,23 @@ export function globalAddress(input: unknown) {
 export type GlobalMarket = { countryCode: string; currency: string; currencyExponent: number; commerceEnabled: boolean; paymentChannels: string[] };
 export const globalCommerceCountry = "CN";
 export const globalCommerceCurrency = "CNY";
-// The global H5 is deliberately split by client container: public-account
-// WeChat uses JSAPI, while every other browser uses Alipay.  Do not add H5 or
-// native WeChat rails here; their presence would make a browser client expose
-// a second, unsupported choice again.
-export const globalCommercePaymentChannels = ["WECHAT_JSAPI", "ALIPAY_WAP", "ALIPAY_PAGE"] as const;
+// H5 and native App channels share the order domain but never share provider
+// credentials. Clients select only channels matching their container.
+export const globalH5CommercePaymentChannels = ["WECHAT_JSAPI", "ALIPAY_WAP", "ALIPAY_PAGE"] as const;
+export const globalAppCommercePaymentChannels = ["WECHAT_APP", "ALIPAY_APP"] as const;
+export const globalCommercePaymentChannels = [
+  ...globalH5CommercePaymentChannels,
+  ...globalAppCommercePaymentChannels,
+] as const;
 
 export function globalCommercePaymentChannelAllowedForUserAgent(
   channel: string,
   userAgent: string | undefined,
+  platform?: string | null,
 ): boolean {
+  if (platform === "android" || platform === "ios") {
+    return globalAppCommercePaymentChannels.some(value => value === channel);
+  }
   const inWechat = /micromessenger/i.test(userAgent ?? "");
   if (inWechat) return channel === "WECHAT_JSAPI";
   return channel === "ALIPAY_WAP" || channel === "ALIPAY_PAGE";
@@ -38,11 +45,12 @@ export function globalCommercePaymentChannelAllowedForUserAgent(
 /** Shared public readiness and dispatch preflight; never returns credential material. */
 export function globalPaymentConfigurationReady(channel: string, config: Record<string, unknown>, secret: Record<string, string | undefined>, publicBaseUrl: string): boolean {
   const wechat = channel.startsWith("WECHAT");
-  const notify = String(config.notifyUrl ?? `${publicBaseUrl}/api/saydian-app/v2/billing/payments/${wechat ? "wechat" : "alipay"}/notify`);
+  const app = channel === "WECHAT_APP" || channel === "ALIPAY_APP";
+  const notify = String(config.notifyUrl ?? `${publicBaseUrl}/api/saydian-app/v2/billing/payments/${wechat ? "wechat" : "alipay"}${app ? "/app" : ""}/notify`);
   if (!securePaymentEndpoint(notify)) return false;
   if (wechat) return !!secret.merchantId && !!secret.serialNo && !!secret.platformSerialNo &&
     Buffer.byteLength(secret.apiV3Key ?? "") === 32 && paymentRsaKey(secret.privateKeyPem, true) &&
-    paymentRsaKey(secret.platformPublicKeyPem, false) && /^wx[A-Za-z0-9]{8,64}$/.test(secret.appIdOfficial ?? "");
+    paymentRsaKey(secret.platformPublicKeyPem, false) && /^wx[A-Za-z0-9]{8,64}$/.test(app ? secret.appIdApp ?? "" : secret.appIdOfficial ?? "");
   try {
     const gateway = new URL(String(config.gateway ?? "https://openapi.alipay.com/gateway.do"));
     return !!secret.appId && paymentRsaKey(secret.privateKeyPem, true) && paymentRsaKey(secret.publicKeyPem, false) &&

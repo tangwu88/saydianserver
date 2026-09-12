@@ -251,16 +251,23 @@ describe("ticket-scoped international binding verification", () => {
   });
 });
 
-describe("global mall refresh keeps real verification boundaries", () => {
-  it("reports the international password-login verification gate without changing the domestic error", async () => {
+describe("global mall refresh keeps account and temporary-session boundaries", () => {
+  it("allows ordinary global password accounts without weakening the domestic phone-verification rule", async () => {
     const service = new AuthService({} as any, {} as any, {} as any, {} as any);
     vi.spyOn(service as any, "passwordUser").mockResolvedValue({ id: memberId, emailVerifiedAt: null, mobileVerifiedAt: null });
-    const issue = vi.spyOn(service as any, "issueSession");
-    await expect(service.loginForMall("member@example.com", password)).rejects.toMatchObject({ status: 403, response: { errorKey: "account_verification_required" } });
-    expect(issue).not.toHaveBeenCalled();
+    const issue = vi.spyOn(service as any, "issueSession").mockResolvedValue({
+      accessToken: "synthetic",
+      refreshToken: "synthetic-refresh",
+      member: { id: memberId },
+    });
+    await expect(service.loginForMall("member@example.com", password)).resolves.toMatchObject({
+      token: "synthetic",
+      user: { id: memberId },
+    });
+    expect(issue).toHaveBeenCalledOnce();
     vi.stubEnv("APP_REALM", "domestic");
     await expect(service.loginForMall("19900001234", password)).rejects.toMatchObject({ status: 401, message: "请先使用手机验证码验证后登录商城" });
-    expect(issue).not.toHaveBeenCalled();
+    expect(issue).toHaveBeenCalledOnce();
   });
   it("adds only safe international member display fields and keeps the domestic shape unchanged", () => {
     const service = new AuthService({} as any, {} as any, {} as any, {} as any) as any;
@@ -271,13 +278,13 @@ describe("global mall refresh keeps real verification boundaries", () => {
     vi.stubEnv("APP_REALM", "domestic");
     expect(service.mallSession(session, "19900001234").user).toEqual({ id: memberId, nickname: "Member", mobile: "19900001234", avatarUrl: null });
   });
-  it("rejects an unverified App refresh token without rotating it; App refresh still keeps its existing policy", async () => {
+  it("rotates an ordinary unverified global mall session without treating it as a temporary phone session", async () => {
     const update = vi.fn().mockResolvedValue({ count: 1 });
     const user = { id: memberId, status: "ACTIVE", emailVerifiedAt: null, mobileVerifiedAt: null };
     const service = new AuthService({ userSession: { findUnique: vi.fn().mockResolvedValue({ id: "session", user, userId: memberId, expiresAt: new Date(Date.now() + 300_000), revokedAt: null }), updateMany: update } } as any, {} as any, {} as any, {} as any);
     vi.spyOn(service as any, "sessionContract").mockResolvedValue({ member: { id: memberId }, accessToken: "test" });
-    await expect(service.refreshForMall("synthetic-refresh")).rejects.toMatchObject({ status: 403 }); expect(update).not.toHaveBeenCalled();
-    await service.refresh("synthetic-refresh"); expect(update).toHaveBeenCalledOnce();
+    await expect(service.refreshForMall("synthetic-refresh")).resolves.toMatchObject({ token: "test" });
+    expect(update).toHaveBeenCalledOnce();
   });
 });
 

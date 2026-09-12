@@ -80,7 +80,7 @@ import QRCode from "qrcode";
 import UniIcons from "@dcloudio/uni-ui/lib/uni-icons/uni-icons.vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import { api, money, toast, requireLogin, clearCheckoutState, mallSessionStamp } from "../../api";
-import { isLoggedIn } from "../../session";
+import { currentPurchaseReferral, isLoggedIn } from "../../session";
 const id = ref(''), error = ref(''), busy = ref(false), posterVisible = ref(false), posterBusy = ref(false), posterUrl = ref(''), posterError = ref('');
 const recovery = ref<{ userId: string; key: string; session: string } | null>(null);
 const product = ref<any>(),
@@ -104,7 +104,7 @@ function goCart(){uni.switchTab({url:'/pages/cart/index'});}
 function productShareUrl() {
   const route = `#/pages/product/index?id=${encodeURIComponent(id.value)}`;
   if (typeof location === 'undefined') return route;
-  const referral = String(mallStorage.get('saidian-ref') || '').trim();
+  const referral = currentPurchaseReferral(String(mallStorage.get('saidian-user')?.id || '') || undefined);
   return `${location.origin}${location.pathname}${referral ? `?ref=${encodeURIComponent(referral)}` : ''}${route}`;
 }
 function copyShareLink() {

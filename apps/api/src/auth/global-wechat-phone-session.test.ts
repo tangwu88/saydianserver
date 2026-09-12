@@ -31,7 +31,8 @@ function harness() {
         return sessions.find(row => row.id === where.id && row.userId === where.userId && row.accessJti === where.accessJti && !row.revokedAt && row.expiresAt > new Date()) ?? null;
       }),
       updateMany: vi.fn(async ({ where, data }: any) => {
-        const row = sessions.find(row => row.id === where.id && row.refreshTokenHash === where.refreshTokenHash && row.accessJti === where.accessJti && !row.revokedAt && row.expiresAt > new Date());
+        const row = sessions.find(row => row.id === where.id && row.refreshTokenHash === where.refreshTokenHash &&
+          (where.accessJti === undefined || row.accessJti === where.accessJti) && !row.revokedAt && row.expiresAt > new Date());
         if (!row || user.status !== "ACTIVE" || !linked) return { count: 0 };
         Object.assign(row, data); return { count: 1 };
       }),
@@ -88,11 +89,13 @@ describe("limited international H5 phone-test session provenance", () => {
     if (scenario === "revoked") h.sessions[0].revokedAt = new Date();
     await expect(h.request(response.token)).rejects.toThrow(); await expect(h.service.refreshForMall(response.refreshToken)).rejects.toThrow(); expect(h.db.userSession.updateMany).not.toHaveBeenCalled();
   });
-  it("does not treat an ordinary unverified App session as a phone-test session", async () => {
+  it("allows an ordinary unverified account while keeping it distinct from a phone-test session", async () => {
     const h = harness(), id = randomUUID(), jti = randomUUID(), refreshToken = "ordinary-synthetic-refresh";
     h.sessions.push({ id, userId, accessJti: jti, refreshTokenHash: sha256(`${refreshToken}:${pepper}`), user: h.user, revokedAt: null, expiresAt: new Date(Date.now() + 300_000) });
     const token = sign({ typ: "access", sub: userId, sid: id }, accessSecret, { algorithm: "HS256", jwtid: jti, issuer: "saydian-global-server", audience: "saydian-global-app" });
-    await expect(h.request(token)).rejects.toThrow(); await expect(h.service.refreshForMall(refreshToken)).rejects.toMatchObject({ status: 403 }); expect(h.db.userSession.updateMany).not.toHaveBeenCalled();
+    await expect(h.request(token)).resolves.toBe(true);
+    await expect(h.service.refreshForMall(refreshToken)).resolves.toMatchObject({ token: expect.any(String) });
+    expect(h.db.userSession.updateMany).toHaveBeenCalledOnce();
     expect(h.sessions[0].accessJti).not.toContain(H5_PHONE_TEST_SESSION_PREFIX);
   });
 });
