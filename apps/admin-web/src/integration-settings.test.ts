@@ -81,6 +81,13 @@ describe('plain-language integration settings', () => {
     const original = row('ai', { hasSecret: true }); const draft = draftFor(original, definition('ai')); draft.state = 'CONFIGURED';
     const errors = validateIntegrationDraft(original, definition('ai'), draft); expect(errors.baseUrl).toBeTruthy(); expect(errors.model).toBeTruthy();
   });
+  it('requires the AI provider model ID instead of a brand display name', () => {
+    const original = row('ai', { hasSecret: true }); const draft = draftFor(original, definition('ai')); draft.state = 'CONFIGURED';
+    draft.values.provider = 'openai_compatible'; draft.values.baseUrl = 'https://ai.example.invalid/v1'; draft.values.model = '智谱';
+    expect(validateIntegrationDraft(original, definition('ai'), draft).model).toContain('模型 ID');
+    draft.values.model = 'glm-5.3-flash';
+    expect(validateIntegrationDraft(original, definition('ai'), draft).model).toBeUndefined();
+  });
   it('offers no fake/mock provider choice and keeps nonfunctional commerce controls read-only', () => {
     expect(integrationDefinitions.flatMap(d => d.fields.flatMap(f => f.options ?? [])).some(o => ['mock', 'disabled'].includes(o.value))).toBe(false);
     expect(definition('commerce').readOnly).toBe(true); expect(definition('apple_iap').deployment).toBe(true); expect(definition('apple_iap').fields).toEqual([]);
