@@ -12,18 +12,18 @@ function paymentUrl(raw: unknown): string {
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port!=='443') || !["wx.tenpay.com","payapp.weixin.qq.com","mclient.alipay.com","openapi.alipay.com","openapi.alipaydev.com","openapi-sandbox.dl.alipaydev.com"].includes(url.hostname)) throw new Error("支付跳转地址不受信任");
   return url.href;
 }
-export async function invokePayment(invoke: any): Promise<{qr?:string;pending?:boolean}> {
+export async function invokePayment(invoke: any): Promise<{qr?:string;pending?:boolean;redirected?:boolean}> {
   if (!invoke?.type) throw new Error("支付结果待确认，请在订单页刷新，不要重复下单");
   if (invoke.type === "QR") {
     if (!/^data:image\/png;base64,/.test(String(invoke.qrDataUrl))) throw new Error("支付二维码暂时无法显示，请稍后重试");
     return {qr:invoke.qrDataUrl};
   }
   /* #ifdef H5 */
-  if (invoke.type === "REDIRECT") { window.location.assign(paymentUrl(invoke.url)); return {pending:true}; }
+  if (invoke.type === "REDIRECT") { window.location.assign(paymentUrl(invoke.url)); return {pending:true,redirected:true}; }
   if (invoke.type === "FORM") {
     const form = document.createElement("form"); form.method="POST"; form.action=paymentUrl(invoke.url);
     for (const [key,value] of Object.entries(invoke.fields || {})) { const input=document.createElement("input");input.type="hidden";input.name=key;input.value=String(value);form.appendChild(input); }
-    document.body.appendChild(form);form.submit();return {pending:true};
+    document.body.appendChild(form);form.submit();return {pending:true,redirected:true};
   }
   if (invoke.type === "JSAPI") {
     await new Promise<void>((resolve,reject) => {

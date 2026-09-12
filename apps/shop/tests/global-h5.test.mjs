@@ -11,8 +11,9 @@ const vue = nodeRequire("vue"),
   { parse, compileScript, compileTemplate } = nodeRequire("vue/compiler-sfc");
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
-function harness({ realm = "global", storage = new Map(), url = "https://app.saydian.cn/global/saidian-mall/", request } = {}) {
+function harness({ realm = "global", storage = new Map(), url = "https://app.saydian.cn/global/saidian-mall/", request, document: documentOverride } = {}) {
   const requests = [],
+    toasts = [],
     events = {},
     session = new Map(),
     mounted = [],
@@ -47,7 +48,7 @@ function harness({ realm = "global", storage = new Map(), url = "https://app.say
     },
     reLaunch() {},
     navigateTo() {},
-    showToast() {},
+    showToast(options) { toasts.push(options); },
   };
   const context = vm.createContext({
     __env: realm === "global" ? { VITE_APP_REALM: "global" } : {},
@@ -62,7 +63,7 @@ function harness({ realm = "global", storage = new Map(), url = "https://app.say
       userAgent: "MicroMessenger",
       locks: { request: (_key, _options, run) => Promise.resolve(run({})) },
     },
-    document: { addEventListener() {} },
+    document: documentOverride ?? { addEventListener() {} },
     location,
     history: {
       state: null,
@@ -129,6 +130,7 @@ function harness({ realm = "global", storage = new Map(), url = "https://app.say
     session,
     location,
     requests,
+    toasts,
     uni,
     events,
     mounted,
@@ -1037,6 +1039,22 @@ test("friendly errors never disclose raw provider reason or internal account det
   );
   assert.equal(authErrorMessage(authUiError("请检查国家区号和手机号。")), "请检查国家区号和手机号。");
   assert.equal(authErrorMessage(new Error("private diagnostic")), "暂时无法完成，请稍后重试。");
+});
+test("low-level request failures use a customer-readable toast", () => {
+  const h = harness(), { toast } = h.load("api");toast(new Error("request:fail abort"));toast({ errMsg: "request:fail timeout" });
+  assert.equal(h.toasts.length, 2);
+  assert.equal(h.toasts.at(-1).title, "网络连接失败，请检查网络后重试。");
+});
+test("Alipay browser form reports a redirect so callers do not query during page unload", async () => {
+  const submitted = [], body = { appendChild(node) { this.node = node; } };
+  const document = { addEventListener() {}, body, createElement(tag) {
+    if (tag === "input") return { type: "", name: "", value: "" };
+    return { method: "", action: "", children: [], appendChild(node) { this.children.push(node); }, submit() { submitted.push(this); } };
+  } };
+  const { invokePayment } = harness({ document }).load("payments");
+  const result = await invokePayment({ type: "FORM", url: "https://openapi.alipay.com/gateway.do", fields: { app_id: "synthetic", sign: "not-a-secret" } });
+  assert.equal(result.pending, true);assert.equal(result.redirected, true);
+  assert.equal(submitted.length, 1);assert.equal(submitted[0].method, "POST");assert.equal(submitted[0].children.length, 2);
 });
 test("account refresh updates safe verification status without touching domestic storage", async () => {
   const h = harness({

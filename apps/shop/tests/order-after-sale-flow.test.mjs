@@ -88,6 +88,17 @@ test('confirmed payment clears the frozen checkout and returns directly to the o
   h.storage.set('checkout-pending',{userId:'member-a',orderId:'order-a'});h.storage.set('checkout-owner','member-a');h.storage.set('checkout-items',[{skuId:'sku'}]);await h.show();await h.state.checkPayment();
   assert.deepEqual(h.navigations,['/pages/orders/index']);assert.equal(h.storage.get('checkout-pending'),undefined);assert.equal(h.storage.get('checkout-items'),undefined);assert.equal(h.storage.get('checkout-owner'),undefined);
 });
+test('order payment redirect never races page unload with an immediate status request',async()=>{
+  let queried=0;
+  const pendingOrder=order({status:'PENDING_PAYMENT',allowedActions:['PAY'],paymentIntents:[]});
+  const h=page('order-detail',path=>path==='/storefront/capabilities'?{payments:[{channel:'wechat_jsapi',enabled:true}]}:pendingOrder,{
+    createOrderPayment:()=>Promise.resolve({id:'payment-redirect',status:'pending',invoke:{type:'FORM'}}),
+    invokePayment:()=>Promise.resolve({pending:true,redirected:true}),
+    confirmPayment:()=>{queried++;return Promise.resolve({paid:false});},
+  });
+  await h.show();await h.state.pay();
+  assert.equal(queried,0);assert.equal(h.state.paymentNote.value,'正在打开支付页面…');assert.deepEqual(h.notices,[]);
+});
 test('order latest reload wins and leaving page clears private forms while delayed old response cannot repaint',async()=>{
   const a=deferred(),b=deferred();let count=0;const h=page('order-detail',path=>path==='/storefront/capabilities'?{payments:[]}:(++count===1?a.promise:b.promise));h.hooks.show();const second=h.state.load();b.resolve(order({orderNo:'newest'}));await second;a.resolve(order({orderNo:'older'}));await tick();assert.equal(h.state.order.value.orderNo,'newest');
   h.state.reviewText.value='private content';h.state.returnTracking.value='private tracking';h.hooks.hide();assert.equal(h.state.order.value,null);assert.equal(h.state.reviewText.value,'');assert.equal(h.state.returnTracking.value,'');

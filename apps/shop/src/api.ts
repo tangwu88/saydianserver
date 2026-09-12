@@ -336,8 +336,12 @@ export function money(cents?: number | null): string {
   return cents == null || !Number.isFinite(Number(cents)) ? "未获取" : `¥${(Number(cents) / 100).toFixed(2)}`;
 }
 export function toast(error: unknown): void {
+  const detail = error && typeof error === "object" ? error as { message?: unknown; errMsg?: unknown } : null;
+  const raw = detail?.message != null ? String(detail.message) : detail?.errMsg != null ? String(detail.errMsg) : String(error);
   uni.showToast({
-    title: error instanceof Error ? error.message : String(error),
+    title: /^(request:fail|network error|failed to fetch|load failed|timeout)/i.test(raw.trim())
+      ? "网络连接失败，请检查网络后重试。"
+      : raw,
     icon: "none",
     duration: 2500,
   });

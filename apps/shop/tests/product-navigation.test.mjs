@@ -257,6 +257,20 @@ test("checkout creates an order, launches payment immediately and returns to the
   assert.deepEqual(h.navigations, ["/pages/orders/index"]); assert.equal(h.cleared(), 1);
 });
 
+test("checkout does not start an API query while a browser payment redirect is unloading the page", async () => {
+  let queried = 0;
+  const payments = {
+    createOrderPayment: async () => ({ id: "payment-redirect", status: "pending", invoke: { type: "FORM" } }),
+    invokePayment: async () => ({ pending: true, redirected: true }),
+    confirmPayment: async () => { queried++; return { paid: false }; },
+  };
+  const h = orderPage("checkout", undefined, payments), s = h.state;
+  s.capabilities.value = { payments: [{ channel: "wechat_jsapi", enabled: true }] };
+  await s.startPayment("order-redirect");
+  assert.equal(queried, 0);
+  assert.equal(s.paymentNote.value, "正在打开支付页面…");
+});
+
 test("checkout only offers payment for the current browser and honors an explicitly closed market", async () => {
   const h = orderPage("checkout"), s = h.state;
   s.address.value = { id: "synthetic-address" }; s.quote.value = { payableCents: 100, lines: [] };
