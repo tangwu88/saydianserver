@@ -44,9 +44,6 @@
           <template v-else-if="active === 'agreement'">
             <h2>用户协议</h2><rich-text v-if="policies.service" :nodes="policies.service" /><p v-else>用户协议尚未在商城后台配置。</p>
           </template>
-          <template v-else>
-            <h2>发票信息</h2><p>如需开票，请在订单完成后联系客服并提供订单号。</p>
-          </template>
         </view>
       </view>
     </view>
@@ -83,7 +80,6 @@ const sections = [
   { key: "service", label: "联系客服" },
   { key: "feedback", label: "问题反馈" },
   { key: "afterSale", label: "售后政策" },
-  { key: "invoice", label: "发票信息" },
   { key: "privacy", label: "隐私政策" },
   { key: "agreement", label: "用户协议" },
 ];

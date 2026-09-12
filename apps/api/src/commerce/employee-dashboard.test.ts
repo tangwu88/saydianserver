@@ -28,9 +28,26 @@ describe("employee dashboard filters", () => {
   });
   it("forwards query filters but always uses the authenticated employee ID", () => {
     const dashboard = vi.fn();
-    new CommerceEmployeeController({ dashboard } as unknown as EmployeePromotionService)
+    new CommerceEmployeeController(
+      { dashboard } as unknown as EmployeePromotionService,
+      {} as CommerceWithdrawalService,
+    )
       .dashboard({ id: "guard-employee" }, { range: "today", page: "2" });
     expect(dashboard).toHaveBeenCalledWith("guard-employee", { range: "today", page: "2" });
+  });
+  it("resolves the promoter from the authenticated member before reading member earnings", async () => {
+    const memberPromoter = vi.fn(async () => ({ id: "member-promoter" }));
+    const dashboard = vi.fn(async () => ({ employee: { id: "member-promoter" } }));
+    const controller = new CommerceEmployeeController(
+      { memberPromoter, dashboard } as unknown as EmployeePromotionService,
+      {} as CommerceWithdrawalService,
+    );
+    await controller.memberDashboard(
+      { id: "member-1", sessionId: "session-1" },
+      { range: "30d" },
+    );
+    expect(memberPromoter).toHaveBeenCalledWith("member-1");
+    expect(dashboard).toHaveBeenCalledWith("member-promoter", { range: "30d" });
   });
   it("scopes every order/refund query to employee and range, keeps unknown wallet/trend unknown", async () => {
     const db = {

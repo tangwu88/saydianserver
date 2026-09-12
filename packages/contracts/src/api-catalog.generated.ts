@@ -14926,6 +14926,905 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "CommerceEmployeeController.memberDashboard",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/storefront/promoter/dashboard",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "*",
+          "type": "EmployeeDashboardQuery",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+      "summary": "会员查看本人推广与奖金",
+      "request": "会员Bearer会话；range=today|7d|30d|month|custom；from/to为YYYY-MM-DD；page/pageSize",
+      "response": "只解析当前会员对应推广账户；返回本人推广订单、奖金账本摘要与提现资格",
+      "dependency": "主库商城；首次访问按会员身份建立稳定推广账户，不依赖企业微信",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "employee": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "avatarUrl": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "referralCode": {
+                  "type": "string"
+                },
+                "departmentNames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "avatarUrl",
+                "referralCode",
+                "departmentNames"
+              ],
+              "additionalProperties": true
+            },
+            "range": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "enum": [
+                    "today",
+                    "7d",
+                    "30d",
+                    "month",
+                    "custom"
+                  ]
+                },
+                "start": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "end": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "endExclusive": {
+                  "const": true
+                },
+                "timezone": {
+                  "const": "Asia/Shanghai"
+                }
+              },
+              "required": [
+                "key",
+                "start",
+                "end",
+                "endExclusive",
+                "timezone"
+              ],
+              "additionalProperties": true
+            },
+            "paidOrders": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "salesCents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+            },
+            "refundCents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+            },
+            "netSalesCents": {
+              "type": "integer"
+            },
+            "metricBasis": {
+              "type": "object",
+              "properties": {
+                "sales": {
+                  "const": "paidAt"
+                },
+                "refunds": {
+                  "const": "completedAt"
+                },
+                "orders": {
+                  "const": "createdAt"
+                }
+              },
+              "required": [
+                "sales",
+                "refunds",
+                "orders"
+              ],
+              "additionalProperties": true
+            },
+            "trend": {
+              "type": "null"
+            },
+            "trendStatus": {
+              "const": "UNAVAILABLE"
+            },
+            "trendReason": {
+              "type": "string"
+            },
+            "orders": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                  },
+                  "orderNo": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "PENDING_PAYMENT",
+                      "PAID",
+                      "WAITING_FULFILLMENT",
+                      "SHIPPED",
+                      "RECEIVED",
+                      "COMPLETED",
+                      "CANCELLED",
+                      "CLOSED",
+                      "AFTER_SALE",
+                      "REFUNDED"
+                    ]
+                  },
+                  "payableCents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647,
+                    "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                  },
+                  "paidAt": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "user": {
+                    "type": "object",
+                    "properties": {
+                      "nickname": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "nickname"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "required": [
+                  "id",
+                  "orderNo",
+                  "status",
+                  "payableCents",
+                  "paidAt",
+                  "createdAt",
+                  "user"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "pagination": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pageSize": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "hasMore": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "page",
+                "pageSize",
+                "total",
+                "hasMore"
+              ],
+              "additionalProperties": true
+            },
+            "promotion": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "referralCode": {
+                      "type": "string"
+                    },
+                    "linkUrl": {
+                      "type": "string"
+                    },
+                    "qrDataUrl": {
+                      "type": "string"
+                    },
+                    "posterDataUrl": {
+                      "type": "string"
+                    },
+                    "qrType": {
+                      "const": "H5"
+                    }
+                  },
+                  "required": [
+                    "referralCode",
+                    "linkUrl",
+                    "qrDataUrl",
+                    "posterDataUrl",
+                    "qrType"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "promotionStatus": {
+              "enum": [
+                "AVAILABLE",
+                "UNCONFIGURED"
+              ]
+            },
+            "bonus": {
+              "type": "object",
+              "properties": {
+                "plan": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "rateBps": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "settlementDays": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "withdrawalEnabled": {
+                          "type": "boolean"
+                        },
+                        "minimumWithdrawCents": {
+                          "oneOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 2147483647,
+                              "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "dailyWithdrawLimitCents": {
+                          "oneOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 2147483647,
+                              "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reviewRequired": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "rateBps",
+                        "settlementDays",
+                        "withdrawalEnabled",
+                        "minimumWithdrawCents",
+                        "dailyWithdrawLimitCents",
+                        "reviewRequired"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "wallet": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "employeeId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                        },
+                        "frozenCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                        },
+                        "availableCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                        },
+                        "withdrawingCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                        },
+                        "totalPaidCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                        },
+                        "debtCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "employeeId",
+                        "frozenCents",
+                        "availableCents",
+                        "withdrawingCents",
+                        "totalPaidCents",
+                        "debtCents",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "walletStatus": {
+                  "enum": [
+                    "AVAILABLE",
+                    "UNAVAILABLE"
+                  ]
+                },
+                "recentAccruals": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                      },
+                      "employeeId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                      },
+                      "orderId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "grossBonusCents": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647,
+                        "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                      },
+                      "reversedBonusCents": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647,
+                        "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "employeeId",
+                      "orderId",
+                      "status",
+                      "grossBonusCents",
+                      "reversedBonusCents",
+                      "createdAt"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "recentWithdrawals": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                      },
+                      "amountCents": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647,
+                        "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "amountCents",
+                      "status",
+                      "version"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "withdrawal": {
+                  "type": "object",
+                  "properties": {
+                    "canApply": {
+                      "type": "boolean"
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "verified": {
+                          "type": "boolean"
+                        },
+                        "accountHint": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "verified",
+                        "accountHint"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "pendingCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "availableAmountCents": {
+                      "oneOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dailyUsedCents": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2147483647,
+                      "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                    },
+                    "dailyRemainingCents": {
+                      "oneOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "description": "人民币整数分；不得传浮点元或以字符串冒充已核验金额。"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "payoutMode": {
+                      "const": "MANUAL_RECEIPT_ONLY"
+                    }
+                  },
+                  "required": [
+                    "canApply",
+                    "identity",
+                    "pendingCount",
+                    "availableAmountCents",
+                    "dailyUsedCents",
+                    "dailyRemainingCents",
+                    "payoutMode"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "plan",
+                "wallet",
+                "walletStatus",
+                "recentAccruals",
+                "recentWithdrawals",
+                "withdrawal"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "employee",
+            "range",
+            "paidOrders",
+            "salesCents",
+            "refundCents",
+            "netSalesCents",
+            "metricBasis",
+            "trend",
+            "trendStatus",
+            "trendReason",
+            "orders",
+            "pagination",
+            "promotion",
+            "promotionStatus",
+            "bonus"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "employee": {
+            "id": "00000000-0000-4000-8000-000000000011",
+            "name": "H5-CONTRACT演示员工",
+            "avatarUrl": null,
+            "referralCode": "H5DEMO",
+            "departmentNames": [
+              "合成演示"
+            ]
+          },
+          "range": {
+            "key": "custom",
+            "start": "2026-09-07T16:00:00.000Z",
+            "end": "2026-09-08T16:00:00.000Z",
+            "endExclusive": true,
+            "timezone": "Asia/Shanghai"
+          },
+          "paidOrders": 1,
+          "salesCents": 59398,
+          "refundCents": 19599,
+          "netSalesCents": 39799,
+          "metricBasis": {
+            "sales": "paidAt",
+            "refunds": "completedAt",
+            "orders": "createdAt"
+          },
+          "trend": null,
+          "trendStatus": "UNAVAILABLE",
+          "trendReason": "当前接口尚未提供逐日汇总，不以空数组或随机趋势代替",
+          "orders": [
+            {
+              "id": "00000000-0000-4000-8000-000000000007",
+              "orderNo": "H5-CONTRACT-ORDER-0001",
+              "status": "AFTER_SALE",
+              "payableCents": 59398,
+              "paidAt": "2026-09-08T01:00:00.000Z",
+              "createdAt": "2026-09-08T01:00:00.000Z",
+              "user": {
+                "nickname": "H5-CONTRACT合成会员"
+              }
+            }
+          ],
+          "pagination": {
+            "page": 1,
+            "pageSize": 20,
+            "total": 1,
+            "hasMore": false
+          },
+          "promotion": null,
+          "promotionStatus": "UNCONFIGURED",
+          "bonus": {
+            "plan": null,
+            "wallet": null,
+            "walletStatus": "UNAVAILABLE",
+            "recentAccruals": [],
+            "recentWithdrawals": [],
+            "withdrawal": {
+              "canApply": false,
+              "identity": {
+                "verified": false,
+                "accountHint": null
+              },
+              "pendingCount": 0,
+              "availableAmountCents": null,
+              "dailyUsedCents": 0,
+              "dailyRemainingCents": null,
+              "payoutMode": "MANUAL_RECEIPT_ONLY"
+            }
+          }
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/employee-promotion.service.ts; apps/api/src/commerce/employee-dashboard-query.ts; apps/api/src/commerce/commerce-withdrawal.service.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 只接受Employee令牌，不能以会员token越权。销售按paidAt、退款按completedAt、订单列表按createdAt分别过滤，所以列表不是销售额汇总依据；净销售可负。date-only按北京时间且to含当天，ISO时间必须含时区，上限366天，end为排他。trend与未获取钱包保留null；dailyRemainingCents=null表示未设日限，不等于0。只登记真实人工回执，不自动打款。",
+        "query": {
+          "range": {
+            "schema": {
+              "enum": [
+                "today",
+                "7d",
+                "30d",
+                "month",
+                "custom"
+              ]
+            },
+            "example": "custom",
+            "required": false
+          },
+          "from": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "2026-09-08",
+            "required": false
+          },
+          "to": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "2026-09-08",
+            "required": false
+          },
+          "page": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "example": 1,
+            "required": false
+          },
+          "pageSize": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "example": 20,
+            "required": false
+          }
+        },
+        "notes": "只接受当前会员Bearer会话并解析该会员自己的稳定推广账户；不接受客户端employeeId。返回结构与员工工作台一致，但普通会员不需要企业微信登录。提现仍要求后台启用、可用余额和已核验收款身份。"
+      }
+    },
+    {
+      "key": "CommerceEmployeeController.memberPromotion",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/storefront/promoter/promotion",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "productId",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+      "summary": "会员生成本人推广素材",
+      "request": "会员Bearer会话；productId可选商品UUID",
+      "response": "本人推广码、链接、二维码和海报",
+      "dependency": "COMMERCE_STOREFRONT_URL商城地址配置",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceEmployeeController.memberCoupons",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/storefront/promoter/coupons",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+      "summary": "会员查看可分发推广优惠券",
+      "request": "会员Bearer会话",
+      "response": "可领取额度、赠券码和状态；历史原始链接不回显",
+      "dependency": "主库商城",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceEmployeeController.memberClaimCoupons",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/promoter/coupons/:id/claim",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+      "summary": "会员领取推广赠券码",
+      "request": "会员Bearer会话；id=优惠券UUID；{quantity?}受批次和账户限额约束",
+      "response": "一次性返回赠券链接与二维码；自己的推广券不会把本人绑定成自己的上级",
+      "dependency": "主库商城",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceEmployeeController.memberWithdrawals",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/storefront/promoter/withdrawals",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+      "summary": "会员查看本人奖金提现",
+      "request": "会员Bearer会话",
+      "response": "本人钱包、收款身份核验状态、限额和提现记录；不返回完整收款标识",
+      "dependency": "主库商城",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceEmployeeController.memberApplyWithdrawal",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/promoter/withdrawals",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+      "summary": "会员申请本人奖金提现",
+      "request": "会员Bearer会话；{amountCents,idempotencyKey}",
+      "response": "创建待审核提现；必须有可用奖金、已核验收款身份且后台已启用",
+      "dependency": "仅记录申请并冻结余额，不自动发起第三方转账",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-employee.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "CommerceEmployeeController.gift",
       "method": "GET",
       "path": "/api/saidian-mall/v1/storefront/coupon-gifts/:token",

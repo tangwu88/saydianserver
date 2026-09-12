@@ -25,6 +25,8 @@ export function globalApiAllowed(path: string, method = "GET") {
   if (route === '/storefront/after-sale-images') return method === 'POST';
   if (/^\/storefront\/after-sale-images\/(capabilities|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(route)) return method === 'GET';
   if (route === "/payments/create") return method === "POST";
+  if (method === "GET" && /^\/storefront\/promoter\/(dashboard|promotion|coupons|withdrawals)$/.test(route)) return true;
+  if (method === "POST" && (route === "/storefront/promoter/withdrawals" || /^\/storefront\/promoter\/coupons\/[A-Za-z0-9_-]+\/claim$/.test(route))) return true;
   if (method === "GET" && /^\/wecom\/(authorize-url|me\/(dashboard|promotion|coupons|withdrawals))$/.test(route)) return true;
   if (method === "POST" && (route === "/wecom/oauth" || route === "/wecom/me/withdrawals" || /^\/wecom\/me\/coupons\/[A-Za-z0-9_-]+\/claim$/.test(route))) return true;
   if (route === "/storefront/coupons/available") return method === "GET";

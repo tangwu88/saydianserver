@@ -20,6 +20,10 @@ import { randomToken, safeObject, sha256 } from "../common/crypto";
 import { PrismaService } from "../common/prisma.service";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
+import {
+  isOwnPromoter,
+  memberPromoterExternalId,
+} from "../common/member-promoter-identity";
 import { CommerceWithdrawalService } from "./commerce-withdrawal.service";
 import { employeeDashboardQuery, type EmployeeDashboardQuery } from "./employee-dashboard-query";
 
@@ -154,6 +158,64 @@ export class EmployeePromotionService {
     };
   }
 
+  async memberPromoter(userId: string) {
+    const member = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        nickname: true,
+        avatarUrl: true,
+        mobile: true,
+        mobileVerifiedAt: true,
+      },
+    });
+    if (!member) throw new UnauthorizedException("会员登录已失效，请重新登录");
+
+    const wecomUserId = memberPromoterExternalId(member.id);
+    const name = member.nickname.trim() || "赛电会员";
+    const mobile = member.mobileVerifiedAt ? member.mobile : null;
+    const existing = await this.prisma.commerceEmployee.findUnique({
+      where: { wecomUserId },
+    });
+    if (existing) {
+      if (!existing.active) throw new UnauthorizedException("推广账户已停用");
+      if (
+        existing.name === name &&
+        existing.mobile === mobile &&
+        existing.avatarUrl === member.avatarUrl
+      ) {
+        return existing;
+      }
+      return this.prisma.commerceEmployee.update({
+        where: { id: existing.id },
+        data: {
+          name,
+          mobile,
+          avatarUrl: member.avatarUrl,
+        },
+      });
+    }
+
+    const created = await this.prisma.commerceEmployee.upsert({
+      where: { wecomUserId },
+      create: {
+        wecomUserId,
+        name,
+        mobile,
+        avatarUrl: member.avatarUrl,
+        departmentNames: [],
+        referralCode: await this.uniqueReferralCode(),
+      },
+      update: {
+        name,
+        mobile,
+        avatarUrl: member.avatarUrl,
+      },
+    });
+    if (!created.active) throw new UnauthorizedException("推广账户已停用");
+    return created;
+  }
+
   async promotion(employeeId: string, productId?: string) {
     const [employee, storefrontUrl] = await Promise.all([
       this.prisma.commerceEmployee.findFirstOrThrow({
@@ -229,7 +291,7 @@ export class EmployeePromotionService {
           tx.commerceCoupon.findUnique({ where: { id: couponId } }),
         ]);
         const now = new Date();
-        if (!employee) throw new UnauthorizedException("员工账号已停用");
+        if (!employee) throw new UnauthorizedException("推广账户已停用");
         if (
           !coupon ||
           !coupon.employeeDistributable ||
@@ -250,7 +312,7 @@ export class EmployeePromotionService {
           update: {},
         });
         if (grant.allocatedQuantity + quantity > coupon.perEmployeeLimit) {
-          throw new BadRequestException("已达到员工领券上限");
+          throw new BadRequestException("已达到推广领券上限");
         }
         if (
           coupon.totalQuantity !== null &&
@@ -320,7 +382,10 @@ export class EmployeePromotionService {
       async (tx) => {
         const gift = await tx.commerceCouponGift.findUnique({
           where: { tokenHash: sha256(token) },
-          include: { coupon: true },
+          include: {
+            coupon: true,
+            employee: { select: { wecomUserId: true, mobile: true } },
+          },
         });
         const now = new Date();
         if (
@@ -358,6 +423,10 @@ export class EmployeePromotionService {
             sourceGiftId: gift.id,
           },
         });
+        const member = await tx.user.findUnique({
+          where: { id: userId },
+          select: { id: true, mobile: true, mobileVerifiedAt: true },
+        });
         await Promise.all([
           tx.commerceCoupon.update({
             where: { id: gift.couponId },
@@ -370,10 +439,14 @@ export class EmployeePromotionService {
             where: { id: gift.grantId },
             data: { redeemedQuantity: { increment: 1 } },
           }),
-          tx.user.updateMany({
-            where: { id: userId, referralEmployeeId: null },
-            data: { referralEmployeeId: gift.employeeId },
-          }),
+          ...(member && !isOwnPromoter(member, gift.employee)
+            ? [
+                tx.user.updateMany({
+                  where: { id: userId, referralEmployeeId: null },
+                  data: { referralEmployeeId: gift.employeeId },
+                }),
+              ]
+            : []),
         ]);
         return claim;
       },
@@ -436,12 +509,13 @@ export class EmployeePromotionService {
     const existing = await this.prisma.commerceEmployee.findUnique({
       where: { wecomUserId },
     });
+    const mobile = optionalString(result.mobile);
     return this.prisma.commerceEmployee.upsert({
       where: { wecomUserId },
       create: {
         wecomUserId,
         name: String(result.name ?? wecomUserId),
-        mobile: optionalString(result.mobile),
+        mobile,
         avatarUrl: optionalString(result.avatar),
         departmentNames: Array.isArray(result.department)
           ? result.department.map(String)
@@ -450,7 +524,7 @@ export class EmployeePromotionService {
       },
       update: {
         name: String(result.name ?? existing?.name ?? wecomUserId),
-        mobile: optionalString(result.mobile),
+        mobile,
         avatarUrl: optionalString(result.avatar),
         departmentNames: Array.isArray(result.department)
           ? result.department.map(String)

@@ -344,6 +344,12 @@ export const notes = {
   "CommerceEmployeeController.promotion": entry("生成员工推广素材", "productId可选商品UUID", "推荐链接、二维码和海报；链接不改变顾客或员工身份", "COMMERCE_STOREFRONT_URL商城地址配置"),
   "CommerceEmployeeController.coupons": entry("员工可分发优惠券", "无请求体", "可领取额度、赠券码和状态；历史链接不回显", "主库商城"),
   "CommerceEmployeeController.claimCoupons": entry("领取员工赠券码", "id=优惠券UUID；{quantity?}受批次和员工限额约束", "一次性返回赠券链接与二维码；原始令牌不落库", "主库商城"),
+  "CommerceEmployeeController.memberDashboard": entry("会员查看本人推广与奖金", "会员Bearer会话；range=today|7d|30d|month|custom；from/to为YYYY-MM-DD；page/pageSize", "只解析当前会员对应推广账户；返回本人推广订单、奖金账本摘要与提现资格", "主库商城；首次访问按会员身份建立稳定推广账户，不依赖企业微信"),
+  "CommerceEmployeeController.memberPromotion": entry("会员生成本人推广素材", "会员Bearer会话；productId可选商品UUID", "本人推广码、链接、二维码和海报", "COMMERCE_STOREFRONT_URL商城地址配置"),
+  "CommerceEmployeeController.memberCoupons": entry("会员查看可分发推广优惠券", "会员Bearer会话", "可领取额度、赠券码和状态；历史原始链接不回显", "主库商城"),
+  "CommerceEmployeeController.memberClaimCoupons": entry("会员领取推广赠券码", "会员Bearer会话；id=优惠券UUID；{quantity?}受批次和账户限额约束", "一次性返回赠券链接与二维码；自己的推广券不会把本人绑定成自己的上级", "主库商城"),
+  "CommerceEmployeeController.memberWithdrawals": entry("会员查看本人奖金提现", "会员Bearer会话", "本人钱包、收款身份核验状态、限额和提现记录；不返回完整收款标识", "主库商城"),
+  "CommerceEmployeeController.memberApplyWithdrawal": entry("会员申请本人奖金提现", "会员Bearer会话；{amountCents,idempotencyKey}", "创建待审核提现；必须有可用奖金、已核验收款身份且后台已启用", "仅记录申请并冻结余额，不自动发起第三方转账"),
   "CommerceEmployeeController.gift": entry("查看员工赠送的优惠券", "token=高熵一次性赠券令牌", "优惠券、员工摘要和领取状态；不返回会员信息", "主库商城"),
   "CommerceEmployeeController.redeemGift": entry("会员领取员工赠券", "token=赠券令牌；需会员登录", "本人优惠券领取记录；并发领取只成功一次", "主库商城"),
 };

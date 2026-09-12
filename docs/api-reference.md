@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **333 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **339 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -88,7 +88,7 @@
 | `POST /api/v1/site/refresh` | 旧版刷新 | public | 表单 refresh_token | LegacySession | 核心服务 |
 | `POST /api/v1/site/logout` | 旧版退出 | member | 无请求体 | {logged_out:true} | 核心服务 |
 
-## 商城 H5/小程序兼容接口（62）
+## 商城 H5/小程序兼容接口（68）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -149,6 +149,12 @@
 | `GET /api/saidian-mall/v1/wecom/me/promotion` | 生成员工推广素材 | employee | query:productId?；productId可选商品UUID | 推荐链接、二维码和海报；链接不改变顾客或员工身份 | COMMERCE_STOREFRONT_URL商城地址配置 |
 | `GET /api/saidian-mall/v1/wecom/me/coupons` | 员工可分发优惠券 | employee | 无请求体 | 可领取额度、赠券码和状态；历史链接不回显 | 主库商城 |
 | `POST /api/saidian-mall/v1/wecom/me/coupons/:id/claim` | 领取员工赠券码 | employee | path:id；id=优惠券UUID；{quantity?}受批次和员工限额约束 | 一次性返回赠券链接与二维码；原始令牌不落库 | 主库商城 |
+| `GET /api/saidian-mall/v1/storefront/promoter/dashboard` | 会员查看本人推广与奖金 | member | query:*；会员Bearer会话；range=today\|7d\|30d\|month\|custom；from/to为YYYY-MM-DD；page/pageSize | 只解析当前会员对应推广账户；返回本人推广订单、奖金账本摘要与提现资格 | 主库商城；首次访问按会员身份建立稳定推广账户，不依赖企业微信 |
+| `GET /api/saidian-mall/v1/storefront/promoter/promotion` | 会员生成本人推广素材 | member | query:productId?；会员Bearer会话；productId可选商品UUID | 本人推广码、链接、二维码和海报 | COMMERCE_STOREFRONT_URL商城地址配置 |
+| `GET /api/saidian-mall/v1/storefront/promoter/coupons` | 会员查看可分发推广优惠券 | member | 会员Bearer会话 | 可领取额度、赠券码和状态；历史原始链接不回显 | 主库商城 |
+| `POST /api/saidian-mall/v1/storefront/promoter/coupons/:id/claim` | 会员领取推广赠券码 | member | path:id；会员Bearer会话；id=优惠券UUID；{quantity?}受批次和账户限额约束 | 一次性返回赠券链接与二维码；自己的推广券不会把本人绑定成自己的上级 | 主库商城 |
+| `GET /api/saidian-mall/v1/storefront/promoter/withdrawals` | 会员查看本人奖金提现 | member | 会员Bearer会话 | 本人钱包、收款身份核验状态、限额和提现记录；不返回完整收款标识 | 主库商城 |
+| `POST /api/saidian-mall/v1/storefront/promoter/withdrawals` | 会员申请本人奖金提现 | member | 会员Bearer会话；{amountCents,idempotencyKey} | 创建待审核提现；必须有可用奖金、已核验收款身份且后台已启用 | 仅记录申请并冻结余额，不自动发起第三方转账 |
 | `GET /api/saidian-mall/v1/storefront/coupon-gifts/:token` | 查看员工赠送的优惠券 | public | path:token；token=高熵一次性赠券令牌 | 优惠券、员工摘要和领取状态；不返回会员信息 | 主库商城 |
 | `POST /api/saidian-mall/v1/storefront/coupon-gifts/:token/claim` | 会员领取员工赠券 | member | path:token；token=赠券令牌；需会员登录 | 本人优惠券领取记录；并发领取只成功一次 | 主库商城 |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/capabilities` | 检查售后图片上传配置 | member | 需会员Bearer会话；global须真实验证邮箱或手机号，临时手机登记会话不可用 | raw JSON {enabled,maxFiles:9,maxBytes:10485760,contentTypes,reason?}；配置缺失返回enabled=false；只检查配置，不代表真实存储回执 | 私有object_storage配置；不返回密钥、桶名或公开链接 |

@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { mallStorage } from "../realm";
 import { onMounted, ref } from "vue";
-import { money, toast, API_BASE } from "../api";
+import { api, money, toast, API_BASE } from "../api";
 
 const data = ref<any>(), amount = ref(""), busy = ref(false), loading = ref(false), requestKey = ref("");
-const props=defineProps<{employeeId:string}>();
+const props=withDefaults(defineProps<{employeeId:string;memberMode?:boolean}>(),{memberMode:false});
 const uncertain=ref(false);
 const labels: Record<string, string> = { SUBMITTED: "待审核", APPROVED: "已审核", PROCESSING: "付款处理中", WAIT_USER_CONFIRM: "等待确认收款", SUCCEEDED: "已付款", FAILED: "已失败并退回", REJECTED: "已拒绝", CANCELLED: "已取消" };
 function request(method = "GET", body?: unknown) {
+  if (props.memberMode) {
+    return api("/storefront/promoter/withdrawals", {
+      method: method as any,
+      data: body,
+      auth: true,
+    });
+  }
   const token=String(mallStorage.get('employee-token')||'');
   return new Promise<any>((resolve, reject) => uni.request({
     url: `${API_BASE}/wecom/me/withdrawals`, method: method as "GET" | "POST", data: body as any,
@@ -16,6 +23,7 @@ function request(method = "GET", body?: unknown) {
       response.statusCode < 300 ? resolve(response.data) : reject(Object.assign(new Error((response.data as any)?.message || '提现请求失败'),{status:response.statusCode})); }, fail: reject,
   }));
 }
+function draftOwner(){return `${props.memberMode?'member':'employee'}:${props.employeeId}`;}
 async function load() { loading.value = true; data.value=undefined;try { data.value = await request(); } catch (error) { toast(error); } finally { loading.value = false; } }
 async function apply() {
   if (busy.value) return;
@@ -26,21 +34,21 @@ async function apply() {
   // Retain the key through uncertain retries; input changes clear it. This key is not an auth credential.
   if (!requestKey.value) requestKey.value = `employee_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
   busy.value = true;
-  try {const saved=mallStorage.get('employee-withdrawal-draft');const payload=saved?.employeeId===props.employeeId&&saved.uncertain?saved.payload:{amountCents,idempotencyKey:requestKey.value};mallStorage.set('employee-withdrawal-draft',{employeeId:props.employeeId,payload,uncertain:true});uncertain.value=true;
+  try {const saved=mallStorage.get('employee-withdrawal-draft');const payload=saved?.owner===draftOwner()&&saved.uncertain?saved.payload:{amountCents,idempotencyKey:requestKey.value};mallStorage.set('employee-withdrawal-draft',{owner:draftOwner(),payload,uncertain:true});uncertain.value=true;
     await request('POST',payload);mallStorage.remove('employee-withdrawal-draft');uncertain.value=false;amount.value = ''; requestKey.value = ''; uni.showToast({ title: '已申请，等待审核', icon: 'none' }); await load(); }
   catch (error) { if([400,403,409,422].includes((error as any)?.status)){uncertain.value=false;mallStorage.remove('employee-withdrawal-draft');}toast(error); }
   finally { busy.value = false; }
 }
-onMounted(()=>{const saved=mallStorage.get('employee-withdrawal-draft');if(saved?.employeeId===props.employeeId&&saved.uncertain){uncertain.value=true;requestKey.value=saved.payload.idempotencyKey;amount.value=(saved.payload.amountCents/100).toFixed(2);}else mallStorage.remove('employee-withdrawal-draft');void load();});
+onMounted(()=>{const saved=mallStorage.get('employee-withdrawal-draft');if(saved?.owner===draftOwner()&&saved.uncertain){uncertain.value=true;requestKey.value=saved.payload.idempotencyKey;amount.value=(saved.payload.amountCents/100).toFixed(2);}else mallStorage.remove('employee-withdrawal-draft');void load();});
 </script>
 
 <template>
   <view class="withdrawal-panel card">
-    <view class="heading"><text>员工提现</text><button size="mini" :disabled="loading || busy" @click="load">刷新</button></view>
+    <view class="heading"><text>{{ props.memberMode ? '奖金提现' : '员工提现' }}</text><button size="mini" :disabled="loading || busy" @click="load">刷新</button></view>
     <template v-if="data">
       <view v-if="data.wallet" class="balances">可提现 {{ money(data.wallet.availableCents) }} · 提现中 {{ money(data.wallet.withdrawingCents) }} · 已支付 {{ money(data.wallet.totalPaidCents) }}</view>
       <view v-else class="tip">佣金钱包未获取或未完成迁移核验。</view>
-      <view v-if="!data.plan.enabled" class="tip">员工提现尚未启用。</view>
+      <view v-if="!data.plan.enabled" class="tip">{{ props.memberMode ? '奖金提现尚未启用。' : '员工提现尚未启用。' }}</view>
       <view class="tip">最低提现：{{ data.plan.minimumWithdrawCents === null ? '未配置' : money(data.plan.minimumWithdrawCents) }}；每日限额：{{ data.plan.dailyWithdrawLimitCents === null ? '未设额外限额' : money(data.plan.dailyWithdrawLimitCents) }}（北京时间）</view>
       <view v-if="data.pendingCount" class="tip">已有提现处理中，请等待原提现完成，勿重复申请。</view>
       <view v-if="!data.identity.verified" class="tip">收款身份未核验，请联系管理员。系统不会使用未核验身份或自动转账。</view>
