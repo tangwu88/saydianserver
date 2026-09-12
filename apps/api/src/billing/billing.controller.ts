@@ -20,8 +20,10 @@ import { AdminAuditInterceptor } from "../admin/admin-audit.interceptor";
 import { AdminAuthGuard, AdminRoles } from "../admin/admin-auth";
 import { UserAuthGuard } from "../common/user-auth.guard";
 import {
+  CurrentAdmin,
   CurrentUser,
   type AuthenticatedUser,
+  type RequestWithContext,
 } from "../common/request-context";
 import { RawResponse } from "../common/raw-response.decorator";
 import { isUuid, safeObject } from "../common/crypto";
@@ -160,5 +162,17 @@ export class BillingAdminController {
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
   createRefund(@Param("id") id: string, @Body() body: unknown) {
     return this.billing.createRefund(id, body);
+  }
+
+  @Post("commerce-orders/:orderId/payments/:paymentId/close")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  closeCommerceOrderPayment(
+    @Param("orderId") orderId: string,
+    @Param("paymentId") paymentId: string,
+    @Body() body: unknown,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Req() request: RequestWithContext,
+  ) {
+    return this.billing.closeCommerceOrderPayment(orderId, paymentId, body, current, request.requestId);
   }
 }

@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **331 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **333 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -256,7 +256,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（99）
+## 管理后台接口（101）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -314,9 +314,10 @@
 | `PATCH /api/saydian-app/admin/v1/commerce-business-configs/:key` | 保存商城业务设置 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:key；key=配置键；{label?,value?,enabled?} | 商城配置；支付、ERP等密钥仍由集成中心管理 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/commerce-reviews` | 商城评价管理 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, CUSTOMER_SERVICE, READ_ONLY | 无请求体 | 真实订单评价、脱敏会员和商品摘要 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/commerce-reviews/:id` | 设置评价展示状态 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, CUSTOMER_SERVICE | path:id；id=评价UUID；{published:boolean} | 评价；不能改写评分或正文 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/commerce-orders` | 总后台订单 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:status?，query:page?，query:search?；status可选；page默认1 | 会员已脱敏的订单、明细、支付、物流和售后 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-orders` | 总后台订单 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:status?，query:page?，query:search?；status可选；page默认1 | 订单、商品、支付、物流、售后、完整地址和推广上级；仅SUPER_ADMIN返回收货原手机号，其他角色脱敏 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/commerce-orders/:id` | 维护订单备注 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=订单UUID；{adminRemark?}；订单状态不能手工改写 | 订单 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/commerce-orders/:id/manual-payment` | 待付款订单调价或登记线下收款 | admin: SUPER_ADMIN | path:id；id=订单UUID；仅SUPER_ADMIN；{action:ADJUST_PRICE\|CONFIRM_OFFLINE_PAID,payableCents:正整数分,note:2–500字,orderVersion,idempotencyKey:8–120字符} | 更新后的订单、商品金额分摊和收款记录；重复同键同参数返回reused=true；异参、过期版本、非新系统订单、非待付款或渠道支付处理中均拒绝 | 主库商城；线下收款只登记已核实结果，不调用或伪造第三方支付 |
+| `POST /api/saydian-app/admin/v1/commerce-orders/:id/close` | 关闭未付款订单 | admin: SUPER_ADMIN | path:id；id=订单UUID；仅SUPER_ADMIN；{note:2–500字,orderVersion,idempotencyKey:8–120字符} | CANCELLED订单；释放库存、退回占用优惠券与积分；在线支付未关单时拒绝 | 主库商城 |
 | `GET /api/saydian-app/admin/v1/commerce-orders/:id/fulfillment-preview` | 本地订单可发货数量 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；订单UUID路径参数；限超级管理员/商城运营 | {orderId,version,status,items:[{orderItemId,name,quantity,shippedQuantity,refundedQuantity,afterSaleReservedQuantity,remainingQuantity}],shipments,unavailableReason?}；旧包裹或售后归属不明时阻断 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `POST /api/saydian-app/admin/v1/commerce-orders/:id/shipments` | 登记本地商品分包发货 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；{version,logisticsCompany,trackingNo,items:[{orderItemId,quantity}]}；仅已接管的新LOCAL已付款订单；运单号3–100位字母数字._- | 发货预览结构及shipmentId/replayed；同订单同运单同内容重试幂等，异参/超量/过期版本409；不生成承运轨迹 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `GET /api/saydian-app/admin/v1/commerce-orders/:id/shipping-refunds/preview` | 核验独立退运费额度 | admin: SUPER_ADMIN, FINANCE | path:id；已支付订单ID；仅财务或超级管理员 | 返回剩余运费、剩余现金、maximumCents与orderVersion；未知历史或进行中申请阻断 | 核心服务 |
@@ -354,6 +355,7 @@
 | `POST /api/saydian-app/admin/v1/provider-events/replay` | 回放已验签支付回调 | admin: SUPER_ADMIN, FINANCE | {limit?:1–100}；先解除回调处理暂停；只回放已持久化且verifiedAt不空的事件 | {items:[{id,processed,error?}],remaining}；失败不算完成 | 支付回调Inbox |
 | `POST /api/saydian-app/admin/v1/commerce-after-sales/:id/refund` | 按已审核售后发起退款 | admin: SUPER_ADMIN, FINANCE | path:id；id=售后UUID；{reason?}；退款金额由售后单确定 | 退款记录；渠道受理不等于成功，最终以验签回调或已验签同步结果为准 | 微信支付/支付宝 |
 | `POST /api/saydian-app/admin/v1/payments/:id/refunds` | 财务发起指定支付退款 | admin: SUPER_ADMIN, FINANCE | path:id；id=支付UUID；{amountCents,reason,afterSaleId?,idempotencyKey}；金额单位分 | 幂等退款记录；Apple购买退款需由App Store处理 | 微信支付/支付宝 |
+| `POST /api/saydian-app/admin/v1/commerce-orders/:orderId/payments/:paymentId/close` | 关闭待付款订单的在线支付 | admin: SUPER_ADMIN | path:orderId，path:paymentId；orderId=订单UUID；paymentId=支付UUID；仅SUPER_ADMIN；{note:2–500字,orderVersion,idempotencyKey:8–120字符} | 渠道确认关单后返回CLOSED和新订单版本；渠道未确认时不改变本地支付状态 | 微信支付关单/支付宝trade.close |
 | `GET /api/saydian-app/admin/v1/commerce-after-sales/:saleId/evidence/:fileId` | 后台授权查看售后证据图片 | admin | path:saleId，path:fileId；saleId=售后UUID，fileId=该售后实际关联的文件UUID；后台Bearer和commerce-after-sales/read权限 | HTTP200原始JPEG/PNG/WebP二进制，不含data或公开URL；校验订单会员文件归属并成功写COMMERCE_EVIDENCE_READ审计后返回；权限403、未关联404、存储503；审计失败不返回图片 | 私有object_storage与强制读取审计；角色沿用后台售后读取权限 |
 | `GET /api/saydian-app/admin/v1/commerce/withdrawals` | 提现审核分页列表 | admin: SUPER_ADMIN, FINANCE | query:*；page/pageSize/status | {items,total,page,pageSize}；收款标识脱敏 | 主库资金账本 |
 | `POST /api/saydian-app/admin/v1/commerce/withdrawals/:id/review` | 审批提现申请 | admin: SUPER_ADMIN, FINANCE | path:id；{version,idempotencyKey,decision:APPROVE/REJECT,note}；拒绝同事务释放冻结 | 提现记录；重复同键幂等，异参或旧版本409 | 主库资金账本 |

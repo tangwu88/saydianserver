@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { mallStorage, isGlobalMall, globalCommerceNotice } from "../realm";
+import { mallStorage } from "../realm";
 import { onMounted, ref } from "vue";
 import { money, toast, API_BASE } from "../api";
 
@@ -8,7 +8,6 @@ const props=defineProps<{employeeId:string}>();
 const uncertain=ref(false);
 const labels: Record<string, string> = { SUBMITTED: "待审核", APPROVED: "已审核", PROCESSING: "付款处理中", WAIT_USER_CONFIRM: "等待确认收款", SUCCEEDED: "已付款", FAILED: "已失败并退回", REJECTED: "已拒绝", CANCELLED: "已取消" };
 function request(method = "GET", body?: unknown) {
-  if (isGlobalMall) return Promise.reject(new Error(globalCommerceNotice));
   const token=String(mallStorage.get('employee-token')||'');
   return new Promise<any>((resolve, reject) => uni.request({
     url: `${API_BASE}/wecom/me/withdrawals`, method: method as "GET" | "POST", data: body as any,

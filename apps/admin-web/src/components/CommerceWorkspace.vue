@@ -37,6 +37,8 @@ const detailVisible = ref(false);
 const detailRow = ref<Row>({});
 const manualOrderVisible = ref(false);
 const manualOrderSaving = ref(false);
+const paymentCloseSaving = ref(false);
+const orderCloseSaving = ref(false);
 const manualOrderForm = ref({
   action: "ADJUST_PRICE",
   payableYuan: 0,
@@ -63,12 +65,12 @@ const descriptions: Record<string, string> = {
   "commerce-categories": "按层级维护商城分类、图标、排序和启用状态；分类停用后不会出现在商城分类入口。",
   "commerce-banners": "管理商城首页轮播图片、跳转目标、排序和启用状态，图片与目标地址均由商城前端读取。",
   "commerce-business-configs": "集中维护购物、配送、发票等业务参数；支付密钥和外部平台凭据仍在集成中心配置。",
-  "commerce-orders": "按订单状态查看商品、金额、买家、收货和履约信息；超级管理员可在待付款订单详情中调价或登记线下收款，其他状态仍由支付、物流与售后流程推进。",
+  "commerce-orders": "按订单状态查看商品、金额、买家、收货、推广和履约信息；超级管理员可安全关闭在线支付后调价，也可关闭未付款订单。",
   "commerce-after-sales": "商品售后与单独退运费均需审核；现金以验签渠道结果为准，纯积分商品审核后本地结算。",
   "commerce-reviews": "查看真实订单评价、评分和图片，后台只控制评价是否在商城公开展示。",
   "commerce-coupons": "管理优惠金额、使用门槛、发行数量、有效期和员工分发范围。",
   "commerce-employees": "查看企业微信员工、推广码、部门和钱包摘要；企业微信身份与授权状态以真实联调为准。",
-  "commerce-commissions": "查看奖金规则、计提与钱包流水。规则调整只影响新计提；提现审核请进入“提现审核”。",
+  "commerce-commissions": "设置推广奖金比例，并查看计提与钱包流水。规则调整只影响新计提；提现审核请进入“提现审核”。",
   "commerce-jobs": "查看聚水潭商品与履约同步任务，失败任务可在确认后重新排队。",
   payments: "查看商城与健康业务共用的支付流水；渠道受理、支付成功和退款完成是不同状态。",
 };
@@ -259,8 +261,92 @@ function paymentChannelLabel(channel: unknown): string {
 }
 
 function hasActiveOnlinePayment(row: Row): boolean {
+  return Boolean(activeOnlinePayment(row));
+}
+
+function activeOnlinePayment(row: Row): Row | undefined {
   return Array.isArray(row.paymentIntents)
-    && row.paymentIntents.some((intent: Row) => ["CREATED", "PENDING"].includes(String(intent.status)));
+    ? row.paymentIntents.find((intent: Row) => ["CREATED", "PENDING"].includes(String(intent.status)))
+    : undefined;
+}
+
+function orderAddress(row: Row): string {
+  return [row.province, row.city, row.district, row.addressDetail].map((part) => String(part ?? "").trim()).filter(Boolean).join(" ") || "—";
+}
+
+async function closeOnlinePayment(row: Row): Promise<void> {
+  if (paymentCloseSaving.value) return;
+  const payment = activeOnlinePayment(row);
+  if (!payment) return;
+  try {
+    const answer = await ElMessageBox.prompt(
+      "渠道确认关单后，该支付入口会失效，订单仍保持待付款，随后即可调价或登记线下收款。请输入关单原因。",
+      "关闭在线支付",
+      {
+        type: "warning",
+        confirmButtonText: "确认渠道关单",
+        cancelButtonText: "取消",
+        inputPlaceholder: "必填，例如：客户要求改价，已核对尚未付款",
+        inputValidator: (value) => {
+          const note = String(value ?? "").trim();
+          return note.length >= 2 && note.length <= 500 ? true : "请输入2至500字的关单备注";
+        },
+      },
+    );
+    paymentCloseSaving.value = true;
+    const result = responseData<Row>(await api.post(
+      `/commerce-orders/${encodeURIComponent(String(row.id))}/payments/${encodeURIComponent(String(payment.id))}/close`,
+      {
+        note: String(answer.value ?? "").trim(),
+        orderVersion: Number(row.version ?? 0),
+        idempotencyKey: crypto.randomUUID(),
+      },
+    ));
+    detailRow.value = {
+      ...detailRow.value,
+      version: result.orderVersion,
+      paymentIntents: (detailRow.value.paymentIntents || []).map((intent: Row) => intent.id === payment.id ? { ...intent, status: "CLOSED" } : intent),
+    };
+    ElMessage.success("在线支付已由渠道确认关闭，现在可以调价或登记线下收款");
+    emit("refresh");
+  } catch (error) {
+    if (error !== "cancel" && error !== "close") ElMessage.error(readableError(error));
+  } finally {
+    paymentCloseSaving.value = false;
+  }
+}
+
+async function closeOrder(row: Row): Promise<void> {
+  if (orderCloseSaving.value || row.status !== "PENDING_PAYMENT" || row.paidAt || row.executionOwner !== "NEW_SYSTEM") return;
+  try {
+    const answer = await ElMessageBox.prompt(
+      "关闭订单后将释放库存、退回本单占用的优惠券和积分，订单不能继续付款。请输入关闭原因。",
+      "关闭订单",
+      {
+        type: "warning",
+        confirmButtonText: "确认关闭订单",
+        cancelButtonText: "取消",
+        inputPlaceholder: "必填，例如：客户取消购买",
+        inputValidator: (value) => {
+          const note = String(value ?? "").trim();
+          return note.length >= 2 && note.length <= 500 ? true : "请输入2至500字的关单备注";
+        },
+      },
+    );
+    orderCloseSaving.value = true;
+    const saved = responseData<Row>(await api.post(`/commerce-orders/${encodeURIComponent(String(row.id))}/close`, {
+      note: String(answer.value ?? "").trim(),
+      orderVersion: Number(row.version ?? 0),
+      idempotencyKey: crypto.randomUUID(),
+    }));
+    detailRow.value = { ...detailRow.value, ...saved };
+    ElMessage.success("订单已关闭，库存、优惠券和积分已按原订单返还");
+    emit("refresh");
+  } catch (error) {
+    if (error !== "cancel" && error !== "close") ElMessage.error(readableError(error));
+  } finally {
+    orderCloseSaving.value = false;
+  }
 }
 
 function openManualOrder(row: Row): void {
@@ -343,7 +429,7 @@ function changeStatus(value: unknown): void {
       </el-select>
       <el-button type="primary" @click="emit('refresh')">刷新</el-button>
       <el-button v-if="createable" @click="emit('create')">新增</el-button>
-      <el-button v-if="canEdit && resource === 'commerce-commissions'" @click="emit('edit', { enabled: false, rateBps: 0, settlementDays: 7, withdrawalEnabled: false, minimumWithdrawCents: null, dailyWithdrawLimitCents: null, ...meta.plan, reviewRequired: true })">奖金与提现规则</el-button>
+      <el-button v-if="canEdit && resource === 'commerce-commissions'" @click="emit('edit', { enabled: false, rateBps: 0, settlementDays: 7, withdrawalEnabled: false, minimumWithdrawCents: null, dailyWithdrawLimitCents: null, ...meta.plan, reviewRequired: true })">推广奖金与提现规则</el-button>
       <template v-if="canEdit && resource === 'commerce-products' && selectedProductIds.length">
         <el-button @click="emit('batch-products', selectedProductIds, 'PUBLISH')">批量上架</el-button>
         <el-button @click="emit('batch-products', selectedProductIds, 'DISABLE')">批量下架</el-button>
@@ -511,7 +597,7 @@ function changeStatus(value: unknown): void {
       />
     </div>
 
-    <el-drawer v-model="detailVisible" title="业务详情" size="560px">
+    <el-drawer v-model="detailVisible" :title="resource === 'commerce-orders' ? '订单详情' : '业务详情'" :size="resource === 'commerce-orders' ? '640px' : '560px'">
       <AfterSaleEvidence v-if="detailVisible && resource === 'commerce-after-sales'" :key="detailRow.id" :sale-id="String(detailRow.id || '')" :references="detailRow.evidenceImages" />
       <el-descriptions :column="1" border>
         <el-descriptions-item label="编号">{{ detailRow.id || "—" }}</el-descriptions-item>
@@ -523,8 +609,22 @@ function changeStatus(value: unknown): void {
         <el-descriptions-item v-if="detailRow.updatedAt" label="更新时间">{{ dateTime(detailRow.updatedAt) }}</el-descriptions-item>
       </el-descriptions>
       <section v-if="resource === 'commerce-orders'" class="detail-section">
-        <div class="section-heading"><h3>金额与收款</h3><el-button v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && !detailRow.paidAt && detailRow.executionOwner === 'NEW_SYSTEM'" type="primary" plain size="small" :disabled="hasActiveOnlinePayment(detailRow)" :title="hasActiveOnlinePayment(detailRow) ? '请先确认在线渠道结果或完成关单' : ''" @click="openManualOrder(detailRow)">{{ hasActiveOnlinePayment(detailRow) ? "在线支付处理中" : "调价 / 线下收款" }}</el-button></div>
-        <el-alert v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && hasActiveOnlinePayment(detailRow)" title="该订单已有在线支付处理中记录，请先确认渠道结果或完成关单，再调价或登记线下收款。" type="warning" :closable="false" show-icon style="margin-bottom: 12px" />
+        <div class="section-heading">
+          <h3>收货与推广</h3>
+          <el-button v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && !detailRow.paidAt && detailRow.executionOwner === 'NEW_SYSTEM'" type="danger" plain size="small" :loading="orderCloseSaving" :disabled="hasActiveOnlinePayment(detailRow) || paymentCloseSaving" :title="hasActiveOnlinePayment(detailRow) ? '请先关闭正在处理的在线支付' : '关闭后释放库存并返还优惠券和积分'" @click="closeOrder(detailRow)">关闭订单</el-button>
+        </div>
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="收货人">{{ detailRow.recipientName || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="收货电话">{{ detailRow.recipientMobile || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="详细地址">{{ orderAddress(detailRow) }}</el-descriptions-item>
+          <el-descriptions-item label="推广上级 ID">{{ detailRow.referralEmployeeId || "无" }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailRow.referralEmployee" label="推广人">{{ detailRow.referralEmployee.name }} · {{ detailRow.referralEmployee.referralCode }}</el-descriptions-item>
+          <el-descriptions-item label="支付完成时间">{{ dateTime(detailRow.paidAt) }}</el-descriptions-item>
+        </el-descriptions>
+      </section>
+      <section v-if="resource === 'commerce-orders'" class="detail-section">
+        <div class="section-heading"><h3>金额与收款</h3><el-button v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && !detailRow.paidAt && detailRow.executionOwner === 'NEW_SYSTEM'" :type="hasActiveOnlinePayment(detailRow) ? 'warning' : 'primary'" plain size="small" :loading="paymentCloseSaving" @click="hasActiveOnlinePayment(detailRow) ? closeOnlinePayment(detailRow) : openManualOrder(detailRow)">{{ hasActiveOnlinePayment(detailRow) ? "关闭在线支付" : "调价 / 线下收款" }}</el-button></div>
+        <el-alert v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && hasActiveOnlinePayment(detailRow)" title="该订单已有在线支付处理中记录。请先点击“关闭在线支付”，由渠道确认关单后即可调价或登记线下收款。" type="warning" :closable="false" show-icon style="margin-bottom: 12px" />
         <el-descriptions :column="1" border>
           <el-descriptions-item label="商品金额">{{ money(detailRow.subtotalCents, detailRow.currency) }}</el-descriptions-item>
           <el-descriptions-item label="优惠金额">-{{ money(detailRow.discountCents, detailRow.currency) }}</el-descriptions-item>

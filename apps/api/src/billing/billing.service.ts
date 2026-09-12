@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -8,6 +9,7 @@ import {
 } from "@nestjs/common";
 import {
   AfterSaleStatus,
+  AdminRole,
   BusinessType,
   CommerceOrderStatus,
   CreditLedgerType,
@@ -33,7 +35,7 @@ import {
 } from "@saydian/app-contracts";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "../common/prisma.service";
-import { isUuid, safeObject } from "../common/crypto";
+import { isUuid, safeObject, sha256 } from "../common/crypto";
 import { markIntegrationVerified } from "../common/integration-health";
 import {
   AppleIapService,
@@ -357,6 +359,148 @@ export class BillingService {
       }
     }
     return serializePayment(intent);
+  }
+
+  async closeCommerceOrderPayment(
+    orderId: string,
+    paymentId: string,
+    input: unknown,
+    current: { id: string; role: string; roles?: string[] },
+    requestId?: string,
+  ) {
+    const roles = current.roles?.length ? current.roles : [current.role];
+    if (!isGlobalRealm()) throw new NotFoundException("此功能仅供国际版后台使用");
+    if (!current.id || !roles.includes(AdminRole.SUPER_ADMIN)) throw new ForbiddenException("只有超级管理员可以关闭在线支付");
+    if (!isUuid(orderId) || !isUuid(paymentId)) throw new BadRequestException("订单或支付记录编号不正确");
+    const body = safeObject(input);
+    if (Object.keys(body).some((field) => !["note", "orderVersion", "idempotencyKey"].includes(field))) {
+      throw new BadRequestException("关闭在线支付包含不支持的字段");
+    }
+    const orderVersion = Number(body.orderVersion);
+    if (!Number.isSafeInteger(orderVersion) || orderVersion < 0) throw new BadRequestException("订单版本不正确");
+    const note = String(body.note ?? "").trim();
+    if (note.length < 2 || note.length > 500) throw new BadRequestException("请填写2至500字的渠道关单备注");
+    const idempotencyKey = String(body.idempotencyKey ?? "").trim();
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 120) throw new BadRequestException("请提供有效的操作请求编号");
+    const scope = "admin_order_payment_close_v1";
+    const requestHash = sha256(JSON.stringify({ orderId, paymentId, note, orderVersion, actorId: current.id }));
+    const readOrder = () => this.prisma.commerceOrder.findUnique({
+      where: { id: orderId },
+      include: { paymentIntents: { where: { id: paymentId } } },
+    });
+    let order = await readOrder();
+    if (!order) throw new NotFoundException("订单不存在");
+    assertNewExecutionOwner(order);
+    const previousRequest = await this.prisma.idempotencyRecord.findUnique({
+      where: { userId_scope_key: { userId: order.userId, scope, key: idempotencyKey } },
+    });
+    if (previousRequest) {
+      if (previousRequest.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
+      return { ...safeObject(previousRequest.responseBody), reused: true };
+    }
+    if (order.version !== orderVersion) throw new ConflictException("订单已更新，请刷新后重试");
+    if (order.status !== CommerceOrderStatus.PENDING_PAYMENT || order.paidAt) {
+      throw new ConflictException("只有待付款订单可以关闭在线支付");
+    }
+    let intent = order.paymentIntents[0];
+    if (!intent || intent.commerceOrderId !== orderId || intent.userId !== order.userId) throw new NotFoundException("订单支付记录不存在");
+    assertNewExecutionOwner(intent);
+    if (intent.status === PaymentStatus.CLOSED) {
+      return { orderId, paymentId, paymentStatus: PaymentStatus.CLOSED, orderVersion: order.version, reused: true };
+    }
+    if (!([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status)) {
+      throw new ConflictException("该支付记录已完成或不可关闭，请先核对渠道结果");
+    }
+
+    await this.payment(order.userId, paymentId);
+    order = await readOrder();
+    if (!order) throw new NotFoundException("订单不存在");
+    intent = order.paymentIntents[0];
+    if (!intent) throw new NotFoundException("订单支付记录不存在");
+    if (order.status !== CommerceOrderStatus.PENDING_PAYMENT || order.paidAt ||
+        !([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status)) {
+      throw new ConflictException("渠道结果已变化，未执行关单，请刷新订单后核对");
+    }
+    assertPaymentOutboundEnabled();
+    const providerResult = await this.providers.closePayment(intent);
+    const closedAt = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const lockedOrder = await tx.commerceOrder.findUnique({
+        where: { id: orderId },
+        include: { paymentIntents: { where: { id: paymentId } } },
+      });
+      if (!lockedOrder) throw new NotFoundException("订单不存在");
+      assertNewExecutionOwner(lockedOrder);
+      const prior = await tx.idempotencyRecord.findUnique({
+        where: { userId_scope_key: { userId: lockedOrder.userId, scope, key: idempotencyKey } },
+      });
+      if (prior) {
+        if (prior.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
+        return { ...safeObject(prior.responseBody), reused: true };
+      }
+      const lockedIntent = lockedOrder.paymentIntents[0];
+      if (!lockedIntent) throw new NotFoundException("订单支付记录不存在");
+      if (lockedIntent.status === PaymentStatus.CLOSED) {
+        return { orderId, paymentId, paymentStatus: PaymentStatus.CLOSED, orderVersion: lockedOrder.version, reused: true };
+      }
+      if (lockedOrder.status !== CommerceOrderStatus.PENDING_PAYMENT || lockedOrder.paidAt ||
+          !([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(lockedIntent.status)) {
+        throw new ConflictException("支付或订单状态已变化，请立即核对渠道结果");
+      }
+      const paymentChanged = await tx.paymentIntent.updateMany({
+        where: { id: paymentId, commerceOrderId: orderId, status: { in: [PaymentStatus.CREATED, PaymentStatus.PENDING] } },
+        data: {
+          status: PaymentStatus.CLOSED,
+          providerPayload: {
+            ...safeObject(lockedIntent.providerPayload),
+            closeResult: providerResult,
+            closedByAdminId: current.id,
+            closedAt: closedAt.toISOString(),
+          } as Prisma.InputJsonValue,
+        },
+      });
+      if (!paymentChanged.count) throw new ConflictException("支付状态已变化，请立即核对渠道结果");
+      const adminRemark = [lockedOrder.adminRemark, `[关闭在线支付 ${closedAt.toISOString()}] ${note}`].filter(Boolean).join("\n");
+      const nextOrderVersion = lockedOrder.version + 1;
+      const orderChanged = await tx.commerceOrder.updateMany({
+        where: { id: orderId, status: CommerceOrderStatus.PENDING_PAYMENT, paidAt: null, executionOwner: "NEW_SYSTEM" },
+        data: { adminRemark, version: { increment: 1 } },
+      });
+      if (!orderChanged.count) throw new ConflictException("订单状态已变化，请立即核对渠道结果");
+      const result = {
+        orderId,
+        paymentId,
+        paymentStatus: PaymentStatus.CLOSED,
+        orderVersion: nextOrderVersion,
+        closedAt: closedAt.toISOString(),
+      };
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: current.id,
+          action: "COMMERCE_ORDER_ONLINE_PAYMENT_CLOSED",
+          entityType: "PAYMENT_INTENT",
+          entityId: paymentId,
+          requestId: requestId ?? null,
+          beforeJson: { status: lockedIntent.status, orderVersion: lockedOrder.version },
+          afterJson: { ...result, note },
+        },
+      });
+      await tx.idempotencyRecord.create({
+        data: {
+          userId: lockedOrder.userId,
+          scope,
+          key: idempotencyKey,
+          requestHash,
+          responseCode: 201,
+          responseBody: result,
+          expiresAt: new Date(closedAt.valueOf() + 30 * 86_400_000),
+        },
+      });
+      return { ...result, reused: false };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async handleWechatNotification(

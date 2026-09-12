@@ -15,6 +15,7 @@ import { createLocalShipment, localFulfillmentPreview } from "./local-fulfillmen
 import { protectLastSuperAdmin } from "./admin-account-policy";
 import { parseGlobalDownloadManifest } from "../support/global-download-manifest";
 import { withCategoryNumbers } from "./article-category-number";
+import { cancelCommerceOrderInTransaction } from "../commerce/commerce-order-cancellation";
 
 const adminOrderPaymentSelect = {
   id: true,
@@ -28,6 +29,15 @@ const adminOrderPaymentSelect = {
   paidAt: true,
   createdAt: true,
 } satisfies Prisma.PaymentIntentSelect;
+
+const adminOrderDetailInclude = {
+  user: { select: { id: true, nickname: true, mobile: true } },
+  referralEmployee: { select: { id: true, name: true, referralCode: true } },
+  items: true,
+  shipments: { include: { items: true } },
+  paymentIntents: { select: adminOrderPaymentSelect },
+  afterSales: true,
+} satisfies Prisma.CommerceOrderInclude;
 
 @Injectable()
 export class AdminService {
@@ -1310,7 +1320,7 @@ export class AdminService {
     });
   }
 
-  async commerceOrders(statusInput?: string, pageInput = 1, searchInput = "") {
+  async commerceOrders(statusInput: string | undefined, pageInput: number, searchInput: string, current: { role: string; roles?: string[] }) {
     const page = Math.max(Number(pageInput) || 1, 1);
     const status = statusInput ? enumValue(CommerceOrderStatus, statusInput, "订单状态") : undefined;
     const search = searchInput.trim().slice(0, 200);
@@ -1325,13 +1335,7 @@ export class AdminService {
     const [items, total, statusCounts, amounts] = await this.prisma.$transaction([
       this.prisma.commerceOrder.findMany({
         where,
-        include: {
-          user: { select: { id: true, nickname: true, mobile: true } },
-          items: true,
-          shipments: { include: { items: true } },
-          paymentIntents: { select: adminOrderPaymentSelect },
-          afterSales: true,
-        },
+        include: adminOrderDetailInclude,
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * 50,
         take: 50,
@@ -1351,7 +1355,9 @@ export class AdminService {
     return {
       items: items.map((order) => ({
         ...order,
-        recipientMobile: maskMobile(order.recipientMobile),
+        recipientMobile: (current.roles?.length ? current.roles : [current.role]).includes(AdminRole.SUPER_ADMIN)
+          ? order.recipientMobile
+          : maskMobile(order.recipientMobile),
         user: { ...order.user, mobile: maskMobile(order.user.mobile) },
       })),
       total,
@@ -1434,15 +1440,12 @@ export class AdminService {
           const saved = await tx.commerceOrder.findUniqueOrThrow({
             where: { id },
             include: {
-              items: true,
-              paymentIntents: { select: adminOrderPaymentSelect },
-              shipments: { include: { items: true } },
-              afterSales: true,
+              ...adminOrderDetailInclude,
             },
           });
           return {
             ...saved,
-            recipientMobile: maskMobile(saved.recipientMobile),
+            recipientMobile: saved.recipientMobile,
             reused: true,
           };
         }
@@ -1586,20 +1589,86 @@ export class AdminService {
         const saved = await tx.commerceOrder.findUniqueOrThrow({
           where: { id },
           include: {
-            items: true,
-            paymentIntents: { select: adminOrderPaymentSelect },
-            shipments: { include: { items: true } },
-            afterSales: true,
+            ...adminOrderDetailInclude,
           },
         });
         return {
           ...saved,
-          recipientMobile: maskMobile(saved.recipientMobile),
+          recipientMobile: saved.recipientMobile,
           reused: false,
         };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+  }
+
+  async closeCommerceOrder(
+    id: string,
+    input: unknown,
+    current: { id: string; role: string; roles?: string[] },
+    requestId?: string,
+  ) {
+    const roles = current.roles?.length ? current.roles : [current.role];
+    if (!isGlobalRealm()) throw new NotFoundException("此功能仅供国际版后台使用");
+    if (!current.id || !roles.includes(AdminRole.SUPER_ADMIN)) throw new ForbiddenException("只有超级管理员可以关闭订单");
+    if (!isUuid(id)) throw new BadRequestException("订单编号不正确");
+    const body = safeObject(input);
+    if (Object.keys(body).some((field) => !["note", "orderVersion", "idempotencyKey"].includes(field))) {
+      throw new BadRequestException("关闭订单包含不支持的字段");
+    }
+    const orderVersion = expectedVersion(body.orderVersion);
+    const note = String(body.note ?? "").trim();
+    if (note.length < 2 || note.length > 500) throw new BadRequestException("请填写2至500字的关单备注");
+    const idempotencyKey = String(body.idempotencyKey ?? "").trim();
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 120) throw new BadRequestException("请提供有效的操作请求编号");
+    const scope = "admin_order_close_v1";
+    const requestHash = sha256(JSON.stringify({ id, note, orderVersion, actorId: current.id }));
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${id}::uuid FOR UPDATE`;
+      const order = await tx.commerceOrder.findUnique({
+        where: { id },
+        include: { items: true },
+      });
+      if (!order) throw new NotFoundException("订单不存在");
+      const previousRequest = await tx.idempotencyRecord.findUnique({
+        where: { userId_scope_key: { userId: order.userId, scope, key: idempotencyKey } },
+      });
+      if (previousRequest) {
+        if (previousRequest.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
+        const saved = await tx.commerceOrder.findUniqueOrThrow({ where: { id }, include: adminOrderDetailInclude });
+        return { ...saved, recipientMobile: saved.recipientMobile, reused: true };
+      }
+      if (order.version !== orderVersion) throw new ConflictException("订单已更新，请刷新后重试");
+      const closedAt = new Date();
+      const adminRemark = [order.adminRemark, `[后台关闭订单 ${closedAt.toISOString()}] ${note}`].filter(Boolean).join("\n");
+      await cancelCommerceOrderInTransaction(tx, order, { expectedVersion: orderVersion, adminRemark, cancelledAt: closedAt });
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: current.id,
+          action: "COMMERCE_ORDER_CLOSED",
+          entityType: "COMMERCE_ORDER",
+          entityId: id,
+          requestId: requestId ?? null,
+          beforeJson: { status: order.status, version: order.version },
+          afterJson: { status: CommerceOrderStatus.CANCELLED, version: order.version + 1, note },
+        },
+      });
+      await tx.idempotencyRecord.create({
+        data: {
+          userId: order.userId,
+          scope,
+          key: idempotencyKey,
+          requestHash,
+          responseCode: 201,
+          responseBody: { orderId: id, status: CommerceOrderStatus.CANCELLED },
+          expiresAt: new Date(closedAt.valueOf() + 30 * 86_400_000),
+        },
+      });
+      const saved = await tx.commerceOrder.findUniqueOrThrow({ where: { id }, include: adminOrderDetailInclude });
+      return { ...saved, recipientMobile: saved.recipientMobile, reused: false };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   commerceFulfillmentPreview(orderId: string, current: { id: string; role: string; roles?: string[] }) {

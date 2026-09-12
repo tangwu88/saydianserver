@@ -47,6 +47,13 @@ type AlipayPaymentForQuery = {
   providerAppId: string | null;
 };
 
+export type PaymentForClose = {
+  paymentNo: string;
+  channel: PaymentChannel;
+  providerMerchantId: string | null;
+  providerAppId: string | null;
+};
+
 /** Validate before reserving a new intent and again immediately before dispatch. */
 export function assertGlobalPaymentSupported(intent: { channel: PaymentChannel; businessType?: string; currency: string }) {
   assertGlobalPaymentScope(intent);
@@ -179,6 +186,19 @@ export class PaymentProviderService {
     }
     if (refund.channel.startsWith("WECHAT")) return this.refundWechat(refund);
     return this.refundAlipay(refund);
+  }
+
+  async closePayment(intent: PaymentForClose): Promise<Record<string, unknown>> {
+    if (intent.channel === PaymentChannel.OFFLINE_MANUAL) {
+      throw new BadRequestException("线下收款没有可关闭的在线支付");
+    }
+    if (intent.channel === PaymentChannel.APPLE_IAP) {
+      throw new ServiceUnavailableException("苹果应用内购买不能由商城后台关单");
+    }
+    await this.assertIdentity(intent);
+    return intent.channel.startsWith("WECHAT")
+      ? this.closeWechatPayment(intent)
+      : this.closeAlipayPayment(intent);
   }
 
   async queryWechatPayment(
@@ -551,6 +571,101 @@ export class PaymentProviderService {
       { merchantId, serialNo, privateKeyPem },
     );
     return parseWechatRefundResponse(payload, refund);
+  }
+
+  private async closeWechatPayment(intent: PaymentForClose): Promise<Record<string, unknown>> {
+    await this.assertConfigured("wechat_pay");
+    const secrets = await this.wechatSecrets();
+    const merchantId = secrets.merchantId ?? "";
+    const serialNo = secrets.serialNo ?? "";
+    const privateKeyPem = secrets.privateKeyPem ?? "";
+    if (!merchantId || !serialNo || !privateKeyPem) {
+      throw new ServiceUnavailableException("微信支付暂时无法关单，请稍后再试");
+    }
+    if (!intent.providerMerchantId || intent.providerMerchantId !== merchantId) {
+      throw new BadRequestException("原交易商户与当前微信支付配置不一致");
+    }
+    const paymentNo = providerText(intent.paymentNo, "微信支付单号");
+    const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(paymentNo)}/close`;
+    const bodyText = JSON.stringify({ mchid: merchantId });
+    const timestamp = String(Math.floor(Date.now() / 1_000));
+    const nonce = randomBytes(16).toString("hex");
+    const message = `POST\n${path}\n${timestamp}\n${nonce}\n${bodyText}\n`;
+    const authorization = `WECHATPAY2-SHA256-RSA2048 mchid="${merchantId}",nonce_str="${nonce}",timestamp="${timestamp}",serial_no="${serialNo}",signature="${rsaSign(message, privateKeyPem)}"`;
+    const response = await fetch(`https://api.mch.weixin.qq.com${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization,
+      },
+      body: bodyText,
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (response.status !== 204) {
+      await response.text();
+      throw new ServiceUnavailableException("微信支付关单未确认，请先查单并稍后重试");
+    }
+    await markIntegrationVerified(this.prisma, "wechat_pay");
+    return { provider: "wechat", out_trade_no: paymentNo, closed: true };
+  }
+
+  private async closeAlipayPayment(intent: PaymentForClose): Promise<Record<string, unknown>> {
+    const publicConfig = await this.assertConfigured("alipay");
+    const secrets = await this.alipaySecrets();
+    const appId = secrets.appId ?? "";
+    const privateKeyPem = secrets.privateKeyPem ?? "";
+    const publicKeyPem = secrets.publicKeyPem ?? "";
+    if (!appId || !privateKeyPem || !publicKeyPem) {
+      throw new ServiceUnavailableException("支付宝暂时无法关单，请稍后再试");
+    }
+    if (!intent.providerAppId || intent.providerAppId !== appId) {
+      throw new BadRequestException("原交易应用与当前支付宝配置不一致");
+    }
+    const paymentNo = providerText(intent.paymentNo, "支付宝支付单号");
+    const params: Record<string, string> = {
+      app_id: appId,
+      method: "alipay.trade.close",
+      format: "JSON",
+      charset: "utf-8",
+      sign_type: "RSA2",
+      timestamp: formatAlipayDate(new Date()),
+      version: "1.0",
+      biz_content: JSON.stringify({ out_trade_no: paymentNo }),
+    };
+    params.sign = rsaSign(canonical(params), privateKeyPem);
+    const response = await fetch(
+      trustedPaymentUrl(String(publicConfig.gateway ?? "https://openapi.alipay.com/gateway.do"), "alipay"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" },
+        body: new URLSearchParams(params).toString(),
+        signal: AbortSignal.timeout(20_000),
+      },
+    );
+    const raw = await response.text();
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = safeObject(JSON.parse(raw));
+    } catch {
+      throw new ServiceUnavailableException("支付宝关单未确认，请先查单并稍后重试");
+    }
+    const result = safeObject(parsed.alipay_trade_close_response);
+    const signature = String(parsed.sign ?? "");
+    const signedContent = extractJsonObject(raw, "alipay_trade_close_response");
+    const verifier = createVerify("RSA-SHA256");
+    verifier.update(signedContent);
+    if (!signature || !signedContent || !verifier.verify(publicKeyPem, signature, "base64")) {
+      throw new BadRequestException("支付宝关单响应验证失败");
+    }
+    if (!response.ok || String(result.code ?? "") !== "10000") {
+      throw new ServiceUnavailableException("支付宝关单未确认，请先查单并稍后重试");
+    }
+    if (result.out_trade_no !== undefined && providerText(result.out_trade_no, "支付宝支付单号") !== paymentNo) {
+      throw new BadRequestException("支付宝关单响应与原支付记录不匹配");
+    }
+    await markIntegrationVerified(this.prisma, "alipay");
+    return { ...result, provider: "alipay", closed: true };
   }
 
   private async refundAlipay(

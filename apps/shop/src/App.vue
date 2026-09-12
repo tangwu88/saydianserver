@@ -6,7 +6,7 @@ import { isGlobalMall } from "./realm";
 import { installGlobalNavigation } from "./global-navigation";
 onLaunch((options) => {
   startMallSessionSync();
-  if (isGlobalMall) { installGlobalNavigation(); return; }
+  if (isGlobalMall) installGlobalNavigation();
   const query = (options as any)?.query ?? {};
   const referral =
     query.ref ||
@@ -14,11 +14,13 @@ onLaunch((options) => {
       ? decodeURIComponent(String(query.scene)).split(".")[0]
       : undefined);
   captureReferral(referral);
-  /* #ifdef MP-WEIXIN */
-  void ensureMiniProgramSession()
-    .then(() => bindReferral())
-    .catch(() => undefined);
-  /* #endif */
+  if (!isGlobalMall) {
+    /* #ifdef MP-WEIXIN */
+    void ensureMiniProgramSession()
+      .then(() => bindReferral())
+      .catch(() => undefined);
+    /* #endif */
+  }
   /* #ifdef H5 */
   if (typeof location === "undefined") return;
   const pageUrl = new URL(location.href);

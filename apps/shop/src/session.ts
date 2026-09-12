@@ -1,7 +1,6 @@
-import { mallStorage, isGlobalMall } from "./realm";
+import { mallStorage } from "./realm";
 import { api } from "./api";
 export function captureReferral(explicitReferral?: string): void {
-  if (isGlobalMall) return;
   const pages = getCurrentPages?.() ?? [];
   const route = pages[pages.length - 1] as any;
   const locationSearch =
@@ -25,7 +24,6 @@ export function isLoggedIn(): boolean {
   return Boolean(mallStorage.get("saidian-token"));
 }
 export async function bindReferral(): Promise<void> {
-  if (isGlobalMall) return;
   const ref = String(mallStorage.get("saidian-ref") || "");
   if (ref && isLoggedIn())
     await api("/auth/referral", {

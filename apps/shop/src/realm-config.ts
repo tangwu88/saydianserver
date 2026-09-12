@@ -12,18 +12,21 @@ export function resolveMallConfig(env: Record<string, unknown>, miniProgram = fa
 
 export function realmKey(key: string, realm: MallRealm) { return realm === "global" ? "saydian-global-mall:" + key : key; }
 export function globalPageAllowed(route: string) {
-  return /^\/pages\/(home|category|search|product|profile|login|help|cart|checkout|orders|order-detail|after-sale|addresses|address-edit|favorites|coupons|points)\/index(?:\?[^#]*)?$/.test(route) && !/[\\\r\n]/.test(route);
+  return /^\/pages\/(home|category|search|product|profile|login|help|cart|checkout|orders|order-detail|after-sale|addresses|address-edit|favorites|coupons|points|employee)\/index(?:\?[^#]*)?$/.test(route) && !/[\\\r\n]/.test(route);
 }
 export function globalApiAllowed(path: string, method = "GET") {
   // Routing only: the server still verifies identity, scope, market and channel
   // capability. In particular this list never grants temporary OTP trading rights.
   if (/[\\#\r\n]/.test(path) || (method !== "GET" && path.includes("?"))) return false;
   if (/^\/auth\/(password\/login|refresh|wechat\/h5\/(authorize-url|login|bind-account|binding-code|bind-code|phone-code|bind-phone))$/.test(path)) return method === "POST";
+  if (path === "/auth/referral") return method === "POST";
   if (path === "/auth/wechat/h5/account") return method === "GET";
   const route = path.split("?", 1)[0] ?? "";
   if (route === '/storefront/after-sale-images') return method === 'POST';
   if (/^\/storefront\/after-sale-images\/(capabilities|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(route)) return method === 'GET';
   if (route === "/payments/create") return method === "POST";
+  if (method === "GET" && /^\/wecom\/(authorize-url|me\/(dashboard|promotion|coupons|withdrawals))$/.test(route)) return true;
+  if (method === "POST" && (route === "/wecom/oauth" || route === "/wecom/me/withdrawals" || /^\/wecom\/me\/coupons\/[A-Za-z0-9_-]+\/claim$/.test(route))) return true;
   if (route === "/storefront/coupons/available") return method === "GET";
   if (route === "/storefront/coupons/code/claim") return method === "POST";
   if (route === "/storefront/feedback") return method === "GET" || method === "POST";

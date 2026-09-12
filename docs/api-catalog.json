@@ -1905,7 +1905,7 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "总后台订单",
       "request": "status可选；page默认1",
-      "response": "会员已脱敏的订单、明细、支付、物流和售后",
+      "response": "订单、商品、支付、物流、售后、完整地址和推广上级；仅SUPER_ADMIN返回收货原手机号，其他角色脱敏",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -1988,6 +1988,46 @@
       "request": "id=订单UUID；仅SUPER_ADMIN；{action:ADJUST_PRICE|CONFIRM_OFFLINE_PAID,payableCents:正整数分,note:2–500字,orderVersion,idempotencyKey:8–120字符}",
       "response": "更新后的订单、商品金额分摊和收款记录；重复同键同参数返回reused=true；异参、过期版本、非新系统订单、非待付款或渠道支付处理中均拒绝",
       "dependency": "主库商城；线下收款只登记已核实结果，不调用或伪造第三方支付",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.closeCommerceOrder",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-orders/:id/close",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "关闭未付款订单",
+      "request": "id=订单UUID；仅SUPER_ADMIN；{note:2–500字,orderVersion,idempotencyKey:8–120字符}",
+      "response": "CANCELLED订单；释放库存、退回占用优惠券与积分；在线支付未关单时拒绝",
+      "dependency": "主库商城",
       "successStatus": 201,
       "contract": {
         "status": "unreviewed",
@@ -5793,6 +5833,52 @@
         "contentType": "application/json",
         "source": "apps/api/src/billing/billing.service.ts; apps/api/src/billing/billing-safety.test.ts",
         "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "BillingAdminController.closeCommerceOrderPayment",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-orders/:orderId/payments/:paymentId/close",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "orderId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "paymentId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/billing/billing.controller.ts",
+      "summary": "关闭待付款订单的在线支付",
+      "request": "orderId=订单UUID；paymentId=支付UUID；仅SUPER_ADMIN；{note:2–500字,orderVersion,idempotencyKey:8–120字符}",
+      "response": "渠道确认关单后返回CLOSED和新订单版本；渠道未确认时不改变本地支付状态",
+      "dependency": "微信支付关单/支付宝trade.close",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/billing/billing.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
     },
     {

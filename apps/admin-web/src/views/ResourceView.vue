@@ -1059,7 +1059,7 @@ onBeforeUnmount(() => {
         <template v-else-if="resource === 'commerce-commissions'">
           <el-alert title="奖金规则只影响新支付订单；已有奖金使用原快照。提现仅可使用可用余额，仍需财务人工审核。" type="info" :closable="false" />
           <el-form-item label="启用奖金"><el-switch v-model="form.enabled" /></el-form-item>
-          <el-form-item label="奖金比例"><el-input-number v-model="form.rateBps" :min="0" :max="10000" :precision="0" /><span class="muted">基点（100 = 1%）</span></el-form-item>
+          <el-form-item label="推广奖金比例"><el-input-number v-model="form.rateBps" :min="0" :max="10000" :precision="0" /><span class="muted">基点（100 = 1%），只影响之后支付的新订单</span></el-form-item>
           <el-form-item label="收货等待天数"><el-input-number v-model="form.settlementDays" :min="0" :max="3650" :precision="0" /></el-form-item>
           <el-form-item label="启用提现"><el-switch v-model="form.withdrawalEnabled" /></el-form-item>
           <el-form-item label="最低提现（分）"><el-input-number v-model="form.minimumWithdrawCents" :min="1" :precision="0" placeholder="未配置时无法提现" /></el-form-item>

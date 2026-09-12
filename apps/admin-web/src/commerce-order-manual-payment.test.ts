@@ -26,9 +26,16 @@ function harness(roles = ["SUPER_ADMIN"]) {
   };
   const props = { resource: "commerce-orders", rows: [order], meta: {}, loading: false, createable: false, search: "" };
   const emit = vi.fn();
-  const api = { post: vi.fn(async () => ({ data: { data: { ...order, status: "PAID", payableCents: 9_000, version: 3, paidAt: "2026-09-11T12:00:00.000Z" } } })) };
+  const api = { post: vi.fn(async (path: string) => ({ data: { data:
+    path.includes("/payments/") && path.endsWith("/close")
+      ? { orderId: order.id, paymentId: "payment-1", paymentStatus: "CLOSED", orderVersion: 3 }
+      : path.endsWith("/close")
+        ? { ...order, status: "CANCELLED", version: 3, cancelledAt: "2026-09-11T12:00:00.000Z" }
+        : { ...order, status: "PAID", payableCents: 9_000, version: 3, paidAt: "2026-09-11T12:00:00.000Z" }
+  } })) };
   const ElMessage = { success: vi.fn(), error: vi.fn() };
   const confirm = vi.fn(async () => true);
+  const prompt = vi.fn(async () => ({ value: "客户要求改价，已核对尚未付款" }));
   const deps = {
     computed,
     ref,
@@ -41,14 +48,14 @@ function harness(roles = ["SUPER_ADMIN"]) {
     responseData: (response: any) => response.data.data,
     readableError: (error: unknown) => error instanceof Error ? error.message : "请求失败",
     ElMessage,
-    ElMessageBox: { confirm },
+    ElMessageBox: { confirm, prompt },
     crypto: { randomUUID: () => "synthetic-action-key" },
   };
   const state = new Function(
     ...Object.keys(deps),
-    `${code}\nreturn { detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel, hasActiveOnlinePayment };`,
+    `${code}\nreturn { detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, paymentCloseSaving, orderCloseSaving, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel, hasActiveOnlinePayment, activeOnlinePayment, orderAddress, closeOnlinePayment, closeOrder };`,
   )(...Object.values(deps));
-  return { ...state, order, api, emit, ElMessage, confirm };
+  return { ...state, order, api, emit, ElMessage, confirm, prompt };
 }
 
 describe("commerce order super-admin payment controls", () => {
@@ -87,6 +94,33 @@ describe("commerce order super-admin payment controls", () => {
     expect(h.api.post).not.toHaveBeenCalled();
   });
 
+  it("closes the active provider payment first and immediately enables repricing", async () => {
+    const h = harness();
+    h.order.paymentIntents = [{ id: "payment-1", channel: "ALIPAY_WAP", status: "PENDING" }];
+    h.openDetail(h.order);
+    await h.closeOnlinePayment(h.order);
+    expect(h.prompt).toHaveBeenCalledWith(expect.stringContaining("随后即可调价"), "关闭在线支付", expect.objectContaining({ confirmButtonText: "确认渠道关单" }));
+    expect(h.api.post).toHaveBeenCalledWith("/commerce-orders/order-1/payments/payment-1/close", {
+      note: "客户要求改价，已核对尚未付款",
+      orderVersion: 2,
+      idempotencyKey: "synthetic-action-key",
+    });
+    expect(h.detailRow.value).toMatchObject({ version: 3, paymentIntents: [expect.objectContaining({ id: "payment-1", status: "CLOSED" })] });
+    h.openManualOrder(h.detailRow.value);
+    expect(h.manualOrderVisible.value).toBe(true);
+  });
+
+  it("closes an unpaid order with one required note", async () => {
+    const h = harness(); h.openDetail(h.order);
+    await h.closeOrder(h.order);
+    expect(h.api.post).toHaveBeenCalledWith("/commerce-orders/order-1/close", {
+      note: "客户要求改价，已核对尚未付款",
+      orderVersion: 2,
+      idempotencyKey: "synthetic-action-key",
+    });
+    expect(h.detailRow.value).toMatchObject({ status: "CANCELLED", version: 3 });
+  });
+
   it("requires a meaningful note and keeps the form open on a server conflict", async () => {
     const h = harness(); h.openDetail(h.order); h.openManualOrder(h.order);
     h.manualOrderForm.value.note = "x"; await h.saveManualOrder();
@@ -105,8 +139,13 @@ describe("commerce order super-admin payment controls", () => {
     const source = readFileSync(new URL("./components/CommerceWorkspace.vue", import.meta.url), "utf8");
     expect(source).toContain("已有渠道支付处理中时服务端会拒绝操作");
     expect(source).toContain("在线支付处理中");
-    expect(source).toContain("请先确认渠道结果或完成关单");
+    expect(source).toContain("关闭在线支付");
     expect(source).toContain("处理备注");
+    expect(source).toContain("订单详情");
+    expect(source).toContain("收货电话");
+    expect(source).toContain("详细地址");
+    expect(source).toContain("推广上级 ID");
+    expect(source).toContain("支付完成时间");
   });
 
   it("opens an order product in the H5 storefront without replacing the admin page", () => {

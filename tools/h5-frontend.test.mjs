@@ -26,7 +26,7 @@ function load(relative, globals = {}, imports = {}) {
 const model = load("apps/shop/src/commerce-model.ts");
 const normalize = (value) => JSON.parse(JSON.stringify(value));
 
-test("realm fixture executes real storage isolation with customer shopping and employee guards", () => {
+test("realm fixture executes storage isolation with scoped customer and employee promotion routes", () => {
   const storage = new Map(), uni = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value), removeStorageSync: key => storage.delete(key) };
   const domestic = realmTestModules(uni, { repo }), global = realmTestModules(uni, { repo, env: { VITE_APP_REALM: "global" } });
   domestic.realm.mallStorage.set("saidian-token", "domestic-test"); global.realm.mallStorage.set("saidian-token", "global-test");
@@ -34,7 +34,8 @@ test("realm fixture executes real storage isolation with customer shopping and e
   assert.equal(domestic.realm.mallStorageKey("checkout-draft"), "checkout-draft"); assert.equal(global.realm.mallStorageKey("checkout-draft"), "saydian-global-mall:checkout-draft");
   assert.equal(domestic.realm.isGlobalMall, false); assert.equal(global.realm.isGlobalMall, true);
   assert.equal(global.config.globalApiAllowed("/storefront/orders", "POST"), true); assert.equal(global.config.globalPageAllowed("/pages/checkout/index"), true);
-  assert.equal(global.config.globalApiAllowed("/wecom/oauth", "POST"), false); assert.equal(global.config.globalPageAllowed("/pages/employee/index"), false);
+  assert.equal(global.config.globalApiAllowed("/wecom/oauth", "POST"), true); assert.equal(global.config.globalPageAllowed("/pages/employee/index"), true);
+  assert.equal(global.config.globalApiAllowed("/auth/referral", "POST"), true); assert.equal(global.config.globalApiAllowed("/wecom/oauth", "GET"), false);
 });
 
 test("legacy orders without item snapshots remain unknown and canonical orders retain quantity", () => {

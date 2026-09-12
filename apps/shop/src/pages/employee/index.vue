@@ -95,7 +95,7 @@
   >
 </template>
 <script setup lang="ts">
-import { mallStorage, isGlobalMall, globalCommerceNotice } from "../../realm";
+import { mallStorage } from "../../realm";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
@@ -109,7 +109,6 @@ const demo=ref(false),demoToken=ref(''),busy=ref(false),page=ref(1),rangeIndex=r
 const ranges=[{key:'today',label:'今天'},{key:'7d',label:'近7天'},{key:'30d',label:'近30天'},{key:'month',label:'本月'},{key:'custom',label:'自定义'}];
 onShow(()=>{if(data.value)void load();});
 onLoad(async () => {
-  if (isGlobalMall) { loginMessage.value = globalCommerceNotice; return; }
   try{const caps:any=await api('/storefront/capabilities');demo.value=!!caps.demo;}catch{/* Login still reports its own failure. */}
   const oauthCode = queryValue("code");
   if (oauthCode && !token.value) {
@@ -158,7 +157,6 @@ async function load() {
   }
 }
 function employeeApi(path: string, method = "GET", body?: any, headers?: Record<string,string>) {
-  if (isGlobalMall) return Promise.reject(new Error(globalCommerceNotice));
   return new Promise<any>((resolve, reject) =>
     uni.request({
       url: `${API_BASE}${path}`,

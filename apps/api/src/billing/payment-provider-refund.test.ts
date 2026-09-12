@@ -11,6 +11,7 @@ const keys = generateKeyPairSync("rsa", { modulusLength: 2048,
 const request: RefundForProvider = { refundNo: "REF-partial-1", paymentNo: "PAY-original-1", providerTransactionId: "provider-original-1",
   amountCents: 101, totalCents: 1000, currency: "CNY", reason: "测试退款", channel: PaymentChannel.WECHAT_APP };
 const paymentQuery = { paymentNo: "PAY-query-1", channel: PaymentChannel.WECHAT_JSAPI, providerMerchantId: "merchant-1" };
+const paymentClose = { ...paymentQuery, providerAppId: "app-1" };
 const wechat = (extra: Record<string, unknown> = {}) => ({ status: "SUCCESS", refund_id: "wx-refund-1", out_refund_no: request.refundNo,
   out_trade_no: request.paymentNo, transaction_id: request.providerTransactionId, amount: { total: 1000, refund: 101, currency: "CNY" }, ...extra });
 const alipay = (extra: Record<string, unknown> = {}) => ({ code: "10000", trade_no: request.providerTransactionId,
@@ -23,9 +24,10 @@ function signedWechat(raw: string) {
 }
 function fixture(extraSecrets: Record<string, string | undefined> = {}) {
   const prisma = { integrationConfig: { findUnique: vi.fn().mockResolvedValue({ state: IntegrationState.CONFIGURED,
-    publicConfig: { refundNotifyUrl: "https://example.invalid/refund-notify", gateway: "https://example.invalid/alipay" } }), updateMany: vi.fn() } };
+    publicConfig: { refundNotifyUrl: "https://example.invalid/refund-notify", gateway: "https://openapi.alipay.com/gateway.do" } }), updateMany: vi.fn() } };
   const secrets = { resolve: vi.fn().mockResolvedValue({ merchantId: "merchant-1", serialNo: "MERCHANT-SERIAL", appId: "app-1", privateKeyPem: keys.privateKey,
-    publicKeyPem: keys.publicKey, platformPublicKeyPem: keys.publicKey, platformSerialNo: "PLATFORM-SERIAL", ...extraSecrets }) };
+    appIdOfficial: "app-1", appIdMini: "mini-app-1", appIdApp: "native-app-1", publicKeyPem: keys.publicKey,
+    platformPublicKeyPem: keys.publicKey, platformSerialNo: "PLATFORM-SERIAL", ...extraSecrets }) };
   return new PaymentProviderService(prisma as unknown as PrismaService, secrets as unknown as IntegrationSecretsService);
 }
 afterEach(() => vi.unstubAllGlobals());
@@ -99,6 +101,30 @@ describe("provider refund response contract", () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
     await expect(fixture().queryWechatPayment({ ...paymentQuery, providerMerchantId: "another-merchant" })).rejects.toThrow("商户");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("closes WeChat only after the official endpoint returns HTTP 204", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fixture().closePayment(paymentClose)).resolves.toMatchObject({ provider: "wechat", out_trade_no: paymentClose.paymentNo, closed: true });
+    const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no/PAY-query-1/close");
+    expect(options.method).toBe("POST");
+    expect(JSON.parse(String(options.body))).toEqual({ mchid: "merchant-1" });
+    fetchMock.mockResolvedValueOnce(new Response('{"code":"ORDERPAID"}', { status: 400 }));
+    await expect(fixture().closePayment(paymentClose)).rejects.toThrow("关单未确认");
+  });
+  it("verifies a successful Alipay trade-close response and binds the original payment number", async () => {
+    const result = { code: "10000", out_trade_no: paymentClose.paymentNo, trade_no: "alipay-trade-1" };
+    const content = JSON.stringify(result);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ alipay_trade_close_response: result, sign: sign(content) }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fixture().closePayment({ ...paymentClose, channel: PaymentChannel.ALIPAY_WAP, providerMerchantId: null })).resolves.toMatchObject({ provider: "alipay", closed: true });
+    const body = new URLSearchParams(fetchMock.mock.calls[0]?.[1]?.body as string);
+    expect(body.get("method")).toBe("alipay.trade.close");
+    expect(JSON.parse(body.get("biz_content") || "{}")).toEqual({ out_trade_no: paymentClose.paymentNo });
+    const mismatched = { ...result, out_trade_no: "another-payment" };
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ alipay_trade_close_response: mismatched, sign: sign(JSON.stringify(mismatched)) }), { status: 200 }));
+    await expect(fixture().closePayment({ ...paymentClose, channel: PaymentChannel.ALIPAY_WAP, providerMerchantId: null })).rejects.toThrow("不匹配");
   });
   it("public Alipay refund path validates signed actual amount before returning completion", async () => {
     const result = alipay(); const content = JSON.stringify(result);

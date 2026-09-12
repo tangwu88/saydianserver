@@ -21,10 +21,11 @@ import { publicSku } from "./commerce-public-sku";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { globalAddress, configuredGlobalMarkets, globalCommerceCountry, globalCommerceCurrency } from "./global-commerce-policy";
 import { globalError } from "../auth/global-identity";
-import { onCommerceOrderReceived, priceOrder, quoteAfterSale, afterSaleAvailability, financialSnapshot, cents, allocateLargestRemainder } from "./commerce-finance";
+import { onCommerceOrderReceived, priceOrder, quoteAfterSale, afterSaleAvailability, cents, allocateLargestRemainder } from "./commerce-finance";
 import { commerceQuoteFingerprint, optionalExpectedQuote } from "./commerce-quote";
 import { commerceOrderListFilter } from "./commerce-order-filter";
 import { afterSaleEvidenceReferences } from "./commerce-evidence";
+import { cancelCommerceOrderInTransaction } from "./commerce-order-cancellation";
 
 type CreateOrderInput = {
   addressId: string;
@@ -533,46 +534,14 @@ export class CommerceStoreService {
 
   async cancelOrder(userId: string, id: string) {
     return this.prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${id}::uuid FOR UPDATE`;
-    const order = await tx.commerceOrder.findFirst({
-      where: { id, userId },
-      include: { items: true },
-    });
-    if (!order) throw new NotFoundException("订单不存在");
-    requireCommerceOwner(order.executionOwner);
-    if (order.status !== CommerceOrderStatus.PENDING_PAYMENT) {
-      throw new ConflictException("当前订单不可取消");
-    }
-    const pendingPayment = await tx.paymentIntent.count({ where: {
-      commerceOrderId: id, status: { in: ["CREATED", "PENDING"] },
-    } });
-    if (pendingPayment) throw new ConflictException("支付结果尚未确认，请先完成支付渠道关单或查单后再取消");
-    const changed = await tx.commerceOrder.updateMany({
-        where: { id, status: CommerceOrderStatus.PENDING_PAYMENT, version: order.version },
-        data: { status: CommerceOrderStatus.CANCELLED, cancelledAt: new Date(), version: { increment: 1 } },
+      await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${id}::uuid FOR UPDATE`;
+      const order = await tx.commerceOrder.findFirst({
+        where: { id, userId },
+        include: { items: true },
       });
-    if (!changed.count) throw new ConflictException("订单状态已改变，请刷新后重试");
-    for (const item of order.items) {
-      await tx.commerceSku.update({
-          where: { id: item.skuId },
-          data: { stock: { increment: item.quantity } },
-        });
-    }
-    await tx.commerceCouponClaim.updateMany({
-        where: { orderId: id },
-        data: { orderId: null, usedAt: null },
-      });
-    if (order.pointDiscountCents > 0) {
-      financialSnapshot(order);
-      await tx.commercePointAccount.update({ where: { userId }, data: {
-        balanceCents: { increment: order.pointDiscountCents }, version: { increment: 1 },
-      } });
-      await tx.commercePointLedger.create({ data: {
-        userId, orderId: id, deltaCents: order.pointDiscountCents,
-        type: "ORDER_CANCEL_RETURN", idempotencyKey: `points-cancel:${id}`,
-      } });
-    }
-    return null;
+      if (!order) throw new NotFoundException("订单不存在");
+      await cancelCommerceOrderInTransaction(tx, order);
+      return null;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 

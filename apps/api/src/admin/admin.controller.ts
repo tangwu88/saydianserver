@@ -377,11 +377,12 @@ export class AdminController {
   @Get("commerce-orders")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
   commerceOrders(
+    @CurrentAdmin() current: { role: string; roles?: string[] },
     @Query("status") status?: string,
     @Query("page") page?: string,
     @Query("search") search?: string,
   ) {
-    return this.admin.commerceOrders(status, Number(page ?? 1), search);
+    return this.admin.commerceOrders(status, Number(page ?? 1), search ?? "", current);
   }
 
   @Patch("commerce-orders/:id")
@@ -399,6 +400,17 @@ export class AdminController {
     @Req() request: RequestWithContext,
   ) {
     return this.admin.manuallySettleCommerceOrder(id, input, current, request.requestId);
+  }
+
+  @Post("commerce-orders/:id/close")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  closeCommerceOrder(
+    @Param("id") id: string,
+    @Body() input: unknown,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Req() request: RequestWithContext,
+  ) {
+    return this.admin.closeCommerceOrder(id, input, current, request.requestId);
   }
 
   @Get("commerce-orders/:id/fulfillment-preview")

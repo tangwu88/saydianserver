@@ -31,6 +31,7 @@ function harness({ realm = "global", storage = new Map(), url = "https://app.say
   };
   Object.defineProperties(location, {
     pathname: { get: () => new URL(location.href).pathname },
+    search: { get: () => new URL(location.href).search },
     hash: { get: () => new URL(location.href).hash },
   });
   const sessionStorage = {
@@ -167,11 +168,11 @@ test("all customer, checkout, employee, OAuth and lock keys are isolated; domest
     assert.notEqual(realmKey(key, "global"), key);
   }
 });
-test("global customer shopping pages and exact endpoint methods are allowed without employee or mini routes", () => {
+test("global customer shopping and employee promotion pages allow only exact endpoint methods", () => {
   const { globalApiAllowed, globalPageAllowed } = harness().load("realm-config");
   assert.equal(globalApiAllowed("/storefront/products?page=1"), true);
   assert.equal(globalApiAllowed("/auth/wechat/h5/bind-code", "POST"), true);
-  for (const path of ["/wecom/oauth", "/auth/wechat/mini", "/auth/sms-login", "/auth/referral", "/payments/wechat/notify", "/payments/wechat/refund-notify", "/payments/alipay/notify", "/storefront/coupon-gifts/token/claim", "https://example.invalid"]) assert.equal(globalApiAllowed(path, "POST"), false, path);
+  for (const path of ["/auth/wechat/mini", "/auth/sms-login", "/payments/wechat/notify", "/payments/wechat/refund-notify", "/payments/alipay/notify", "/storefront/coupon-gifts/token/claim", "https://example.invalid"]) assert.equal(globalApiAllowed(path, "POST"), false, path);
   for (const [method, paths] of [
     ["GET", ["/storefront/bootstrap", "/storefront/capabilities?locale=en", "/storefront/markets", "/storefront/products/sku-1", "/storefront/cart", "/storefront/addresses", "/storefront/orders?status=PAID", "/storefront/orders/order-1", "/storefront/orders/order-1/logistics", "/storefront/favorites", "/storefront/coupons", "/storefront/points?page=2", "/payments/payment-1"]],
     ["POST", ["/storefront/cart/items", "/storefront/addresses", "/storefront/orders/preview", "/storefront/orders", "/storefront/orders/order-1/cancel", "/storefront/orders/order-1/receipt", "/storefront/orders/order-1/after-sales", "/storefront/orders/order-1/after-sales/preview", "/storefront/orders/order-1/after-sales/sale-1/return-logistics", "/storefront/favorites/product-1", "/storefront/coupons/coupon-1/claim", "/storefront/reviews", "/payments/create"]],
@@ -180,6 +181,9 @@ test("global customer shopping pages and exact endpoint methods are allowed with
   ])
     for (const path of paths) assert.equal(globalApiAllowed(path, method), true, `${method} ${path}`);
   assert.equal(globalApiAllowed("/storefront/coupons/code/claim", "POST"), true);
+  assert.equal(globalApiAllowed("/auth/referral", "POST"), true);
+  for (const path of ["/wecom/authorize-url?redirectUri=https%3A%2F%2Fapp.saydian.cn", "/wecom/me/dashboard?range=30d", "/wecom/me/promotion", "/wecom/me/coupons", "/wecom/me/withdrawals"]) assert.equal(globalApiAllowed(path, "GET"), true, path);
+  for (const path of ["/wecom/oauth", "/wecom/me/coupons/coupon-1/claim", "/wecom/me/withdrawals"]) assert.equal(globalApiAllowed(path, "POST"), true, path);
   for (const [method, path] of [
     ["GET", "/payments/create"],
     ["GET", "/storefront/orders/preview"],
@@ -196,7 +200,25 @@ test("global customer shopping pages and exact endpoint methods are allowed with
     assert.equal(globalApiAllowed(path, method), false, `${method} ${path}`);
   assert.equal(globalPageAllowed("/pages/product/index?id=1"), true);
   for (const page of ["cart", "checkout", "orders", "order-detail", "after-sale", "addresses", "address-edit", "favorites", "coupons", "points"]) assert.equal(globalPageAllowed(`/pages/${page}/index?id=synthetic`), true);
-  for (const route of ["/pages/employee/index", "/pages/coupon-gift/index?token=employee-token", "//example.invalid", "/pages/login/index#bad"]) assert.equal(globalPageAllowed(route), false);
+  assert.equal(globalPageAllowed("/pages/employee/index"), true);
+  for (const route of ["/pages/coupon-gift/index?token=employee-token", "//example.invalid", "/pages/login/index#bad"]) assert.equal(globalPageAllowed(route), false);
+});
+test("global promotion links retain and bind the first referral to a verified member", async () => {
+  const h = harness({
+    url: "https://app.saydian.cn/global/saidian-mall/?ref=TEAM01#/pages/product/index?id=synthetic",
+    request(options) { options.success({ statusCode: 200, data: { bound: true } }); },
+  });
+  const { captureReferral, bindReferral } = h.load("session");
+  captureReferral();
+  assert.equal(h.storage.get("saydian-global-mall:saidian-ref"), "TEAM01");
+  h.storage.set("saydian-global-mall:saidian-token", "verified-member-token");
+  h.storage.set("saydian-global-mall:saidian-user", { id: "member-1", phoneTestMode: false });
+  await bindReferral();
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/auth/referral");
+  assert.equal(h.requests[0].method, "POST");
+  assert.equal(h.requests[0].data.referralCode, "TEAM01");
+  assert.equal(h.requests[0].header.authorization, "Bearer verified-member-token");
 });
 test("global navigation accepts Uni home-tab alias without permitting other routes", () => {
   const h = harness(),
@@ -212,11 +234,12 @@ test("global navigation accepts Uni home-tab alias without permitting other rout
   assert.equal(home.url, "/pages/home/index");
   assert.equal(toasts.length, 0);
   for (const action of Object.keys(interceptors)) for (const url of ["/pages/checkout/index", "/pages/cart/index", "/pages/order-detail/index?id=1"]) assert.equal(interceptors[action].invoke({ url }), undefined);
-  for (const url of ["//foreign.invalid", "/global/saidian-mall/", "/pages/employee/index", "/?redirect=bad", "/pages/coupon-gift/index"]) {
+  assert.equal(interceptors.navigateTo.invoke({ url: "/pages/employee/index" }), undefined);
+  for (const url of ["//foreign.invalid", "/global/saidian-mall/", "/?redirect=bad", "/pages/coupon-gift/index"]) {
     assert.equal(interceptors.switchTab.invoke({ url }), false);
   }
 });
-test("global direct home and customer shopping hashes survive refresh but employee routes remain blocked", () => {
+test("global direct home, customer shopping, and employee promotion hashes survive refresh", () => {
   const home = harness({
     url: "https://app.saydian.cn/global/saidian-mall/#/",
   });
@@ -229,11 +252,11 @@ test("global direct home and customer shopping hashes survive refresh but employ
     customer.load("global-navigation").normalizeGlobalEntry();
     assert.equal(customer.location.hash, "#" + route);
   }
-  const blocked = harness({
+  const employee = harness({
     url: "https://app.saydian.cn/global/saidian-mall/#/pages/employee/index",
   });
-  blocked.load("global-navigation").normalizeGlobalEntry();
-  assert.equal(blocked.location.hash, "#/pages/help/index");
+  employee.load("global-navigation").normalizeGlobalEntry();
+  assert.equal(employee.location.hash, "#/pages/employee/index");
 });
 
 test("allowed global shopping requests retain same-realm credentials and propagate temporary-session denial", async () => {
@@ -285,7 +308,8 @@ test("allowed global shopping requests retain same-realm credentials and propaga
   assert.equal(h.storage.get("saidian-token"), "domestic-token");
   await assert.rejects(api.api("/payments/wechat/notify", { method: "POST" }));
   await assert.rejects(api.api("/wecom/oauth", { method: "POST" }));
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[1].url, "/global/api/saidian-mall/v1/wecom/oauth");
 });
 test("identifier contracts still require email/E164 and validate passwords", () => {
   const { validGlobalIdentifier, validNewPassword } = harness().load("global-auth-model");
@@ -413,8 +437,11 @@ test("global client refuses disabled routes without network and targets its own 
   const h = harness({
     request: (options) => options.success({ statusCode: 200, data: { realm: "global" } }),
   });
-  await assert.rejects(h.load("api").api("/wecom/oauth", { method: "POST" }), /暂未开放/);
+  await assert.rejects(h.load("api").api("/storefront/coupon-gifts/token", { method: "GET" }), /暂未开放/);
   assert.equal(h.requests.length, 0);
+  await h.load("api").api("/wecom/oauth", { method: "POST" });
+  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/wecom/oauth");
+  h.requests.length = 0;
   await h.load("api").api("/storefront/capabilities?locale=en");
   assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/storefront/capabilities?locale=en");
 });
@@ -1139,7 +1166,7 @@ function renderedText(node) {
 }
 const renderedButton = (tree, label) => renderNodes(tree).find((node) => node.type === "button" && renderedText(node).replace(/›$/, "").trim() === label);
 
-test("global account renders working customer order menus without employee controls and retains temporary verification notices", () => {
+test("global account renders customer orders plus the employee promotion entry and retains temporary verification notices", () => {
   const h = harness(),
     navigations = [];
   h.uni.navigateTo = (value) => navigations.push(value.url);
@@ -1163,6 +1190,7 @@ test("global account renders working customer order menus without employee contr
     我的收藏: "/pages/favorites/index",
     优惠券: "/pages/coupons/index",
     积分与流水: "/pages/points/index",
+    推广与奖金: "/pages/employee/index",
   };
   for (const [label, route] of Object.entries(expected)) {
     const button = renderedButton(tree, label);
@@ -1172,7 +1200,7 @@ test("global account renders working customer order menus without employee contr
   }
   assert.match(renderedText(tree), /待验证/);
   assert.match(renderedText(tree), /购买前需验证账号/);
-  assert.doesNotMatch(renderedText(tree), /internal-uuid|员工|推广中心/);
+  assert.doesNotMatch(renderedText(tree), /internal-uuid/);
   assert.match(renderedText(tree), /会员 ID：123/);
   renderedButton(tree, "更换登录账号").props.onClick();
   assert.equal(navigations.at(-1), "/pages/login/index");
