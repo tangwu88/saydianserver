@@ -35,7 +35,7 @@ test("global catalog fixture preserves read-only realm and safe one-shot UI cont
   assert.equal((await list("keyword=A")).status, 503); assert.equal((await list("keyword=A")).status, 200);
   assert.equal((await arm("bootstrap")).status, 303);
   assert.equal((await get(catalogApi + "/storefront/bootstrap")).status, 503);
-  const boot = (await get(catalogApi + "/storefront/bootstrap")).json(); assert.equal(boot.categories.length, 2); assert.equal(boot.featured.length, 6);
+  const boot = (await get(catalogApi + "/storefront/bootstrap")).json(); assert.deepEqual(boot.categories.map(item => item.name), ["血压手表", "女士手表", "智能戒指", "其它", "老人手表"]); assert.equal(boot.featured.length, 6);
   const detail = (await get(catalogApi + "/storefront/products/" + a.items[0].id)).json();
   assert.equal(detail.skus.length, 1); assert.ok(detail.coverImage.startsWith("/fixture/"));
   assert.equal((await get(detail.coverImage)).status, 200);

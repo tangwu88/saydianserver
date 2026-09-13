@@ -11,7 +11,7 @@
     </swiper>
     <view v-if="state.referral" class="referral-line">专属服务 · {{ state.referral.name }}</view>
     <view class="catalog-layout">
-      <view class="catalog-side"><text class="side-title">产品中心</text><button class="category-link" @click="category()">全部商品 <text>→</text></button><button v-for="item in state.categories" :key="item.id" class="category-link" @click="category(item.id)">{{ item.name }} <text>→</text></button><button class="help-link" @click="go('/pages/help/index')">帮助与售后</button></view>
+      <view class="catalog-side" role="navigation" aria-label="商品分类"><text class="side-title">产品中心</text><button class="category-link" @click="category()"><text class="category-name">全部商品</text><text class="category-arrow">→</text></button><button v-for="item in state.categories" :key="item.id" class="category-link" @click="category(item.id)"><text class="category-name">{{ item.name }}</text><text class="category-arrow">→</text></button><button class="help-link" @click="go('/pages/help/index')">帮助与售后</button></view>
       <view class="catalog-main"><view class="section-title"><text>精选商品</text><button class="text-button" @click="category()">查看全部 →</button></view>
         <view v-if="loading && !state.featured.length" class="empty">正在加载商品…</view>
         <view v-else-if="!state.featured.length && !error" class="empty">暂无上架商品</view>
@@ -58,8 +58,9 @@ function openBanner(banner: any) {
 .banner { height:100%; display:flex; flex-direction:row-reverse; background:#fff; align-items:center; padding:12px; }
 .banner image { width:48%; height:100%; flex:none; }.banner-copy { flex:1; padding:12px; }.banner-copy text { display:block; }
 .banner-kicker { font-size:12px; color:var(--muted); letter-spacing:1px; }.banner-title { font-size:23px; font-weight:700; color:var(--ink); line-height:1.35; margin:12px 0; }.banner-link { font-size:14px; color:var(--green); }
-.catalog-side { display:flex; align-items:center; gap:8px; overflow:auto; padding-bottom:6px; }.side-title,.help-link { display:none; }
-.category-link { display:flex; align-items:center; justify-content:space-between; gap:14px; white-space:nowrap; border-radius:4px; background:#fff; padding:0 14px; line-height:44px; font-size:14px; margin:0; }.category-link text { color:var(--green); }
+.catalog-side { display:grid; grid-template-columns:repeat(auto-fit,minmax(112px,1fr)); align-items:stretch; gap:8px; }.side-title,.help-link { display:none; }
+.category-link { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; width:100%; min-width:0; white-space:nowrap; border-radius:4px; background:#fff; padding:0 12px; line-height:44px; font-size:14px; margin:0; text-align:left; }.category-name { min-width:0; overflow:hidden; text-overflow:ellipsis; }.category-arrow { color:var(--green); }
 .catalog-main { min-width:0; }.section-title { margin:22px 0 16px; font-size:22px; }.referral-line { color:var(--green); font-size:14px; margin:12px 0; }
+@media(max-width:360px) { .catalog-side { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(min-width:900px) { .mobile-brand {display:none;} .home-page {padding-top:24px;}.store-banners {height:280px;margin-bottom:32px;} .banner {padding:20px 60px;} .banner-title {font-size:36px;max-width:500px;} .banner image {width:40%;}.banner-copy {padding:20px;}.catalog-layout {display:grid;grid-template-columns:220px minmax(0,1fr);gap:30px;align-items:start;}.catalog-side {display:block;background:#fff;padding:24px;}.side-title {display:block;font-size:20px;font-weight:700;margin-bottom:12px;}.category-link {width:100%;padding:12px 0;border-radius:0;border-bottom:1px solid var(--line);font-size:16px;}.help-link {display:block;margin:22px 0 0;font-size:14px;background:#f1f2f4;}.section-title {margin:0 0 22px;}.product-grid {grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;} }
 </style>

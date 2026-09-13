@@ -10,7 +10,13 @@ const repo = resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const catalogBase = "/global/saidian-mall/";
 export const catalogApi = "/global/api/saidian-mall/v1";
 const image = "/fixture/product-placeholder.svg";
-const categories = [{ id: "fixture-watch", name: "手表（测试）" }, { id: "fixture-accessory", name: "配件（测试）" }];
+const categories = [
+  { id: "fixture-watch", name: "血压手表" },
+  { id: "fixture-accessory", name: "女士手表" },
+  { id: "fixture-ring", name: "智能戒指" },
+  { id: "fixture-other", name: "其它" },
+  { id: "fixture-senior", name: "老人手表" },
+];
 const products = Array.from({ length: 30 }, (_, index) => {
   const n = index + 1, watch = n <= 27;
   return { id: `fixture-product-${String(n).padStart(2, "0")}`, name: `${watch ? "A 手表" : "B 配件"} ${String(n).padStart(2, "0")}（合成测试）`,

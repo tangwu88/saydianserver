@@ -44,21 +44,22 @@ onMounted(()=>{const saved=mallStorage.get('employee-withdrawal-draft');if(saved
 
 <template>
   <view class="withdrawal-panel card">
-    <view class="heading"><text>{{ props.memberMode ? '奖金提现' : '员工提现' }}</text><button size="mini" :disabled="loading || busy" @click="load">刷新</button></view>
+    <view class="heading"><text>{{ props.memberMode ? '提现' : '员工提现' }}</text><button class="text-button" size="mini" :disabled="loading || busy" @click="load">刷新</button></view>
     <template v-if="data">
-      <view v-if="data.wallet" class="balances">可提现 {{ money(data.wallet.availableCents) }} · 提现中 {{ money(data.wallet.withdrawingCents) }} · 已支付 {{ money(data.wallet.totalPaidCents) }}</view>
-      <view v-else class="tip">佣金钱包未获取或未完成迁移核验。</view>
-      <view v-if="!data.plan.enabled" class="tip">{{ props.memberMode ? '奖金提现尚未启用。' : '员工提现尚未启用。' }}</view>
-      <view class="tip">最低提现：{{ data.plan.minimumWithdrawCents === null ? '未配置' : money(data.plan.minimumWithdrawCents) }}；每日限额：{{ data.plan.dailyWithdrawLimitCents === null ? '未设额外限额' : money(data.plan.dailyWithdrawLimitCents) }}（北京时间）</view>
-      <view v-if="data.pendingCount" class="tip">已有提现处理中，请等待原提现完成，勿重复申请。</view>
-      <view v-if="!data.identity.verified" class="tip">收款身份未核验，请联系管理员。系统不会使用未核验身份或自动转账。</view>
-      <view v-else class="tip">收款身份：{{ data.identity.accountHint }}；审核通过后由管理员核验真实付款回执。</view>
-      <view v-if="data.wallet?.debtCents > 0" class="tip">存在退款欠款 {{ money(data.wallet.debtCents) }}，暂不可申请。</view>
-      <view v-if="uncertain" class="tip">上次提现结果待确认，将复用原申请编号恢复，不能再次申请另一笔。</view><view class="apply"><input v-model="amount" type="digit" placeholder="提现金额（元）" :disabled="busy || uncertain || !data.canApply" @input="requestKey = ''" /><button size="mini" :loading="busy" :disabled="busy || (!uncertain && !data.canApply)" @click="apply">{{ uncertain ? '恢复上次申请' : '申请提现' }}</button></view>
-      <view v-for="row in data.withdrawals" :key="row.id" class="withdrawal-row"><view>{{ money(row.amountCents) }} · {{ labels[row.status] || row.status }}</view><view class="tip">{{ new Date(row.createdAt).toLocaleString() }}{{ row.executionOwner !== 'NEW_SYSTEM' && row.pending ? ' · 原系统锁定待核验' : '' }}</view></view>
-      <view v-if="!data.withdrawals.length" class="tip">暂无提现记录</view>
+      <view v-if="data.wallet" class="balance-summary"><view><text>可提现</text><b>{{ money(data.wallet.availableCents) }}</b></view><view v-if="data.wallet.withdrawingCents"><text>处理中</text><b>{{ money(data.wallet.withdrawingCents) }}</b></view></view>
+      <view v-else class="notice">账户数据暂未获取。</view>
+      <view v-if="!data.plan.enabled" class="notice">{{ props.memberMode ? '提现暂未开放。' : '员工提现暂未开放。' }}</view>
+      <text v-else class="rules">最低 {{ data.plan.minimumWithdrawCents === null ? '未配置' : money(data.plan.minimumWithdrawCents) }} · 每日上限 {{ data.plan.dailyWithdrawLimitCents === null ? '未设置' : money(data.plan.dailyWithdrawLimitCents) }}</text>
+      <view v-if="data.pendingCount" class="notice">已有申请处理中，请勿重复提交。</view>
+      <view v-if="!data.identity.verified" class="notice">收款身份尚未核验，请联系管理员。</view>
+      <text v-else class="rules">收款账户 {{ data.identity.accountHint }}</text>
+      <view v-if="data.wallet?.debtCents > 0" class="notice">退款抵扣 {{ money(data.wallet.debtCents) }}，暂不可申请。</view>
+      <view v-if="uncertain" class="notice">上次结果待确认，将继续原申请。</view>
+      <view class="apply"><input v-model="amount" class="input" type="digit" placeholder="输入提现金额" :disabled="busy || uncertain || !data.canApply" @input="requestKey = ''" /><button class="primary-btn" size="mini" :loading="busy" :disabled="busy || (!uncertain && !data.canApply)" @click="apply">{{ uncertain ? '继续申请' : '申请提现' }}</button></view>
+      <view v-if="data.withdrawals.length" class="withdrawal-history"><h3>提现记录</h3><view v-for="row in data.withdrawals" :key="row.id" class="withdrawal-row"><view><b>{{ money(row.amountCents) }}</b><text>{{ labels[row.status] || row.status }}</text></view><text class="tip">{{ new Date(row.createdAt).toLocaleString() }}{{ row.executionOwner !== 'NEW_SYSTEM' && row.pending ? ' · 原系统待核验' : '' }}</text></view></view>
+      <view v-else class="tip">暂无提现记录</view>
     </template>
     <view v-else class="tip">{{ loading ? '加载中…' : '未获取提现数据，请重试' }}</view>
   </view>
 </template>
-<style scoped>.withdrawal-panel { padding: 24rpx; margin: 24rpx 0; }.heading,.apply { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }.heading { font-weight: 700; }.balances,.tip { margin: 16rpx 0; }.tip { color: #667085; font-size: 24rpx; }.apply input { flex: 1; border: 1px solid #d0d5dd; padding: 14rpx; border-radius: 10rpx; }.withdrawal-row { border-top: 1px solid #e4e7ec; padding-top: 12rpx; }</style>
+<style scoped>.withdrawal-panel{padding:24rpx;margin:24rpx 0}.heading,.apply{display:flex;align-items:center;justify-content:space-between;gap:16rpx}.heading{font-size:19px;font-weight:800}.heading .text-button{width:auto;margin:0;padding:6px 0}.balance-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}.balance-summary>view{min-width:0;padding:14px;border-radius:12px;background:#fff7f8}.balance-summary text,.balance-summary b{display:block}.balance-summary text{color:#667085;font-size:13px}.balance-summary b{margin-top:5px;color:#d20b27;font-size:20px;overflow-wrap:anywhere}.rules{display:block;margin:10px 0;color:#667085;font-size:13px;line-height:1.6}.notice{margin:10px 0;padding:10px 12px;border-radius:10px;background:#fff6de;color:#79500b;font-size:13px;line-height:1.6}.tip{display:block;margin:12px 0;color:#667085;font-size:12px;line-height:1.6}.apply{margin-top:16px}.apply .input{flex:1;min-width:0;height:48px;padding:0 14px;border:1px solid #d0d5dd;border-radius:12px}.apply .primary-btn{width:auto;min-width:112px;min-height:48px;margin:0;padding:10px 14px}.withdrawal-history{margin-top:20px}.withdrawal-history h3{margin:0 0 8px;font-size:16px}.withdrawal-row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid #e4e7ec}.withdrawal-row>view{display:grid;gap:4px}.withdrawal-row>view text{color:#667085;font-size:12px}.withdrawal-row>.tip{text-align:right;margin:0}@media(max-width:360px){.apply{align-items:stretch;flex-direction:column}.apply .primary-btn{width:100%}}</style>
