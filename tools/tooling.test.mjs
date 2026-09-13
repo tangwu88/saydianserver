@@ -132,10 +132,12 @@ test("production Redis expands the configured password in its container shell", 
   assert.match(compose, /redis-cli -a \\"\$\$REDIS_PASSWORD\\" ping/);
   assert.doesNotMatch(compose, /'\$\$REDIS_PASSWORD'/);
 });
-test("automatic release preserves maintenance and rejects schema changes", () => {
+test("automatic release preserves maintenance and only a reviewed manual release may apply schema changes", () => {
   const script = fs.readFileSync(path.join(root, "deploy/scripts/deploy-ci.sh"), "utf8");
   assert.match(script, /prisma migrate status/);
-  assert.doesNotMatch(script, /prisma migrate deploy|MAINTENANCE_READ_ONLY=false|compose down|docker.*prune/);
+  assert.match(script, /\.apply-reviewed-migrations/);
+  assert.match(script, /if \[\[ "\$apply_migrations" == true \]\]; then\s+compose run --rm --no-deps api \.\/node_modules\/\.bin\/prisma migrate deploy/s);
+  assert.doesNotMatch(script, /MAINTENANCE_READ_ONLY=false|compose down|docker.*prune/);
   assert.match(script, /trap 'rollback \$\?' ERR/);
   assert.match(script, /images\.yaml/);
   assert.match(script, /COMPOSE_PARALLEL_LIMIT=1 compose pull --quiet "\$service"/);
@@ -155,6 +157,9 @@ test("automatic release preserves maintenance and rejects schema changes", () =>
   assert.match(productionWorkflow, /release-assets\.githubusercontent\.com/);
   assert.match(productionWorkflow, /actions\/upload-artifact@v4/);
   assert.match(productionWorkflow, /PUBLISH_APP_UPDATE/);
+  assert.match(productionWorkflow, /apply_migrations:/);
+  assert.match(productionWorkflow, /\[\[ "\$EVENT_NAME" == workflow_dispatch \]\]/);
+  assert.match(productionWorkflow, /\.apply-reviewed-migrations/);
   assert.match(productionWorkflow, /inputs\.package_only != true/);
   assert.match(productionWorkflow, /PACKAGE_ONLY/);
   assert.match(script, /application revision unchanged/);

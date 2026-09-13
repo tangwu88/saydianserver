@@ -47,6 +47,8 @@
 6. 外网 `/health/ready` 的 `revision`、管理页面、三容器和维护值全部匹配才完成；失败时尝试恢复前一配置和镜像。
 7. 首次接入、Secrets、主机指纹、停用和故障步骤见 [持续部署说明](continuous-deployment.md)。当前工作流不再使用旧文档中的 `dry_run/open_writes` 输入。
 
+待执行 migration 仍会阻止普通 main 自动发布。只有人工审阅迁移、确认最近生产备份与回滚点后，才可手工运行 `Deploy production`，选择当前已通过 CI 的完整 main SHA，并显式启用 `apply_migrations`。该模式先生成新的生产备份，再使用同一不可变 API 镜像执行 `prisma migrate deploy`，随后复检 migration 状态并继续原有健康与版本门禁；自动 CI 调用不能启用此开关，且不能与 `package_only` 同时使用。
+
 ### 手工/离线回退路径
 
 - `Release images` 与 `Export runtime images` 保留为受控手工/离线方案，不是当前 main 自动发布的正常路径。

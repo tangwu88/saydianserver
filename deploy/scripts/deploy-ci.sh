@@ -52,6 +52,12 @@ done
 changed=false
 containers_changed=false
 setting_changed=false
+apply_migrations=false
+migration_marker="$source_dir/deploy/.apply-reviewed-migrations"
+if [[ -e "$migration_marker" ]]; then
+  [[ -f "$migration_marker" && ! -s "$migration_marker" ]]
+  apply_migrations=true
+fi
 old_setting_b64=
 setting_script=$(cat "$source_dir/deploy/scripts/publish-app-update.mjs")
 run_setting_tool() {
@@ -141,6 +147,7 @@ done
 domain=$(sed -n 's/^APP_DOMAIN=//p' "$env_file" | tail -n 1)
 [[ "$domain" == app.saydian.cn ]] || { echo 'Unexpected domain' >&2; false; }
 if [[ -f "$source_dir/deploy/.package-only" ]]; then
+  [[ "$apply_migrations" == false ]]
   publish_app_update
   [[ "$(sed -n 's/^MAINTENANCE_READ_ONLY=//p' "$env_file" | tail -n 1)" == "$read_only" ]]
   changed=false
@@ -172,7 +179,11 @@ for service in api worker admin; do
   done
   [[ "$pulled" == true ]]
 done
-# Stop on pending or failed schema migration. Existing API image startup only reapplies already-completed migrations.
+# Automatic releases stop on pending or failed schema migrations. A reviewed
+# manual workflow may apply them only after the production backup above exists.
+if [[ "$apply_migrations" == true ]]; then
+  compose run --rm --no-deps api ./node_modules/.bin/prisma migrate deploy
+fi
 compose run --rm --no-deps api ./node_modules/.bin/prisma migrate status
 containers_changed=true
 compose up -d --no-deps api worker admin

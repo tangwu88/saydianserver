@@ -39,6 +39,7 @@ pwsh -NoProfile -File tools/Start-Change.ps1
 - 镜像私有保存于 GHCR。接收器用本次 Actions 的短期 GITHUB_TOKEN 拉取；不在服务器永久保存个人 Token。
 - 服务器保存当前环境、Compose、运行中镜像 ID 和数据库备份后更新三项应用；商城 H5 已打入 Admin 镜像并发布到 `/saidian-mall/`。不启动或重建原商城、旧库或其他应用。
 - 保持原有 MAINTENANCE_READ_ONLY；出现待执行/失败的数据库迁移时停止，不自动变更结构。
+- 已审 migration 仅能由 `Deploy production` 的手工运行显式启用 `apply_migrations`；工作流会先验证目标为当前 main 且该 SHA 已有成功 CI，再由发布脚本生成生产备份后应用。main 自动发布和安装包单独发布都不能启用该开关。
 - API/公开 readiness 版本不符、启动或页面检查失败时尝试恢复上一版镜像与配置；日志会明确报告回退失败，不假报成功。不会自动覆盖数据库。
 - 首次部署后 `/health/live`、`/health/ready` 的 `revision` 应等于 GitHub 提交号；仅显示 200 不足以证明新版已运行。
 

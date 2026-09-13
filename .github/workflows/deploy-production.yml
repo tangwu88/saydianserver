@@ -26,6 +26,10 @@ on:
         required: false
         type: boolean
         default: false
+      apply_migrations:
+        required: false
+        type: boolean
+        default: false
       package_only:
         required: false
         type: boolean
@@ -54,6 +58,11 @@ on:
         type: string
       publish_app_update:
         description: Publish deploy/app-update.internal-test.json after the package is verified
+        required: false
+        type: boolean
+        default: false
+      apply_migrations:
+        description: Apply reviewed pending Prisma migrations after the production backup
         required: false
         type: boolean
         default: false
@@ -86,9 +95,16 @@ jobs:
         env:
           REVISION: ${{ inputs.revision }}
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
+          PACKAGE_ONLY: ${{ inputs.package_only }}
         run: |
           [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$REVISION"
+          if [[ "$APPLY_MIGRATIONS" == true ]]; then
+            [[ "$EVENT_NAME" == workflow_dispatch ]]
+            [[ "$PACKAGE_ONLY" != true ]]
+          fi
           # Reusable invocation follows CI verify. Manual runs need a successful CI for this SHA.
           if [ '${{ github.event_name }}' = workflow_dispatch ]; then
             result=$(gh run list --workflow ci.yml --commit "$REVISION" --event push --json conclusion --jq 'map(select(.conclusion == "success")) | length')
@@ -182,7 +198,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DOWNLOAD_URL: ${{ inputs.download_url }}
           PUBLISH_APP_UPDATE: ${{ inputs.publish_app_update }}
+          APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
           PACKAGE_ONLY: ${{ inputs.package_only }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -Eeuo pipefail
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
@@ -206,6 +224,11 @@ jobs:
           if [[ "$PUBLISH_APP_UPDATE" == true ]]; then
             test -n "$DOWNLOAD_URL"
             : > "$bundle_dir/deploy/.publish-app-update"
+          fi
+          if [[ "$APPLY_MIGRATIONS" == true ]]; then
+            [[ "$EVENT_NAME" == workflow_dispatch ]]
+            [[ "$PACKAGE_ONLY" != true ]]
+            : > "$bundle_dir/deploy/.apply-reviewed-migrations"
           fi
           if [[ "$PACKAGE_ONLY" == true ]]; then
             [[ "$PUBLISH_APP_UPDATE" == true && -n "$DOWNLOAD_URL" ]]
