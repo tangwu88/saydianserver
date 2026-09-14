@@ -7,6 +7,7 @@ const superAdmin = {
   roles: ["SUPER_ADMIN"],
 };
 const initialUpdatedAt = new Date("2026-09-11T00:00:00.000Z");
+const referralEmployeeId = "00000000-0000-4000-8000-000000000456";
 
 function userRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -25,6 +26,8 @@ function userRow(overrides: Record<string, unknown> = {}) {
     heightCm: { toNumber: () => 168.5 } as { toNumber(): number } | null,
     weightKg: { toNumber: () => 56.2 } as { toNumber(): number } | null,
     status: "ACTIVE",
+    referralEmployeeId: null as string | null,
+    referralEmployee: null as { id: string; name: string; referralCode: string; active: boolean } | null,
     createdAt: new Date("2026-09-09T00:00:00.000Z"),
     _count: { healthRecords: 0, devices: 0 },
     ...overrides,
@@ -45,6 +48,14 @@ function updateHarness(overrides: Record<string, unknown> = {}) {
       }),
     },
     userSession: { updateMany: vi.fn(async () => ({ count: 2 })) },
+    commerceEmployee: {
+      findUnique: vi.fn(async () => ({
+        id: referralEmployeeId,
+        name: "Synthetic promoter",
+        referralCode: "TEAM01",
+        active: true,
+      })),
+    },
     auditLog,
   };
   const prisma = { $transaction: vi.fn(async (callback: any) => callback(tx)) };
@@ -150,7 +161,7 @@ describe("international member contact verification administration", () => {
         afterJson: {
           mobilePresent: true,
           emailPresent: true,
-          fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification"],
+          fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification", "referralEmployeeId"],
         },
       }),
     });
@@ -213,6 +224,78 @@ describe("international member contact verification administration", () => {
     expect(audit).not.toContain("member@example.invalid");
     expect(audit).not.toContain("1991-03-04");
     expect(audit).not.toContain("updated.png");
+  });
+
+  it("changes or clears the default promoter without revoking the member session or rewriting history", async () => {
+    const h = updateHarness();
+    const shared = {
+      nickname: "Synthetic member",
+      avatarUrl: "https://cdn.example.invalid/avatar.png",
+      gender: "FEMALE",
+      birthday: "1990-01-02",
+      heightCm: 168.5,
+      weightKg: 56.2,
+      mobile: "+8613812348888",
+      email: "member@example.invalid",
+      status: "ACTIVE",
+      mobileVerified: false,
+      emailVerified: true,
+      expectedUpdatedAt: initialUpdatedAt.toISOString(),
+    };
+    const assigned = await h.service.updateMemberProfile(superAdmin, h.current()!.id, "promoter-assign", {
+      ...shared,
+      referralEmployeeId,
+    });
+    expect(assigned).toMatchObject({
+      referralEmployeeId,
+      referralEmployee: { id: referralEmployeeId, referralCode: "TEAM01", active: true },
+    });
+    expect(h.tx.userSession.updateMany).not.toHaveBeenCalled();
+    expect(h.tx.user.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ referralEmployeeId }),
+    }));
+    expect(h.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "MEMBER_PROFILE_UPDATE",
+        beforeJson: expect.objectContaining({ referralEmployeeId: null }),
+        afterJson: expect.objectContaining({ referralEmployeeId, referralChanged: true }),
+      }),
+    });
+
+    const version = h.current()!.updatedAt.toISOString();
+    const cleared = await h.service.updateMemberProfile(superAdmin, h.current()!.id, "promoter-clear", {
+      ...shared,
+      referralEmployeeId: null,
+      expectedUpdatedAt: version,
+    });
+    expect(cleared).toMatchObject({ referralEmployeeId: null, referralEmployee: null });
+    expect(h.tx.userSession.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a newly selected inactive promoter", async () => {
+    const h = updateHarness();
+    h.tx.commerceEmployee.findUnique.mockResolvedValueOnce({
+      id: referralEmployeeId,
+      name: "Inactive promoter",
+      referralCode: "OLD01",
+      active: false,
+    });
+    await expect(h.service.updateMemberProfile(superAdmin, h.current()!.id, "inactive-promoter", {
+      nickname: "Synthetic member",
+      avatarUrl: "https://cdn.example.invalid/avatar.png",
+      gender: "FEMALE",
+      birthday: "1990-01-02",
+      heightCm: 168.5,
+      weightKg: 56.2,
+      mobile: "+8613812348888",
+      email: "member@example.invalid",
+      status: "ACTIVE",
+      mobileVerified: false,
+      emailVerified: true,
+      referralEmployeeId,
+      expectedUpdatedAt: initialUpdatedAt.toISOString(),
+    })).rejects.toThrow("所选推广上级不存在或已停用");
+    expect(h.tx.user.updateMany).not.toHaveBeenCalled();
   });
 
   it("lets a super administrator reset a member password, revokes sessions and never audits the password", async () => {
