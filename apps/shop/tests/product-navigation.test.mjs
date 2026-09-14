@@ -52,6 +52,7 @@ async function page(realmName, value = product(), options = {}) {
   if (options.draft) { realm.mallStorage.set("checkout-draft", structuredClone(options.draft)); realm.mallStorage.set("checkout-owner", options.owner ?? options.user?.id); }
   const component = evaluate(script.content, {
     vue, "../../realm": realm, "../../components/DesktopHeader.vue": { default: { render: () => null } },
+    "../../static/saidian-brand-logo.png": { default: "data:image/png;base64,c2F5ZGlhbi1sb2dv" },
     "@dcloudio/uni-ui/lib/uni-icons/uni-icons.vue": { default: { render: () => null } },
     qrcode: { default: { toDataURL: async value => `data:image/png;base64,${Buffer.from(value).toString('base64')}` } },
     "../../components/ImageEvidencePicker.vue": { default: { render: () => null } },
@@ -88,7 +89,7 @@ test("product share creates a QR poster, keeps referral attribution and provides
   const h = await page("global"); h.storage.set("saidian-ref", "TEAM01");
   await h.state.shareProduct();
   assert.equal(h.state.posterVisible.value, true); assert.match(h.state.posterUrl.value, /^data:image\/png;base64,/);
-  const tree = h.tree(), save = button(tree, "查看并保存"), copy = button(tree, "复制商品链接");
+  const tree = h.tree(), save = button(tree, "长按上图保存"), copy = button(tree, "复制商品链接");
   assert.ok(save); assert.ok(copy); save.props.onClick(); copy.props.onClick();
   const expected = "https://app.saydian.cn/global/saidian-mall/?ref=TEAM01#/pages/product/index?id=synthetic-product";
   assert.equal(h.previews[0].current, h.state.posterUrl.value); assert.deepEqual(h.copied, [expected]);

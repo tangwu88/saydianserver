@@ -85,6 +85,7 @@ import { onLoad, onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import EmployeeWithdrawalPanel from "../../components/EmployeeWithdrawalPanel.vue";
+import saidianBrandLogo from "../../static/saidian-brand-logo.png";
 import { api, money, toast, API_BASE, requireLogin } from "../../api";
 const token = ref(String(mallStorage.get("employee-token") || "")),
   memberMode = ref(Boolean(mallStorage.get("saidian-token")) || !token.value),
@@ -277,12 +278,96 @@ function errorMessage(error: unknown) {
 function copy(value: string) {
   uni.setClipboardData({ data: value });
 }
-function preview() {
-  uni.previewImage({
-    urls: [
-      data.value.promotion.posterDataUrl || data.value.promotion.qrDataUrl,
-    ],
+async function preview() {
+  const fallback = data.value?.promotion?.posterDataUrl || data.value?.promotion?.qrDataUrl;
+  if (!fallback) return;
+  try {
+    uni.showLoading({ title: "正在生成海报", mask: true });
+    const poster = await buildPromotionPoster();
+    uni.previewImage({ current: poster, urls: [poster] });
+  } catch {
+    uni.previewImage({ current: fallback, urls: [fallback] });
+  } finally {
+    uni.hideLoading();
+  }
+}
+async function buildPromotionPoster(): Promise<string> {
+  const promotion = data.value?.promotion;
+  const fallback = promotion?.posterDataUrl || promotion?.qrDataUrl;
+  if (typeof document === "undefined") return fallback;
+  const [logo, qr] = await Promise.all([loadPosterImage(saidianBrandLogo), loadPosterImage(promotion?.qrDataUrl)]);
+  if (!qr) throw new Error("二维码不可用");
+  const canvas = document.createElement("canvas");
+  canvas.width = 750;
+  canvas.height = 1120;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas unavailable");
+  ctx.fillStyle = "#f3f5f8";
+  ctx.fillRect(0, 0, 750, 1120);
+  ctx.fillStyle = "#ffffff";
+  posterRoundRect(ctx, 30, 30, 690, 1060, 32);
+  ctx.fill();
+  ctx.fillStyle = "#d20b27";
+  ctx.fillRect(30, 30, 690, 14);
+  if (logo) posterDrawContain(ctx, logo, 72, 72, 300, 68);
+  ctx.fillStyle = "#171b2b";
+  ctx.font = '700 44px "PingFang SC", sans-serif';
+  ctx.fillText("扫码进入赛电商城", 72, 200);
+  ctx.fillStyle = "#667085";
+  ctx.font = '24px "PingFang SC", sans-serif';
+  ctx.fillText("官方商城 · 正品服务 · 售后可查", 72, 246);
+  ctx.fillStyle = "#ffffff";
+  posterRoundRect(ctx, 74, 300, 602, 600, 26);
+  ctx.fill();
+  ctx.strokeStyle = "#e4e7ec";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.drawImage(qr, 150, 356, 450, 450);
+  ctx.fillStyle = "#171b2b";
+  ctx.font = '700 28px "PingFang SC", sans-serif';
+  ctx.textAlign = "center";
+  ctx.fillText(`${String(data.value?.employee?.name || "赛电会员").trim()} 为您推荐`, 375, 858);
+  ctx.fillStyle = "#d20b27";
+  posterRoundRect(ctx, 74, 932, 602, 72, 18);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = '700 28px "PingFang SC", sans-serif';
+  ctx.fillText(`推荐号 ${String(promotion?.referralCode || "")}`, 375, 978);
+  ctx.fillStyle = "#7a8391";
+  ctx.font = '22px "PingFang SC", sans-serif';
+  ctx.fillText("长按保存，分享给好友", 375, 1052);
+  ctx.textAlign = "start";
+  return canvas.toDataURL("image/png");
+}
+function posterRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+function loadPosterImage(source?: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    if (!source) return resolve(null);
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = source;
   });
+}
+function posterDrawContain(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, width: number, height: number) {
+  const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  ctx.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
 }
 function previewQr(url?: string) {
   if (url) uni.previewImage({ urls: [url] });

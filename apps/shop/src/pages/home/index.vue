@@ -51,7 +51,7 @@ function openBanner(banner: any) {
 </script>
 <style scoped lang="scss">
 .mobile-brand { display:flex; align-items:center; gap:12px; background:#fff; padding:12px 16px; color:var(--ink); }
-.mobile-brand image { width:86px; height:34px; }.mobile-brand>text { flex:1; font-size:16px; font-weight:600; }.mobile-brand button { background:#f1f2f4; font-size:14px; line-height:36px; margin:0; }
+.mobile-brand image { width:122px; height:34px; }.mobile-brand>text { flex:1; font-size:16px; font-weight:600; }.mobile-brand button { background:#f1f2f4; font-size:14px; line-height:36px; margin:0; }
 .home-page { min-height:60vh; padding-top:12px; padding-bottom:20px; }
 .store-notice { font-size:14px; line-height:1.6; color:#76531c; background:#fff8e6; border:1px solid #f0dfb9; padding:10px 14px; margin-bottom:16px; }
 .store-banners { height:210px; background:#fff; margin-bottom:22px; }

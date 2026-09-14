@@ -2,6 +2,22 @@ import { describe, expect, it, vi } from "vitest";
 import { AdminService } from "./admin.service";
 
 describe("commerce administration", () => {
+  it("finds an ERP product by its exact SKU for the product import form", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const prisma = {
+      commerceProduct: { findMany, count },
+      $transaction: vi.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
+    };
+    await new AdminService(prisma as any, {} as any).commerceProducts(" ERP-SKU-001 ");
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        OR: expect.arrayContaining([{ skus: { some: { erpSkuId: "ERP-SKU-001" } } }]),
+      }),
+      include: expect.objectContaining({ skus: true }),
+    }));
+  });
+
   it("refuses editing ERP SKU authority through the local product form", async () => {
     const prisma = { commerceProduct: { findUnique: vi.fn().mockResolvedValue({ source: "ERP", name: "ERP watch", erpItemId: "E", skus: [] }) } };
     const service = new AdminService(prisma as any, {} as any);

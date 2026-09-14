@@ -1,7 +1,8 @@
 import { mallStorage, isGlobalMall } from "./realm";
 import { reactive } from "vue";
 import { api } from "./api";
-export const brandLogo = "https://www.saidian.cc/skin/images/logo.png";
+import saidianBrandLogo from "./static/saidian-brand-logo.png";
+export const brandLogo = saidianBrandLogo;
 export const storefront = reactive<any>({ banners: [], categories: [], featured: [], configs: {}, capabilities: null, referral: null });
 export function configValue(key: string): any { const item = storefront.configs?.[key]; return item?.enabled === false ? null : item?.value ?? null; }
 export async function loadStorefront() {

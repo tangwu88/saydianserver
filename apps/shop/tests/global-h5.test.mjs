@@ -117,6 +117,7 @@ function harness({ realm = "global", storage = new Map(), url = "https://app.say
           };
         if (path === "libphonenumber-js/max") return nodeRequire(path);
         if (path.endsWith(".vue")) return {};
+        if (path.endsWith(".png")) return { default: path };
         if (!path.startsWith(".")) throw new Error("Unexpected dependency: " + path);
         return load(resolve(dirname(filename), path));
       },
@@ -1265,10 +1266,18 @@ test("global mobile home wraps category navigation and member promotion keeps a 
   assert.doesNotMatch(home, /\.catalog-side\s*\{[^}]*overflow:auto/);
 
   const promotion = readFileSync(resolve(source, "pages/employee/index.vue"), "utf8");
+  const brandIdentity = readFileSync(resolve(source, "components/BrandIdentity.vue"), "utf8");
+  const storefrontSource = readFileSync(resolve(source, "storefront.ts"), "utf8");
   assert.match(promotion, /memberMode && 'saydian-app-surface promotion-surface'/);
   assert.match(promotion, /v-if="!memberMode" class="legacy-amount"/);
+  assert.match(promotion, /buildPromotionPoster/);
+  assert.match(promotion, /#d20b27/);
+  assert.match(promotion, /saidian-brand-logo\.png/);
   assert.match(promotion, /function backToProfile\(\)\{ uni\.switchTab\(\{ url: "\/pages\/profile\/index"/);
   assert.match(promotion, /请选择开始和结束日期后查询/);
+  assert.match(brandIdentity, /saidian-brand-logo\.png/);
+  assert.match(storefrontSource, /saidian-brand-logo\.png/);
+  assert.doesNotMatch(storefrontSource, /www\.saidian\.cc\/skin\/images\/logo\.png/);
 });
 
 test("storefront help and profile source no longer expose invoice navigation", () => {

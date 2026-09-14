@@ -1034,6 +1034,7 @@ export class AdminService {
 
   async commerceProducts(search = "", pageInput = 1, statusInput = "") {
     const page = Math.max(Number(pageInput) || 1, 1);
+    const searchText = String(search).trim();
     const where: Prisma.CommerceProductWhereInput = {
       ...(statusInput === "ARCHIVED"
         ? { localArchived: true }
@@ -1048,9 +1049,14 @@ export class AdminService {
                 status: enumValue(ProductStatus, statusInput, "商品状态"),
               }
             : {}),
-      ...(search
+      ...(searchText
         ? {
-            OR: [{ name: { contains: search, mode: "insensitive" } }, { displayName: { contains: search, mode: "insensitive" } }, { erpItemId: { contains: search } }],
+            OR: [
+              { name: { contains: searchText, mode: "insensitive" } },
+              { displayName: { contains: searchText, mode: "insensitive" } },
+              { erpItemId: { contains: searchText } },
+              { skus: { some: { erpSkuId: searchText } } },
+            ],
           }
         : {}),
     };

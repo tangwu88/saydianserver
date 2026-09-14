@@ -19,6 +19,7 @@ const route = useRoute();
 const loading = ref(false);
 const loadError = ref("");
 const saving = ref(false);
+const erpLookupBusy = ref(false);
 const rows = ref<Row[]>([]);
 const resourceMeta = ref<Row>({});
 const categoryOptions = ref<Row[]>([]);
@@ -335,20 +336,15 @@ async function openCreate(): Promise<void> {
     "article-categories": { enabled: true, sort: 0, parentId: null },
     "admin-users": { role: "READ_ONLY", roles: ["READ_ONLY"], active: true },
     "commerce-products": {
-      source: "LOCAL",
+      source: "ERP",
+      _erpLookupSku: "",
+      _erpLookupPending: true,
       status: "DRAFT",
       gallery: [],
       tags: [],
       featured: false,
       sort: 0,
-      skus: [
-        {
-          specification: "默认规格",
-          salePriceCents: 1,
-          stock: 0,
-          enabled: true,
-        },
-      ],
+      skus: [],
     },
     "commerce-categories": { _isNew: true, enabled: true, sort: 0 },
     "commerce-banners": { enabled: true, sort: 0 },
@@ -527,6 +523,43 @@ async function ensureCommerceCategories(): Promise<void> {
   }
 }
 
+async function loadCommerceProductBySku(): Promise<void> {
+  if (erpLookupBusy.value) return;
+  const sku = String(form.value._erpLookupSku ?? "").trim();
+  if (!sku) {
+    ElMessage.error("请填写 ERP SKU");
+    return;
+  }
+  erpLookupBusy.value = true;
+  try {
+    const result = responseData<Row>(await api.get("/commerce-products", {
+      params: { search: sku, page: 1 },
+    }));
+    const products = Array.isArray(result?.items) ? result.items : [];
+    const normalizedSku = sku.toLowerCase();
+    const product = products.find((item: Row) => item.source === "ERP" && Array.isArray(item.skus) && item.skus.some((entry: Row) => String(entry.erpSkuId ?? "").trim().toLowerCase() === normalizedSku));
+    if (!product) {
+      throw new Error("ERP 同步库未找到该 SKU，请先在 ERP 任务中同步商品后重试");
+    }
+    form.value = {
+      ...product,
+      source: "ERP",
+      _erpLookupSku: sku,
+      _erpLookupPending: false,
+      skus: product.skus.map((entry: Row) => ({ ...entry })),
+      galleryText: Array.isArray(product.gallery) ? product.gallery.join("\n") : "",
+      tagsText: Array.isArray(product.tags) ? product.tags.join("，") : "",
+    };
+    dialogTitle.value = `编辑商品 · ERP 资料已载入`;
+    ElMessage.success("已按 SKU 获取 ERP 商品资料");
+  } catch (error) {
+    form.value._erpLookupPending = true;
+    ElMessage.error(error instanceof Error && error.message.startsWith("ERP 同步库") ? error.message : readableError(error));
+  } finally {
+    erpLookupBusy.value = false;
+  }
+}
+
 async function save(): Promise<void> {
   if (needsArticleCategories.value && (!articleCategoriesReady.value || articleCategoryEditorResource.value !== resource.value)) {
     ElMessage.error("请重新打开编辑窗口，等待分类加载成功后保存");
@@ -534,6 +567,10 @@ async function save(): Promise<void> {
   }
   if (needsArticleCategories.value && !articleCategorySelectionValid()) {
     ElMessage.error("请选择可用分类；上级分类不能是自身或下级分类");
+    return;
+  }
+  if (resource.value === "commerce-products" && form.value._erpLookupPending) {
+    ElMessage.error("请先填写 SKU 并获取 ERP 商品资料");
     return;
   }
   saving.value = true;
@@ -1134,59 +1171,51 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
         <template v-else-if="resource === 'commerce-products'">
-          <el-form-item label="商品来源"
-            ><el-tag>{{ form.source === "LOCAL" ? "本地商品" : "ERP同步商品" }}</el-tag></el-form-item
-          >
-          <el-form-item label="商品编号"><el-input v-model="form.erpItemId" :disabled="form.source !== 'LOCAL'" placeholder="留空自动生成" /></el-form-item>
-          <el-form-item label="商品名称"><el-input v-model="form.name" :disabled="form.source !== 'LOCAL'" /></el-form-item>
-          <el-form-item label="展示名称"><el-input v-model="form.displayName" /></el-form-item>
-          <el-form-item label="副标题"><el-input v-model="form.subtitle" /></el-form-item>
-          <el-form-item label="品牌"><el-input v-model="form.brand" /></el-form-item>
-          <el-form-item label="商城分类"
-            ><el-select v-model="form.categoryId" clearable filterable placeholder="请选择分类"><el-option v-for="item in categoryOptions" :key="item.id" :label="item.parent?.name ? `${item.parent.name} / ${item.name}` : item.name" :value="item.id" /></el-select
-          ></el-form-item>
-          <el-form-item label="封面地址"><el-input v-model="form.coverImage" /></el-form-item>
-          <el-form-item label="相册地址"><el-input v-model="form.galleryText" type="textarea" :rows="4" placeholder="每行一个图片地址" /></el-form-item>
-          <el-form-item label="标签"><el-input v-model="form.tagsText" placeholder="多个标签用逗号分隔" /></el-form-item>
-          <el-form-item label="商品详情"><RichTextEditor v-model="form.detailHtml" /></el-form-item>
-          <el-form-item v-if="form.source === 'LOCAL'" label="商品规格">
-            <div style="width: 100%">
-              <el-table :data="form.skus" border>
-                <el-table-column label="规格"
-                  ><template #default="scope"><el-input v-model="scope.row.specification" /></template
-                ></el-table-column>
-                <el-table-column label="SKU编码"
-                  ><template #default="scope"><el-input v-model="scope.row.erpSkuId" placeholder="自动生成" /></template
-                ></el-table-column>
-                <el-table-column label="售价（分）" width="145"
-                  ><template #default="scope"><el-input-number v-model="scope.row.salePriceCents" :min="1" controls-position="right" style="width: 120px" /></template
-                ></el-table-column>
-                <el-table-column label="库存" width="130"
-                  ><template #default="scope"><el-input-number v-model="scope.row.stock" :min="0" controls-position="right" style="width: 105px" /></template
-                ></el-table-column>
-                <el-table-column label="启用" width="65"
-                  ><template #default="scope"><el-switch v-model="scope.row.enabled" /></template
-                ></el-table-column>
-              </el-table>
-              <el-button
-                style="margin-top: 8px"
-                @click="
-                  form.skus.push({
-                    specification: '',
-                    salePriceCents: 1,
-                    stock: 0,
-                    enabled: true,
-                  })
-                "
-                >添加规格</el-button
-              >
-            </div>
-          </el-form-item>
-          <el-form-item label="状态"
-            ><el-select v-model="form.status"><el-option label="草稿" value="DRAFT" /><el-option label="在售" value="PUBLISHED" /><el-option label="下架" value="OFF_SHELF" /></el-select
-          ></el-form-item>
-          <el-form-item label="首页推荐"><el-switch v-model="form.featured" /></el-form-item>
-          <el-form-item label="排序"><el-input-number v-model="form.sort" /></el-form-item>
+          <template v-if="form._erpLookupPending">
+            <el-alert title="新增商品需先填写 ERP SKU。系统会从已同步的 ERP 商品库读取名称、图片、规格、售价和库存。" type="info" :closable="false" show-icon />
+            <el-form-item label="ERP SKU（必填）">
+              <div style="display: flex; width: 100%; gap: 12px">
+                <el-input v-model="form._erpLookupSku" placeholder="填写 ERP 系统中的 SKU" clearable @keyup.enter="loadCommerceProductBySku" />
+                <el-button type="primary" :loading="erpLookupBusy" @click="loadCommerceProductBySku">获取 ERP 资料</el-button>
+              </div>
+            </el-form-item>
+          </template>
+          <template v-else>
+            <el-alert v-if="form.source === 'ERP'" title="ERP 名称、编码、SKU、售价和库存由同步任务维护；此处保存商城展示资料。" type="success" :closable="false" show-icon />
+            <el-form-item label="商品来源"><el-tag>{{ form.source === "LOCAL" ? "本地商品" : "ERP同步商品" }}</el-tag></el-form-item>
+            <el-form-item v-if="form.source === 'ERP'" label="匹配 SKU">
+              <el-space wrap><el-tag v-for="sku in form.skus" :key="sku.id || sku.erpSkuId" type="info">{{ sku.erpSkuId }}</el-tag></el-space>
+            </el-form-item>
+            <el-form-item label="商品编号"><el-input v-model="form.erpItemId" :disabled="form.source !== 'LOCAL'" placeholder="留空自动生成" /></el-form-item>
+            <el-form-item label="商品名称"><el-input v-model="form.name" :disabled="form.source !== 'LOCAL'" /></el-form-item>
+            <el-form-item label="展示名称"><el-input v-model="form.displayName" /></el-form-item>
+            <el-form-item label="副标题"><el-input v-model="form.subtitle" /></el-form-item>
+            <el-form-item label="品牌"><el-input v-model="form.brand" /></el-form-item>
+            <el-form-item label="商城分类"
+              ><el-select v-model="form.categoryId" clearable filterable placeholder="请选择分类"><el-option v-for="item in categoryOptions" :key="item.id" :label="item.parent?.name ? `${item.parent.name} / ${item.name}` : item.name" :value="item.id" /></el-select
+            ></el-form-item>
+            <el-form-item label="封面地址"><el-input v-model="form.coverImage" /></el-form-item>
+            <el-form-item label="相册地址"><el-input v-model="form.galleryText" type="textarea" :rows="4" placeholder="每行一个图片地址" /></el-form-item>
+            <el-form-item label="标签"><el-input v-model="form.tagsText" placeholder="多个标签用逗号分隔" /></el-form-item>
+            <el-form-item label="商品详情"><RichTextEditor v-model="form.detailHtml" /></el-form-item>
+            <el-form-item v-if="form.source === 'LOCAL'" label="商品规格">
+              <div style="width: 100%">
+                <el-table :data="form.skus" border>
+                  <el-table-column label="规格"><template #default="scope"><el-input v-model="scope.row.specification" /></template></el-table-column>
+                  <el-table-column label="SKU编码"><template #default="scope"><el-input v-model="scope.row.erpSkuId" placeholder="自动生成" /></template></el-table-column>
+                  <el-table-column label="售价（分）" width="145"><template #default="scope"><el-input-number v-model="scope.row.salePriceCents" :min="1" controls-position="right" style="width: 120px" /></template></el-table-column>
+                  <el-table-column label="库存" width="130"><template #default="scope"><el-input-number v-model="scope.row.stock" :min="0" controls-position="right" style="width: 105px" /></template></el-table-column>
+                  <el-table-column label="启用" width="65"><template #default="scope"><el-switch v-model="scope.row.enabled" /></template></el-table-column>
+                </el-table>
+                <el-button style="margin-top: 8px" @click="form.skus.push({ specification: '', salePriceCents: 1, stock: 0, enabled: true })">添加规格</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="状态"
+              ><el-select v-model="form.status"><el-option label="草稿" value="DRAFT" /><el-option label="在售" value="PUBLISHED" /><el-option label="下架" value="OFF_SHELF" /></el-select
+            ></el-form-item>
+            <el-form-item label="首页推荐"><el-switch v-model="form.featured" /></el-form-item>
+            <el-form-item label="排序"><el-input-number v-model="form.sort" /></el-form-item>
+          </template>
         </template>
         <template v-else-if="resource === 'commerce-categories'">
           <el-form-item label="分类名称"><el-input v-model="form.name" /></el-form-item>
@@ -1384,7 +1413,7 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
       </el-form>
-      <template #footer><el-button @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit'" type="primary" :loading="saving" :disabled="needsArticleCategories && !articleCategoriesReady" @click="save">保存</el-button></template>
+      <template #footer><el-button @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit'" type="primary" :loading="saving" :disabled="(needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
     </el-dialog>
   </section>
 </template>
