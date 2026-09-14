@@ -1184,12 +1184,17 @@ test("global account removes the redundant order shortcuts but keeps member prom
   });
   let tree = component.tree();
   const expected = {
+    推广与奖金: "/pages/employee/index",
     收货地址: "/pages/addresses/index",
     我的收藏: "/pages/favorites/index",
     优惠券: "/pages/coupons/index",
     积分与流水: "/pages/points/index",
-    推广与奖金: "/pages/employee/index",
   };
+  const memberMenuOrder = renderNodes(tree)
+    .filter((node) => node.type === "button")
+    .map((node) => renderedText(node).replace(/›$/, "").trim())
+    .filter((label) => Object.hasOwn(expected, label));
+  assert.deepEqual(memberMenuOrder, Object.keys(expected));
   for (const [label, route] of Object.entries(expected)) {
     const button = renderedButton(tree, label);
     assert.ok(button, label);
@@ -1215,6 +1220,20 @@ test("global account removes the redundant order shortcuts but keeps member prom
   assert.doesNotMatch(renderedText(tree), /待验证|购买前需验证账号/);
   assert.match(renderedText(tree), /会员 ID：456/);
   assert.equal(h.requests.length, 0);
+});
+
+test("global mobile home wraps category navigation and member promotion keeps a deterministic return path", () => {
+  const home = readFileSync(resolve(source, "pages/home/index.vue"), "utf8");
+  assert.match(home, /class="catalog-side" role="navigation" aria-label="商品分类"/);
+  assert.match(home, /\.catalog-side\s*\{[^}]*display:grid;[^}]*repeat\(auto-fit,minmax\(112px,1fr\)\)/);
+  assert.match(home, /\.category-name\s*\{[^}]*text-overflow:ellipsis/);
+  assert.doesNotMatch(home, /\.catalog-side\s*\{[^}]*overflow:auto/);
+
+  const promotion = readFileSync(resolve(source, "pages/employee/index.vue"), "utf8");
+  assert.match(promotion, /memberMode && 'saydian-app-surface promotion-surface'/);
+  assert.match(promotion, /v-if="!memberMode" class="legacy-amount"/);
+  assert.match(promotion, /function backToProfile\(\)\{ uni\.switchTab\(\{ url: "\/pages\/profile\/index"/);
+  assert.match(promotion, /请选择开始和结束日期后查询/);
 });
 
 test("storefront help and profile source no longer expose invoice navigation", () => {

@@ -38,9 +38,9 @@ import DesktopHeader from "./DesktopHeader.vue";
 const props = defineProps<{ user: any; error?: string; loading?: boolean; recentOrders?: any[]; recentOrdersLoading?: boolean; recentOrdersError?: string }>(); defineEmits<{ logout: []; refresh: [] }>();
 const memberNumber = computed(() => /^\d+$/.test(String(props.user?.memberNo || '')) ? String(props.user.memberNo) : '未获取');
 const shoppingMenus = [
-  { label: '收货地址', url: '/pages/addresses/index' }, { label: '我的收藏', url: '/pages/favorites/index' },
+  { label: '推广与奖金', url: '/pages/employee/index' }, { label: '收货地址', url: '/pages/addresses/index' },
+  { label: '我的收藏', url: '/pages/favorites/index' },
   { label: '优惠券', url: '/pages/coupons/index' }, { label: '积分与流水', url: '/pages/points/index' },
-  { label: '推广与奖金', url: '/pages/employee/index' },
   { label: '帮助与客服', url: '/pages/help/index?section=service' },
 ];
 function go(url: string) { uni.navigateTo({ url }); }
