@@ -521,6 +521,15 @@ test("global login source never uses domestic consent; authorize carries the con
   assert.match(text, /if \(busy.value \|\| loading.value\) return/);
   assert.match(readFileSync(resolve(source, "../index.html"), "utf8"), /name="referrer" content="no-referrer"/);
 });
+test("login actions stay clickable so validation and provider errors remain reachable", () => {
+  const domestic = readFileSync(resolve(source, "pages/login/index.vue"), "utf8"),
+    global = readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8");
+  assert.match(domestic, /class="outline-btn" :disabled="!!countdown \|\| busy" @click="sendCode"/);
+  assert.match(domestic, /class="primary-btn" :loading="busy" :disabled="busy" @click="login"/);
+  assert.match(global, /class="text-button code-button" :disabled="busy \|\| loading \|\| countdown > 0" @click="sendCode"/);
+  assert.match(global, /class="primary-btn submit" :disabled="busy \|\| loading" :loading="busy" @click="login"/);
+  assert.doesNotMatch(global, /const primaryEnabled/);
+});
 
 async function settle(check) {
   for (let i = 0; i < 30; i++) {
