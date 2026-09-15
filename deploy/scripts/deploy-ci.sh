@@ -170,7 +170,11 @@ compose config --quiet
 for service in api worker admin; do
   pulled=false
   for attempt in 1 2 3; do
-    if COMPOSE_PARALLEL_LIMIT=1 compose pull --quiet "$service"; then
+    # Do not let a stalled registry connection retain the global release lock
+    # indefinitely. Ninety minutes still accommodates the production host's
+    # known slow GHCR route; timeout terminates the client before the retry.
+    if COMPOSE_PARALLEL_LIMIT=1 timeout --signal=TERM --kill-after=30s 90m \
+      docker compose --env-file "$env_file" -f "$compose_file" pull --quiet "$service"; then
       pulled=true
       break
     fi

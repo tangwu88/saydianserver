@@ -140,7 +140,10 @@ test("automatic release preserves maintenance and only a reviewed manual release
   assert.doesNotMatch(script, /MAINTENANCE_READ_ONLY=false|compose down|docker.*prune/);
   assert.match(script, /trap 'rollback \$\?' ERR/);
   assert.match(script, /images\.yaml/);
-  assert.match(script, /COMPOSE_PARALLEL_LIMIT=1 compose pull --quiet "\$service"/);
+  assert.match(
+    script,
+    /COMPOSE_PARALLEL_LIMIT=1 timeout --signal=TERM --kill-after=30s 90m \\\s+docker compose --env-file "\$env_file" -f "\$compose_file" pull --quiet "\$service"/s,
+  );
   assert.match(script, /for attempt in 1 2 3/);
   assert.match(script, /for page in admin down/);
   assert.match(script, /sha256sum --strict --check SHA256SUMS/);
