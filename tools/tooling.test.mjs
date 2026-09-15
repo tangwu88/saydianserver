@@ -9,7 +9,7 @@ import { findMissingConsumers } from "./check-client-contracts.mjs";
 import { fieldContracts } from "./api-field-contracts.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const bash = process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash";
+const bash = process.env.SAYDIAN_BASH || (process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash");
 function run(command, args, cwd = root) {
   const result = spawnSync(command, args, { cwd, encoding: "utf8", timeout: 60_000, windowsHide: true });
   return { ...result, output: `${result.stdout ?? ""}${result.stderr ?? ""}` };

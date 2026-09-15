@@ -3,7 +3,7 @@ import ts from 'typescript';
 import { computed, ref } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 import { canAdminResource } from '@saydian/app-contracts';
-import { draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft } from './integration-settings';
+import { applicableIntegrationFields, draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft } from './integration-settings';
 
 // Exercise the actual SFC's script with explicit UI/network substitutes, not a duplicate save implementation.
 function harness(role = 'INTEGRATION_ADMIN') {
@@ -14,7 +14,7 @@ function harness(role = 'INTEGRATION_ADMIN') {
   const api = { get: vi.fn(async () => ({ data: { data: [] } })), patch: vi.fn(async () => ({ data: { data: {} } })) };
   const messages = { success: vi.fn(), error: vi.fn(), warning: vi.fn() };
   const confirm = vi.fn(async () => 'confirm');
-  const deps = { computed, ref, onBeforeUnmount: vi.fn(), onMounted: vi.fn(), onBeforeRouteLeave: vi.fn(), ElMessage: messages, ElMessageBox: { confirm }, canAdminResource, api, getAdminRoles: () => [role], responseData: (response: any) => response.data.data, draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft };
+  const deps = { computed, ref, onBeforeUnmount: vi.fn(), onMounted: vi.fn(), onBeforeRouteLeave: vi.fn(), ElMessage: messages, ElMessageBox: { confirm }, canAdminResource, api, getAdminRoles: () => [role], responseData: (response: any) => response.data.data, applicableIntegrationFields, draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft };
   const instance = new Function(...Object.keys(deps), code + '\nreturn { load, begin, next, save, close, clear, credentialsChanged, draft, selected, step, errors, acknowledged, saveUncertain, loading, loadError, saving, editable, open };')(...Object.values(deps));
   return { ...instance, api, messages, confirm, definition: integrationDefinitions.find(d => d.key === 'sms')! };
 }

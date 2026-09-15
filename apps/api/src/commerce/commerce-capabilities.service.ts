@@ -58,14 +58,24 @@ export class CommerceCapabilitiesService {
         const secret = await this.secrets.resolve("sms", {
           webhookUrl: "SMS_WEBHOOK_URL",
           webhookToken: "SMS_WEBHOOK_TOKEN",
+          accessKeyId: "ALIBABA_CLOUD_ACCESS_KEY_ID",
+          accessKeySecret: "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
         });
-        sms =
-          (publicConfig.provider ?? env("SMS_PROVIDER", "disabled")) ===
-            "webhook" &&
-          !!secret.webhookToken &&
-          secureEndpoint(
-            String(publicConfig.webhookUrl ?? secret.webhookUrl ?? ""),
-          );
+        const provider = String(
+          publicConfig.provider ?? env("SMS_PROVIDER", "disabled"),
+        ).toLowerCase();
+        sms = provider === "webhook"
+          ? !!secret.webhookToken && secureEndpoint(
+              String(publicConfig.webhookUrl ?? secret.webhookUrl ?? ""),
+            )
+          : provider === "aliyun"
+            ? !!secret.accessKeyId &&
+              !!secret.accessKeySecret &&
+              !!String(publicConfig.signName ?? env("ALIYUN_SMS_SIGN_NAME", "")).trim() &&
+              /^SMS_[A-Za-z0-9]+$/.test(
+                String(publicConfig.templateCode ?? env("ALIYUN_SMS_TEMPLATE_CODE", "")).trim(),
+              )
+            : false;
       } catch {
         sms = false;
       }

@@ -4,7 +4,7 @@ import { onBeforeRouteLeave } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { canAdminResource } from '@saydian/app-contracts';
 import { api, getAdminRoles, responseData } from '../api';
-import { draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft, type ConfigField, type IntegrationDefinition, type IntegrationDraft, type IntegrationRow } from '../integration-settings';
+import { applicableIntegrationFields, draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft, type ConfigField, type IntegrationDefinition, type IntegrationDraft, type IntegrationRow } from '../integration-settings';
 
 const rows = ref<IntegrationRow[]>([]);
 const loading = ref(false);
@@ -29,8 +29,9 @@ const cards = computed(() => [
 ].filter(card => category.value === '全部服务' || card.definition.group === category.value));
 const dirty = computed(() => JSON.stringify(draft.value) !== initialDraft.value);
 const editable = computed(() => writable.value && !selected.value?.definition.readOnly);
-const hasCredentials = computed(() => selected.value?.definition.fields.some(field => field.secret));
-const fields = computed(() => selected.value?.definition.fields.filter(field => !field.secret || draft.value.replaceSecrets) ?? []);
+const applicableFields = computed(() => selected.value ? applicableIntegrationFields(selected.value.definition, draft.value) : []);
+const hasCredentials = computed(() => applicableFields.value.some(field => field.secret));
+const fields = computed(() => applicableFields.value.filter(field => !field.secret || draft.value.replaceSecrets));
 const basicFields = computed(() => fields.value.filter(field => !field.advanced));
 const advancedFields = computed(() => fields.value.filter(field => field.advanced));
 const submitLabel = computed(() => draft.value.state === 'CONFIGURED' ? selected.value?.row.state === 'CONFIGURED' ? '保存并保持启用' : '保存并启用服务' : draft.value.state === 'DISABLED' ? '保存并暂停服务' : '保存资料，暂不启用');
@@ -117,7 +118,7 @@ onMounted(load);
           <h3>先准备这些资料</h3><p>{{ selected.definition.prepare }}</p>
           <el-alert v-if="selected.definition.note" :title="selected.definition.note" type="warning" :closable="false" show-icon />
           <p v-if="selected.row.hasSecret" class="saved-secret">已有加密凭证。默认保持不变，后台不会显示原内容；这不代表凭证已验证。</p>
-          <template v-if="!editable && !selected.definition.readOnly"><h3>当前填写情况</h3><dl class="read-summary"><template v-for="field in selected.definition.fields.filter(f => !f.secret)" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ reviewValue(field) }}</dd></template></dl></template>
+          <template v-if="!editable && !selected.definition.readOnly"><h3>当前填写情况</h3><dl class="read-summary"><template v-for="field in applicableFields.filter(f => !f.secret)" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ reviewValue(field) }}</dd></template></dl></template>
           <p v-if="!writable" class="field-hint">需要修改时，请联系拥有配置权限的管理员。</p>
           <details class="technical-detail"><summary>供维护人员核对</summary><p>服务标识：{{ selected.row.key }}。密钥只在服务端加密保存；此页不读取原密钥，也不会测试发短信、付款、推送或 ERP 同步。</p></details>
         </section>
@@ -132,7 +133,7 @@ onMounted(load);
           <el-alert v-if="errors._form" :title="errors._form" type="error" :closable="false" show-icon />
           <div class="fields-grid">
             <el-form-item v-for="field in basicFields" :key="field.key" :label="field.label" :for="`integration-${field.key}`" :required="field.required" :error="errors[field.key]" :class="{ 'wide-field': field.kind === 'pem' }">
-              <el-select v-if="field.options" v-model="draft.values[field.key]" :id="`integration-${field.key}`" :aria-describedby="`hint-${field.key}`" placeholder="请选择接入方式"><el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" /><el-option v-if="draft.values[field.key] && !field.options.some(o => o.value === draft.values[field.key])" :label="`原接入方式：${draft.values[field.key]}（请重新选择）`" :value="String(draft.values[field.key])" disabled /></el-select>
+              <el-select v-if="field.options" v-model="draft.values[field.key]" :id="`integration-${field.key}`" :aria-describedby="`hint-${field.key}`" placeholder="请选择接入方式" @change="errors = {}; acknowledged = false"><el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" /><el-option v-if="draft.values[field.key] && !field.options.some(o => o.value === draft.values[field.key])" :label="`原接入方式：${draft.values[field.key]}（请重新选择）`" :value="String(draft.values[field.key])" disabled /></el-select>
               <el-input v-else-if="field.kind === 'pem'" v-model="draft.values[field.key]" :id="`integration-${field.key}`" type="textarea" :rows="5" :aria-describedby="`hint-${field.key}`" autocomplete="off" :maxlength="16000" placeholder="粘贴完整 PEM，保留所有换行。仅显示本次输入，不回显原凭证。" />
               <el-input v-else v-model="draft.values[field.key]" :id="`integration-${field.key}`" :type="field.secret ? 'password' : 'text'" :show-password="field.secret" :aria-describedby="`hint-${field.key}`" autocomplete="off" :maxlength="4000" placeholder="请填写" />
               <p :id="`hint-${field.key}`" class="field-hint">{{ field.hint }}</p>
