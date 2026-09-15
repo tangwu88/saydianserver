@@ -16,6 +16,7 @@ import { protectLastSuperAdmin } from "./admin-account-policy";
 import { parseGlobalDownloadManifest } from "../support/global-download-manifest";
 import { withCategoryNumbers } from "./article-category-number";
 import { cancelCommerceOrderInTransaction } from "../commerce/commerce-order-cancellation";
+import { importJushuitanProductBySku } from "./jushuitan-product-import";
 
 const adminOrderPaymentSelect = {
   id: true,
@@ -1074,6 +1075,10 @@ export class AdminService {
       this.prisma.commerceProduct.count({ where }),
     ]);
     return { items, total, page, pageSize: 50 };
+  }
+
+  async importCommerceProductBySku(input: unknown) {
+    return importJushuitanProductBySku(this.prisma, this.integrationSecrets, input);
   }
 
   async saveCommerceProduct(id: string | undefined, input: unknown) {

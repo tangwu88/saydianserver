@@ -292,6 +292,12 @@ export class AdminController {
     return this.admin.saveCommerceProduct(undefined, input);
   }
 
+  @Post("commerce-products/erp-import")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  importCommerceProductBySku(@Body() input: unknown) {
+    return this.admin.importCommerceProductBySku(input);
+  }
+
   @Post("commerce-products/batch")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
   batchCommerceProducts(@Body() input: unknown) {
