@@ -9,6 +9,7 @@ type Kind = "mini" | "app";
 const memberId = "11111111-1111-4111-8111-111111119909";
 const baseUser = () => ({
   id: memberId, legacyMemberId: null, mobile: null as string | null, mobileVerifiedAt: null as Date | null,
+  email: null as string | null, emailVerifiedAt: null as Date | null,
   status: UserStatus.ACTIVE as string, nickname: "SYNTHETIC-OAUTH-STATUS-20260909",
   avatarUrl: null, gender: "UNSPECIFIED", birthday: null, heightCm: null, weightKg: null, referralEmployeeId: null,
 });
@@ -68,13 +69,17 @@ async function fixture(
     const userAuth = new UserAuthGuard({ userSession: { findFirst: async ({ where }: any) => {
       checked = where.user;
       assert.equal(where.user.status, "ACTIVE");
-      if (saved.status !== "ACTIVE" || where.user.mobile && !saved.mobile || where.user.mobileVerifiedAt && !saved.mobileVerifiedAt) return null;
+      const verified = (saved.mobile && saved.mobileVerifiedAt) || (saved.email && saved.emailVerifiedAt);
+      if (saved.status !== "ACTIVE" || (where.user.OR && !verified)) return null;
       return { id: "synthetic-session" };
     } } } as any);
     const pending = userAuth.canActivate({ switchToHttp: () => ({ getRequest: () => request }) } as any);
-    if (mall && (!saved.mobile || !saved.mobileVerifiedAt)) {
+    if (mall && !((saved.mobile && saved.mobileVerifiedAt) || (saved.email && saved.emailVerifiedAt))) {
       await assert.rejects(pending, (error: any) => error.getStatus?.() === 401);
-      assert.deepEqual(checked, { status: "ACTIVE", mobile: { not: null }, mobileVerifiedAt: { not: null } });
+      assert.deepEqual(checked, { status: "ACTIVE", OR: [
+        { mobile: { not: null }, mobileVerifiedAt: { not: null } },
+        { email: { not: null }, emailVerifiedAt: { not: null } },
+      ] });
       assert.equal(request.authUser, undefined);
     } else {
       assert.equal(await pending, true);

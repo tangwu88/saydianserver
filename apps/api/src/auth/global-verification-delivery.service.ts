@@ -40,16 +40,18 @@ export class GlobalVerificationDeliveryService {
   }
 
   private async configuration(channel: VerificationChannel) {
-    const provider = process.env[channel === "email" ? "GLOBAL_EMAIL_PROVIDER" : "GLOBAL_SMS_PROVIDER"] ?? "disabled";
-    if (provider !== "webhook") return null;
     const key = integrationKeys[channel];
     const integration = await this.prisma.integrationConfig.findUnique({ where: { key } });
     const config = safeObject(integration?.publicConfig);
+    const provider = String(
+      config.provider ?? process.env[channel === "email" ? "GLOBAL_EMAIL_PROVIDER" : "GLOBAL_SMS_PROVIDER"] ?? "disabled",
+    ).toLowerCase();
+    if (provider !== "webhook") return null;
     // Enable only after the operator has tested the provider and its country list.
     if (integration?.state !== IntegrationState.CONFIGURED || config.provider !== "webhook" || config.deliveryVerified !== true) return null;
     const prefix = channel === "email" ? "GLOBAL_EMAIL" : "GLOBAL_SMS";
     const resolved = await this.secrets.resolve(key, { webhookUrl: `${prefix}_WEBHOOK_URL`, webhookToken: `${prefix}_WEBHOOK_TOKEN` }).catch(() => ({} as Record<string, string>));
-    const url = resolved.webhookUrl ?? "";
+    const url = String(config.webhookUrl ?? resolved.webhookUrl ?? "");
     const token = resolved.webhookToken ?? "";
     try {
       const parsed = new URL(url);

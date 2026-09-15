@@ -150,8 +150,8 @@ export class PaymentProviderService {
       where: { userId_appId: { userId, appId } },
       include: { user: { select: { status: true, mobileVerifiedAt: true, emailVerifiedAt: true } } },
     });
-    if (!identity || identity.user.status !== "ACTIVE" || !(identity.user.mobileVerifiedAt || (isGlobalRealm() && identity.user.emailVerifiedAt))) {
-      throw new BadRequestException(isGlobalRealm() ? "请先在当前公众号中授权并验证邮箱或手机号" : "请先在当前公众号中授权并验证手机号");
+    if (!identity || identity.user.status !== "ACTIVE" || !(identity.user.mobileVerifiedAt || identity.user.emailVerifiedAt)) {
+      throw new BadRequestException("请先在当前公众号中授权并验证手机号或邮箱");
     }
     return identity.openId;
   }

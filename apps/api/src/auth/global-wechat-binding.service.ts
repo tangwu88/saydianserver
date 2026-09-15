@@ -234,14 +234,6 @@ export class GlobalWechatBindingService {
         if (!user || user.status !== UserStatus.ACTIVE) throw inactive();
         if (user.mobile && user.mobile !== identity.identifier) throw conflict();
         if (temporary && user.mobileVerifiedAt) throw conflict();
-        if (!temporary && !initialLink && !user.mobileVerifiedAt) {
-          if (!user.passwordHash) throw conflict();
-          if (!body.password) throw globalError(403, "phone_password_required", "Enter the existing account password as well as the verification code.");
-          if (!await compare(password(body.password), user.passwordHash)) {
-            await tx.globalVerificationChallenge.updateMany({ where: { id: challengeId, consumedAt: null, attempts: { lt: 5 } }, data: { attempts: { increment: 1 } } });
-            return { invalid: true as const, credentials: true as const };
-          }
-        }
       } else if (initialLink) throw inactive();
       await lockIdentity(tx, appId, ticket.openId);
       const linked = await tx.wechatOfficialIdentity.findUnique({ where: { appId_openId: { appId, openId: ticket.openId } } });
@@ -261,7 +253,6 @@ export class GlobalWechatBindingService {
       return { invalid: false as const, userId: saved.id };
     }, { maxWait: 10_000, timeout: 30_000 }).catch(identityConflict);
     if (result.invalid) {
-      if ("credentials" in result) throw globalError(401, "invalid_credentials", "Use this account's existing password. Verification codes do not reset passwords.");
       throw invalidCode();
     }
     return this.session(result.userId, ticket.returnTo, appId);

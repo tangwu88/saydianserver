@@ -18,7 +18,7 @@ export function globalApiAllowed(path: string, method = "GET") {
   // Routing only: the server still verifies identity, scope, market and channel
   // capability. In particular this list never grants temporary OTP trading rights.
   if (/[\\#\r\n]/.test(path) || (method !== "GET" && path.includes("?"))) return false;
-  if (/^\/auth\/(password\/login|refresh|wechat\/h5\/(authorize-url|login|bind-account|binding-code|bind-code|phone-code|bind-phone))$/.test(path)) return method === "POST";
+  if (/^\/auth\/(code\/(request|login)|password\/login|refresh|wechat\/h5\/(authorize-url|login|bind-account|binding-code|bind-code|phone-code|bind-phone))$/.test(path)) return method === "POST";
   if (path === "/auth/referral") return method === "POST";
   if (path === "/auth/wechat/h5/account") return method === "GET";
   const route = path.split("?", 1)[0] ?? "";

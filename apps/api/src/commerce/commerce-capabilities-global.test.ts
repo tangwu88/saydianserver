@@ -14,7 +14,8 @@ function fixture() {
   const db = { integrationConfig: { findMany: vi.fn().mockResolvedValue(rows) }, commerceBusinessConfig: { findUnique: vi.fn().mockResolvedValue(null) } };
   const secrets = { resolve: vi.fn(async (key: string) => credentials[key]) };
   const official = { configured: vi.fn().mockResolvedValue({ appId }), globalCapabilities: vi.fn().mockResolvedValue({ consentVersion: "legal-v1", legal: null, wechatH5: { enabled: true }, wechatBinding: { phoneCodeMode: "test" } }) };
-  return { service: new CommerceCapabilitiesService(db as any, secrets as any, official as any), db, secrets, official, credentials, rows };
+  const verification = { capabilities: vi.fn().mockResolvedValue({ email: false, sms: false, smsCountries: [] }) };
+  return { service: new CommerceCapabilitiesService(db as any, secrets as any, official as any, verification as any), db, secrets, official, verification, credentials, rows };
 }
 beforeEach(() => {
   for (const [key, value] of Object.entries({ APP_REALM: "global", NODE_ENV: "production", WORKER_OUTBOUND_PAUSED: "false", BUSINESS_WRITES_PAUSED: "false", MAINTENANCE_READ_ONLY: "false", H5_DEMO_ENABLED: "false", ALLOW_TEST_OTP: "false" })) vi.stubEnv(key, value);

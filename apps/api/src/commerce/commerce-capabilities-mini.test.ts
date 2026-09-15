@@ -16,7 +16,8 @@ function fixture(input: { mini?: string; official?: string; oauth?: string; conf
   ]) } };
   const configured = input.oauth ? vi.fn().mockResolvedValue({ appId: input.oauth })
     : vi.fn().mockRejectedValue(new Error("Official OAuth unconfigured"));
-  return { service: new CommerceCapabilitiesService(db as any, secrets as any, { configured } as any), secrets };
+  const verification = { capabilities: vi.fn().mockResolvedValue({ email: false, sms: false, smsCountries: [] }) };
+  return { service: new CommerceCapabilitiesService(db as any, secrets as any, { configured } as any, verification as any), secrets };
 }
 const payment = (result: Awaited<ReturnType<CommerceCapabilitiesService["publicCapabilities"]>>, channel: string) =>
   result.payments.find(item => item.channel === channel)!;

@@ -50,6 +50,12 @@ describe("verified registration and inactive member boundaries", () => {
     const token = sign({ sub: "user", sid: "session", typ: "access", jti: "jti" }, process.env.ACCESS_TOKEN_SECRET!, { issuer: "saydianapp-server", audience: "saydian-app" });
     const request = { path: "/api/saidian-mall/v1/storefront/cart", header: () => `Bearer ${token}` };
     await expect(new UserAuthGuard({ userSession: { findFirst } } as any).canActivate({ switchToHttp: () => ({ getRequest: () => request }) } as any)).rejects.toThrow("登录已失效");
-    expect(findFirst.mock.calls[0]?.[0].where.user).toEqual({ status: "ACTIVE", mobile: { not: null }, mobileVerifiedAt: { not: null } });
+    expect(findFirst.mock.calls[0]?.[0].where.user).toEqual({
+      status: "ACTIVE",
+      OR: [
+        { mobile: { not: null }, mobileVerifiedAt: { not: null } },
+        { email: { not: null }, emailVerifiedAt: { not: null } },
+      ],
+    });
   });
 });

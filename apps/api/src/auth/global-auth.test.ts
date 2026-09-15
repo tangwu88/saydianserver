@@ -37,11 +37,13 @@ function harness() {
       create: async ({ data }: any) => { const user = { id: randomUUID(), status: "ACTIVE", ...data }; users.set(user.id, user); return user; },
       update: async ({ where, data }: any) => Object.assign(users.get(where.id), data),
     },
-    consentRecord: { create: vi.fn(async () => undefined) },
+    consentRecord: { create: vi.fn(async () => undefined), upsert: vi.fn(async () => undefined) },
     userSession: { updateMany: vi.fn(async () => ({ count: 1 })) },
   };
   const prisma: any = { ...tx, $transaction: async (run: any) => { const snapshot = structuredClone({ records, users, throttles }); try { return await run(tx); } catch (error) { records = snapshot.records; users = snapshot.users; throttles = snapshot.throttles; throw error; } } };
-  const auth: any = { issueSession: vi.fn(async (id: string) => { sessions.push(id); const user = users.get(id); return { accessToken: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + 900_000).toISOString(), member: { id, nickname: user.nickname ?? "Test", locale: user.locale ?? "en" } }; }), login: vi.fn(async () => ({ accessToken: "synthetic-access" })) };
+  const issueSession = vi.fn(async (id: string) => { sessions.push(id); const user = users.get(id); return { accessToken: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + 900_000).toISOString(), member: { id, nickname: user.nickname ?? "Test", locale: user.locale ?? "en" } }; });
+  const issueMallSession = vi.fn(async (id: string) => { sessions.push(id); const user = users.get(id); return { token: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + 900_000).toISOString(), user: { id, nickname: user.nickname ?? "Test", mobile: user.mobile ?? null, avatarUrl: null } }; });
+  const auth: any = { issueSession, issueMallSession, login: vi.fn(async () => ({ accessToken: "synthetic-access" })) };
   const service = new GlobalAuthService(prisma, delivery as any, auth);
   return { service, prisma, delivery, auth, tx, sessions, records: () => records, users: () => users };
 }
@@ -104,6 +106,30 @@ describe("global registration challenges", () => {
     expect(h.tx.consentRecord.create).toHaveBeenCalledTimes(2);
     await expect(h.service.register({ challengeId: challenge.challengeId, code: sent.code, password: "Synthetic-only-password!", consentVersion: "v1" })).rejects.toThrow("expired");
     expect(h.users().size).toBe(1); expect(h.sessions).toHaveLength(1);
+  });
+  it.each([
+    ["email", "Member@Example.com", "member@example.com", "emailVerifiedAt"],
+    ["sms", "+1 202 555 0123", "+12025550123", "mobileVerifiedAt"],
+  ] as const)("logs in or creates a passwordless %s account with one consumed OTP", async (channel, entered, normalized, verifiedField) => {
+    const h = harness();
+    const challenge = await h.service.requestLoginCode({ channel, identifier: entered, locale: "en" });
+    const sent = h.delivery.send.mock.calls[0]![0];
+    expect(sent).toMatchObject({ purpose: "login", identifier: normalized });
+    const session = await h.service.loginWithCode({ channel, identifier: entered, challengeId: challenge.challengeId, code: sent.code, consentVersion: "v1", locale: "en" });
+    const stored = h.users().get(session.user.id);
+    expect(stored[verifiedField]).toBeInstanceOf(Date);
+    expect(stored.passwordHash).toBeNull();
+    expect(h.tx.consentRecord.upsert).toHaveBeenCalledTimes(2);
+    await expect(h.service.loginWithCode({ channel, identifier: entered, challengeId: challenge.challengeId, code: sent.code, consentVersion: "v1", locale: "en" })).rejects.toThrow("expired");
+  });
+  it("supports domestic passwordless email login without weakening phone normalization", async () => {
+    vi.stubEnv("APP_REALM", "domestic");
+    const h = harness();
+    const challenge = await h.service.requestLoginCode({ channel: "email", identifier: "Domestic@Example.com" });
+    const sent = h.delivery.send.mock.calls[0]![0];
+    const session = await h.service.loginWithCode({ channel: "email", identifier: "domestic@example.com", challengeId: challenge.challengeId, code: sent.code, consentVersion: "commerce-legal-v1" });
+    expect(h.users().get(session.user.id)).toMatchObject({ email: "domestic@example.com", emailVerifiedAt: expect.any(Date), nickname: "赛电用户", passwordHash: null });
+    await expect(h.service.requestLoginCode({ channel: "sms", identifier: "13800138000" })).rejects.toThrow("valid email");
   });
   it("creates a verified international phone account with E.164 storage", async () => {
     const h = harness(); const challenge = await h.service.requestCode({ channel: "sms", identifier: "+1 202 555 0123" });
@@ -240,13 +266,13 @@ describe("global registration challenges", () => {
 describe("global real-channel readiness", () => {
   it("is disabled by default without reading any credentials", async () => {
     vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "disabled"); vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled");
-    const resolve = vi.fn(); const service = new GlobalVerificationDeliveryService({} as any, { resolve } as any);
+    const resolve = vi.fn(); const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: vi.fn().mockResolvedValue(null) } } as any, { resolve } as any);
     expect(await service.capabilities()).toEqual({ email: false, sms: false, smsCountries: [] }); expect(resolve).not.toHaveBeenCalled();
   });
   it("requires configured and operator-verified delivery with actual secret fields", async () => {
     vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "webhook"); vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled");
-    const row = { state: "CONFIGURED", publicConfig: { provider: "webhook", deliveryVerified: false } };
-    const resolve = vi.fn(async () => ({ webhookUrl: "https://example.invalid/verify", webhookToken: "synthetic-provider-token" }));
+    const row = { state: "CONFIGURED", publicConfig: { provider: "webhook", webhookUrl: "https://example.invalid/verify", deliveryVerified: false } };
+    const resolve = vi.fn(async () => ({ webhookToken: "synthetic-provider-token" }));
     const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: async () => row } } as any, { resolve } as any);
     expect((await service.capabilities()).email).toBe(false); expect(resolve).not.toHaveBeenCalled();
     row.publicConfig.deliveryVerified = true; expect((await service.capabilities()).email).toBe(true);

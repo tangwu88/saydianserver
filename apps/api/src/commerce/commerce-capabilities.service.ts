@@ -7,6 +7,7 @@ import { safeObject } from "../common/crypto";
 import { PrismaService } from "../common/prisma.service";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { isGlobalRealm } from "../common/deployment-realm";
+import { GlobalVerificationDeliveryService } from "../auth/global-verification-delivery.service";
 import { configuredGlobalMarkets, globalCommerceCountry, globalCommerceCurrency, globalCommercePaymentChannels, globalPaymentConfigurationReady, paymentRsaKey as rsaKey, securePaymentEndpoint as secureEndpoint } from "./global-commerce-policy";
 
 type Capability = { enabled: boolean; reason?: string };
@@ -18,6 +19,7 @@ export class CommerceCapabilitiesService {
     private readonly prisma: PrismaService,
     private readonly secrets: IntegrationSecretsService,
     private readonly official: WechatH5AuthService,
+    private readonly verificationDelivery: GlobalVerificationDeliveryService,
   ) {}
 
   // Configuration readiness is not a provider verification or a payer identity
@@ -31,6 +33,7 @@ export class CommerceCapabilitiesService {
       where: { key: { in: ["sms", "wechat_pay", "alipay"] } },
     });
     const byKey = new Map(rows.map(row => [row.key, row]));
+    const verificationReady = await this.verificationDelivery.capabilities();
     const configured = (key: string) => byKey.get(key)?.state === IntegrationState.CONFIGURED;
     let sms = !global && process.env.NODE_ENV !== "production" && envBoolean("ALLOW_TEST_OTP");
     if (!global && !sms && configured("sms")) {
@@ -94,7 +97,14 @@ export class CommerceCapabilitiesService {
       const checkoutAvailable = configuredGlobalMarkets(marketConfig).some(market => market.commerceEnabled);
       return {
         realm: "global", consentVersion: official.consentVersion, legal: official.legal,
-        login: { password: { enabled: !readOnly }, sms: { enabled: false, reason: "Use email or international account sign-in." }, wechatH5: official.wechatH5, wechatBinding: official.wechatBinding },
+        login: {
+          password: { enabled: !readOnly },
+          sms: capability(verificationReady.sms && !readOnly, readOnly ? "系统维护中" : "International SMS verification is not configured."),
+          email: capability(verificationReady.email && !readOnly, readOnly ? "系统维护中" : "Email verification is not configured."),
+          defaultChannel: "sms",
+          wechatH5: official.wechatH5,
+          wechatBinding: official.wechatBinding,
+        },
         payments: payments.filter(payment => globalCommercePaymentChannels.some(channel => channel.toLowerCase() === payment.channel))
           .map(payment => checkoutAvailable ? payment : { ...payment, enabled: false, reason: "当前尚未开放中国大陆人民币结算" }),
         checkout: { ...capability(checkoutAvailable && !readOnly, readOnly ? "系统维护中" : "当前尚未开放中国大陆人民币结算"), countryCodes: [globalCommerceCountry], currency: globalCommerceCurrency, minimumCashCents: 1, points: { supported: checkoutAvailable, requiresVerifiedAccount: true } },
@@ -105,6 +115,8 @@ export class CommerceCapabilitiesService {
       login: {
         password: capability(!readOnly, "系统维护中"),
         sms: capability(sms && !readOnly, readOnly ? "系统维护中" : "短信服务未配置"),
+        email: capability(verificationReady.email && !readOnly, readOnly ? "系统维护中" : "邮箱验证码服务未配置"),
+        defaultChannel: "sms",
         wechatH5: capability(!!officialAppId && !readOnly, readOnly ? "系统维护中" : "微信公众号登录未配置"),
       },
       payments,

@@ -21,6 +21,6 @@ import { GlobalWechatBindingService } from "./global-wechat-binding.service";
     WechatAppAuthService,
     WechatH5AuthService,
   ],
-  exports: [AuthService, UserAuthGuard, WechatH5AuthService],
+  exports: [AuthService, GlobalAuthService, GlobalVerificationDeliveryService, UserAuthGuard, WechatH5AuthService],
 })
 export class AuthModule {}
