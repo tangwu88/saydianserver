@@ -1,5 +1,5 @@
 export type IntegrationRow = { key: string; state: string; publicConfig?: Record<string, unknown>; hasSecret?: boolean; verificationStatus?: string; lastCheckedAt?: string | null; lastError?: string | null; updatedAt?: string };
-export type ConfigField = { key: string; label: string; hint: string; secret?: boolean; required?: boolean; kind?: 'text' | 'url' | 'pem' | 'list' | 'boolean'; advanced?: boolean; options?: { label: string; value: string }[]; defaultValue?: string };
+export type ConfigField = { key: string; label: string; hint: string; secret?: boolean; required?: boolean; kind?: 'text' | 'url' | 'pem' | 'list' | 'boolean'; advanced?: boolean; options?: { label: string; value: string }[]; defaultValue?: string; providers?: string[] };
 export type IntegrationDefinition = { key: string; title: string; group: string; short: string; purpose: string; prepare: string; note?: string; readOnly?: boolean; deployment?: boolean; fields: ConfigField[] };
 const p = (key: string, label: string, hint: string, extra: Partial<ConfigField> = {}): ConfigField => ({ key, label, hint, ...extra });
 const s = (key: string, label: string, hint: string, extra: Partial<ConfigField> = {}): ConfigField => p(key, label, hint, { secret: true, required: true, ...extra });
@@ -7,7 +7,15 @@ const provider = (value: string, label: string) => p('provider', '接入方式',
 const url = (key: string, label: string, hint: string, extra: Partial<ConfigField> = {}) => p(key, label, hint, { kind: 'url', ...extra });
 const appIdentity = [s('appId', '应用编号（AppID）', '从对应微信应用的开发资料中复制；不同类型应用不能混用。'), s('appSecret', '应用密钥（AppSecret）', '由该微信应用的管理员提供，不是微信登录密码。')];
 export const integrationDefinitions: IntegrationDefinition[] = [
-  { key: 'sms', title: '短信验证码', group: '登录与消息', short: '短', purpose: '发送注册、登录和绑定手机的验证码。', prepare: '请短信服务维护人员提供发送地址和访问令牌。目前使用短信中转接口，不直接填写阿里云或腾讯云短信账号。', fields: [provider('webhook', '短信中转接口'), url('webhookUrl', '短信发送地址', '由维护人员提供的 HTTPS 地址；不在地址中放入密钥。', { required: true }), s('webhookToken', '访问令牌', '用于验证短信发送请求，由短信接口维护人员提供。')] },
+  { key: 'sms', title: '短信验证码', group: '登录与消息', short: '短', purpose: '发送注册、登录和绑定手机的验证码。', prepare: '阿里云直连需准备 RAM 用户的 AccessKey ID、AccessKey Secret、已审核通过的短信签名名称和验证码模板 Code；模板变量必须为 code。也可继续使用现有短信中转接口。', note: '请使用仅有短信发送权限的 RAM 用户，不要使用阿里云主账号 AccessKey。保存不会发送测试短信；首次真实发送成功后才会显示验证通过。', fields: [
+    p('provider', '接入方式', '阿里云直连会由本服务调用官方 SendSms 接口；短信中转接口用于兼容现有服务。', { required: true, defaultValue: 'aliyun', options: [{ value: 'aliyun', label: '阿里云短信（直连）' }, { value: 'webhook', label: '短信中转接口' }] }),
+    s('accessKeyId', 'AccessKey ID', '从阿里云 RAM 用户的 AccessKey 中复制；不要填写账号名。', { providers: ['aliyun'] }),
+    s('accessKeySecret', 'AccessKey Secret', '与上方 AccessKey ID 配套，仅加密保存在服务端且不会回显。', { providers: ['aliyun'] }),
+    p('signName', '短信签名名称', '填写阿里云短信控制台中已审核通过的签名名称，不包含【】。', { required: true, providers: ['aliyun'] }),
+    p('templateCode', '验证码模板 Code', '填写已审核通过且变量名为 code 的模板 Code，例如 SMS_123456789。', { required: true, providers: ['aliyun'] }),
+    url('webhookUrl', '短信发送地址', '由维护人员提供的 HTTPS 地址；不在地址中放入密钥。', { required: true, providers: ['webhook'] }),
+    s('webhookToken', '访问令牌', '用于验证短信发送请求，由短信接口维护人员提供。', { providers: ['webhook'] }),
+  ] },
   { key: 'email_otp', title: '邮箱验证码', group: '登录与消息', short: '邮', purpose: '发送邮箱验证码，用于邮箱登录。', prepare: '准备一个可接收系统 JSON 请求的 HTTPS 邮件发送接口及访问令牌。', note: '邮件接口验收通过后再开启“已完成投递验收”；未配置时登录页仍默认使用手机号，邮箱方式会明确显示暂不可用。', fields: [
     { ...provider('webhook', '邮件发送接口'), defaultValue: 'webhook' },
     url('webhookUrl', '邮件发送地址', '由邮件服务维护人员提供的 HTTPS 地址；地址中不要包含账号或密钥。', { required: true }),
@@ -39,6 +47,11 @@ export type IntegrationDraft = { state: string; replaceSecrets: boolean; values:
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function get(config: Record<string, unknown>, key: string): unknown { return key.split('.').reduce<unknown>((value, part) => object(value)[part], config); }
 function put(config: Record<string, unknown>, key: string, value: unknown): void { const [parent, child] = key.split('.'); if (child) config[parent!] = { ...object(config[parent!]), [child]: value }; else config[key] = value; }
+function drop(config: Record<string, unknown>, key: string): void { const [parent, child] = key.split('.'); if (child) { const nested = { ...object(config[parent!]) }; delete nested[child]; config[parent!] = nested; } else delete config[key]; }
+export function applicableIntegrationFields(definition: IntegrationDefinition, draft: IntegrationDraft): ConfigField[] {
+  const selectedProvider = String(draft.values.provider ?? '');
+  return definition.fields.filter(field => !field.providers || field.providers.includes(selectedProvider));
+}
 export function draftFor(row: IntegrationRow, definition: IntegrationDefinition): IntegrationDraft {
   const values: IntegrationDraft['values'] = {};
   for (const field of definition.fields) { const value = field.secret ? undefined : get(object(row.publicConfig), field.key); values[field.key] = field.kind === 'boolean' ? value == null ? 'inherit' : ['true', '1', 'yes'].includes(String(value).toLowerCase()) ? 'true' : 'false' : Array.isArray(value) ? value.join('\n') : String(value ?? field.defaultValue ?? ''); }
@@ -53,11 +66,15 @@ export function integrationStatus(row: IntegrationRow): { label: string; tone: '
 function safeUrl(value: string): boolean { try { const u = new URL(value); return !u.username && !u.password && !u.hash && (u.protocol === 'https:' || u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)); } catch { return false; } }
 export function validateIntegrationDraft(row: IntegrationRow, definition: IntegrationDefinition, draft: IntegrationDraft): Record<string, string> {
   const errors: Record<string, string> = {};
+  const activeFields = applicableIntegrationFields(definition, draft);
+  const originalProvider = String(get(object(row.publicConfig), 'provider') ?? '');
+  const selectedProvider = String(draft.values.provider ?? '');
   if (definition.readOnly) return { _form: '此项目不通过配置表单更改，请使用商城业务设置。' };
   if (!['UNCONFIGURED', 'CONFIGURED', 'DISABLED', 'ERROR'].includes(draft.state)) errors._form = '请选择服务状态。';
   if (draft.replaceSecrets && row.state === 'CONFIGURED') errors._form = '请先暂停服务并保存，再重新打开页面替换凭证。';
-  if (draft.state === 'CONFIGURED' && definition.fields.some(f => f.secret) && !draft.replaceSecrets && !row.hasSecret && row.state !== 'CONFIGURED') errors._form = '尚未保存凭证，请先填写整组凭证；服务器部署的凭证请由维护人员核对。';
-  for (const f of definition.fields) {
+  if (originalProvider && selectedProvider && selectedProvider !== originalProvider && activeFields.some(f => f.secret) && !draft.replaceSecrets && (row.hasSecret || row.state === 'CONFIGURED')) errors._form = '更换接入方式时必须同时替换整组凭证；服务正在启用时请先暂停并保存。';
+  if (draft.state === 'CONFIGURED' && activeFields.some(f => f.secret) && !draft.replaceSecrets && !row.hasSecret && row.state !== 'CONFIGURED') errors._form = '尚未保存凭证，请先填写整组凭证；服务器部署的凭证请由维护人员核对。';
+  for (const f of activeFields) {
     if (f.secret && !draft.replaceSecrets) continue;
     if (!f.secret && draft.state !== 'CONFIGURED' && draft.values[f.key] === draftFor(row, definition).values[f.key]) continue;
     const value = String(draft.values[f.key] ?? '').trim();
@@ -66,6 +83,7 @@ export function validateIntegrationDraft(row: IntegrationRow, definition: Integr
     if (f.kind === 'url' && !safeUrl(value)) errors[f.key] = '请填写不含账号、密钥或 # 的完整 HTTPS 地址（本地调试允许回环 HTTP）。';
     if (f.key === 'redirectUri' && safeUrl(value) && new URL(value).search) errors[f.key] = '授权返回地址不能带问号参数。';
     if (f.options && !f.options.some(option => option.value === value)) errors[f.key] = '当前方式不在普通配置支持范围，请选择已支持的接入方式。';
+    if (definition.key === 'sms' && f.key === 'templateCode' && !/^SMS_[A-Za-z0-9]+$/.test(value)) errors[f.key] = '请填写以 SMS_ 开头的阿里云模板 Code。';
     if (definition.key === 'ai' && f.key === 'model' && !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(value)) errors[f.key] = '请填写服务商返回的模型 ID，不能填写品牌名称。';
     if (f.kind === 'pem' && !/^-----BEGIN (?:RSA )?(?:PRIVATE KEY|PUBLIC KEY|CERTIFICATE)-----[\s\S]+-----END (?:RSA )?(?:PRIVATE KEY|PUBLIC KEY|CERTIFICATE)-----$/.test(value.replace(/\\n/g, '\n'))) errors[f.key] = '请粘贴完整 PEM 文件内容，包括开头和结尾两行。';
     if (f.key === 'privateKeyPem' && !/BEGIN (?:RSA )?PRIVATE KEY/.test(value)) errors[f.key] = '这里需要私钥，不能填写公钥或证书。';
@@ -85,7 +103,12 @@ export function integrationPayload(row: IntegrationRow, definition: IntegrationD
   const publicConfig = JSON.parse(JSON.stringify(object(row.publicConfig))) as Record<string, unknown>;
   const secrets: Record<string, string> = {};
   const initial = draftFor(row, definition);
-  for (const f of definition.fields) {
+  const activeFields = applicableIntegrationFields(definition, draft);
+  const originalProvider = String(get(publicConfig, 'provider') ?? '');
+  const selectedProvider = String(draft.values.provider ?? '');
+  const switchingProvider = Boolean(selectedProvider && selectedProvider !== originalProvider && (originalProvider || draft.replaceSecrets));
+  if (switchingProvider) for (const f of definition.fields) if (f.providers && !activeFields.includes(f) && !f.secret) drop(publicConfig, f.key);
+  for (const f of activeFields) {
     const raw = draft.values[f.key]; const value = String(raw ?? '').trim();
     if (f.secret) { if (draft.replaceSecrets && value) secrets[f.key] = value.replace(/\\n/g, '\n'); continue; }
     // Preserve unshown fields and untouched nulls/nested defaults, including environment fallbacks.

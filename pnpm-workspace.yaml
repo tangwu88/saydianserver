@@ -1,7 +1,12 @@
 packages:
   - apps/*
   - packages/*
+overrides:
+  '@darabonba/typescript>ws': 8.21.0
 allowBuilds:
+  # Its postinstall only installs legacy TypeScript types for Node 10/12.
+  # The repository requires Node 22+, and the package already ships dist files.
+  '@alicloud/openapi-core': false
   '@parcel/watcher': true
   '@prisma/client': true
   '@prisma/engines': true

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { reactive } from 'vue';
 import { canAdminResource } from '@saydian/app-contracts';
-import { draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft, type IntegrationRow } from './integration-settings';
+import { applicableIntegrationFields, draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft, type IntegrationRow } from './integration-settings';
 
 const definition = (key: string) => integrationDefinitions.find(row => row.key === key)!;
 const row = (key = 'sms', extra: Partial<IntegrationRow> = {}): IntegrationRow => ({ key, state: 'UNCONFIGURED', publicConfig: {}, ...extra });
@@ -69,6 +69,22 @@ describe('plain-language integration settings', () => {
     expect(payload.secrets).toEqual({ webhookToken: 'synthetic-not-a-real-token' }); expect(payload.state).toBe('UNCONFIGURED');
     expect(payload.publicConfig).toEqual({ keep: true, provider: 'webhook' }); expect(payload.publicConfig).not.toHaveProperty('webhookToken');
   });
+  it('offers Aliyun direct SMS fields and encrypts both AccessKey values', () => {
+    const original = row('sms'); const draft = draftFor(original, definition('sms'));
+    expect(draft.values.provider).toBe('aliyun');
+    expect(applicableIntegrationFields(definition('sms'), draft).map(field => field.key)).toEqual([
+      'provider', 'accessKeyId', 'accessKeySecret', 'signName', 'templateCode',
+    ]);
+    draft.replaceSecrets = true; draft.state = 'CONFIGURED';
+    Object.assign(draft.values, {
+      accessKeyId: 'synthetic-access-key-id', accessKeySecret: 'synthetic-access-key-secret',
+      signName: '合成签名', templateCode: 'SMS_123456789',
+    });
+    const payload = integrationPayload(original, definition('sms'), draft);
+    expect(payload.publicConfig).toEqual({ provider: 'aliyun', signName: '合成签名', templateCode: 'SMS_123456789' });
+    expect(payload.secrets).toEqual({ accessKeyId: 'synthetic-access-key-id', accessKeySecret: 'synthetic-access-key-secret' });
+    expect(JSON.stringify(payload.publicConfig)).not.toContain('synthetic-access-key');
+  });
   it('keeps email OTP delivery disabled until its webhook has passed delivery acceptance', () => {
     const original = row('email_otp');
     const draft = draftFor(original, definition('email_otp'));
@@ -84,6 +100,22 @@ describe('plain-language integration settings', () => {
     const payload = integrationPayload(original, definition('email_otp'), draft);
     expect(payload.publicConfig).toEqual({ provider: 'webhook', webhookUrl: 'https://mail.example.invalid/otp', deliveryVerified: true });
     expect(payload.secrets).toEqual({ webhookToken: 'synthetic-email-token' });
+  });
+  it('requires a complete credential replacement when switching SMS providers', () => {
+    const original = row('sms', { state: 'DISABLED', hasSecret: true, publicConfig: { provider: 'webhook', webhookUrl: 'https://example.invalid/send' } });
+    const draft = draftFor(original, definition('sms')); draft.values.provider = 'aliyun';
+    expect(validateIntegrationDraft(original, definition('sms'), draft)._form).toContain('替换整组凭证');
+    draft.replaceSecrets = true;
+    Object.assign(draft.values, { accessKeyId: 'synthetic-id', accessKeySecret: 'synthetic-secret', signName: '合成签名', templateCode: 'SMS_123456789' });
+    const payload = integrationPayload(original, definition('sms'), draft);
+    expect(payload.publicConfig).toEqual({ provider: 'aliyun', signName: '合成签名', templateCode: 'SMS_123456789' });
+    expect(payload.publicConfig).not.toHaveProperty('webhookUrl');
+    expect(payload.secrets).not.toHaveProperty('webhookToken');
+  });
+  it('rejects a malformed Aliyun template identifier', () => {
+    const original = row('sms'); const draft = draftFor(original, definition('sms'));
+    draft.replaceSecrets = true; draft.values.templateCode = '123456789';
+    expect(validateIntegrationDraft(original, definition('sms'), draft).templateCode).toContain('SMS_');
   });
   it('does not submit abandoned replacement inputs when replacement is unchecked', () => {
     const original = row(); const draft = draftFor(original, definition('sms')); draft.values.webhookToken = 'discarded-synthetic-value';
@@ -136,7 +168,7 @@ describe('plain-language integration settings', () => {
     const payload = integrationPayload(original, definition('alipay'), draft); expect(payload.secrets?.privateKeyPem).toBe(draft.values.privateKeyPem); expect(payload.secrets?.publicKeyPem).toBe(draft.values.publicKeyPem);
   });
   it('rejects URL credentials and insecure remote URLs while allowing local loopback', () => {
-    const original = row(); const draft = draftFor(original, definition('sms'));
+    const original = row(); const draft = draftFor(original, definition('sms')); draft.values.provider = 'webhook';
     for (const value of ['http://example.com/sms', 'https://user:secret@example.com', 'https://example.com/#token', 'javascript:alert(1)']) { draft.values.webhookUrl = value; expect(validateIntegrationDraft(original, definition('sms'), draft).webhookUrl).toBeTruthy(); }
     draft.values.webhookUrl = 'http://127.0.0.1:8081/local'; expect(validateIntegrationDraft(original, definition('sms'), draft).webhookUrl).toBeUndefined();
   });

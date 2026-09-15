@@ -266,14 +266,14 @@ describe("global registration challenges", () => {
 describe("global real-channel readiness", () => {
   it("is disabled by default without reading any credentials", async () => {
     vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "disabled"); vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled");
-    const resolve = vi.fn(); const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: vi.fn().mockResolvedValue(null) } } as any, { resolve } as any);
+    const resolve = vi.fn(); const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: vi.fn().mockResolvedValue(null) } } as any, { resolve } as any, { aliyunReady: vi.fn().mockResolvedValue(false) } as any);
     expect(await service.capabilities()).toEqual({ email: false, sms: false, smsCountries: [] }); expect(resolve).not.toHaveBeenCalled();
   });
   it("requires configured and operator-verified delivery with actual secret fields", async () => {
     vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "webhook"); vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled");
     const row = { state: "CONFIGURED", publicConfig: { provider: "webhook", webhookUrl: "https://example.invalid/verify", deliveryVerified: false } };
     const resolve = vi.fn(async () => ({ webhookToken: "synthetic-provider-token" }));
-    const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: async () => row } } as any, { resolve } as any);
+    const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: async () => row } } as any, { resolve } as any, { aliyunReady: vi.fn().mockResolvedValue(false) } as any);
     expect((await service.capabilities()).email).toBe(false); expect(resolve).not.toHaveBeenCalled();
     row.publicConfig.deliveryVerified = true; expect((await service.capabilities()).email).toBe(true);
     resolve.mockResolvedValue({} as any); expect((await service.capabilities()).email).toBe(false);
@@ -281,8 +281,19 @@ describe("global real-channel readiness", () => {
   it("never promises every phone country and does not call the network outside configured countries", async () => {
     vi.stubEnv("GLOBAL_SMS_PROVIDER", "webhook"); vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "disabled");
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
-    const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: async () => ({ state: "CONFIGURED", publicConfig: { provider: "webhook", deliveryVerified: true, countries: ["US", "US", "ZZ"] } }) } } as any, { resolve: async () => ({ webhookUrl: "https://example.invalid/verify", webhookToken: "synthetic-provider-token" }) } as any);
+    const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: async () => ({ state: "CONFIGURED", publicConfig: { provider: "webhook", deliveryVerified: true, countries: ["US", "US", "ZZ"] } }) } } as any, { resolve: async () => ({ webhookUrl: "https://example.invalid/verify", webhookToken: "synthetic-provider-token" }) } as any, { aliyunReady: vi.fn().mockResolvedValue(false) } as any);
     expect((await service.capabilities()).smsCountries).toEqual(["US"]);
     await expect(service.assertAvailable("sms", "DE")).rejects.toThrow("not available"); expect(fetch).not.toHaveBeenCalled();
+  });
+  it("uses the configured Aliyun SMS integration only for mainland China numbers", async () => {
+    vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled"); vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "disabled");
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    const sms = { aliyunReady: vi.fn().mockResolvedValue(true), send: vi.fn().mockResolvedValue(undefined) };
+    const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: vi.fn().mockResolvedValue(null) } } as any, { resolve: vi.fn() } as any, sms as any);
+    expect(await service.capabilities()).toEqual({ email: false, sms: true, smsCountries: ["CN"] });
+    await service.send({ channel: "sms", identifier: "+8613812345678", country: "CN", code: "123456", purpose: "login", locale: "zh-CN", challengeId: "synthetic" });
+    expect(sms.send).toHaveBeenCalledWith("13812345678", "123456", "login");
+    await expect(service.assertAvailable("sms", "US")).rejects.toThrow("not available");
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

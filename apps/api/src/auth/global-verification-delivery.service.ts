@@ -6,12 +6,17 @@ import { IntegrationSecretsService } from "../common/integration-secrets.service
 import { safeObject } from "../common/crypto";
 import { markIntegrationVerified } from "../common/integration-health";
 import { globalError, type VerificationChannel, type VerificationPurpose } from "./global-identity";
+import { SmsAdapterService } from "./sms-adapter.service";
 
 const integrationKeys = { email: "email_otp", sms: "sms_global" } as const;
 
 @Injectable()
 export class GlobalVerificationDeliveryService {
-  constructor(private readonly prisma: PrismaService, private readonly secrets: IntegrationSecretsService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly secrets: IntegrationSecretsService,
+    private readonly sms: SmsAdapterService,
+  ) {}
 
   async capabilities() {
     const [email, sms] = await Promise.all([this.configuration("email"), this.configuration("sms")]);
@@ -28,6 +33,15 @@ export class GlobalVerificationDeliveryService {
 
   async send(input: { channel: VerificationChannel; identifier: string; country: string | null; code: string; purpose: VerificationPurpose; locale: string; challengeId: string }) {
     const config = await this.assertAvailable(input.channel, input.country);
+    if (config.provider === "aliyun") {
+      if (input.country !== "CN" || !input.identifier.startsWith("+86")) {
+        throw globalError(503, "verification_unavailable", "Verification is not available for this address or country yet.");
+      }
+      await this.sms.send(input.identifier.slice(3), input.code, input.purpose).catch(() => {
+        throw globalError(503, "verification_delivery_failed", "The verification code could not be sent. Please try again later.");
+      });
+      return;
+    }
     const response = await fetch(config.url, {
       method: "POST",
       headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json" },
@@ -46,7 +60,12 @@ export class GlobalVerificationDeliveryService {
     const provider = String(
       config.provider ?? process.env[channel === "email" ? "GLOBAL_EMAIL_PROVIDER" : "GLOBAL_SMS_PROVIDER"] ?? "disabled",
     ).toLowerCase();
-    if (provider !== "webhook") return null;
+    if (provider !== "webhook") {
+      if (channel === "sms" && await this.sms.aliyunReady()) {
+        return { provider: "aliyun" as const, url: "", token: "", countries: ["CN"] };
+      }
+      return null;
+    }
     // Enable only after the operator has tested the provider and its country list.
     if (integration?.state !== IntegrationState.CONFIGURED || config.provider !== "webhook" || config.deliveryVerified !== true) return null;
     const prefix = channel === "email" ? "GLOBAL_EMAIL" : "GLOBAL_SMS";
@@ -61,6 +80,6 @@ export class GlobalVerificationDeliveryService {
       ? [...new Set(config.countries.map(String).filter(value => getCountries().some(country => country === value)))].sort()
       : [];
     if (channel === "sms" && countries.length === 0) return null;
-    return { url, token, countries };
+    return { provider: "webhook" as const, url, token, countries };
   }
 }
