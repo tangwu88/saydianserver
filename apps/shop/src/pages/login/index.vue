@@ -3,9 +3,9 @@
 <view v-if="error" class="error-state">{{ error }}</view>
 <view v-if="!bindTicket" class="login-tabs"><button :class="{active:channel==='sms'}" @click="changeChannel('sms')">手机号</button><button :class="{active:channel==='email'}" @click="changeChannel('email')">邮箱</button></view>
 <label class="form-label">{{ channel==='sms' || bindTicket ? '手机号' : '邮箱' }}<input v-model="identifier" class="input" :type="channel==='sms' || bindTicket ? 'number' : 'text'" :maxlength="channel==='sms' || bindTicket ? 11 : 254" :placeholder="channel==='sms' || bindTicket ? '请输入手机号' : '请输入邮箱'" @input="resetCode" /></label>
-<view><label class="form-label">验证码</label><view class="code-row"><input v-model="code" class="input" type="number" maxlength="6" :placeholder="channel==='sms' || bindTicket ? '短信验证码' : '邮箱验证码'"/><button class="outline-btn" :disabled="!!countdown || busy || !enabled" @click="sendCode">{{ countdown ? countdown+'秒后重试' : '获取验证码' }}</button></view><text v-if="capabilities && !enabled" class="muted">{{ capabilityReason }}</text><text v-if="devCode" class="notice">仅本地测试验证码：{{ devCode }}</text></view>
+<view><label class="form-label">验证码</label><view class="code-row"><input v-model="code" class="input" type="number" maxlength="6" :placeholder="channel==='sms' || bindTicket ? '短信验证码' : '邮箱验证码'"/><button class="outline-btn" :disabled="!!countdown || busy" @click="sendCode">{{ countdown ? countdown+'秒后重试' : '获取验证码' }}</button></view><text v-if="capabilities && !enabled" class="muted">{{ capabilityReason }}</text><text v-if="devCode" class="notice">仅本地测试验证码：{{ devCode }}</text></view>
 <view class="agreement"><checkbox-group @change="agreementAccepted=!!$event.detail.value.length"><label><checkbox value="yes" :checked="agreementAccepted"/>{{ capabilities?.demo ? '我确认仅进行本地模拟测试' : '我已阅读并同意' }}</label></checkbox-group><text class="link" @click="help('agreement')">用户协议</text><text>与</text><text class="link" @click="help('privacy')">隐私政策</text></view>
-<button class="primary-btn" :loading="busy" :disabled="busy || !enabled" @click="login">{{ bindTicket ? "验证并绑定" : "登录" }}</button>
+<button class="primary-btn" :loading="busy" :disabled="busy" @click="login">{{ bindTicket ? "验证并绑定" : "登录" }}</button>
 <!-- #ifdef H5 -->
 <button v-if="isWechat && !bindTicket" class="outline-btn wechat-login" :disabled="busy || !capabilities?.login?.wechatH5?.enabled" @click="officialLogin">微信授权登录</button>
 <text v-if="isWechat && capabilities && !capabilities.login.wechatH5.enabled" class="muted">{{ capabilities.login.wechatH5.reason }}</text>
@@ -49,6 +49,7 @@ onLoad(async()=>{
 });
 async function sendCode(){
   if(countdown.value || busy.value)return;
+  if(!enabled.value)return toast(capabilityReason.value||"当前方式暂时无法获取验证码，请稍后再试");
   const value=loginIdentifier();if(!value)return;
   busy.value=true;
   try{const response:any=bindTicket.value
@@ -59,7 +60,7 @@ async function sendCode(){
   finally{busy.value=false;}
 }
 async function login(){
-  if(busy.value)return;if(!agreementAccepted.value)return toast("请先阅读并同意协议");
+  if(busy.value)return;if(!enabled.value)return toast(capabilityReason.value||"当前方式暂时无法登录，请稍后再试");if(!agreementAccepted.value)return toast("请先阅读并同意协议");
   const value=loginIdentifier();if(!value)return;if(!/^\d{6}$/.test(code.value))return toast("请输入6位验证码");
   if(channel.value==="email" && !bindTicket.value && !challengeId.value)return toast("请先获取当前邮箱的验证码");
   busy.value=true;error.value="";
