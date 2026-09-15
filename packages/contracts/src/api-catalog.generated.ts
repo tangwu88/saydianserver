@@ -1440,6 +1440,161 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.importCommerceProductBySku",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-products/erp-import",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "按SKU实时获取并导入ERP商品",
+      "request": "{sku:单个ERP SKU，最多100字符}；不读取本地同步列表作为资料来源",
+      "response": "聚水潭商品与库存均成功后新增或刷新草稿商品，并返回完整已知ERP字段；未配置、无权限、未找到或库存缺失时不导入",
+      "dependency": "聚水潭商品查询与库存查询",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "sku": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "^[^,\\r\\n]+$"
+            }
+          },
+          "required": [
+            "sku"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "sku": "ERP-SKU-001"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "source": {
+              "const": "ERP"
+            },
+            "erpItemId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "skus": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "erpSkuId": {
+                    "type": "string"
+                  },
+                  "stock": {
+                    "type": "integer"
+                  },
+                  "salePriceCents": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "erpSkuId",
+                  "stock",
+                  "salePriceCents"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "erpLookup": {
+              "type": "object",
+              "properties": {
+                "requestedSku": {
+                  "type": "string"
+                },
+                "fetchedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "product": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                },
+                "inventory": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "requestedSku",
+                "fetchedAt",
+                "product",
+                "inventory"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "id",
+            "source",
+            "erpItemId",
+            "name",
+            "skus",
+            "erpLookup"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "source": "ERP",
+          "erpItemId": "ERP-ITEM-001",
+          "name": "合成测试商品",
+          "skus": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "erpSkuId": "ERP-SKU-001",
+              "stock": 5,
+              "salePriceCents": 100
+            }
+          ],
+          "erpLookup": {
+            "requestedSku": "ERP-SKU-001",
+            "fetchedAt": "2026-09-15T00:00:00.000Z",
+            "product": {},
+            "inventory": {}
+          }
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/jushuitan-product-import.ts; apps/api/src/admin/jushuitan-product-import.test.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
       "key": "AdminController.batchCommerceProducts",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/commerce-products/batch",

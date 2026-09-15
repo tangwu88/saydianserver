@@ -68,7 +68,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
     downloadEditorToManifest: globalDownloadEditorToManifest,
     downloadManifestToEditor: globalDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -748,6 +748,57 @@ describe("content category number and association editor", () => {
 });
 
 describe("administrator commerce and service editor improvements", () => {
+  it("requires an ERP SKU, imports live ERP product data and edits the imported draft", async () => {
+    const h = harness();
+    h.route.params.resource = "commerce-products";
+    h.api.get.mockResolvedValueOnce({ data: { data: [] } });
+    h.api.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          id: "erp-product-1",
+          source: "ERP",
+          erpItemId: "ERP-ITEM-1",
+          name: "ERP 智能手表",
+          displayName: "商城智能手表",
+          gallery: ["https://cdn.example.invalid/1.png"],
+          tags: ["健康"],
+          skus: [{ id: "erp-sku-1", erpSkuId: "ERP-SKU-001", specification: "黑色", stock: 9 }],
+          status: "DRAFT",
+          erpLookup: {
+            requestedSku: "ERP-SKU-001",
+            product: { sku_id: "ERP-SKU-001", brand: "SAYDIAN" },
+            inventory: { sku_id: "ERP-SKU-001", qty: 9 },
+          },
+        },
+      },
+    });
+    await h.openCreate();
+    expect(h.form.value).toMatchObject({ source: "ERP", _erpLookupPending: true, _erpLookupSku: "" });
+    await h.save();
+    expect(h.api.post).not.toHaveBeenCalled();
+    expect(h.messages.error).toHaveBeenCalledWith("请先填写 SKU 并获取 ERP 商品资料");
+
+    h.form.value._erpLookupSku = " ERP-SKU-001 ";
+    await h.loadCommerceProductBySku();
+    expect(h.api.post).toHaveBeenLastCalledWith("/commerce-products/erp-import", { sku: "ERP-SKU-001" });
+    expect(h.form.value).toMatchObject({
+      id: "erp-product-1",
+      name: "ERP 智能手表",
+      _erpLookupSku: "ERP-SKU-001",
+      _erpLookupPending: false,
+      galleryText: "https://cdn.example.invalid/1.png",
+      tagsText: "健康",
+    });
+    expect(h.form.value._erpSnapshotText).toContain('"qty": 9');
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledWith("/commerce-products/erp-product-1", expect.objectContaining({
+      displayName: "商城智能手表",
+      gallery: ["https://cdn.example.invalid/1.png"],
+      tags: ["健康"],
+    }));
+    expect(h.api.post).toHaveBeenCalledTimes(1);
+  });
+
   it("opens a new coupon with a valid 30-day period and blocks missing dates before the API call", async () => {
     const h = harness();
     h.route.params.resource = "commerce-coupons";
