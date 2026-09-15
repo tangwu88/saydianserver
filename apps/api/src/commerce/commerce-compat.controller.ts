@@ -30,6 +30,7 @@ import { UserAuthGuard } from "../common/user-auth.guard";
 import { CommerceService } from "./commerce.service";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { SupportService } from "../support/support.service";
+import { GlobalAuthService } from "../auth/global-auth.service";
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 
@@ -47,6 +48,7 @@ export class CommerceCompatibilityController {
     private readonly commerce: CommerceService,
     private readonly billing: BillingService,
     private readonly wechatH5: WechatH5AuthService,
+    private readonly globalAuth: GlobalAuthService,
     private readonly capabilities: CommerceCapabilitiesService,
     private readonly support: SupportService,
   ) {}
@@ -132,6 +134,39 @@ export class CommerceCompatibilityController {
       code: String(body.code ?? ""),
       consentVersion: String(body.consentVersion ?? ""),
       consentSource: "commerce_sms",
+      ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}),
+    });
+  }
+
+  @Post("auth/code/request")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async requestLoginCode(@Body() input: unknown) {
+    const body = safeObject(input);
+    if (isGlobalRealm() || body.channel === "email") {
+      return this.globalAuth.requestLoginCode(body);
+    }
+    if (body.channel !== "sms") {
+      return this.globalAuth.requestLoginCode(body);
+    }
+    const result = await this.auth.requestSmsCode(String(body.identifier ?? ""), "login");
+    return { configured: true, channel: "sms", retryAfter: 60, ...result };
+  }
+
+  @Post("auth/code/login")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  loginCode(@Body() input: unknown) {
+    const body = safeObject(input);
+    if (isGlobalRealm() || body.channel === "email") {
+      return this.globalAuth.loginWithCode(body);
+    }
+    if (body.channel !== "sms") {
+      return this.globalAuth.loginWithCode(body);
+    }
+    return this.auth.loginWithSms({
+      mobile: String(body.identifier ?? ""),
+      code: String(body.code ?? ""),
+      consentVersion: String(body.consentVersion ?? ""),
+      consentSource: "commerce_code",
       ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}),
     });
   }

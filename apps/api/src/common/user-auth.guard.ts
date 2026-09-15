@@ -71,7 +71,10 @@ export class UserAuthGuard implements CanActivate {
             ...(temporary
               ? { wechatOfficialIdentities: { some: { appId: testAppId! } } }
               : requiresVerifiedCommerceMobile(path) && !isGlobalRealm()
-                ? { mobile: { not: null }, mobileVerifiedAt: { not: null } }
+                ? { OR: [
+                    { mobile: { not: null }, mobileVerifiedAt: { not: null } },
+                    { email: { not: null }, emailVerifiedAt: { not: null } },
+                  ] }
                 : {}),
           },
         },

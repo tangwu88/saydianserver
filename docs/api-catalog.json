@@ -7478,8 +7478,8 @@
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "微信手机号登记或核验后登录",
-      "request": "{bindTicket,challengeId,code:6位数字,consentVersion,locale?,password?}",
-      "response": "raw会话；user含phoneTestMode/phoneVerified/phoneVerificationStatus。临时模式接受任意6位数字但不验证手机号，仅原微信账号或未占用号码新建，冲突不合并",
+      "request": "{bindTicket,challengeId,code:6位数字,consentVersion,locale?}",
+      "response": "raw会话；user含phoneTestMode/phoneVerified/phoneVerificationStatus。正式短信验证码即为手机号凭证，不再要求旧账号密码；临时模式不验证手机号，仅原微信账号或未占用号码新建，冲突不合并",
       "dependency": "test会话只准账号读取/退出/H5刷新，关闭开关即失效；正式短信才可标记手机号已验证",
       "successStatus": 201,
       "contract": {
@@ -8828,6 +8828,70 @@
         "contentType": "application/json",
         "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/auth/auth.service.ts; apps/api/src/auth/wechat-h5-auth.service.ts; apps/api/src/auth/global-wechat-binding.service.ts; apps/api/src/auth/global-wechat-policy.ts; apps/api/src/auth/global-legal.ts",
         "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 商城成功响应为 raw：直接读取 token/user，不套 data。与 App 共享 User.id；Employee 会话的 typ/aud 和权限独立。手机号显示形态可能为掩码，不据此判断账号身份。核验 login 用途验证码后复用手机号账号；新手机号可以创建统一会员。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.requestLoginCode",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/auth/code/request",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "商城统一登录验证码",
+      "request": "{channel:sms|email,identifier,locale?}",
+      "response": "手机号走国内sms集成（支持阿里云直连），邮箱与国际手机号返回一次性challengeId；不返回正式验证码",
+      "dependency": "通道真实配置、频率限制和维护门禁",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.loginCode",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/auth/code/login",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "商城手机号或邮箱验证码登录",
+      "request": "{channel:sms|email,identifier,code,challengeId?,consentVersion,locale?,referralCode?}",
+      "response": "验证成功后返回商城raw会话；账号不存在时自动建立无密码会员",
+      "dependency": "验证码一次消费；停用账号拒绝；国内手机号使用sms记录，邮箱和国际手机号使用challengeId",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
     },
     {

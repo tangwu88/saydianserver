@@ -6,8 +6,8 @@ import { applicableIntegrationFields, draftFor, integrationDefinitions, integrat
 const definition = (key: string) => integrationDefinitions.find(row => row.key === key)!;
 const row = (key = 'sms', extra: Partial<IntegrationRow> = {}): IntegrationRow => ({ key, state: 'UNCONFIGURED', publicConfig: {}, ...extra });
 describe('plain-language integration settings', () => {
-  it('covers all twelve built-in services without conflating official and native WeChat', () => {
-    expect(new Set(integrationDefinitions.map(d => d.key)).size).toBe(14);
+  it('covers all built-in services without conflating official and native WeChat', () => {
+    expect(new Set(integrationDefinitions.map(d => d.key)).size).toBe(15);
     expect(definition('wechat_official').fields.some(f => f.key === 'redirectUri')).toBe(true);
     expect(definition('wechat_login').fields.some(f => f.key === 'redirectUri')).toBe(false);
   });
@@ -84,6 +84,22 @@ describe('plain-language integration settings', () => {
     expect(payload.publicConfig).toEqual({ provider: 'aliyun', signName: '合成签名', templateCode: 'SMS_123456789' });
     expect(payload.secrets).toEqual({ accessKeyId: 'synthetic-access-key-id', accessKeySecret: 'synthetic-access-key-secret' });
     expect(JSON.stringify(payload.publicConfig)).not.toContain('synthetic-access-key');
+  });
+  it('keeps email OTP delivery disabled until its webhook has passed delivery acceptance', () => {
+    const original = row('email_otp');
+    const draft = draftFor(original, definition('email_otp'));
+    expect(draft.values.provider).toBe('webhook');
+    expect(draft.values.deliveryVerified).toBe('inherit');
+    draft.replaceSecrets = true;
+    draft.state = 'CONFIGURED';
+    Object.assign(draft.values, {
+      webhookUrl: 'https://mail.example.invalid/otp',
+      webhookToken: 'synthetic-email-token',
+      deliveryVerified: 'true',
+    });
+    const payload = integrationPayload(original, definition('email_otp'), draft);
+    expect(payload.publicConfig).toEqual({ provider: 'webhook', webhookUrl: 'https://mail.example.invalid/otp', deliveryVerified: true });
+    expect(payload.secrets).toEqual({ webhookToken: 'synthetic-email-token' });
   });
   it('requires a complete credential replacement when switching SMS providers', () => {
     const original = row('sms', { state: 'DISABLED', hasSecret: true, publicConfig: { provider: 'webhook', webhookUrl: 'https://example.invalid/send' } });

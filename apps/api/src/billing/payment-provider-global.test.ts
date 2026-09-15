@@ -92,11 +92,11 @@ describe("global payment adapter boundary", () => {
     expect(paymentIntegrationKeyForStoredIntent({ channel: PaymentChannel.ALIPAY_APP, integrationKey: null })).toBe("alipay");
     expect(() => paymentIntegrationKeyForStoredIntent({ channel: PaymentChannel.WECHAT_APP, integrationKey: "wechat_pay" })).toThrow("不匹配");
   });
-  it.each(["email", "phone"])("requires ACTIVE current-app official identity with true %s verification", async channel => {
+  it.each(["email", "phone"])("accepts ACTIVE current-app official identity with true %s verification in either realm", async channel => {
     const h = providerFixture(); h.db.wechatOfficialIdentity.findUnique.mockResolvedValue({ openId: "current-official-openid", user: { status: "ACTIVE", emailVerifiedAt: channel === "email" ? new Date() : null, mobileVerifiedAt: channel === "phone" ? new Date() : null } } as any);
     expect(await h.service.resolveOfficialPayer("user", "official-app")).toBe("current-official-openid");
     expect(h.db.wechatOfficialIdentity.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { userId_appId: { userId: "user", appId: "official-app" } } }));
-    if (channel === "email") { vi.stubEnv("APP_REALM", "domestic"); await expect(h.service.resolveOfficialPayer("user", "official-app")).rejects.toMatchObject({ status: 400 }); }
+    if (channel === "email") { vi.stubEnv("APP_REALM", "domestic"); await expect(h.service.resolveOfficialPayer("user", "official-app")).resolves.toBe("current-official-openid"); }
   });
   it.each([null, { openId: "unverified", user: { status: "ACTIVE", emailVerifiedAt: null, mobileVerifiedAt: null } }, { openId: "frozen", user: { status: "FROZEN", emailVerifiedAt: new Date(), mobileVerifiedAt: new Date() } }])("rejects missing, unverified/test or disabled payer %j", async identity => {
     const h = providerFixture(); h.db.wechatOfficialIdentity.findUnique.mockResolvedValue(identity as any);

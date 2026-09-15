@@ -1,10 +1,9 @@
 <template><GlobalLogin v-if="isGlobalMall"/><template v-else><DesktopHeader/><view class="page login-page"><view class="login-card card"><image class="login-logo" :src="brandLogo" mode="aspectFit"/><h1>{{ bindTicket ? "绑定手机账号" : "登录赛电商城" }}</h1><text class="muted">与赛电 App 共用会员、订单和积分账户</text>
 <view v-if="capabilities?.demo" class="notice">本地演示：使用合成手机号，验证码不会发送到手机。</view>
 <view v-if="error" class="error-state">{{ error }}</view>
-<view v-if="!bindTicket" class="login-tabs"><button :class="{active:mode==='sms'}" @click="mode='sms'">验证码登录</button><button :class="{active:mode==='password'}" @click="mode='password'">密码登录</button></view>
-<label class="form-label">手机号<input v-model="mobile" class="input" type="number" maxlength="11" placeholder="请输入手机号" /></label>
-<label v-if="mode==='password' && !bindTicket" class="form-label">密码<input v-model="password" class="input" password placeholder="请输入 App 账号密码" @confirm="login"/></label>
-<view v-else><label class="form-label">验证码</label><view class="code-row"><input v-model="code" class="input" type="number" maxlength="6" placeholder="短信验证码"/><button class="outline-btn" :disabled="!!countdown || busy || !capabilities?.login?.sms?.enabled" @click="sendCode">{{ countdown ? countdown+'秒后重试' : '获取验证码' }}</button></view><text v-if="capabilities && !capabilities.login.sms.enabled" class="muted">{{ capabilities.login.sms.reason }}</text><text v-if="devCode" class="notice">仅本地测试验证码：{{ devCode }}</text></view>
+<view v-if="!bindTicket" class="login-tabs"><button :class="{active:channel==='sms'}" @click="changeChannel('sms')">手机号</button><button :class="{active:channel==='email'}" @click="changeChannel('email')">邮箱</button></view>
+<label class="form-label">{{ channel==='sms' || bindTicket ? '手机号' : '邮箱' }}<input v-model="identifier" class="input" :type="channel==='sms' || bindTicket ? 'number' : 'text'" :maxlength="channel==='sms' || bindTicket ? 11 : 254" :placeholder="channel==='sms' || bindTicket ? '请输入手机号' : '请输入邮箱'" @input="resetCode" /></label>
+<view><label class="form-label">验证码</label><view class="code-row"><input v-model="code" class="input" type="number" maxlength="6" :placeholder="channel==='sms' || bindTicket ? '短信验证码' : '邮箱验证码'"/><button class="outline-btn" :disabled="!!countdown || busy || !enabled" @click="sendCode">{{ countdown ? countdown+'秒后重试' : '获取验证码' }}</button></view><text v-if="capabilities && !enabled" class="muted">{{ capabilityReason }}</text><text v-if="devCode" class="notice">仅本地测试验证码：{{ devCode }}</text></view>
 <view class="agreement"><checkbox-group @change="agreementAccepted=!!$event.detail.value.length"><label><checkbox value="yes" :checked="agreementAccepted"/>{{ capabilities?.demo ? '我确认仅进行本地模拟测试' : '我已阅读并同意' }}</label></checkbox-group><text class="link" @click="help('agreement')">用户协议</text><text>与</text><text class="link" @click="help('privacy')">隐私政策</text></view>
 <button class="primary-btn" :loading="busy" :disabled="busy || !enabled" @click="login">{{ bindTicket ? "验证并绑定" : "登录" }}</button>
 <!-- #ifdef H5 -->
@@ -21,9 +20,10 @@ import { onLoad,onUnload } from "@dcloudio/uni-app"; import { computed,ref } fro
 import DesktopHeader from "../../components/DesktopHeader.vue";import { brandLogo } from "../../storefront";
 import { api,saveMallSession,COMMERCE_CONSENT_VERSION,ensureMiniProgramSession,toast } from "../../api";
 import { bindReferral,captureReferral } from "../../session";import { safeMallRoute } from "../../commerce-model";
-const mobile=ref(""),password=ref(""),code=ref(""),mode=ref("sms"),agreementAccepted=ref(false),busy=ref(false),countdown=ref(0),devCode=ref(""),error=ref(""),bindTicket=ref(""),capabilities=ref<any>();
+const identifier=ref(""),code=ref(""),channel=ref<"sms"|"email">("sms"),challengeId=ref(""),agreementAccepted=ref(false),busy=ref(false),countdown=ref(0),devCode=ref(""),error=ref(""),bindTicket=ref(""),capabilities=ref<any>();
 const isWechat=typeof navigator!=="undefined" && /micromessenger/i.test(navigator.userAgent);
-const enabled=computed(()=>bindTicket.value ? capabilities.value?.login?.sms?.enabled : capabilities.value?.login?.[mode.value]?.enabled);
+const enabled=computed(()=>bindTicket.value ? capabilities.value?.login?.sms?.enabled : capabilities.value?.login?.[channel.value]?.enabled);
+const capabilityReason=computed(()=>bindTicket.value ? capabilities.value?.login?.sms?.reason : capabilities.value?.login?.[channel.value]?.reason);
 let timer:ReturnType<typeof setInterval>|undefined;
 onUnload(()=>{if(timer)clearInterval(timer);});
 onLoad(async()=>{
@@ -41,7 +41,7 @@ onLoad(async()=>{
       const response:any=await api("/auth/wechat/h5/login",{method:"POST",data:{code:oauthCode,state,codeVerifier:stored.verifier,consentVersion:COMMERCE_CONSENT_VERSION}});
       sessionStorage.removeItem("saidian-oauth:"+state);
       const clean=new URL(location.href);clean.searchParams.delete("code");clean.searchParams.delete("state");history.replaceState(null,"",clean.href);
-      if(response.requiresMobileBinding){bindTicket.value=response.bindTicket;agreementAccepted.value=true;mode.value="sms";mallStorage.set("saidian-post-login-route",safeMallRoute(response.returnTo));}
+      if(response.requiresMobileBinding){bindTicket.value=response.bindTicket;agreementAccepted.value=true;channel.value="sms";resetCode();mallStorage.set("saidian-post-login-route",safeMallRoute(response.returnTo));}
       else await save(response);
     }
     /* #endif */
@@ -49,22 +49,30 @@ onLoad(async()=>{
 });
 async function sendCode(){
   if(countdown.value || busy.value)return;
-  if(!/^1\d{10}$/.test(mobile.value))return toast("请输入11位手机号");
-  try{const response:any=await api("/auth/sms/request",{method:"POST",data:{mobile:mobile.value,...(bindTicket.value?{usage:"bind_mobile"}:{})}});
-    devCode.value=String(response.devCode||"");if(response.devCode)code.value=String(response.devCode);countdown.value=60;timer=setInterval(()=>{countdown.value--;if(!countdown.value && timer)clearInterval(timer);},1000);
+  const value=loginIdentifier();if(!value)return;
+  busy.value=true;
+  try{const response:any=bindTicket.value
+      ? await api("/auth/sms/request",{method:"POST",data:{mobile:value,usage:"bind_mobile"}})
+      : await api("/auth/code/request",{method:"POST",data:{channel:channel.value,identifier:value}});
+    challengeId.value=String(response.challengeId||"");devCode.value=String(response.devCode||"");if(response.devCode)code.value=String(response.devCode);countdown.value=Math.max(1,Number(response.retryAfter||60));timer=setInterval(()=>{countdown.value--;if(!countdown.value && timer)clearInterval(timer);},1000);
   }catch(e){toast(e);}
+  finally{busy.value=false;}
 }
 async function login(){
   if(busy.value)return;if(!agreementAccepted.value)return toast("请先阅读并同意协议");
-  if(!/^1\d{10}$/.test(mobile.value))return toast("请输入11位手机号");
+  const value=loginIdentifier();if(!value)return;if(!/^\d{6}$/.test(code.value))return toast("请输入6位验证码");
+  if(channel.value==="email" && !bindTicket.value && !challengeId.value)return toast("请先获取当前邮箱的验证码");
   busy.value=true;error.value="";
   try{
-    const path=bindTicket.value?"/auth/wechat/h5/bind-mobile":mode.value==="password"?"/auth/password/login":"/auth/sms/login";
-    const response=await api(path,{method:"POST",data:{mobile:mobile.value,...(mode.value==="password"&&!bindTicket.value?{password:password.value}:{code:code.value}),...(bindTicket.value?{bindTicket:bindTicket.value}:{}),consentVersion:COMMERCE_CONSENT_VERSION,referralCode:String(mallStorage.get("saidian-ref")||"")}});
+    const path=bindTicket.value?"/auth/wechat/h5/bind-mobile":"/auth/code/login";
+    const response=await api(path,{method:"POST",data:{...(bindTicket.value?{mobile:value,bindTicket:bindTicket.value}:{channel:channel.value,identifier:value,...(challengeId.value?{challengeId:challengeId.value}:{})}),code:code.value,consentVersion:COMMERCE_CONSENT_VERSION,referralCode:String(mallStorage.get("saidian-ref")||"")}});
     await save(response);
   }catch(e){error.value=e instanceof Error?e.message:"登录失败";}finally{busy.value=false;}
 }
 async function save(response:any){await saveMallSession(response);await bindReferral();const route=safeMallRoute(response.returnTo||mallStorage.get("saidian-post-login-route"));mallStorage.remove("saidian-post-login-route");uni.reLaunch({url:route});}
+function resetCode(){challengeId.value="";code.value="";devCode.value="";}
+function changeChannel(next:"sms"|"email"){if(busy.value||channel.value===next)return;channel.value=next;identifier.value="";resetCode();error.value="";}
+function loginIdentifier(){const value=identifier.value.trim();if(channel.value==="sms"||bindTicket.value){if(!/^1\d{10}$/.test(value)){toast("请输入11位手机号");return "";}}else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)||value.length>254){toast("请输入正确的邮箱地址");return "";}return value;}
 async function officialLogin(){
   if(!agreementAccepted.value)return toast("请先阅读并同意协议");
   /* #ifdef H5 */

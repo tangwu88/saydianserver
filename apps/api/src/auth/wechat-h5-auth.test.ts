@@ -161,7 +161,8 @@ describe("H5 public capabilities", () => {
     vi.stubEnv("MAINTENANCE_READ_ONLY", "false"); vi.stubEnv("BUSINESS_WRITES_PAUSED", "false"); vi.stubEnv("WORKER_OUTBOUND_PAUSED", "false");
     const secrets = { resolve: vi.fn() };
     const service = new CommerceCapabilitiesService({ integrationConfig: { findMany: vi.fn().mockResolvedValue([]) } } as any,
-      secrets as any, { configured: vi.fn().mockRejectedValue(new Error("not configured")) } as any);
+      secrets as any, { configured: vi.fn().mockRejectedValue(new Error("not configured")) } as any,
+      { capabilities: vi.fn().mockResolvedValue({ email: false, sms: false, smsCountries: [] }) } as any);
     const result = await service.publicCapabilities();
     expect(result).toMatchObject({ demo: true, maintenance: { readOnly: false }, login: { password: { enabled: true }, sms: { enabled: true }, wechatH5: { enabled: false } } });
     expect(result.payments.every(item => !item.enabled)).toBe(true);

@@ -242,9 +242,9 @@ export class AuthService {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     if (
       user.status !== UserStatus.ACTIVE ||
-      (!isGlobalRealm() && !user.mobileVerifiedAt)
+      (!isGlobalRealm() && !user.mobileVerifiedAt && !user.emailVerifiedAt)
     ) {
-      throw new UnauthorizedException("请先完成手机号验证");
+      throw new UnauthorizedException("请先完成手机号或邮箱验证");
     }
     return this.mallSession(await this.issueSession(userId), user.mobile);
   }

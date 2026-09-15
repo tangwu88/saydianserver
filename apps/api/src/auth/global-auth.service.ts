@@ -32,6 +32,11 @@ export class GlobalAuthService {
         sms: registrationOpen && (unverifiedRegistration || ready.sms),
         verificationRequired: !unverifiedRegistration,
       },
+      login: {
+        email: ready.email && deliveryOpen,
+        sms: ready.sms && deliveryOpen,
+        defaultChannel: "sms",
+      },
       recovery: { email: ready.email && deliveryOpen, sms: ready.sms && deliveryOpen },
       smsCountries: ready.smsCountries,
       verification: { codeLength: 6, expiresIn: 300, retryAfter: 60 },
@@ -45,9 +50,75 @@ export class GlobalAuthService {
     const body = safeObject(input);
     const identity = globalIdentity(body.channel, body.identifier);
     const purpose = String(body.purpose ?? "register") as VerificationPurpose;
-    if (!["register", "reset_password"].includes(purpose)) throw globalError(400, "invalid_verification_purpose", "Choose a valid verification purpose.");
+    if (!["register", "reset_password", "login"].includes(purpose)) throw globalError(400, "invalid_verification_purpose", "Choose a valid verification purpose.");
     const locale = globalLocale(body.locale);
-    if (purpose === "register" && !(await globalLegalBundle(this.prisma, locale))) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
+    if (["register", "login"].includes(purpose) && !(await globalLegalBundle(this.prisma, locale))) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
+    return this.requestChallenge(identity, purpose, locale);
+  }
+
+  async requestLoginCode(input: unknown) {
+    const body = safeObject(input);
+    if (isGlobalRealm()) return this.requestCode({ ...body, purpose: "login" });
+    if (body.channel !== "email") throw globalError(400, "invalid_identifier", "Enter a valid email address.");
+    const identity = globalIdentity("email", body.identifier);
+    return this.requestChallenge(identity, "login", globalLocale(body.locale));
+  }
+
+  async loginWithCode(input: unknown) {
+    const body = safeObject(input);
+    const global = isGlobalRealm();
+    if (!global && body.channel !== "email") throw globalError(400, "invalid_identifier", "Enter a valid email address.");
+    const identity = globalIdentity(body.channel, body.identifier);
+    const consentVersion = String(body.consentVersion ?? "").trim();
+    if (!consentVersion || consentVersion.length > 80) throw globalError(400, "consent_required", "Read and agree to the terms and privacy policy.");
+    const legal = global ? await globalLegalBundle(this.prisma, body.locale) : null;
+    if (global && !legal) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
+    if (legal && legal.consentVersion !== consentVersion) throw globalError(409, "consent_outdated", "The terms have changed. Please read and agree to the latest version.");
+    let userId: string;
+    try {
+      userId = await this.consume(body.challengeId, body.code, "login", async (tx, challenge) => {
+        if (challenge.channel !== identity.channel || challenge.identifier !== identity.identifier) throw this.invalidCode();
+        const where = challenge.channel === "email" ? { email: challenge.identifier } : { mobile: challenge.identifier };
+        const existing = await tx.user.findUnique({ where });
+        if (existing && existing.status !== UserStatus.ACTIVE) throw globalError(409, "account_unavailable", "This account cannot sign in. Contact support.");
+        const verified = challenge.channel === "email" ? { emailVerifiedAt: new Date() } : { mobileVerifiedAt: new Date() };
+        if (existing && (challenge.channel === "email" ? !existing.emailVerifiedAt : !existing.mobileVerifiedAt)) {
+          await tx.userSession.updateMany({ where: { userId: existing.id, revokedAt: null }, data: { revokedAt: new Date() } });
+        }
+        const user = existing
+          ? await tx.user.update({ where: { id: existing.id }, data: verified })
+          : await tx.user.create({ data: {
+              ...(challenge.channel === "email" ? { email: challenge.identifier } : { mobile: challenge.identifier }),
+              ...verified,
+              passwordHash: null,
+              nickname: global ? "Saydian user" : "赛电用户",
+              ...(global ? { locale: globalLocale(body.locale ?? challenge.locale) } : {}),
+            } });
+        const source = global ? `global_h5_code:${legal!.locale}` : "commerce_code";
+        for (const documentType of ["user_agreement", "privacy_policy"]) {
+          await tx.consentRecord.upsert({
+            where: { userId_documentType_version: { userId: user.id, documentType, version: consentVersion } },
+            create: { userId: user.id, documentType, version: consentVersion, source },
+            update: { withdrawnAt: null, source },
+          });
+        }
+        return user.id;
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw globalError(409, "identity_conflict", "This address is already linked to another account.");
+      }
+      throw error;
+    }
+    if (!global && body.referralCode) await this.auth.bindReferral(userId, String(body.referralCode));
+    return this.auth.issueMallSession(userId);
+  }
+
+  private async requestChallenge(
+    identity: ReturnType<typeof globalIdentity>,
+    purpose: VerificationPurpose,
+    locale: ReturnType<typeof globalLocale>,
+  ) {
     await this.delivery.assertAvailable(identity.channel, identity.country);
     const challengeId = randomUUID();
     const now = new Date();

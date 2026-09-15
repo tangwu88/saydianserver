@@ -10,58 +10,35 @@
         <button class="outline-btn" @click="reading = null">返回</button>
       </template>
       <template v-else>
-        <h1>
-          {{ bindTicket ? "绑定手机号" : registering ? "注册会员" : "登录" }}
-        </h1>
+        <h1>{{ bindTicket ? "绑定手机号" : "登录" }}</h1>
         <text v-if="bindTicket" class="muted step-note">微信授权完成，请填写手机号继续。</text>
         <view v-if="error" class="error-state" role="alert">{{ error }}</view>
         <text v-if="loading" class="muted">正在加载…</text>
         <button v-if="!loading && (!capabilities || !legalReady)" class="text-button retry" :disabled="busy" @click="initialize(false)">重新加载</button>
-        <view v-if="!bindTicket" class="contact-tabs"><button :class="{ active: contactMode === 'email' }" :disabled="busy || (registering && registrationCapabilities && !registrationCapabilities.registration?.email)" @click="changeContact('email')">邮箱</button><button :class="{ active: contactMode === 'sms' }" :disabled="busy || (registering && registrationCapabilities && !registrationCapabilities.registration?.sms)" @click="changeContact('sms')">手机号</button></view>
+        <view v-if="!bindTicket" class="contact-tabs"><button :class="{ active: contactMode === 'sms' }" :disabled="busy" @click="changeContact('sms')">手机号</button><button :class="{ active: contactMode === 'email' }" :disabled="busy" @click="changeContact('email')">邮箱</button></view>
         <label class="field-label" :for="bindTicket ? 'bind-phone' : 'login-contact'">{{ bindTicket || contactMode === "sms" ? "手机号" : "邮箱" }}</label>
         <view :class="{ 'phone-fields': phoneMode }"><CountryCallingCodePicker v-if="phoneMode" v-model="phoneCountry" :disabled="busy" compact @update:model-value="resetChallenge" /><input :id="bindTicket ? 'bind-phone' : 'login-contact'" v-model="identifier" :disabled="busy" class="input" :maxlength="phoneMode ? 32 : 254" :placeholder="phoneMode ? '请输入手机号' : '请输入邮箱'" @input="resetChallenge" /></view>
-        <template v-if="bindTicket">
-          <view class="code-row" :class="{ 'code-row-direct': temporaryPhoneCode }"
-            ><input id="phone-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码" /><button v-if="!temporaryPhoneCode" class="text-button code-button" :disabled="busy || loading || countdown > 0 || !bindingEnabled" @click="sendCode">
-              {{ countdown > 0 ? countdown + "秒后重试" : "获取验证码" }}
-            </button></view
-          >
-          <text v-if="codeNote || temporaryPhoneCode" class="muted code-note">{{ codeNote || "填写6位验证码后继续。" }}</text>
-          <text v-if="!loading && !bindingEnabled" class="muted code-note">暂时无法获取验证码，请稍后再试。</text>
-        </template>
-        <template v-else-if="registering && registrationVerificationRequired">
-          <view class="code-row"
-            ><input id="registration-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码" /><button class="text-button code-button" :disabled="busy || countdown > 0 || !registrationEnabled" @click="sendRegistrationCode">
-              {{ countdown > 0 ? countdown + "秒后重试" : "获取验证码" }}
-            </button></view
-          >
-          <text v-if="codeNote" class="muted code-note">{{ codeNote }}</text>
-        </template>
-        <text v-if="registering && !registrationEnabled" class="muted code-note">当前方式暂时无法注册，请选择其他方式。</text>
-        <template v-if="!bindTicket || passwordRequired">
-          <label class="field-label" for="account-password">{{ bindTicket ? "原账号密码" : "密码" }}</label>
-          <view class="password-field"
-            ><input id="account-password" v-model="password" :disabled="busy" :password="obscured" class="input" maxlength="72" :placeholder="bindTicket ? '请输入此手机号原账号的密码' : registering ? '请设置至少8位密码' : '请输入密码'" @confirm="submitAccount" /><button class="password-toggle" :disabled="busy" :aria-label="obscured ? '显示密码' : '隐藏密码'" @click="obscured = !obscured">
-              {{ obscured ? "显示" : "隐藏" }}
-            </button></view
-          >
-          <view v-if="!registering && !bindTicket" class="account-actions"><button class="text-button register-link" :disabled="busy || loading || !legalReady" @click="startRegistration">注册会员</button><button class="text-button forgot" :disabled="busy" @click="forgotPassword">忘记密码？</button></view>
-        </template>
+        <view class="code-row" :class="{ 'code-row-direct': bindTicket && temporaryPhoneCode }"
+          ><input id="login-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码" /><button v-if="!bindTicket || !temporaryPhoneCode" class="text-button code-button" :disabled="busy || loading || countdown > 0 || !verificationEnabled" @click="sendCode">
+            {{ countdown > 0 ? countdown + "秒后重试" : "获取验证码" }}
+          </button></view
+        >
+        <text v-if="codeNote || (bindTicket && temporaryPhoneCode)" class="muted code-note">{{ codeNote || "填写6位验证码后继续。" }}</text>
+        <text v-if="!loading && !verificationEnabled" class="muted code-note">当前方式暂时无法获取验证码，请选择其他方式或稍后再试。</text>
         <view class="agreement"
           ><checkbox-group @change="accepted = !!$event.detail.value.length"
             ><label><checkbox value="yes" :checked="accepted" :disabled="busy || !legalReady" color="#d20b27" />我已阅读并同意</label></checkbox-group
           ><button class="text-button" :disabled="busy || !legalReady" @click="reading = 'userAgreement'">用户协议</button><text>和</text><button class="text-button" :disabled="busy || !legalReady" @click="reading = 'privacyPolicy'">隐私政策</button></view
         >
         <text v-if="!loading && !legalReady" class="muted code-note">协议暂时无法查看，请稍后重试。</text>
-        <button class="primary-btn submit" :disabled="busy || loading || !legalReady || !capabilities || !primaryEnabled" :loading="busy" @click="submitAccount">
-          {{ bindTicket ? "确认并继续" : registering ? "注册并登录" : "登录" }}
+        <button class="primary-btn submit" :disabled="busy || loading || !legalReady || !capabilities || !primaryEnabled" :loading="busy" @click="login">
+          {{ bindTicket ? "确认并继续" : "登录" }}
         </button>
-        <template v-if="!bindTicket && !registering">
+        <template v-if="!bindTicket">
           <view v-if="isWechat && capabilities?.login?.wechatH5?.enabled" class="wechat-section"><text class="separator">其他登录方式</text><button class="outline-btn wechat" :disabled="busy || loading || !legalReady" @click="officialLogin">微信登录</button></view>
           <text v-else-if="!isWechat && !isWecom" class="muted wechat-hint">在微信中打开，可使用微信登录。</text>
         </template>
         <button v-if="bindTicket" class="text-button back-login" :disabled="busy" @click="cancelBinding">返回登录</button>
-        <button v-else-if="registering" class="text-button back-login" :disabled="busy" @click="returnToLogin">返回登录</button>
         <button v-else class="text-button back-login" :disabled="busy" @click="browse">先逛逛</button>
       </template>
     </view></view
@@ -76,7 +53,7 @@ import { api, mallOAuthSessionStamp, saveMallSession } from "../api";
 import { mallConfig, mallStorage } from "../realm";
 import { globalPageAllowed } from "../realm-config";
 import { safeMallRoute } from "../commerce-model";
-import { OAUTH_CONTEXT_KEY, OAUTH_TTL, OAUTH_CALLBACK_PATH, normalizeGlobalPhone, validGlobalIdentifier, validNewPassword, validOAuthContext, type OAuthContext, type PhoneCountryCode } from "../global-auth-model";
+import { OAUTH_CONTEXT_KEY, OAUTH_TTL, OAUTH_CALLBACK_PATH, normalizeGlobalPhone, validGlobalIdentifier, validOAuthContext, type OAuthContext, type PhoneCountryCode } from "../global-auth-model";
 import { takeGlobalOAuthCallback } from "../global-oauth";
 import { loadGlobalLegal, legalPlainText, type GlobalLegalDocument } from "../global-legal";
 import { authErrorMessage, authUiError } from "../friendly-auth";
@@ -85,7 +62,6 @@ type DocumentType = "userAgreement" | "privacyPolicy";
 const capabilities = ref<any>(),
   documents = ref<Partial<Record<DocumentType, GlobalLegalDocument>>>({});
 const identifier = ref(""),
-  password = ref(""),
   code = ref(""),
   error = ref(""),
   busy = ref(false),
@@ -94,13 +70,9 @@ const identifier = ref(""),
   reading = ref<DocumentType | null>(null);
 const bindTicket = ref(""),
   bindExpiresAt = ref(0),
-  contactMode = ref<"email" | "sms">("email"),
+  contactMode = ref<"email" | "sms">("sms"),
   countdown = ref(0),
-  codeNote = ref(""),
-  passwordRequired = ref(false),
-  obscured = ref(true);
-const registering = ref(false),
-  registrationCapabilities = ref<any>();
+  codeNote = ref("");
 const phoneCountry = ref<PhoneCountryCode>("CN");
 const consent = ref({ version: "", locale: "en" }),
   challenge = ref<{ id: string; identifier: string; expiresAt: number } | null>(null);
@@ -111,9 +83,9 @@ const legalReady = computed(() => !!consent.value.version && !!documents.value.u
 const bindingEnabled = computed(() => capabilities.value?.login?.wechatBinding?.phoneBindingAvailable === true && ["sms", "test"].includes(capabilities.value?.login?.wechatBinding?.phoneCodeMode));
 const phoneMode = computed(() => !!bindTicket.value || contactMode.value === "sms");
 const temporaryPhoneCode = computed(() => bindingEnabled.value && capabilities.value?.login?.wechatBinding?.phoneCodeMode === "test");
-const registrationVerificationRequired = computed(() => registrationCapabilities.value?.registration?.verificationRequired === true);
-const registrationEnabled = computed(() => registrationCapabilities.value?.registration?.[contactMode.value] === true);
-const primaryEnabled = computed(() => (bindTicket.value ? bindingEnabled.value : registering.value ? registrationEnabled.value : capabilities.value?.login?.password?.enabled === true));
+const loginChannelEnabled = computed(() => capabilities.value?.login?.[contactMode.value]?.enabled === true);
+const verificationEnabled = computed(() => bindTicket.value ? bindingEnabled.value : loginChannelEnabled.value);
+const primaryEnabled = computed(() => verificationEnabled.value);
 let active = true,
   timer: ReturnType<typeof setInterval> | undefined,
   resendAt = 0;
@@ -122,7 +94,6 @@ let oauthDocumentEntry = false;
 onBeforeUnmount(() => {
   active = false;
   if (timer) clearInterval(timer);
-  password.value = "";
   code.value = "";
   bindTicket.value = "";
 });
@@ -177,8 +148,8 @@ async function initialize(handleCallback: boolean) {
       bindExpiresAt.value = Date.now() + Math.min(response.expiresIn * 1000, OAUTH_TTL);
       bindingSession = context.sessionStamp;
       identifier.value = "";
-      password.value = "";
-      passwordRequired.value = false;
+      contactMode.value = "sms";
+      resetChallenge();
       mallStorage.set("saidian-post-login-route", safeMallRoute(response.returnTo || context.returnTo));
     } else await save(response);
   } catch (cause) {
@@ -194,8 +165,6 @@ function resetChallenge() {
   challenge.value = null;
   code.value = "";
   codeNote.value = "";
-  password.value = "";
-  passwordRequired.value = false;
 }
 function changeContact(next: "email" | "sms") {
   if (busy.value) return;
@@ -229,10 +198,21 @@ async function sendCode() {
   busy.value = true;
   error.value = "";
   try {
-    requireBinding();
-    const recipient = normalizeGlobalPhone(identifier.value, phoneCountry.value);
-    if (!recipient) throw authUiError("请检查国家区号和手机号。");
-    await requestPhoneCode(recipient, temporaryPhoneCode.value);
+    const recipient = accountIdentifier();
+    if (bindTicket.value) {
+      requireBinding();
+      await requestPhoneCode(recipient, temporaryPhoneCode.value);
+    } else {
+      if (!loginChannelEnabled.value) throw authUiError("当前方式暂时无法获取验证码，请选择其他方式或稍后再试。");
+      const response: any = await api("/auth/code/request", {
+        method: "POST",
+        data: { channel: contactMode.value, identifier: recipient, locale: consent.value.locale },
+      });
+      if (!response?.challengeId || !Number.isFinite(response.expiresIn) || response.expiresIn <= 0 || !Number.isFinite(response.retryAfter)) throw authUiError("验证码暂时无法使用，请稍后重试。");
+      challenge.value = { id: response.challengeId, identifier: recipient, expiresAt: Date.now() + response.expiresIn * 1000 };
+      codeNote.value = "验证码已发送至 " + String(response.maskedIdentifier || "所填账号");
+      startCountdown(response.retryAfter);
+    }
   } catch (cause) {
     await showError(cause);
   } finally {
@@ -261,108 +241,13 @@ async function requestPhoneCode(recipient: string, testOnly: boolean) {
     identifier: recipient,
     expiresAt: Math.min(bindExpiresAt.value, Date.now() + response.expiresIn * 1000),
   };
-  passwordRequired.value = false;
-  password.value = "";
   codeNote.value = response.sent === true ? "验证码已发送至 " + String(response.maskedIdentifier || "所填手机号") : "请填写6位验证码";
   startCountdown(response.retryAfter);
-}
-async function startRegistration() {
-  if (busy.value || loading.value || !legalReady.value) return;
-  busy.value = true;
-  error.value = "";
-  try {
-    const response: any = await globalAuthRequest("capabilities?locale=" + encodeURIComponent(consent.value.locale));
-    if (response?.realm !== "global" || response.consentVersion !== consent.value.version || !response.registration) throw authUiError("注册信息已更新，请刷新后重试。");
-    if (response.registration.email !== true && response.registration.sms !== true) throw authUiError("注册暂时不可用，请稍后再试。");
-    registrationCapabilities.value = response;
-    registering.value = true;
-    contactMode.value = response.registration.email === true ? "email" : "sms";
-    identifier.value = "";
-    resetChallenge();
-    error.value = "";
-  } catch (cause) {
-    await showError(cause);
-  } finally {
-    if (active) busy.value = false;
-  }
-}
-async function sendRegistrationCode() {
-  if (busy.value || countdown.value > 0 || !registrationVerificationRequired.value) return;
-  busy.value = true;
-  error.value = "";
-  try {
-    if (!registrationEnabled.value) throw authUiError("当前方式暂时无法注册，请选择其他方式。");
-    const recipient = accountIdentifier();
-    const response: any = await globalAuthRequest("verification-code", {
-      channel: contactMode.value,
-      identifier: recipient,
-      purpose: "register",
-      locale: consent.value.locale,
-    });
-    if (!response?.challengeId || !Number.isFinite(response.expiresIn) || response.expiresIn <= 0 || !Number.isFinite(response.retryAfter)) throw authUiError("验证码暂时无法使用，请稍后重试。");
-    challenge.value = {
-      id: response.challengeId,
-      identifier: recipient,
-      expiresAt: Date.now() + response.expiresIn * 1000,
-    };
-    codeNote.value = "验证码已发送至 " + String(response.maskedIdentifier || "所填账号");
-    startCountdown(response.retryAfter);
-  } catch (cause) {
-    await showError(cause);
-  } finally {
-    if (active) busy.value = false;
-  }
 }
 function accountIdentifier() {
   const recipient = phoneMode.value ? normalizeGlobalPhone(identifier.value, phoneCountry.value) : identifier.value.trim();
   if (!recipient || !validGlobalIdentifier(recipient, phoneMode.value ? "sms" : "email")) throw authUiError(phoneMode.value ? "请检查国家区号和手机号。" : "请输入正确的邮箱地址。");
   return recipient;
-}
-async function registerMember() {
-  if (busy.value || loading.value) return;
-  busy.value = true;
-  error.value = "";
-  try {
-    if (!accepted.value || !legalReady.value) throw authUiError("请先阅读并同意用户协议与隐私政策。");
-    if (!registrationEnabled.value || registrationCapabilities.value?.consentVersion !== consent.value.version) throw authUiError("注册信息已更新，请返回后重试。");
-    const recipient = accountIdentifier();
-    if (!validNewPassword(password.value)) throw authUiError("请设置至少8位密码。");
-    let response: any;
-    if (registrationVerificationRequired.value) {
-      if (!/^\d{6}$/.test(code.value)) throw authUiError("请输入6位验证码。");
-      const pending = challenge.value;
-      if (!pending || pending.expiresAt <= Date.now() || pending.identifier !== recipient) throw authUiError("请先获取当前账号的验证码。");
-      response = await globalAuthRequest("register-with-code", {
-        challengeId: pending.id,
-        code: code.value,
-        password: password.value,
-        consentVersion: consent.value.version,
-        locale: consent.value.locale,
-      });
-    } else {
-      response = await globalAuthRequest("register", {
-        channel: contactMode.value,
-        identifier: recipient,
-        password: password.value,
-        consentVersion: consent.value.version,
-        locale: consent.value.locale,
-      });
-    }
-    if (!response?.accessToken || !response?.member?.id) throw authUiError("注册暂时无法完成，请稍后重试。");
-    if (active)
-      await save({
-        token: response.accessToken,
-        refreshToken: response.refreshToken,
-        user: response.member,
-      });
-  } catch (cause) {
-    await showError(cause);
-  } finally {
-    if (active) busy.value = false;
-  }
-}
-function submitAccount() {
-  return registering.value ? registerMember() : login();
 }
 async function login() {
   if (busy.value || loading.value) return;
@@ -371,27 +256,24 @@ async function login() {
   try {
     if (!accepted.value || !legalReady.value) throw authUiError("请先阅读并同意用户协议与隐私政策。");
     const recipient = accountIdentifier();
+    if (!/^\d{6}$/.test(code.value)) throw authUiError("请输入6位验证码。");
+    if (!challenge.value || challenge.value.expiresAt <= Date.now() || challenge.value.identifier !== recipient) {
+      if (!bindTicket.value || !temporaryPhoneCode.value) throw authUiError(bindTicket.value ? "请先获取当前手机号的验证码。" : "请先获取当前账号的验证码。");
+      if (countdown.value > 0) throw authUiError("操作较频繁，请稍后再试。");
+      await requestPhoneCode(recipient, true);
+      if (!active) return;
+    }
+    const pending = challenge.value;
+    if (!pending || pending.expiresAt <= Date.now() || pending.identifier !== recipient) throw authUiError("验证码暂时无法使用，请稍后重试。");
     let response: any;
     if (!bindTicket.value) {
-      if (!password.value) throw authUiError("请输入密码。");
-      if (!capabilities.value?.login?.password?.enabled) throw authUiError("登录暂时无法使用，请稍后重试。");
-      response = await api("/auth/password/login", {
+      if (!loginChannelEnabled.value) throw authUiError("当前方式暂时无法登录，请选择其他方式或稍后再试。");
+      response = await api("/auth/code/login", {
         method: "POST",
-        data: { mobile: recipient, password: password.value },
+        data: { channel: contactMode.value, identifier: recipient, challengeId: pending.id, code: code.value, consentVersion: consent.value.version, locale: consent.value.locale },
       });
     } else {
       requireBinding();
-      if (!/^\d{6}$/.test(code.value)) throw authUiError("请输入6位验证码。");
-      if (!challenge.value || challenge.value.expiresAt <= Date.now() || challenge.value.identifier !== recipient) {
-        if (!temporaryPhoneCode.value) throw authUiError("请先获取当前手机号的验证码。");
-        if (countdown.value > 0) throw authUiError("操作较频繁，请稍后再试。");
-        await requestPhoneCode(recipient, true);
-        if (!active) return;
-      }
-      requireBinding();
-      const pending = challenge.value;
-      if (!pending || pending.expiresAt <= Date.now() || pending.identifier !== recipient) throw authUiError("验证码暂时无法使用，请稍后重试。");
-      if (passwordRequired.value && !password.value) throw authUiError("请输入该手机号原账号的密码。");
       response = await api("/auth/wechat/h5/bind-phone", {
         method: "POST",
         data: {
@@ -400,7 +282,6 @@ async function login() {
           code: code.value,
           consentVersion: consent.value.version,
           locale: consent.value.locale,
-          ...(passwordRequired.value ? { password: password.value } : {}),
         },
       });
     }
@@ -465,7 +346,6 @@ async function save(response: any) {
   const target = safeMallRoute(response.returnTo || mallStorage.get("saidian-post-login-route"));
   mallStorage.remove("saidian-post-login-route");
   sessionStorage.removeItem(OAUTH_CONTEXT_KEY);
-  password.value = "";
   code.value = "";
   bindTicket.value = "";
   const destination = globalPageAllowed(target) ? target : "/pages/profile/index";
@@ -479,7 +359,6 @@ async function save(response: any) {
 async function showError(cause: unknown) {
   if (!active) return;
   const key = (cause as any)?.errorKey;
-  if (key === "phone_password_required" && bindTicket.value && challenge.value) passwordRequired.value = true;
   const message = authErrorMessage(cause);
   if (["consent_outdated", "consent_required", "legal_unavailable"].includes(key)) {
     cancelBinding();
@@ -501,54 +380,6 @@ function cancelBinding() {
   identifier.value = "";
   accepted.value = false;
   error.value = "";
-}
-function returnToLogin() {
-  registering.value = false;
-  registrationCapabilities.value = undefined;
-  contactMode.value = "email";
-  identifier.value = "";
-  resetChallenge();
-  accepted.value = false;
-  error.value = "";
-}
-function globalAuthRequest(path: string, data?: Record<string, unknown>) {
-  if (!/^(capabilities\?locale=[A-Za-z-]+|verification-code|register-with-code|register)$/.test(path)) return Promise.reject(authUiError("注册暂时不可用，请稍后再试。"));
-  const sessionStamp = mallOAuthSessionStamp();
-  return new Promise((resolve, reject) =>
-    uni.request({
-      url: "/global/api/saydian-app/v2/auth/" + path,
-      method: data ? "POST" : "GET",
-      timeout: 15000,
-      ...(data ? { data, header: { "content-type": "application/json" } } : {}),
-      success(response) {
-        if (sessionStamp !== mallOAuthSessionStamp()) {
-          reject(authUiError("账号已切换，请重新登录。"));
-          return;
-        }
-        const envelope = response.data as any;
-        if (response.statusCode >= 200 && response.statusCode < 300 && envelope?.code === 200 && envelope.data) {
-          resolve(envelope.data);
-          return;
-        }
-        reject(
-          Object.assign(new Error(String(envelope?.message || "请求失败")), {
-            status: response.statusCode,
-            errorKey: envelope?.errorKey,
-          }),
-        );
-      },
-      fail() {
-        reject(new Error("网络连接失败"));
-      },
-    }),
-  );
-}
-function forgotPassword() {
-  uni.showModal({
-    title: "找回密码",
-    content: "请打开 Saydian App，在登录页选择“忘记密码”找回。",
-    showCancel: false,
-  });
 }
 function browse() {
   uni.switchTab({ url: "/pages/home/index" });
@@ -627,40 +458,6 @@ function browse() {
 .contact-tabs .active {
   background: #fff6de;
   border-color: #fff6de;
-}
-.password-field {
-  position: relative;
-}
-.password-field .input {
-  padding-right: 62px;
-}
-.password-toggle {
-  position: absolute;
-  right: 3px;
-  top: 3px;
-  bottom: 3px;
-  min-width: 54px;
-  padding: 0 8px;
-  margin: 0;
-  font-size: 13px;
-  line-height: 48px;
-  color: #5f6675;
-  background: transparent;
-}
-.account-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 4px;
-}
-.account-actions .text-button {
-  margin: 0;
-}
-.register-link {
-  text-align: left;
-}
-.forgot {
-  text-align: right;
 }
 .agreement {
   display: flex;

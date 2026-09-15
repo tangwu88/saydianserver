@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **351 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **353 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -88,7 +88,7 @@
 | `POST /api/v1/site/refresh` | 旧版刷新 | public | 表单 refresh_token | LegacySession | 核心服务 |
 | `POST /api/v1/site/logout` | 旧版退出 | member | 无请求体 | {logged_out:true} | 核心服务 |
 
-## 商城 H5/小程序兼容接口（68）
+## 商城 H5/小程序兼容接口（70）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -100,12 +100,14 @@
 | `POST /api/saidian-mall/v1/auth/wechat/h5/binding-code` | 国际H5申请身份绑定验证码 | public | {bindTicket,channel:email/sms,identifier,locale?} | {challengeId,expiresIn,retryAfter,maskedIdentifier}；无验证码回显 | 仅global；独立wechat_bind用途；邮件/短信真实渠道，未配置拒绝发送 |
 | `POST /api/saidian-mall/v1/auth/wechat/h5/bind-code` | 国际H5核验并绑定公众号 | public | {bindTicket,challengeId,code,password,consentVersion,locale?,nickname?} | raw会员会话和站内returnTo；票据与验证码同事务一次消费 | 仅global；账号冲突不合并；已有未验证账号需原密码与OTP双证明 |
 | `POST /api/saidian-mall/v1/auth/wechat/h5/phone-code` | 微信授权后申请手机号登记凭证 | public | {bindTicket,identifier:E.164手机号,locale?,expectedMode?:test}；自动申请临时凭证必须传expectedMode=test | {challengeId,expiresIn,retryAfter,maskedIdentifier,mode:test/sms,sent,verificationRequired}；test不发短信、不返回已发送提示；expectedMode不符在发送前拒绝 | 仅global；临时模式需独立显式开关；test用途不被注册/重置/原验证码绑定端点接受 |
-| `POST /api/saidian-mall/v1/auth/wechat/h5/bind-phone` | 微信手机号登记或核验后登录 | public | {bindTicket,challengeId,code:6位数字,consentVersion,locale?,password?} | raw会话；user含phoneTestMode/phoneVerified/phoneVerificationStatus。临时模式接受任意6位数字但不验证手机号，仅原微信账号或未占用号码新建，冲突不合并 | test会话只准账号读取/退出/H5刷新，关闭开关即失效；正式短信才可标记手机号已验证 |
+| `POST /api/saidian-mall/v1/auth/wechat/h5/bind-phone` | 微信手机号登记或核验后登录 | public | {bindTicket,challengeId,code:6位数字,consentVersion,locale?} | raw会话；user含phoneTestMode/phoneVerified/phoneVerificationStatus。正式短信验证码即为手机号凭证，不再要求旧账号密码；临时模式不验证手机号，仅原微信账号或未占用号码新建，冲突不合并 | test会话只准账号读取/退出/H5刷新，关闭开关即失效；正式短信才可标记手机号已验证 |
 | `GET /api/saidian-mall/v1/auth/wechat/h5/account` | 读取H5当前会员安全资料 | member | Authorization: Bearer会员令牌 | raw安全会员资料；手机号掩码和真实核验状态；不返回其他会员或微信OpenID | 临时phone-test令牌只在此读接口/退出被接受；不能用于App、交易、健康或后台 |
 | `GET /api/saidian-mall/v1/storefront/capabilities` | 商城公开能力与维护状态 | public | query:locale?；无请求体 | 登录、支付、积分和维护状态及不可用原因；global checkout含enabled/countryCodes:[CN]/currency:CNY/minimumCashCents；五H5支付渠道独立enabled/reason；不返回密钥 | 真实配置、密钥、回调地址及出站/只读门禁共同决定支付就绪；未配置不开放；不代表已取得供应商回执；global登录与未核验/临时账号限制不变 |
 | `GET /api/saidian-mall/v1/payments/:id` | 查询本人支付状态 | member | path:id；id=支付单UUID | raw支付记录；只有服务端确认成功才算付款完成 | 核心服务 |
 | `POST /api/saidian-mall/v1/auth/sms/request` | 商城短信登录验证码 | public | {mobile,usage?:login\|bind_mobile} | 发送状态；只有非生产ALLOW_TEST_OTP显式启用时返回开发验证码 | 短信供应商或隔离开发测试 |
 | `POST /api/saidian-mall/v1/auth/sms/login` | 商城短信登录 | public | {mobile,code,consentVersion,referralCode?} | 商城兼容会话；会员身份与主系统统一 | 短信供应商 |
+| `POST /api/saidian-mall/v1/auth/code/request` | 商城统一登录验证码 | public | {channel:sms\|email,identifier,locale?} | 手机号走国内sms集成（支持阿里云直连），邮箱与国际手机号返回一次性challengeId；不返回正式验证码 | 通道真实配置、频率限制和维护门禁 |
+| `POST /api/saidian-mall/v1/auth/code/login` | 商城手机号或邮箱验证码登录 | public | {channel:sms\|email,identifier,code,challengeId?,consentVersion,locale?,referralCode?} | 验证成功后返回商城raw会话；账号不存在时自动建立无密码会员 | 验证码一次消费；停用账号拒绝；国内手机号使用sms记录，邮箱和国际手机号使用challengeId |
 | `POST /api/saidian-mall/v1/auth/wechat/mini` | 商城小程序微信登录 | public | {code,consentVersion,referralCode?} | 商城兼容会话；未验证配置时返回暂不可用 | 微信小程序 |
 | `POST /api/saidian-mall/v1/auth/refresh` | 轮换商城刷新令牌 | public | {refreshToken} | 新商城兼容会话 | 核心服务 |
 | `POST /api/saidian-mall/v1/auth/referral` | 锁定商城推荐关系 | member | {referralCode} | 推荐关系；已有关系不覆盖 | 核心服务 |

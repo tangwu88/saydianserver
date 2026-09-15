@@ -16,6 +16,12 @@ export const integrationDefinitions: IntegrationDefinition[] = [
     url('webhookUrl', '短信发送地址', '由维护人员提供的 HTTPS 地址；不在地址中放入密钥。', { required: true, providers: ['webhook'] }),
     s('webhookToken', '访问令牌', '用于验证短信发送请求，由短信接口维护人员提供。', { providers: ['webhook'] }),
   ] },
+  { key: 'email_otp', title: '邮箱验证码', group: '登录与消息', short: '邮', purpose: '发送邮箱验证码，用于邮箱登录。', prepare: '准备一个可接收系统 JSON 请求的 HTTPS 邮件发送接口及访问令牌。', note: '邮件接口验收通过后再开启“已完成投递验收”；未配置时登录页仍默认使用手机号，邮箱方式会明确显示暂不可用。', fields: [
+    { ...provider('webhook', '邮件发送接口'), defaultValue: 'webhook' },
+    url('webhookUrl', '邮件发送地址', '由邮件服务维护人员提供的 HTTPS 地址；地址中不要包含账号或密钥。', { required: true }),
+    s('webhookToken', '访问令牌', '用于验证邮件发送请求，仅加密保存在服务端。'),
+    p('deliveryVerified', '已完成投递验收', '只有已用测试邮箱确认验证码可以真实送达后才能开启。', { kind: 'boolean', required: true, defaultValue: 'false' }),
+  ] },
   { key: 'wechat_login', title: 'App 微信登录', group: '登录与消息', short: '微', purpose: '让手机 App 用户使用微信登录。', prepare: '准备微信开放平台中的移动应用 AppID 和 AppSecret。这里不填写公众号或小程序资料。', fields: appIdentity },
   { key: 'wechat_official', title: '商城微信登录', group: '登录与消息', short: '商', purpose: '在微信内打开商城时使用公众号网页授权。', prepare: '准备公众号 AppID、AppSecret 和授权返回地址；公众号网页授权域名需由维护人员核对。', note: '返回地址须与服务器配置的商城地址同源，不带问号参数或 #。要使用微信内支付，还需与微信支付中的公众号 AppID 一致。', fields: [...appIdentity, url('redirectUri', '授权返回地址', '由维护人员提供的商城授权返回页面地址，不是接口地址。', { required: true })] },
   { key: 'push', title: 'App 消息推送', group: '登录与消息', short: '推', purpose: '通过极光推送向手机发送通知。', prepare: '准备极光推送应用的 AppKey 和 Master Secret，并确认 App 已接入同一推送应用。', note: '保存后需要维护人员重启消息任务服务才能加载新配置。此页不发送测试通知。', fields: [provider('jpush', '极光推送'), s('appKey', '应用标识（AppKey）', '从极光应用资料复制。'), s('masterSecret', '服务端密钥（Master Secret）', '从同一极光应用资料复制，仅在服务器使用。')] },

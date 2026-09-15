@@ -552,6 +552,9 @@ function phoneLoginHarness(t, options = {}) {
           ),
           login: {
             password: { enabled: true },
+            sms: { enabled: true },
+            email: { enabled: true },
+            defaultChannel: "sms",
             wechatH5: { enabled: true },
             wechatBinding: {
               phoneBindingAvailable: options.available !== false,
@@ -589,14 +592,6 @@ function phoneLoginHarness(t, options = {}) {
       }
       if (request.url.endsWith("/auth/wechat/h5/bind-phone")) {
         bindAttempts++;
-        if (options.passwordRequired && bindAttempts === 1)
-          return request.success({
-            statusCode: 403,
-            data: {
-              errorKey: "phone_password_required",
-              message: "Do not expose this provider detail",
-            },
-          });
         return ok({
           token: "synthetic-phone-token",
           refreshToken: "synthetic-phone-refresh",
@@ -609,9 +604,16 @@ function phoneLoginHarness(t, options = {}) {
           },
         });
       }
-      if (request.url.endsWith("/auth/password/login"))
+      if (request.url.endsWith("/auth/code/request"))
         return ok({
-          token: "synthetic-password-token",
+          challengeId: "synthetic-login-challenge",
+          expiresIn: 300,
+          retryAfter: 60,
+          maskedIdentifier: request.data.channel === "email" ? "m***@example.invalid" : "+86***5678",
+        });
+      if (request.url.endsWith("/auth/code/login"))
+        return ok({
+          token: "synthetic-code-token",
           refreshToken: "synthetic-refresh",
           user: { id: "existing-member", memberNo: "54321" },
         });
@@ -626,8 +628,7 @@ function phoneLoginHarness(t, options = {}) {
   t.after(h.unmount);
   return { ...h, ui };
 }
-function registrationHarness(t, options = {}) {
-  const verificationRequired = options.verificationRequired === true;
+function codeLoginHarness(t) {
   const h = harness({
     request: (request) => {
       const raw = (data) => request.success({ statusCode: 200, data });
@@ -658,6 +659,9 @@ function registrationHarness(t, options = {}) {
           ),
           login: {
             password: { enabled: true },
+            sms: { enabled: true },
+            email: { enabled: true },
+            defaultChannel: "sms",
             wechatH5: { enabled: true },
             wechatBinding: {
               phoneBindingAvailable: true,
@@ -674,31 +678,10 @@ function registrationHarness(t, options = {}) {
             contentHtml: "<p>Synthetic reviewed terms</p>",
           },
         });
-      if (request.url.includes("/saydian-app/v2/auth/capabilities"))
-        return envelope({
-          realm: "global",
-          registration: { email: true, sms: true, verificationRequired },
-          consentVersion: "approved-2026-09",
-        });
-      if (request.url.endsWith("/auth/verification-code"))
-        return envelope(
-          {
-            challengeId: "synthetic-registration-challenge",
-            expiresIn: 300,
-            retryAfter: 60,
-            maskedIdentifier: "+86***5678",
-          },
-          201,
-        );
-      if (request.url.endsWith("/auth/register") || request.url.endsWith("/auth/register-with-code"))
-        return envelope(
-          {
-            accessToken: "synthetic-registration-token",
-            refreshToken: "synthetic-registration-refresh",
-            member: { id: "synthetic-registration-member", memberNo: "10008" },
-          },
-          201,
-        );
+      if (request.url.endsWith("/auth/code/request"))
+        return raw({ challengeId: "synthetic-login-challenge", expiresIn: 300, retryAfter: 60, maskedIdentifier: request.data.channel === "email" ? "n***@example.com" : "+86***5678" });
+      if (request.url.endsWith("/auth/code/login"))
+        return raw({ token: "synthetic-login-token", refreshToken: "synthetic-login-refresh", user: { id: "synthetic-login-member", memberNo: "10008" } });
       throw new Error("Unexpected request " + request.url);
     },
   });
@@ -708,81 +691,43 @@ function registrationHarness(t, options = {}) {
   t.after(h.unmount);
   return { ...h, ui };
 }
-test("login offers email-first registration without showing or requiring a fake code", async (t) => {
-  const h = registrationHarness(t);
+test("login defaults to phone OTP and contains no registration or password flow", async (t) => {
+  const h = codeLoginHarness(t);
   await settle(() => !h.ui.loading.value);
-  await h.ui.startRegistration();
-  assert.equal(h.ui.registering.value, true);
-  assert.equal(h.ui.contactMode.value, "email");
+  assert.equal(h.ui.contactMode.value, "sms");
   assert.equal(h.ui.phoneCountry.value, "CN");
-  h.ui.identifier.value = "new.member@example.com";
-  h.ui.password.value = "synthetic-password";
-  h.ui.accepted.value = true;
-  await h.ui.submitAccount();
-  const request = h.requests.find((item) => item.url.endsWith("/auth/register"));
-  assert.ok(request);
-  assert.equal(
-    JSON.stringify(request.data),
-    JSON.stringify({
-      channel: "email",
-      identifier: "new.member@example.com",
-      password: "synthetic-password",
-      consentVersion: "approved-2026-09",
-      locale: "en",
-    }),
-  );
-  assert.equal(
-    h.requests.some((item) => item.url.endsWith("/auth/verification-code")),
-    false,
-  );
-  assert.equal(h.storage.get("saydian-global-mall:saidian-user").memberNo, "10008");
-  assert.doesNotMatch(readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8"), /填写任意6位数字后继续/);
-});
-test("temporary registration accepts a valid international phone without a code", async (t) => {
-  const h = registrationHarness(t);
-  await settle(() => !h.ui.loading.value);
-  await h.ui.startRegistration();
-  h.ui.changeContact("sms");
-  h.ui.phoneCountry.value = "US";
-  h.ui.identifier.value = "(202) 555-0123";
-  h.ui.password.value = "synthetic-password";
-  h.ui.accepted.value = true;
-  await h.ui.submitAccount();
-  const request = h.requests.find((item) => item.url.endsWith("/auth/register"));
-  assert.equal(request.data.identifier, "+12025550123");
-  assert.equal(request.data.channel, "sms");
-  assert.equal(h.requests.some((item) => item.url.endsWith("/auth/verification-code")), false);
-});
-test("verified registration explicitly requests a code and submits its guarded challenge", async (t) => {
-  const h = registrationHarness(t, { verificationRequired: true });
-  await settle(() => !h.ui.loading.value);
-  await h.ui.startRegistration();
-  h.ui.changeContact("sms");
   h.ui.identifier.value = "13812345678";
-  await h.ui.sendRegistrationCode();
+  await h.ui.sendCode();
   h.ui.code.value = "123456";
-  h.ui.password.value = "synthetic-password";
   h.ui.accepted.value = true;
-  await h.ui.submitAccount();
-  const codeRequest = h.requests.find((item) => item.url.endsWith("/auth/verification-code"));
-  const registration = h.requests.find((item) => item.url.endsWith("/auth/register-with-code"));
-  assert.equal(
-    JSON.stringify(codeRequest.data),
-    JSON.stringify({
-      channel: "sms",
-      identifier: "+8613812345678",
-      purpose: "register",
-      locale: "en",
-    }),
-  );
-  assert.equal(registration.data.challengeId, "synthetic-registration-challenge");
-  assert.equal(registration.data.code, "123456");
+  await h.ui.login();
+  const requested = h.requests.find((item) => item.url.endsWith("/auth/code/request"));
+  const loggedIn = h.requests.find((item) => item.url.endsWith("/auth/code/login"));
+  assert.equal(JSON.stringify(requested.data), JSON.stringify({ channel: "sms", identifier: "+8613812345678", locale: "en" }));
+  assert.equal(loggedIn.data.challengeId, "synthetic-login-challenge");
+  assert.equal(loggedIn.data.code, "123456");
+  assert.equal(h.storage.get("saydian-global-mall:saidian-user").memberNo, "10008");
+  assert.doesNotMatch(readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8"), /注册会员|account-password|忘记密码/);
+});
+test("email login requests and consumes a guarded OTP challenge", async (t) => {
+  const h = codeLoginHarness(t);
+  await settle(() => !h.ui.loading.value);
+  h.ui.changeContact("email");
+  h.ui.identifier.value = "new.member@example.com";
+  await h.ui.sendCode();
+  h.ui.code.value = "654321";
+  h.ui.accepted.value = true;
+  await h.ui.login();
+  const requested = h.requests.find((item) => item.url.endsWith("/auth/code/request"));
+  const loggedIn = h.requests.find((item) => item.url.endsWith("/auth/code/login"));
+  assert.equal(JSON.stringify(requested.data), JSON.stringify({ channel: "email", identifier: "new.member@example.com", locale: "en" }));
+  assert.equal(loggedIn.data.challengeId, "synthetic-login-challenge");
+  assert.equal(loggedIn.data.identifier, "new.member@example.com");
 });
 test("phone step uses real server challenge; temporary mode never claims SMS sent or verification", async (t) => {
   const h = phoneLoginHarness(t);
   await settle(() => !h.ui.loading.value);
   assert.equal(h.ui.bindTicket.value, "synthetic-ticket");
-  assert.equal(h.ui.passwordRequired.value, false);
   h.ui.identifier.value = "+8613812345678";
   await h.ui.sendCode();
   assert.equal(h.ui.codeNote.value, "请填写6位验证码");
@@ -826,7 +771,7 @@ test("OAuth phone binding finishes with a clean full-page storefront navigation 
   assert.equal(new URL(h.location.href).search, "");
 });
 
-test("phone password login uses +86 local input and preserves pasted full international numbers", async (t) => {
+test("phone OTP login uses +86 local input and preserves pasted full international numbers", async (t) => {
   for (const [identifier, expected] of [
     ["13812345678", "+8613812345678"],
     ["+14155550123", "+14155550123"],
@@ -836,10 +781,12 @@ test("phone password login uses +86 local input and preserves pasted full intern
     h.ui.cancelBinding();
     h.ui.changeContact("sms");
     h.ui.identifier.value = identifier;
-    h.ui.password.value = "synthetic-password";
+    await h.ui.sendCode();
+    h.ui.code.value = "123456";
     h.ui.accepted.value = true;
     await h.ui.login();
-    assert.equal(h.requests.find((request) => request.url.endsWith("/auth/password/login")).data.mobile, expected);
+    assert.equal(h.requests.find((request) => request.url.endsWith("/auth/code/request")).data.identifier, expected);
+    assert.equal(h.requests.find((request) => request.url.endsWith("/auth/code/login")).data.identifier, expected);
   }
 });
 
@@ -953,22 +900,16 @@ test("real SMS step only says sent when server confirms sent SMS", async (t) => 
   await h.ui.sendCode();
   assert.match(h.ui.codeNote.value, /已发送至/);
 });
-test("existing phone password is requested only after server asks and preserves challenge", async (t) => {
-  const h = phoneLoginHarness(t, { mode: "sms", passwordRequired: true });
+test("existing phone binding uses the delivered OTP without requesting an account password", async (t) => {
+  const h = phoneLoginHarness(t, { mode: "sms" });
   await settle(() => !h.ui.loading.value);
   h.ui.identifier.value = "+8613812345678";
   await h.ui.sendCode();
   h.ui.code.value = "123456";
   await h.ui.login();
-  assert.equal(h.ui.passwordRequired.value, true);
-  assert.equal(h.ui.challenge.value.id, "synthetic-phone-challenge");
-  assert.equal(h.ui.code.value, "123456");
-  assert.equal(h.ui.error.value, "请输入该手机号原账号的密码。");
-  h.ui.password.value = "Synthetic-original-password";
-  await h.ui.login();
   const calls = h.requests.filter((request) => request.url.endsWith("/bind-phone"));
-  assert.equal(calls.length, 2);
-  assert.equal(calls[1].data.password, "Synthetic-original-password");
+  assert.equal(calls.length, 1);
+  assert.equal("password" in calls[0].data, false);
 });
 test("disabled code capability cannot send or fabricate a challenge", async (t) => {
   const h = phoneLoginHarness(t, { available: false, mode: "unavailable" });
@@ -1018,21 +959,17 @@ test("duplicate code clicks are fenced; changed contact clears challenge without
   );
 });
 
-test("changing phone country clears the previous challenge, code and original password", async (t) => {
+test("changing phone country clears the previous challenge and code", async (t) => {
   const h = phoneLoginHarness(t);
   await settle(() => !h.ui.loading.value);
   h.ui.phoneCountry.value = "US";
   h.ui.identifier.value = "4155550123";
   await h.ui.sendCode();
   h.ui.code.value = "123456";
-  h.ui.passwordRequired.value = true;
-  h.ui.password.value = "old-password";
   h.ui.phoneCountry.value = "GB";
   h.ui.resetChallenge();
   assert.equal(h.ui.challenge.value, null);
   assert.equal(h.ui.code.value, "");
-  assert.equal(h.ui.password.value, "");
-  assert.equal(h.ui.passwordRequired.value, false);
   h.ui.identifier.value = "020 7946 0018";
   h.ui.code.value = "123456";
   await h.ui.login();
@@ -1076,12 +1013,14 @@ test("changed legal document version blocks OAuth exchange", async (t) => {
     false,
   );
 });
-test("ordinary email password login remains available after cancelling phone step", async (t) => {
+test("ordinary email OTP login remains available after cancelling phone step", async (t) => {
   const h = phoneLoginHarness(t);
   await settle(() => !h.ui.loading.value);
   h.ui.cancelBinding();
+  h.ui.changeContact("email");
   h.ui.identifier.value = "member@example.invalid";
-  h.ui.password.value = "synthetic-password";
+  await h.ui.sendCode();
+  h.ui.code.value = "123456";
   h.ui.accepted.value = true;
   await h.ui.login();
   assert.equal(h.storage.get("saydian-global-mall:saidian-user").id, "existing-member");
@@ -1149,8 +1088,8 @@ test("login/account/help visible UI removes edition notices and uses App brand/t
     assert.equal(/国际版|国内版|隔离|raw reason/.test(text), false, file);
   }
   const loginSource = readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8");
-  assert.ok(loginSource.includes("注册会员"));
-  assert.match(loginSource, /@click="startRegistration"/);
+  assert.equal(/注册会员|@click="startRegistration"|account-password/.test(loginSource), false);
+  assert.match(loginSource, /contactMode = ref<"email" \| "sms">\("sms"\)/);
   assert.match(readFileSync(resolve(source, "global-ui.scss"), "utf8"), /#d20b27/);
   assert.match(readFileSync(resolve(source, "components/GlobalAccount.vue"), "utf8"), /phoneVerified === false[\s\S]*?待验证/);
 });

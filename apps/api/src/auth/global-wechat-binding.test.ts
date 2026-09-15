@@ -80,7 +80,7 @@ function harness(existing = true, verified = true) {
   const secrets: any = { resolve: vi.fn().mockResolvedValue({ appId, appSecret: "synthetic-official-secret-only" }) };
   const binding = new GlobalWechatBindingService(db, auth, delivery);
   const h5 = new WechatH5AuthService(db, auth, secrets, binding);
-  const capabilities = new CommerceCapabilitiesService(db, secrets, h5);
+  const capabilities = new CommerceCapabilitiesService(db, secrets, h5, delivery);
   return { db, auth, delivery, binding, h5, capabilities, get state() { return state; } };
 }
 const accountInput = () => ({ bindTicket, identifier: "MEMBER@example.com", password, consentVersion: "legal-v1", locale: "en" });
@@ -385,12 +385,12 @@ describe("real WeChat phone verification remains separate", () => {
     expect(h.state.challenges[0]).toMatchObject({ purpose: "wechat_bind", sentAt: expect.any(Date) });
     await h.binding.bindPhone(appId, input); expect(h.state.users[0]).toMatchObject({ mobile: testPhone, mobileVerifiedAt: expect.any(Date), passwordHash: null }); expect(h.auth.issuePhoneTestMallSession).not.toHaveBeenCalled();
   });
-  it("requires old password plus real OTP before unlocking a preclaimed phone", async () => {
+  it("uses the real OTP as the credential before unlocking a preclaimed phone", async () => {
     const h = harness(true, false); h.state.users[0].mobile = testPhone; const input = await phoneInput(h);
-    await expect(h.binding.bindPhone(appId, input)).rejects.toMatchObject({ status: 403, response: { errorKey: "phone_password_required" } });
-    expect(h.state.challenges[0].attempts).toBe(0); expect(h.state.challenges[0].consumedAt).toBeNull();
-    await expect(h.binding.bindPhone(appId, { ...input, password: "wrong-password" })).rejects.toMatchObject({ status: 401 }); expect(h.state.challenges[0].attempts).toBe(1);
-    await h.binding.bindPhone(appId, { ...input, password }); expect(h.state.users[0]).toMatchObject({ passwordHash: originalHash, mobileVerifiedAt: expect.any(Date) }); expect(h.state.oldSessionsRevoked).toBe(true);
+    await h.binding.bindPhone(appId, input);
+    expect(h.state.challenges[0].consumedAt).toBeInstanceOf(Date);
+    expect(h.state.users[0]).toMatchObject({ passwordHash: originalHash, mobileVerifiedAt: expect.any(Date) });
+    expect(h.state.oldSessionsRevoked).toBe(true);
   });
   it("keeps a verified phone's existing ID/password on real OTP login", async () => {
     const h = harness(); h.state.users[0].mobile = testPhone; h.state.users[0].mobileVerifiedAt = new Date(); const input = await phoneInput(h);

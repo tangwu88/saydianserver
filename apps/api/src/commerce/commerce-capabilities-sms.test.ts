@@ -15,7 +15,7 @@ function fixture(
   const secrets = { resolve: vi.fn().mockResolvedValue(secretsValue) };
   const official = { configured: vi.fn().mockRejectedValue(new Error("not configured")) };
   return {
-    service: new CommerceCapabilitiesService(db as never, secrets as never, official as never),
+    service: new CommerceCapabilitiesService(db as never, secrets as never, official as never, { capabilities: vi.fn().mockResolvedValue({ email: false, sms: false, smsCountries: [] }) } as never),
     secrets,
   };
 }

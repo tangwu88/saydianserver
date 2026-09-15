@@ -13,7 +13,17 @@ const sessionId = "22222222-2222-4222-8222-222222229909";
 const secret = "synthetic-commerce-guard-key-not-a-real-secret";
 const bridgeKey = "synthetic-legacy-bridge-hash-key-not-a-real-secret";
 const opaque = "SYNTHETIC-SOURCE-VERIFIED-OPAQUE-20260909";
-const user = () => ({ status: "ACTIVE", mobile: "19900009909" as string | null, mobileVerifiedAt: new Date("2026-09-08T00:00:00Z") as Date | null });
+const user = () => ({
+  status: "ACTIVE",
+  mobile: "19900009909" as string | null,
+  mobileVerifiedAt: new Date("2026-09-08T00:00:00Z") as Date | null,
+  email: null as string | null,
+  emailVerifiedAt: null as Date | null,
+});
+const verifiedIdentityWhere = { status: "ACTIVE", OR: [
+  { mobile: { not: null }, mobileVerifiedAt: { not: null } },
+  { email: { not: null }, emailVerifiedAt: { not: null } },
+] };
 async function fixture(
   kind: CredentialKind, path: string, member: any,
   run: (h: any) => Promise<void>,
@@ -50,7 +60,8 @@ async function fixture(
       calls.jwt.push(args);
       const expected = args.where.user;
       assert.equal(expected.status, "ACTIVE");
-      if (options.invalidSession || member.status !== "ACTIVE" || expected.mobile && !member.mobile || expected.mobileVerifiedAt && !member.mobileVerifiedAt) return null;
+      const verified = (member.mobile && member.mobileVerifiedAt) || (member.email && member.emailVerifiedAt);
+      if (options.invalidSession || member.status !== "ACTIVE" || (expected.OR && !verified)) return null;
       return { id: sessionId };
     } },
     $transaction: async (operation: any) => operation(tx),
@@ -87,8 +98,7 @@ describe("verified mobile boundaries cover exact legacy shopping routes", () => 
         await fixture(kind, path, member, async h => {
           await rejected(h.authenticate()); assert.equal(h.request.authUser, undefined);
           assert.equal(h.calls.upsert.length, 0); assert.equal(h.calls.cas.length, 0);
-          if (kind === "jwt") assert.deepEqual(h.calls.jwt[0].where.user,
-            { status: "ACTIVE", mobile: { not: null }, mobileVerifiedAt: { not: null } });
+          if (kind === "jwt") assert.deepEqual(h.calls.jwt[0].where.user, verifiedIdentityWhere);
           else assert.deepEqual(h.calls.lookup[0].include.user.select,
             { status: true, mobile: true, mobileVerifiedAt: true });
           assert.deepEqual(member, before);
@@ -107,6 +117,14 @@ describe("verified mobile boundaries cover exact legacy shopping routes", () => 
       });
     });
   }
+  it("allows a new mall JWT with a verified email and no phone", async () => {
+    await fixture("jwt", "/api/saidian-mall/v1/storefront/cart", {
+      ...user(), mobile: null, mobileVerifiedAt: null, email: "member@example.com", emailVerifiedAt: new Date("2026-09-08T00:00:00Z"),
+    }, async h => {
+      assert.equal(await h.authenticate(), true);
+      assert.deepEqual(h.calls.jwt[0].where.user, verifiedIdentityWhere);
+    });
+  });
   it("new mall JWT still requires verification and legacy opaque tokens are not newly accepted on new mall APIs", async () => {
     for (const kind of ["jwt", "opaque"] as CredentialKind[]) {
       await fixture(kind, "/api/saidian-mall/v1/storefront/cart", { ...user(), mobileVerifiedAt: null }, async h => {
@@ -140,7 +158,7 @@ describe("verified mobile boundaries cover exact legacy shopping routes", () => 
   it("full original URL classification protects commerce even if a router supplies a shortened path", async () => {
     await fixture("jwt", "/member/cart-item/index", { ...user(), mobileVerifiedAt: null }, async h => {
       await rejected(h.authenticate());
-      assert.deepEqual(h.calls.jwt[0].where.user, { status: "ACTIVE", mobile: { not: null }, mobileVerifiedAt: { not: null } });
+      assert.deepEqual(h.calls.jwt[0].where.user, verifiedIdentityWhere);
     }, { originalUrl: "/api/inv-shop/v1/member/cart-item/index?from=synthetic" });
   });
   it("verified phone alone cannot authorize unknown, revoked, inactive, or disabled-bridge credentials", async () => {

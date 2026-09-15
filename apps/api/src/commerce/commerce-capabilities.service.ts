@@ -19,6 +19,7 @@ import {
   paymentRsaKey as rsaKey,
   securePaymentEndpoint as secureEndpoint,
 } from "./global-commerce-policy";
+import { GlobalVerificationDeliveryService } from "../auth/global-verification-delivery.service";
 
 type Capability = { enabled: boolean; reason?: string };
 type PaymentCapability = Capability & {
@@ -32,6 +33,7 @@ export class CommerceCapabilitiesService {
     private readonly prisma: PrismaService,
     private readonly secrets: IntegrationSecretsService,
     private readonly official: WechatH5AuthService,
+    private readonly verificationDelivery: GlobalVerificationDeliveryService,
   ) {}
 
   // Configuration readiness is not a provider verification or a payer identity
@@ -46,6 +48,7 @@ export class CommerceCapabilitiesService {
       where: { key: { in: ["sms", "wechat_pay", "wechat_pay_app", "alipay", "alipay_app"] } },
     });
     const byKey = new Map(rows.map((row) => [row.key, row]));
+    const verificationReady = await this.verificationDelivery.capabilities();
     const configured = (key: string) =>
       byKey.get(key)?.state === IntegrationState.CONFIGURED;
     let sms =
@@ -297,9 +300,16 @@ export class CommerceCapabilitiesService {
         login: {
           password: { enabled: !readOnly },
           sms: {
-            enabled: false,
-            reason: "Use email or international account sign-in.",
+            ...capability(
+              verificationReady.sms && !readOnly,
+              readOnly ? "系统维护中" : "International SMS verification is not configured.",
+            ),
           },
+          email: capability(
+            verificationReady.email && !readOnly,
+            readOnly ? "系统维护中" : "Email verification is not configured.",
+          ),
+          defaultChannel: "sms",
           wechatH5: official.wechatH5,
           wechatBinding: official.wechatBinding,
         },
@@ -350,6 +360,11 @@ export class CommerceCapabilitiesService {
           sms && !readOnly,
           readOnly ? "系统维护中" : "短信服务未配置",
         ),
+        email: capability(
+          verificationReady.email && !readOnly,
+          readOnly ? "系统维护中" : "邮箱验证码服务未配置",
+        ),
+        defaultChannel: "sms",
         wechatH5: capability(
           !!officialAppId && !readOnly,
           readOnly ? "系统维护中" : "微信公众号登录未配置",
