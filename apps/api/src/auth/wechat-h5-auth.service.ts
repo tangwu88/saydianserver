@@ -51,6 +51,7 @@ export class WechatH5AuthService {
     if (!reason) { try { await this.configured(); } catch { reason = "WeChat official-account sign-in is not configured."; } }
     const enabled = !reason;
     const channels = this.globalBinding ? await this.globalBinding.capabilities() : { email: false, sms: false, smsCountries: [] };
+    const phoneCodeMode = enabled && channels.sms ? "sms" : enabled && globalWechatPhoneTestEnabled() ? "test" : "unavailable";
     const capability = (ready: boolean, unavailable: string) => ready ? { enabled: true } : { enabled: false, reason: reason ?? unavailable };
     return {
       consentVersion: legal?.consentVersion ?? null, legal: legal?.documents ?? null,
@@ -62,9 +63,9 @@ export class WechatH5AuthService {
         sms: capability(enabled && channels.sms, "International SMS verification is not configured."),
         smsCountries: channels.smsCountries,
         verifiedAccountRequired: true,
-        phoneCodeMode: enabled && globalWechatPhoneTestEnabled() ? "test" : enabled && channels.sms ? "sms" : "unavailable",
-        phoneBindingAvailable: enabled && (globalWechatPhoneTestEnabled() || channels.sms),
-        verificationRequired: !globalWechatPhoneTestEnabled(),
+        phoneCodeMode,
+        phoneBindingAvailable: phoneCodeMode !== "unavailable",
+        verificationRequired: phoneCodeMode !== "test",
       },
     };
   }
