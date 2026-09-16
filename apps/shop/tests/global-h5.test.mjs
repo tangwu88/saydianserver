@@ -527,6 +527,7 @@ test("login actions stay clickable so validation and provider errors remain reac
   assert.match(domestic, /class="outline-btn" :disabled="!!countdown \|\| busy" @click="sendCode"/);
   assert.match(domestic, /class="primary-btn" :loading="busy" :disabled="busy" @click="login"/);
   assert.match(global, /class="text-button code-button" :disabled="busy \|\| loading \|\| countdown > 0" @click="sendCode"/);
+  assert.doesNotMatch(global, /v-if="!bindTicket \|\| !temporaryPhoneCode"/);
   assert.match(global, /class="primary-btn submit" :disabled="busy \|\| loading" :loading="busy" @click="login"/);
   assert.doesNotMatch(global, /const primaryEnabled/);
 });

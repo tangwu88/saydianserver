@@ -18,8 +18,8 @@
         <view v-if="!bindTicket" class="contact-tabs"><button :class="{ active: contactMode === 'sms' }" :disabled="busy" @click="changeContact('sms')">手机号</button><button :class="{ active: contactMode === 'email' }" :disabled="busy" @click="changeContact('email')">邮箱</button></view>
         <label class="field-label" :for="bindTicket ? 'bind-phone' : 'login-contact'">{{ bindTicket || contactMode === "sms" ? "手机号" : "邮箱" }}</label>
         <view :class="{ 'phone-fields': phoneMode }"><CountryCallingCodePicker v-if="phoneMode" v-model="phoneCountry" :disabled="busy" compact @update:model-value="resetChallenge" /><input :id="bindTicket ? 'bind-phone' : 'login-contact'" v-model="identifier" :disabled="busy" class="input" :maxlength="phoneMode ? 32 : 254" :placeholder="phoneMode ? '请输入手机号' : '请输入邮箱'" @input="resetChallenge" /></view>
-        <view class="code-row" :class="{ 'code-row-direct': bindTicket && temporaryPhoneCode }"
-          ><input id="login-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码" /><button v-if="!bindTicket || !temporaryPhoneCode" class="text-button code-button" :disabled="busy || loading || countdown > 0" @click="sendCode">
+        <view class="code-row"
+          ><input id="login-code" v-model="code" :disabled="busy" class="input" type="number" maxlength="6" placeholder="6位验证码" aria-label="验证码" /><button class="text-button code-button" :disabled="busy || loading || countdown > 0" @click="sendCode">
             {{ countdown > 0 ? countdown + "秒后重试" : "获取验证码" }}
           </button></view
         >
@@ -396,9 +396,6 @@ function browse() {
 .country-code {
   text-align: center;
   padding: 0 8px;
-}
-.code-row.code-row-direct {
-  grid-template-columns: minmax(0, 1fr);
 }
 .auth-surface {
   padding-top: 40px;

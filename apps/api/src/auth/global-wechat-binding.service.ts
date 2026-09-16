@@ -181,7 +181,8 @@ export class GlobalWechatBindingService {
   async requestPhoneCode(appId: string, input: unknown) {
     const body = safeObject(input);
     if (body.expectedMode !== undefined && body.expectedMode !== "test") throw globalError(400, "invalid_phone_code_mode", "The requested phone-code mode is invalid.");
-    const temporary = globalWechatPhoneTestEnabled();
+    const channels = await this.capabilities();
+    const temporary = globalWechatPhoneTestEnabled() && !channels.sms;
     if (body.expectedMode === "test" && !temporary) throw globalError(403, "phone_test_unavailable", "Temporary phone registration is no longer available.");
     if (!temporary) return { ...await this.requestCode(appId, { ...body, channel: "sms", purpose }), mode: "sms", sent: true, verificationRequired: true };
     requireGlobalWechatPhoneTest();

@@ -83,6 +83,11 @@ function harness(existing = true, verified = true) {
   const capabilities = new CommerceCapabilitiesService(db, secrets, h5, delivery);
   return { db, auth, delivery, binding, h5, capabilities, get state() { return state; } };
 }
+function temporaryHarness(existing = true, verified = true) {
+  const h = harness(existing, verified);
+  h.delivery.capabilities.mockResolvedValue({ email: true, sms: false, smsCountries: [] });
+  return h;
+}
 const accountInput = () => ({ bindTicket, identifier: "MEMBER@example.com", password, consentVersion: "legal-v1", locale: "en" });
 const codeRequest = () => ({ bindTicket, channel: "email", identifier: "member@example.com", locale: "en" });
 async function codeInput(h: ReturnType<typeof harness>) { const response = await h.binding.requestCode(appId, codeRequest()); return { bindTicket, challengeId: response.challengeId, code: h.delivery.send.mock.calls.at(-1)![0].code, password, consentVersion: "legal-v1", locale: "en" }; }
@@ -298,22 +303,22 @@ function ownWechat(h: ReturnType<typeof harness>) { h.state.identities.push({ id
 describe("explicit temporary WeChat phone registration", () => {
   beforeEach(() => vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "true"));
   it("accepts an explicitly test-only automatic challenge without sending SMS", async () => {
-    const h = harness(false);
+    const h = temporaryHarness(false);
     expect(await h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone, expectedMode: "test" })).toMatchObject({ mode: "test", sent: false });
     expect(h.state.challenges).toHaveLength(1); expect(h.delivery.send).not.toHaveBeenCalled(); expect(h.delivery.assertAvailable).not.toHaveBeenCalled();
   });
   it("rejects a stale automatic test request before falling back to a real SMS channel", async () => {
-    const h = harness(false); vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "false");
+    const h = temporaryHarness(false); vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "false");
     await expect(h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone, expectedMode: "test" })).rejects.toMatchObject({ status: 403, response: { errorKey: "phone_test_unavailable" } });
     expect(h.state.challenges).toHaveLength(0); expect(h.delivery.send).not.toHaveBeenCalled(); expect(h.delivery.assertAvailable).not.toHaveBeenCalled();
   });
   it.each(["sms", "", null, true])("rejects malformed expectedMode %s before any delivery", async expectedMode => {
-    const h = harness(false);
+    const h = temporaryHarness(false);
     await expect(h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone, expectedMode })).rejects.toMatchObject({ status: 400 });
     expect(h.state.challenges).toHaveLength(0); expect(h.delivery.send).not.toHaveBeenCalled();
   });
   it("advertises a separate test mode without claiming real SMS readiness", async () => {
-    const h = harness(false); h.delivery.capabilities.mockResolvedValue({ email: false, sms: false, smsCountries: [] });
+    const h = temporaryHarness(false); h.delivery.capabilities.mockResolvedValue({ email: false, sms: false, smsCountries: [] });
     expect((await h.capabilities.publicCapabilities()).login.wechatBinding).toMatchObject({ phoneCodeMode: "test", phoneBindingAvailable: true, verificationRequired: false, smsOtpAvailable: false });
     const request = await h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone });
     expect(request).toMatchObject({ mode: "test", sent: false, verificationRequired: false, challengeId: expect.any(String) });
@@ -321,25 +326,25 @@ describe("explicit temporary WeChat phone registration", () => {
     expect(h.delivery.send).not.toHaveBeenCalled(); expect(h.delivery.assertAvailable).not.toHaveBeenCalled(); expect(h.db.integrationConfig.updateMany).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
   });
   it.each(["000000", "123456", "987654"])("registers only a fresh phone and current OAuth identity with arbitrary six digits %s", async code => {
-    const h = harness(false); const input = await phoneInput(h);
+    const h = temporaryHarness(false); const input = await phoneInput(h);
     expect(await h.binding.bindPhone(appId, { ...input, code })).toMatchObject({ user: { phoneTestMode: true, phoneVerified: false, phoneVerificationStatus: "pending" } });
     expect(h.state.users).toHaveLength(1); expect(h.state.users[0]).toMatchObject({ mobile: testPhone, mobileVerifiedAt: null, emailVerifiedAt: null, passwordHash: null });
     expect(h.state.users[0].email).toBeUndefined(); expect(h.state.identities[0]).toMatchObject({ appId, openId: "official-openid-one", userId: h.state.users[0].id });
     expect(h.state.challenges[0].sentAt).toBeNull(); expect(h.auth.issueMallSession).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
   });
   it.each([false, true])("never takes over an existing phone user (verified=%s), even with their password", async verified => {
-    const h = harness(); h.state.users[0].mobile = testPhone; h.state.users[0].mobileVerifiedAt = verified ? new Date() : null;
+    const h = temporaryHarness(); h.state.users[0].mobile = testPhone; h.state.users[0].mobileVerifiedAt = verified ? new Date() : null;
     const input = await phoneInput(h), before = structuredClone(h.state.users);
     await expect(h.binding.bindPhone(appId, { ...input, password })).rejects.toMatchObject({ status: 409 });
     expect(h.state.users).toEqual(before); expect(h.state.identities).toHaveLength(0); expect(h.state.sessions).toHaveLength(0); expect(h.state.challenges[0].consumedAt).toBeNull(); expect(h.state.tickets[0].consumedAt).toBeNull();
   });
   it("adds an unverified phone only to the current OpenID's existing email user", async () => {
-    const h = harness(); ownWechat(h); const input = await phoneInput(h), before = structuredClone(h.state.users[0]);
+    const h = temporaryHarness(); ownWechat(h); const input = await phoneInput(h), before = structuredClone(h.state.users[0]);
     expect(await h.binding.bindPhone(appId, input)).toMatchObject({ user: { id: memberId, phoneVerified: false } });
     expect(h.state.users).toHaveLength(1); expect(h.state.users[0]).toEqual({ ...before, mobile: testPhone }); expect(h.state.oldSessionsRevoked).toBe(false);
   });
   it.each(["different-owner", "different-current-phone", "disabled-user", "detached-identity"])("rejects %s without modifying a user or consuming proof", async scenario => {
-    const h = harness(); ownWechat(h); const input = await phoneInput(h);
+    const h = temporaryHarness(); ownWechat(h); const input = await phoneInput(h);
     if (scenario === "different-owner") h.state.users.push({ id: randomUUID(), mobile: testPhone, status: "ACTIVE" });
     if (scenario === "different-current-phone") h.state.users[0].mobile = "+4915123456789";
     if (scenario === "disabled-user") h.state.users[0].status = "FROZEN";
@@ -348,7 +353,7 @@ describe("explicit temporary WeChat phone registration", () => {
     await expect(h.binding.bindPhone(appId, input)).rejects.toThrow(); expect(h.state.users).toEqual(before); expect(h.state.challenges[0].consumedAt).toBeNull(); expect(h.state.sessions).toHaveLength(0);
   });
   it.each(["flag-off", "expired", "consumed", "other-ticket", "wrong-app", "fake-sent", "five-attempts", "not-six-digits"])("rejects invalid temporary proof %s", async scenario => {
-    const h = harness(false), input = await phoneInput(h);
+    const h = temporaryHarness(false), input = await phoneInput(h);
     if (scenario === "flag-off") vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "false");
     if (scenario === "expired") h.state.challenges[0].expiresAt = new Date(0);
     if (scenario === "consumed") h.state.challenges[0].consumedAt = new Date();
@@ -360,17 +365,17 @@ describe("explicit temporary WeChat phone registration", () => {
     await expect(h.binding.bindPhone(appId, input)).rejects.toThrow(); expect(h.state.users).toHaveLength(0); expect(h.state.identities).toHaveLength(0); expect(h.state.sessions).toHaveLength(0);
   });
   it("cannot use temporary proof in the old password/OTP binding endpoint", async () => {
-    const h = harness(false), input = await phoneInput(h);
+    const h = temporaryHarness(false), input = await phoneInput(h);
     await expect(h.binding.bindCode(appId, { ...input, password })).rejects.toMatchObject({ status: 400 }); expect(h.state.users).toHaveLength(0);
   });
   it("rolls back every temporary write on a lost ticket claim, and permits only one concurrent claimant", async () => {
-    const h = harness(false), input = await phoneInput(h); h.db.commerceWechatBindTicket.updateMany.mockResolvedValueOnce({ count: 0 });
+    const h = temporaryHarness(false), input = await phoneInput(h); h.db.commerceWechatBindTicket.updateMany.mockResolvedValueOnce({ count: 0 });
     await expect(h.binding.bindPhone(appId, input)).rejects.toMatchObject({ status: 401 }); expect(h.state.users).toHaveLength(0); expect(h.state.challenges[0].consumedAt).toBeNull();
     const results = await Promise.allSettled([h.binding.bindPhone(appId, input), h.binding.bindPhone(appId, input)]);
     expect(results.filter(value => value.status === "fulfilled")).toHaveLength(1); expect(h.state.users).toHaveLength(1); expect(h.state.identities).toHaveLength(1); expect(h.state.sessions).toHaveLength(1);
   });
   it("uses a limited session for an already registered OpenID, then requires phone verification when disabled", async () => {
-    const h = harness(true, false); ownWechat(h); h.state.users[0].mobile = testPhone;
+    const h = temporaryHarness(true, false); ownWechat(h); h.state.users[0].mobile = testPhone;
     expect(await h.binding.linkedUser(appId, "official-openid-one", "legal-v1", "en")).toBe(memberId);
     expect(await h.binding.session(memberId, "/", appId)).toMatchObject({ user: { phoneTestMode: true } });
     vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "false");
@@ -399,5 +404,14 @@ describe("real WeChat phone verification remains separate", () => {
   it("never accepts arbitrary test digits against a real challenge even while test mode is enabled", async () => {
     const h = harness(false), input = await phoneInput(h); vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "true");
     await expect(h.binding.bindPhone(appId, { ...input, code: "000000" })).rejects.toMatchObject({ status: 400 }); expect(h.state.users).toHaveLength(0);
+  });
+  it("prefers configured SMS over the temporary fallback flag", async () => {
+    vi.stubEnv("GLOBAL_WECHAT_PHONE_TEST_ENABLED", "true");
+    const h = harness(false);
+    expect((await h.capabilities.publicCapabilities()).login.wechatBinding).toMatchObject({ phoneCodeMode: "sms", phoneBindingAvailable: true, verificationRequired: true, smsOtpAvailable: true });
+    const request = await h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone });
+    expect(request).toMatchObject({ mode: "sms", sent: true, verificationRequired: true });
+    expect(h.delivery.send).toHaveBeenCalledOnce();
+    await expect(h.binding.requestPhoneCode(appId, { bindTicket, identifier: testPhone, expectedMode: "test" })).rejects.toMatchObject({ status: 403, response: { errorKey: "phone_test_unavailable" } });
   });
 });
