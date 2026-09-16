@@ -110,7 +110,7 @@ export class GlobalAuthService {
       }
       throw error;
     }
-    if (!global && body.referralCode) await this.auth.bindReferral(userId, String(body.referralCode));
+    if (body.referralCode) await this.auth.bindReferral(userId, String(body.referralCode));
     return this.auth.issueMallSession(userId);
   }
 

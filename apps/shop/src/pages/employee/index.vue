@@ -53,8 +53,8 @@
           <view class="section-title">推广优惠券</view>
           <view v-for="coupon in coupons" :key="coupon.id" class="coupon-line">
             <view><b>{{ coupon.name }}</b><text class="small">可领 {{ coupon.remainingEmployeeQuota }} 张</text></view>
-            <button class="outline-btn" :loading="claimingCouponId===coupon.id" :disabled="busy || !!claimingCouponId" @click="claimCoupon(coupon.id)">领取券码</button>
-            <view v-for="gift in coupon.gifts || []" :key="gift.id" class="gift-line"><text selectable>{{ gift.code }} · {{ gift.status === 'RESERVED' ? '待领取' : gift.status === 'REDEEMED' ? '已领取' : gift.status }} {{ gift.redeemedAt ? date(gift.redeemedAt) : '' }}</text><button v-if="gift.linkUrl" class="mini-btn" @click="copy(gift.linkUrl)">复制链接</button><button v-if="gift.qrDataUrl" class="mini-btn" @click="previewQr(gift.qrDataUrl)">二维码</button><text v-if="!gift.linkUrl" class="small">链接仅在领取时展示</text></view>
+            <button class="outline-btn" :loading="claimingCouponId===coupon.id" :disabled="busy || !!claimingCouponId" @click="claimCoupon(coupon.id)">生成分享券</button>
+            <view v-for="gift in coupon.gifts || []" :key="gift.id" class="gift-line"><text selectable>{{ gift.code }} · {{ gift.status === 'RESERVED' ? '待好友领取' : gift.status === 'REDEEMED' ? '已领取' : gift.status }} {{ gift.redeemedAt ? date(gift.redeemedAt) : '' }}</text><button v-if="gift.linkUrl" class="mini-btn" @click="copy(gift.linkUrl)">复制链接</button><button v-if="gift.qrDataUrl" class="mini-btn" @click="previewCouponGift(gift,coupon)">优惠券海报</button><text v-if="!gift.linkUrl" class="small">分享入口仅在本次生成后展示</text></view>
           </view>
           <text v-if="couponLoadError" class="small section-error">{{ couponLoadError }}</text>
           <view v-else-if="!coupons.length" class="empty">暂无可领取的推广优惠券</view>
@@ -234,9 +234,12 @@ async function claimCoupon(id: string) {
   claimingCouponId.value=id;
   try {
     const rows = await promoterApi(`/coupons/${id}/claim`, "POST", { quantity: 1 });
-    if (rows?.[0]?.linkUrl) copy(rows[0].linkUrl);
-    await load();
-    uni.showToast({ title: "券码已领取，链接已复制", icon: "none" });
+    const coupon = coupons.value.find((item) => item.id === id);
+    const gift = rows?.[0];
+    if (coupon && gift) coupon.gifts = [gift, ...(coupon.gifts || []).filter((item:any) => item.id !== gift.id)];
+    if (coupon) coupon.remainingEmployeeQuota = Math.max(0, Number(coupon.remainingEmployeeQuota || 0) - (gift ? 1 : 0));
+    if (gift?.linkUrl) copy(gift.linkUrl);
+    uni.showToast({ title: "分享券已生成，链接已复制", icon: "none" });
   } catch (e) { toast(e); }
   finally { claimingCouponId.value=''; }
 }
@@ -371,6 +374,39 @@ function posterDrawContain(ctx: CanvasRenderingContext2D, image: HTMLImageElemen
 }
 function previewQr(url?: string) {
   if (url) uni.previewImage({ urls: [url] });
+}
+async function previewCouponGift(gift: any, coupon: any) {
+  if (!gift?.qrDataUrl) return;
+  try {
+    uni.showLoading({ title: "正在生成海报", mask: true });
+    const poster = await buildCouponPoster(gift, coupon);
+    uni.previewImage({ current: poster, urls: [poster] });
+  } catch {
+    previewQr(gift.qrDataUrl);
+  } finally {
+    uni.hideLoading();
+  }
+}
+async function buildCouponPoster(gift: any, coupon: any): Promise<string> {
+  if (typeof document === "undefined") return gift.qrDataUrl;
+  const [logo, qr] = await Promise.all([loadPosterImage(saidianBrandLogo), loadPosterImage(gift.qrDataUrl)]);
+  if (!qr) throw new Error("二维码不可用");
+  const canvas = document.createElement("canvas");
+  canvas.width = 750; canvas.height = 1120;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas unavailable");
+  ctx.fillStyle = "#fff5f0"; ctx.fillRect(0, 0, 750, 1120);
+  ctx.fillStyle = "#ffffff"; posterRoundRect(ctx, 30, 30, 690, 1060, 32); ctx.fill();
+  ctx.fillStyle = "#d20b27"; ctx.fillRect(30, 30, 690, 14);
+  if (logo) posterDrawContain(ctx, logo, 72, 72, 300, 68);
+  ctx.fillStyle = "#171b2b"; ctx.font = '700 38px "PingFang SC", sans-serif'; ctx.fillText(String(coupon?.name || "赛电商城优惠券"), 72, 200);
+  ctx.fillStyle = "#d20b27"; ctx.font = '800 70px "PingFang SC", sans-serif'; ctx.fillText(money(coupon?.value), 72, 292);
+  ctx.fillStyle = "#667085"; ctx.font = '24px "PingFang SC", sans-serif'; ctx.fillText(`满 ${money(coupon?.minimumSpendCents)} 可用`, 72, 340);
+  ctx.fillStyle = "#f8fafc"; posterRoundRect(ctx, 92, 390, 566, 566, 24); ctx.fill();
+  ctx.drawImage(qr, 150, 448, 450, 450);
+  ctx.fillStyle = "#171b2b"; ctx.font = '700 27px "PingFang SC", sans-serif'; ctx.textAlign = "center"; ctx.fillText("微信扫码领取，领取后下单可选用", 375, 1006);
+  ctx.fillStyle = "#7a8391"; ctx.font = '22px "PingFang SC", sans-serif'; ctx.fillText("每张分享券仅限一人领取", 375, 1052); ctx.textAlign = "start";
+  return canvas.toDataURL("image/png");
 }
 function date(v: string) {
   return new Date(v).toLocaleDateString();

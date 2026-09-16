@@ -57,7 +57,7 @@ import { OAUTH_CONTEXT_KEY, OAUTH_TTL, OAUTH_CALLBACK_PATH, normalizeGlobalPhone
 import { takeGlobalOAuthCallback } from "../global-oauth";
 import { loadGlobalLegal, legalPlainText, type GlobalLegalDocument } from "../global-legal";
 import { authErrorMessage, authUiError } from "../friendly-auth";
-import { claimPurchaseReferral } from "../session";
+import { claimPurchaseReferral, currentPurchaseReferral } from "../session";
 type DocumentType = "userAgreement" | "privacyPolicy";
 const capabilities = ref<any>(),
   documents = ref<Partial<Record<DocumentType, GlobalLegalDocument>>>({});
@@ -70,6 +70,7 @@ const identifier = ref(""),
   reading = ref<DocumentType | null>(null);
 const bindTicket = ref(""),
   bindExpiresAt = ref(0),
+  wechatProfileProof = ref(""),
   contactMode = ref<"email" | "sms">("sms"),
   countdown = ref(0),
   codeNote = ref("");
@@ -144,6 +145,7 @@ async function initialize(handleCallback: boolean) {
     if (response.requiresPhoneBinding || response.requiresAccountBinding || response.requiresMobileBinding) {
       if (typeof response.bindTicket !== "string" || !response.bindTicket || !Number.isFinite(response.expiresIn) || response.expiresIn <= 0) throw authUiError("微信登录未完成，请重新试一次。");
       bindTicket.value = response.bindTicket;
+      wechatProfileProof.value = String(response.wechatProfileProof || "");
       bindExpiresAt.value = Date.now() + Math.min(response.expiresIn * 1000, OAUTH_TTL);
       bindingSession = context.sessionStamp;
       identifier.value = "";
@@ -269,7 +271,7 @@ async function login() {
       if (!loginChannelEnabled.value) throw authUiError("当前方式暂时无法登录，请选择其他方式或稍后再试。");
       response = await api("/auth/code/login", {
         method: "POST",
-        data: { channel: contactMode.value, identifier: recipient, challengeId: pending.id, code: code.value, consentVersion: consent.value.version, locale: consent.value.locale },
+        data: { channel: contactMode.value, identifier: recipient, challengeId: pending.id, code: code.value, consentVersion: consent.value.version, locale: consent.value.locale, referralCode: currentPurchaseReferral() },
       });
     } else {
       requireBinding();
@@ -281,6 +283,7 @@ async function login() {
           code: code.value,
           consentVersion: consent.value.version,
           locale: consent.value.locale,
+          wechatProfileProof: wechatProfileProof.value,
         },
       });
     }
@@ -312,6 +315,7 @@ async function officialLogin() {
         codeChallenge: challengeHash,
         consentVersion: agreed.version,
         locale: agreed.locale,
+        referralCode: currentPurchaseReferral(),
       },
     });
     if (!active) return;
@@ -347,6 +351,7 @@ async function save(response: any) {
   sessionStorage.removeItem(OAUTH_CONTEXT_KEY);
   code.value = "";
   bindTicket.value = "";
+  wechatProfileProof.value = "";
   const destination = globalPageAllowed(target) ? target : "/pages/profile/index";
   if (oauthDocumentEntry) {
     oauthDocumentEntry = false;
@@ -372,6 +377,7 @@ async function showError(cause: unknown) {
 }
 function cancelBinding() {
   bindTicket.value = "";
+  wechatProfileProof.value = "";
   bindExpiresAt.value = 0;
   bindingSession = "";
   oauthDocumentEntry = false;

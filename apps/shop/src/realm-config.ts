@@ -12,7 +12,7 @@ export function resolveMallConfig(env: Record<string, unknown>, miniProgram = fa
 
 export function realmKey(key: string, realm: MallRealm) { return realm === "global" ? "saydian-global-mall:" + key : key; }
 export function globalPageAllowed(route: string) {
-  return /^\/pages\/(home|category|search|product|profile|login|help|cart|checkout|orders|order-detail|after-sale|addresses|address-edit|favorites|coupons|points|employee)\/index(?:\?[^#]*)?$/.test(route) && !/[\\\r\n]/.test(route);
+  return /^\/pages\/(home|category|search|product|profile|login|help|cart|checkout|orders|order-detail|after-sale|addresses|address-edit|favorites|coupons|coupon-gift|points|employee)\/index(?:\?[^#]*)?$/.test(route) && !/[\\\r\n]/.test(route);
 }
 export function globalApiAllowed(path: string, method = "GET") {
   // Routing only: the server still verifies identity, scope, market and channel
@@ -31,6 +31,7 @@ export function globalApiAllowed(path: string, method = "GET") {
   if (method === "POST" && (route === "/wecom/oauth" || route === "/wecom/me/withdrawals" || /^\/wecom\/me\/coupons\/[A-Za-z0-9_-]+\/claim$/.test(route))) return true;
   if (route === "/storefront/coupons/available") return method === "GET";
   if (route === "/storefront/coupons/code/claim") return method === "POST";
+  if (/^\/storefront\/coupon-gifts\/[A-Za-z0-9_-]+(?:\/claim)?$/.test(route)) return route.endsWith("/claim") ? method === "POST" : method === "GET";
   if (route === "/storefront/feedback") return method === "GET" || method === "POST";
   if (route === "/storefront/orders/preview") return method === "POST";
   if (method === "GET") return /^\/storefront\/(bootstrap|capabilities|categories|markets|products(?:\/[A-Za-z0-9_-]+)?|cart|addresses|orders(?:\/[A-Za-z0-9_-]+(?:\/logistics)?)?|favorites|coupons|points)$/.test(route) || /^\/payments\/[A-Za-z0-9_-]+$/.test(route);

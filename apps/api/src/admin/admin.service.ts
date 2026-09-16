@@ -3,7 +3,7 @@ import { AdminRole, AfterSaleStatus, BusinessType, CommerceJobStatus, CommerceOr
 import { hash } from "bcryptjs";
 import { parseDownloadManifest } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
-import { isUuid, maskMobile, safeObject, sha256 } from "../common/crypto";
+import { isUuid, maskMobile, normalizedMobile, safeObject, sha256 } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { globalLocale, internationalPhone, maskedIdentifier, normalizedEmail } from "../auth/global-identity";
@@ -56,8 +56,9 @@ const memberProfileSelect = {
   status: true,
   referralEmployeeId: true,
   referralEmployee: {
-    select: { id: true, name: true, referralCode: true, active: true },
+    select: { id: true, name: true, referralCode: true, active: true, wecomUserId: true },
   },
+  pointAccount: { select: { balanceCents: true, version: true, updatedAt: true } },
   updatedAt: true,
 } satisfies Prisma.UserSelect;
 
@@ -72,13 +73,10 @@ export class AdminService {
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
 
-  private assertGlobalMemberAdministrator(current: { role: string; roles?: string[] }) {
+  private assertMemberAdministrator(current: { role: string; roles?: string[] }) {
     const roles = current.roles?.length ? current.roles : [current.role];
     if (!roles.includes(AdminRole.SUPER_ADMIN)) {
-      throw new ForbiddenException("只有超级管理员可以编辑会员资料与验证状态");
-    }
-    if (!isGlobalRealm()) {
-      throw new ForbiddenException("会员资料编辑仅用于国际版新会员系统");
+      throw new ForbiddenException("只有超级管理员可以编辑会员资料、验证状态与积分");
     }
   }
 
@@ -101,6 +99,8 @@ export class AdminService {
       status: item.status,
       referralEmployeeId: item.referralEmployeeId,
       referralEmployee: item.referralEmployee,
+      pointBalanceCents: item.pointAccount?.balanceCents ?? null,
+      pointAccountVersion: item.pointAccount?.version ?? null,
       verificationVersion: item.updatedAt.toISOString(),
     };
   }
@@ -111,6 +111,7 @@ export class AdminService {
     return {
       id: item.id,
       memberNo: String(item.compatibilityId),
+      mobile: item.mobile,
       mobileMasked: isGlobalRealm() && item.mobile ? maskedIdentifier("sms", item.mobile) : maskMobile(item.mobile),
       mobileVerified,
       mobileVerificationStatus: !item.mobile ? "NOT_PROVIDED" : mobileVerified ? "VERIFIED" : "UNVERIFIED",
@@ -181,7 +182,11 @@ export class AdminService {
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { _count: { select: { healthRecords: true, devices: true } } },
+        include: {
+          _count: { select: { healthRecords: true, devices: true } },
+          referralEmployee: { select: { id: true, name: true, referralCode: true, active: true, wecomUserId: true } },
+          pointAccount: { select: { balanceCents: true } },
+        },
       }),
       this.prisma.user.count({ where }),
     ]);
@@ -191,6 +196,10 @@ export class AdminService {
         legacyMemberId: item.legacyMemberId,
         nickname: item.nickname,
         avatarUrl: item.avatarUrl,
+        referralEmployeeId: item.referralEmployeeId,
+        referralEmployee: item.referralEmployee,
+        referrer: item.referralEmployee ? `${item.referralEmployee.name} · ${item.referralEmployee.referralCode}` : null,
+        pointBalanceCents: item.pointAccount?.balanceCents ?? null,
         status: item.status,
         healthRecordCount: item._count.healthRecords,
         deviceCount: item._count.devices,
@@ -203,7 +212,7 @@ export class AdminService {
   }
 
   async memberProfile(current: { id: string; role: string; roles?: string[] }, userId: string, requestId: string) {
-    this.assertGlobalMemberAdministrator(current);
+    this.assertMemberAdministrator(current);
     if (!isUuid(userId)) throw new BadRequestException("会员编号无效");
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
@@ -222,7 +231,7 @@ export class AdminService {
           afterJson: {
             mobilePresent: Boolean(user.mobile),
             emailPresent: Boolean(user.email),
-            fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification", "referralEmployeeId"],
+            fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification", "referralEmployeeId", "pointBalanceCents"],
           },
         },
       });
@@ -231,7 +240,7 @@ export class AdminService {
   }
 
   async updateMemberProfile(current: { id: string; role: string; roles?: string[] }, userId: string, requestId: string, input: Record<string, unknown>) {
-    this.assertGlobalMemberAdministrator(current);
+    this.assertMemberAdministrator(current);
     if (!isUuid(userId)) throw new BadRequestException("会员编号无效");
     const allowedFields = new Set(["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "mobileVerified", "emailVerified", "referralEmployeeId", "newPassword", "expectedUpdatedAt"]);
     if (Object.keys(input).some((field) => !allowedFields.has(field))) {
@@ -288,9 +297,9 @@ export class AdminService {
 
     const mobileInput = String(input.mobile ?? "").trim();
     const emailInput = String(input.email ?? "").trim();
-    const mobile = mobileInput ? (internationalPhone(mobileInput)?.identifier ?? "") : null;
+    const mobile = mobileInput ? (isGlobalRealm() ? (internationalPhone(mobileInput)?.identifier ?? "") : normalizedMobile(mobileInput)) : null;
     const email = emailInput ? normalizedEmail(emailInput) : null;
-    if (mobileInput && !mobile) throw new BadRequestException("手机号格式不正确，请填写带国家区号的号码");
+    if (mobileInput && !mobile) throw new BadRequestException(isGlobalRealm() ? "手机号格式不正确，请填写带国家区号的号码" : "手机号格式不正确，请填写11位国内手机号");
     if (emailInput && !email) throw new BadRequestException("邮箱地址格式不正确");
     if (!mobile && !email) throw new BadRequestException("手机号和邮箱至少保留一项");
     if (typeof input.mobileVerified !== "boolean" || typeof input.emailVerified !== "boolean") {
@@ -323,7 +332,7 @@ export class AdminService {
         const referralEmployee = referralEmployeeIdInput && referralEmployeeIdInput !== user.referralEmployeeId
           ? await tx.commerceEmployee.findUnique({
               where: { id: referralEmployeeIdInput },
-              select: { id: true, name: true, referralCode: true, active: true },
+              select: { id: true, name: true, referralCode: true, active: true, wecomUserId: true },
             })
           : user.referralEmployee;
         if (referralEmployeeIdInput && referralEmployeeIdInput !== user.referralEmployeeId && (!referralEmployee || !referralEmployee.active)) {
@@ -444,8 +453,51 @@ export class AdminService {
     }
   }
 
+  async adjustMemberPoints(current: { id: string; role: string; roles?: string[] }, userId: string, requestId: string, input: Record<string, unknown>) {
+    this.assertMemberAdministrator(current);
+    if (!isUuid(userId)) throw new BadRequestException("会员编号无效");
+    const deltaCents = Number(input.deltaCents);
+    if (!Number.isSafeInteger(deltaCents) || deltaCents === 0 || Math.abs(deltaCents) > 100_000_000) {
+      throw new BadRequestException("积分调整金额须为非零整数分，单次不能超过100万元");
+    }
+    const reason = String(input.reason ?? "").replace(/\s+/g, " ").trim();
+    if (reason.length < 2 || reason.length > 200) throw new BadRequestException("请填写2至200字的积分调整原因");
+    const idempotencyKey = String(input.idempotencyKey ?? "").trim();
+    if (!isUuid(idempotencyKey)) throw new BadRequestException("积分调整请求编号无效");
+    const ledgerKey = `admin-point:${idempotencyKey}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId}::uuid FOR UPDATE`;
+      const member = await tx.user.findUnique({ where: { id: userId }, select: { id: true, compatibilityId: true, status: true } });
+      if (!member) throw new NotFoundException("会员不存在");
+      if (member.status === UserStatus.DELETION_PENDING || member.status === UserStatus.DELETED) throw new ConflictException("注销流程中的会员不能调整积分");
+
+      const existing = await tx.commercePointLedger.findUnique({ where: { idempotencyKey: ledgerKey }, select: { userId: true, deltaCents: true, type: true } });
+      if (existing) {
+        if (existing.userId !== userId || existing.deltaCents !== deltaCents || existing.type !== "ADMIN_ADJUSTMENT") throw new ConflictException("积分调整请求编号已被使用");
+        const account = await tx.commercePointAccount.findUnique({ where: { userId }, select: { balanceCents: true, version: true, updatedAt: true } });
+        return { memberNo: String(member.compatibilityId), deltaCents, balanceCents: account?.balanceCents ?? 0, version: account?.version ?? 0, updatedAt: account?.updatedAt.toISOString() ?? null, repeated: true };
+      }
+
+      await tx.commercePointAccount.upsert({ where: { userId }, create: { userId }, update: {} });
+      await tx.$queryRaw`SELECT "userId" FROM "CommercePointAccount" WHERE "userId" = ${userId}::uuid FOR UPDATE`;
+      const account = await tx.commercePointAccount.findUniqueOrThrow({ where: { userId }, select: { balanceCents: true, version: true } });
+      const nextBalance = account.balanceCents + deltaCents;
+      if (!Number.isSafeInteger(nextBalance) || nextBalance < 0) throw new BadRequestException("扣减后积分余额不能小于0");
+      if (nextBalance > 2_000_000_000) throw new BadRequestException("积分余额超过系统上限");
+      const updated = await tx.commercePointAccount.update({ where: { userId }, data: { balanceCents: nextBalance, version: { increment: 1 } }, select: { balanceCents: true, version: true, updatedAt: true } });
+      await tx.commercePointLedger.create({ data: { userId, deltaCents, type: "ADMIN_ADJUSTMENT", idempotencyKey: ledgerKey } });
+      await tx.auditLog.create({ data: {
+        actorType: "ADMIN", actorId: current.id, action: "MEMBER_POINTS_ADJUSTMENT", entityType: "COMMERCE_POINT_ACCOUNT", entityId: userId, requestId,
+        beforeJson: { balanceCents: account.balanceCents, version: account.version },
+        afterJson: { deltaCents, balanceCents: updated.balanceCents, version: updated.version, reason },
+      } });
+      return { memberNo: String(member.compatibilityId), deltaCents, balanceCents: updated.balanceCents, version: updated.version, updatedAt: updated.updatedAt.toISOString(), repeated: false };
+    });
+  }
+
   async updateMemberVerification(current: { id: string; role: string; roles?: string[] }, userId: string, requestId: string, input: Record<string, unknown>) {
-    this.assertGlobalMemberAdministrator(current);
+    this.assertMemberAdministrator(current);
     const channel = String(input.channel ?? "").trim();
     if (channel !== "mobile" && channel !== "email") {
       throw new BadRequestException("验证类型必须是手机号或邮箱");

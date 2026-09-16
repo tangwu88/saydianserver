@@ -20,7 +20,7 @@ import { onLoad,onUnload } from "@dcloudio/uni-app"; import { computed,ref } fro
 import DesktopHeader from "../../components/DesktopHeader.vue";import { brandLogo } from "../../storefront";
 import { api,saveMallSession,COMMERCE_CONSENT_VERSION,ensureMiniProgramSession,toast } from "../../api";
 import { bindReferral,captureReferral } from "../../session";import { safeMallRoute } from "../../commerce-model";
-const identifier=ref(""),code=ref(""),channel=ref<"sms"|"email">("sms"),challengeId=ref(""),agreementAccepted=ref(false),busy=ref(false),countdown=ref(0),devCode=ref(""),error=ref(""),bindTicket=ref(""),capabilities=ref<any>();
+const identifier=ref(""),code=ref(""),channel=ref<"sms"|"email">("sms"),challengeId=ref(""),agreementAccepted=ref(false),busy=ref(false),countdown=ref(0),devCode=ref(""),error=ref(""),bindTicket=ref(""),wechatProfileProof=ref(""),capabilities=ref<any>();
 const isWechat=typeof navigator!=="undefined" && /micromessenger/i.test(navigator.userAgent);
 const enabled=computed(()=>bindTicket.value ? capabilities.value?.login?.sms?.enabled : capabilities.value?.login?.[channel.value]?.enabled);
 const capabilityReason=computed(()=>bindTicket.value ? capabilities.value?.login?.sms?.reason : capabilities.value?.login?.[channel.value]?.reason);
@@ -41,7 +41,7 @@ onLoad(async()=>{
       const response:any=await api("/auth/wechat/h5/login",{method:"POST",data:{code:oauthCode,state,codeVerifier:stored.verifier,consentVersion:COMMERCE_CONSENT_VERSION}});
       sessionStorage.removeItem("saidian-oauth:"+state);
       const clean=new URL(location.href);clean.searchParams.delete("code");clean.searchParams.delete("state");history.replaceState(null,"",clean.href);
-      if(response.requiresMobileBinding){bindTicket.value=response.bindTicket;agreementAccepted.value=true;channel.value="sms";resetCode();mallStorage.set("saidian-post-login-route",safeMallRoute(response.returnTo));}
+      if(response.requiresMobileBinding){bindTicket.value=response.bindTicket;wechatProfileProof.value=String(response.wechatProfileProof||"");agreementAccepted.value=true;channel.value="sms";resetCode();mallStorage.set("saidian-post-login-route",safeMallRoute(response.returnTo));}
       else await save(response);
     }
     /* #endif */
@@ -66,7 +66,7 @@ async function login(){
   busy.value=true;error.value="";
   try{
     const path=bindTicket.value?"/auth/wechat/h5/bind-mobile":"/auth/code/login";
-    const response=await api(path,{method:"POST",data:{...(bindTicket.value?{mobile:value,bindTicket:bindTicket.value}:{channel:channel.value,identifier:value,...(challengeId.value?{challengeId:challengeId.value}:{})}),code:code.value,consentVersion:COMMERCE_CONSENT_VERSION,referralCode:String(mallStorage.get("saidian-ref")||"")}});
+    const response=await api(path,{method:"POST",data:{...(bindTicket.value?{mobile:value,bindTicket:bindTicket.value,wechatProfileProof:wechatProfileProof.value}:{channel:channel.value,identifier:value,...(challengeId.value?{challengeId:challengeId.value}:{})}),code:code.value,consentVersion:COMMERCE_CONSENT_VERSION,referralCode:String(mallStorage.get("saidian-ref")||"")}});
     await save(response);
   }catch(e){error.value=e instanceof Error?e.message:"登录失败";}finally{busy.value=false;}
 }

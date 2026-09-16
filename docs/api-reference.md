@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **354 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **355 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -276,7 +276,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（102）
+## 管理后台接口（103）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -289,9 +289,10 @@
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/members` | 会员查询 | admin | query:search?，query:page?，query:pageSize?；search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库 | {items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员读取会员编辑资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；仅国际版SUPER_ADMIN | 会员编号、头像、姓名/昵称、性别、出生日期、身高、体重、未脱敏手机号/邮箱、账号状态及独立验证状态；读取写入专门审计，不返回密码和健康记录 | 核心服务 |
-| `PATCH /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员编辑会员资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；{nickname,avatarUrl?,gender:MALE\|FEMALE\|UNSPECIFIED,birthday?:YYYY-MM-DD,heightCm?:50..250,weightKg?:10..500,mobile?,email?,status:ACTIVE\|DISABLED,mobileVerified,emailVerified,newPassword?:8至72字节,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项 | 原子更新 App 基本资料、联系方式验证状态及可选新密码；联系方式、验证、账号状态或密码变化会注销会员现有会话，单独修改基本资料不会；重复联系方式409、过期版本409、注销流程会员409；专门审计只保存变更字段名和密码是否变更，不保存资料值、完整联系方式或密码 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/members` | 会员查询 | admin | query:search?，query:page?，query:pageSize?；search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库 | {items,total,page,pageSize}；已登录后台返回数字memberNo、完整手机号、头像、推广上级及积分余额，国际版另含emailMasked；使用对应服务的管理员会话与角色权限 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员读取会员编辑资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；国内与国际版SUPER_ADMIN | 会员编号、头像、姓名/昵称、性别、出生日期、身高、体重、未脱敏手机号/邮箱、账号状态、推广上级、积分余额及独立验证状态；读取写入专门审计，不返回密码和健康记录 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员编辑会员资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；{nickname,avatarUrl?,gender:MALE\|FEMALE\|UNSPECIFIED,birthday?:YYYY-MM-DD,heightCm?:50..250,weightKg?:10..500,mobile?,email?,status:ACTIVE\|DISABLED,mobileVerified,emailVerified,referralEmployeeId?,newPassword?:8至72字节,expectedUpdatedAt}；国内手机号为11位，国际版须含国家区号，手机或邮箱至少保留一项 | 原子更新 App 基本资料、联系方式验证状态、推广上级及可选新密码；联系方式、验证、账号状态或密码变化会注销会员现有会话，单独修改基本资料不会；重复联系方式409、过期版本409、注销流程会员409；专门审计只保存变更字段名和密码是否变更，不保存资料值、完整联系方式或密码 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/members/:id/points-adjustments` | 超级管理员调整会员积分 | admin: SUPER_ADMIN | path:id；id=会员UUID；{deltaCents:非零整数分,reason:2至200字,idempotencyKey:UUID}；单次绝对值不超过100万元 | 返回{userId,deltaCents,balanceCents,idempotent}；余额不可为负，生成会员积分流水与后台审计，同一请求编号安全重试；国内与国际版SUPER_ADMIN可用 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/members/:id/verification` | 超级管理员人工确认联系方式 | admin: SUPER_ADMIN | path:id；id=会员UUID；{channel:mobile\|email,verified:boolean,expectedUpdatedAt}；只调整已有联系方式的验证状态，不修改号码或邮箱 | 返回脱敏联系方式与手机/邮箱独立验证状态；并发变化409；写入专门审计。人工确认后会员需重新登录，临时测试会话不会原地提权 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-summary` | 会员健康数量摘要 | admin | path:id；id=会员 UUID | 按指标数量与首末采集时间 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计 | 核心服务 |

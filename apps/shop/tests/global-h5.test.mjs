@@ -174,7 +174,8 @@ test("global customer shopping and employee promotion pages allow only exact end
   const { globalApiAllowed, globalPageAllowed } = harness().load("realm-config");
   assert.equal(globalApiAllowed("/storefront/products?page=1"), true);
   assert.equal(globalApiAllowed("/auth/wechat/h5/bind-code", "POST"), true);
-  for (const path of ["/auth/wechat/mini", "/auth/sms-login", "/payments/wechat/notify", "/payments/wechat/refund-notify", "/payments/alipay/notify", "/storefront/coupon-gifts/token/claim", "https://example.invalid"]) assert.equal(globalApiAllowed(path, "POST"), false, path);
+  for (const path of ["/auth/wechat/mini", "/auth/sms-login", "/payments/wechat/notify", "/payments/wechat/refund-notify", "/payments/alipay/notify", "https://example.invalid"]) assert.equal(globalApiAllowed(path, "POST"), false, path);
+  assert.equal(globalApiAllowed("/storefront/coupon-gifts/token/claim", "POST"), true);
   for (const [method, paths] of [
     ["GET", ["/storefront/bootstrap", "/storefront/capabilities?locale=en", "/storefront/markets", "/storefront/products/sku-1", "/storefront/cart", "/storefront/addresses", "/storefront/orders?status=PAID", "/storefront/orders/order-1", "/storefront/orders/order-1/logistics", "/storefront/favorites", "/storefront/coupons", "/storefront/points?page=2", "/payments/payment-1"]],
     ["POST", ["/storefront/cart/items", "/storefront/addresses", "/storefront/orders/preview", "/storefront/orders", "/storefront/orders/order-1/cancel", "/storefront/orders/order-1/receipt", "/storefront/orders/order-1/after-sales", "/storefront/orders/order-1/after-sales/preview", "/storefront/orders/order-1/after-sales/sale-1/return-logistics", "/storefront/favorites/product-1", "/storefront/coupons/coupon-1/claim", "/storefront/reviews", "/payments/create"]],
@@ -195,19 +196,20 @@ test("global customer shopping and employee promotion pages allow only exact end
     ["DELETE", "/storefront/orders/order-1"],
     ["PUT", "/storefront/addresses/address-1"],
     ["POST", "/payments/create?channel=wechat_mini"],
-    ["GET", "/storefront/coupon-gifts/token"],
     ["GET", "/storefront/orders/../admin"],
     ["GET", "/storefront/orders/%2e%2e"],
     ["GET", "/storefront/products/id#fragment"],
     ["GET", "/storefront/products/id\\admin"],
   ])
     assert.equal(globalApiAllowed(path, method), false, `${method} ${path}`);
+  assert.equal(globalApiAllowed("/storefront/coupon-gifts/token", "GET"), true);
   assert.equal(globalPageAllowed("/pages/product/index?id=1"), true);
   for (const page of ["cart", "checkout", "orders", "order-detail", "after-sale", "addresses", "address-edit", "favorites", "coupons", "points"]) assert.equal(globalPageAllowed(`/pages/${page}/index?id=synthetic`), true);
   assert.equal(globalPageAllowed("/pages/employee/index"), true);
-  for (const route of ["/pages/coupon-gift/index?token=employee-token", "//example.invalid", "/pages/login/index#bad"]) assert.equal(globalPageAllowed(route), false);
+  assert.equal(globalPageAllowed("/pages/coupon-gift/index?token=employee-token"), true);
+  for (const route of ["//example.invalid", "/pages/login/index#bad"]) assert.equal(globalPageAllowed(route), false);
 });
-test("global promotion links remain tab-local and belong to the current order instead of rebinding the member", async () => {
+test("global promotion links stay tab-local and are forwarded by login without a redundant referral request", async () => {
   const h = harness({
     url: "https://app.saydian.cn/global/saidian-mall/?ref=TEAM01#/pages/product/index?id=synthetic",
     request(options) { options.success({ statusCode: 200, data: { bound: true } }); },
@@ -222,6 +224,8 @@ test("global promotion links remain tab-local and belong to the current order in
   assert.equal(claimPurchaseReferral("member-1"), "TEAM01");
   await bindReferral();
   assert.equal(h.requests.length, 0);
+  const globalLogin = readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8");
+  assert.match(globalLogin, /referralCode: currentPurchaseReferral\(\)/);
   assert.equal(currentPurchaseReferral("member-2"), "");
   assert.equal(h.sessionStorage.getItem(PURCHASE_REFERRAL_KEY), null);
 });
@@ -253,7 +257,8 @@ test("global navigation accepts Uni home-tab alias without permitting other rout
   assert.equal(toasts.length, 0);
   for (const action of Object.keys(interceptors)) for (const url of ["/pages/checkout/index", "/pages/cart/index", "/pages/order-detail/index?id=1"]) assert.equal(interceptors[action].invoke({ url }), undefined);
   assert.equal(interceptors.navigateTo.invoke({ url: "/pages/employee/index" }), undefined);
-  for (const url of ["//foreign.invalid", "/global/saidian-mall/", "/?redirect=bad", "/pages/coupon-gift/index"]) {
+  assert.equal(interceptors.navigateTo.invoke({ url: "/pages/coupon-gift/index?token=gift" }), undefined);
+  for (const url of ["//foreign.invalid", "/global/saidian-mall/", "/?redirect=bad"]) {
     assert.equal(interceptors.switchTab.invoke({ url }), false);
   }
 });
@@ -457,8 +462,11 @@ test("global client refuses disabled routes without network and targets its own 
   const h = harness({
     request: (options) => options.success({ statusCode: 200, data: { realm: "global" } }),
   });
-  await assert.rejects(h.load("api").api("/storefront/coupon-gifts/token", { method: "GET" }), /暂未开放/);
+  await assert.rejects(h.load("api").api("/auth/sms-login", { method: "POST" }), /暂未开放/);
   assert.equal(h.requests.length, 0);
+  await h.load("api").api("/storefront/coupon-gifts/token", { method: "GET" });
+  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/storefront/coupon-gifts/token");
+  h.requests.length = 0;
   await h.load("api").api("/wecom/oauth", { method: "POST" });
   assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/wecom/oauth");
   h.requests.length = 0;
@@ -1210,7 +1218,9 @@ test("global account removes the redundant order shortcuts but keeps member prom
 test("global mobile home wraps category navigation and member promotion keeps a deterministic return path", () => {
   const home = readFileSync(resolve(source, "pages/home/index.vue"), "utf8");
   assert.match(home, /class="catalog-side" role="navigation" aria-label="商品分类"/);
-  assert.match(home, /\.catalog-side\s*\{[^}]*display:grid;[^}]*repeat\(auto-fit,minmax\(112px,1fr\)\)/);
+  assert.match(home, /\.catalog-side\s*\{[^}]*display:grid;[^}]*repeat\(auto-fit,minmax\(142px,1fr\)\)/);
+  assert.match(home, /class="category-icon"/);
+  assert.match(home, /\.section-title \.text-button\{width:auto;margin-left:auto/);
   assert.match(home, /\.category-name\s*\{[^}]*text-overflow:ellipsis/);
   assert.doesNotMatch(home, /\.catalog-side\s*\{[^}]*overflow:auto/);
 
