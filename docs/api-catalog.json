@@ -318,7 +318,7 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "会员查询",
       "request": "search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库",
-      "response": "{items,total,page,pageSize}；包含数字memberNo、脱敏手机号，国际版另含emailMasked；使用对应服务的管理员会话与角色权限",
+      "response": "{items,total,page,pageSize}；已登录后台返回数字memberNo、完整手机号、头像、推广上级及积分余额，国际版另含emailMasked；使用对应服务的管理员会话与角色权限",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -351,8 +351,8 @@
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "超级管理员读取会员编辑资料",
-      "request": "id=会员UUID；仅国际版SUPER_ADMIN",
-      "response": "会员编号、头像、姓名/昵称、性别、出生日期、身高、体重、未脱敏手机号/邮箱、账号状态及独立验证状态；读取写入专门审计，不返回密码和健康记录",
+      "request": "id=会员UUID；国内与国际版SUPER_ADMIN",
+      "response": "会员编号、头像、姓名/昵称、性别、出生日期、身高、体重、未脱敏手机号/邮箱、账号状态、推广上级、积分余额及独立验证状态；读取写入专门审计，不返回密码和健康记录",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -391,10 +391,50 @@
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "超级管理员编辑会员资料",
-      "request": "id=会员UUID；{nickname,avatarUrl?,gender:MALE|FEMALE|UNSPECIFIED,birthday?:YYYY-MM-DD,heightCm?:50..250,weightKg?:10..500,mobile?,email?,status:ACTIVE|DISABLED,mobileVerified,emailVerified,newPassword?:8至72字节,expectedUpdatedAt}；手机号须含国家区号，手机或邮箱至少保留一项",
-      "response": "原子更新 App 基本资料、联系方式验证状态及可选新密码；联系方式、验证、账号状态或密码变化会注销会员现有会话，单独修改基本资料不会；重复联系方式409、过期版本409、注销流程会员409；专门审计只保存变更字段名和密码是否变更，不保存资料值、完整联系方式或密码",
+      "request": "id=会员UUID；{nickname,avatarUrl?,gender:MALE|FEMALE|UNSPECIFIED,birthday?:YYYY-MM-DD,heightCm?:50..250,weightKg?:10..500,mobile?,email?,status:ACTIVE|DISABLED,mobileVerified,emailVerified,referralEmployeeId?,newPassword?:8至72字节,expectedUpdatedAt}；国内手机号为11位，国际版须含国家区号，手机或邮箱至少保留一项",
+      "response": "原子更新 App 基本资料、联系方式验证状态、推广上级及可选新密码；联系方式、验证、账号状态或密码变化会注销会员现有会话，单独修改基本资料不会；重复联系方式409、过期版本409、注销流程会员409；专门审计只保存变更字段名和密码是否变更，不保存资料值、完整联系方式或密码",
       "dependency": "核心服务",
       "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.adjustMemberPoints",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/members/:id/points-adjustments",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "超级管理员调整会员积分",
+      "request": "id=会员UUID；{deltaCents:非零整数分,reason:2至200字,idempotencyKey:UUID}；单次绝对值不超过100万元",
+      "response": "返回{userId,deltaCents,balanceCents,idempotent}；余额不可为负，生成会员积分流水与后台审计，同一请求编号安全重试；国内与国际版SUPER_ADMIN可用",
+      "dependency": "核心服务",
+      "successStatus": 201,
       "contract": {
         "status": "unreviewed",
         "requestSchema": null,

@@ -12,6 +12,7 @@ import { GlobalWechatBindingService } from "./global-wechat-binding.service";
 import { globalLegalBundle } from "./global-legal";
 import { globalError } from "./global-identity";
 import { GLOBAL_WECHAT_CALLBACK_PATH, globalWechatH5Reason, globalWechatPhoneTestEnabled, requireGlobalWechatH5 } from "./global-wechat-policy";
+import { safeWechatProfile, signWechatProfile, verifiedWechatProfile, wechatProfileBackfill, type WechatH5Profile } from "./wechat-h5-profile";
 
 const lifetimeSeconds = 5 * 60;
 type OfficialConfig = { appId: string; appSecret: string; redirectUri: string };
@@ -85,7 +86,7 @@ export class WechatH5AuthService {
     const url = new URL("https://open.weixin.qq.com/connect/oauth2/authorize");
     url.search = new URLSearchParams({
       appid: config.appId, redirect_uri: config.redirectUri, response_type: "code",
-      scope: "snsapi_base", state,
+      scope: "snsapi_userinfo", state,
     }).toString();
     url.hash = "wechat_redirect";
     return { authorizeUrl: url.toString(), state, expiresIn: lifetimeSeconds };
@@ -109,7 +110,7 @@ export class WechatH5AuthService {
     if (claimed.count !== 1) throw expired();
     const identity = await this.exchange(config, input.code);
     if (isGlobalRealm()) {
-      const userId = await this.binding().linkedUser(config.appId, identity.openId, input.consentVersion, input.locale);
+      const userId = await this.binding().linkedUser(config.appId, identity.openId, input.consentVersion, input.locale, identity.profile, state.referralCode);
       if (userId) return this.binding().session(userId, state.returnTo, config.appId);
     }
     const linked = isGlobalRealm() ? null : await this.prisma.wechatOfficialIdentity.findUnique({
@@ -119,6 +120,7 @@ export class WechatH5AuthService {
       throw new ConflictException("该账号不可登录，请联系客服处理");
     }
     if (linked?.user.mobile && linked.user.mobileVerifiedAt) {
+      await this.backfillProfile(linked.user, identity.profile);
       await this.prisma.$transaction(tx => consent(tx, linked.userId, input.consentVersion));
       if (state.referralCode) await this.auth.bindReferral(linked.userId, state.referralCode);
       return { ...(await this.auth.issueMallSession(linked.userId)), requiresMobileBinding: false as const, returnTo: state.returnTo };
@@ -130,10 +132,10 @@ export class WechatH5AuthService {
       returnTo: state.returnTo, referralCode: state.referralCode,
       expiresAt: new Date(Date.now() + lifetimeSeconds * 1000),
     } });
-    return { requiresMobileBinding: true as const, ...(isGlobalRealm() ? { requiresAccountBinding: true as const, requiresPhoneBinding: true as const } : {}), bindTicket, expiresIn: lifetimeSeconds, returnTo: state.returnTo };
+    return { requiresMobileBinding: true as const, ...(isGlobalRealm() ? { requiresAccountBinding: true as const, requiresPhoneBinding: true as const } : {}), bindTicket, expiresIn: lifetimeSeconds, returnTo: state.returnTo, wechatProfile: identity.profile, wechatProfileProof: signWechatProfile(identity.profile, bindTicket) };
   }
 
-  async bindMobile(input: { bindTicket: string; mobile: string; code: string; consentVersion: string }) {
+  async bindMobile(input: { bindTicket: string; mobile: string; code: string; consentVersion: string; wechatProfileProof?: unknown }) {
     if (isGlobalRealm()) throw globalError(400, "verification_required", "Use international account binding or its dedicated verification-code endpoint.");
     assertConsent(input.consentVersion);
     const mobile = normalizedMobile(input.mobile);
@@ -142,6 +144,7 @@ export class WechatH5AuthService {
     if (!ticket || ticket.consumedAt || ticket.expiresAt <= new Date()) throw expired();
     const config = await this.configured();
     if (ticket.appId !== config.appId) throw expired();
+    const profile = verifiedWechatProfile(input.wechatProfileProof, input.bindTicket);
     // This code has a distinct usage and cannot reuse an SMS-login code.
     // Failure below consumes the OTP but does not change either identity.
     await this.auth.consumeMobileBindingCode(mobile, input.code);
@@ -170,8 +173,8 @@ export class WechatH5AuthService {
       });
       if (claimed.count !== 1) throw expired();
       const saved = userId
-        ? await tx.user.update({ where: { id: userId }, data: { mobile, mobileVerifiedAt: new Date() } })
-        : await tx.user.create({ data: { mobile, mobileVerifiedAt: new Date(), nickname: `用户${mobile.slice(-4)}` } });
+        ? await tx.user.update({ where: { id: userId }, data: { mobile, mobileVerifiedAt: new Date(), ...wechatProfileBackfill(linked?.user ?? existing!, profile) } })
+        : await tx.user.create({ data: { mobile, mobileVerifiedAt: new Date(), nickname: profile.nickname || `用户${mobile.slice(-4)}`, ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}) } });
       if (!linked) {
         await tx.wechatOfficialIdentity.create({ data: {
           userId: saved.id, appId: ticket.appId, openId: ticket.openId, unionId: ticket.unionId, verifiedAt: new Date(),
@@ -211,11 +214,31 @@ export class WechatH5AuthService {
     if ([40029, 40163, 42001].includes(Number(payload.errcode))) throw expired();
     const openId = providerIdentifier(payload.openid);
     if (Number(payload.errcode ?? 0) || !openId || typeof payload.access_token !== "string" || !payload.access_token ||
-        typeof payload.scope !== "string" || !payload.scope.split(",").includes("snsapi_base")) throw unavailable();
+        typeof payload.scope !== "string" || !payload.scope.split(",").includes("snsapi_userinfo")) throw unavailable();
+    const profile = await this.profile(payload.access_token, openId);
     await markIntegrationVerified(this.prisma, "wechat_official");
     // Token and secret deliberately never persisted or returned. unionId is
     // metadata only: an unscoped legacy unionId must not silently merge Users.
-    return { openId, unionId: providerIdentifier(payload.unionid) };
+    return { openId, unionId: providerIdentifier(payload.unionid), profile };
+  }
+
+  private async profile(accessToken: string, openId: string): Promise<WechatH5Profile> {
+    const url = new URL("https://api.weixin.qq.com/sns/userinfo");
+    url.search = new URLSearchParams({ access_token: accessToken, openid: openId, lang: "zh_CN" }).toString();
+    try {
+      const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/json" } });
+      const payload = safeObject(await response.json());
+      if (!response.ok || Number(payload.errcode ?? 0) || providerIdentifier(payload.openid) !== openId) throw unavailable();
+      return safeWechatProfile(payload);
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      throw unavailable();
+    }
+  }
+
+  private async backfillProfile(user: { id: string; nickname: string; avatarUrl: string | null }, profile: WechatH5Profile) {
+    const data = wechatProfileBackfill(user, profile);
+    if (Object.keys(data).length) await this.prisma.user.update({ where: { id: user.id }, data });
   }
 }
 
@@ -240,6 +263,7 @@ function boundedReferral(value?: string) {
 function providerIdentifier(value: unknown): string | null {
   return typeof value === "string" && /^[A-Za-z0-9_-]{6,128}$/.test(value) ? value : null;
 }
+
 function expired() { return isGlobalRealm() ? globalError(401, "wechat_authorization_expired", "WeChat authorization has expired. Authorize again.") : new UnauthorizedException("微信授权已失效，请重新授权"); }
 function unavailable() { return isGlobalRealm() ? globalError(503, "wechat_h5_unavailable", "WeChat official-account sign-in is not configured or unavailable.") : new ServiceUnavailableException("微信公众号登录未配置或暂时不可用"); }
 

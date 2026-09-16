@@ -12,7 +12,7 @@ const member = {
   emailMasked: "m***@example.invalid",
   emailVerified: false,
   emailVerificationStatus: "UNVERIFIED",
-  mobileMasked: null,
+  mobile: null,
   mobileVerified: false,
   mobileVerificationStatus: "NOT_PROVIDED",
   verificationVersion: "2026-09-11T00:00:00.000Z",
@@ -68,7 +68,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
     downloadEditorToManifest: globalDownloadEditorToManifest,
     downloadManifestToEditor: globalDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -94,13 +94,13 @@ function deferred<T>() {
 describe("international member admin list", () => {
   it("shows fixed numeric-ID columns, including on empty lists", async () => {
     const h = harness();
-    expect(h.columns.value).toEqual(["memberNo", "emailMasked", "mobileMasked", "nickname", "status", "healthRecordCount", "deviceCount", "createdAt"]);
+    expect(h.columns.value).toEqual(["avatarUrl", "memberNo", "emailMasked", "mobile", "nickname", "referrer", "pointBalanceCents", "status", "createdAt"]);
     expect(h.columns.value).not.toContain("id");
     await h.load();
     expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/members", {
       params: { page: 1, pageSize: 30 },
     });
-    expect(h.columns.value).toHaveLength(8);
+    expect(h.columns.value).toHaveLength(9);
     expect(h.resourceMeta.value.total).toBe(0);
   });
 
@@ -117,7 +117,7 @@ describe("international member admin list", () => {
     });
     expect(h.resourceMeta.value.total).toBe(65);
     expect(h.render(h.rows.value[0].healthRecordCount)).toBe("0");
-    expect(h.render(h.rows.value[0].mobileMasked)).toBe("—");
+    expect(h.render(h.rows.value[0].mobile)).toBe("—");
     await h.changeCommercePage(2);
     expect(h.api.get.mock.calls[1][1].params).toEqual({
       page: 2,
@@ -130,7 +130,7 @@ describe("international member admin list", () => {
     const h = harness();
     const row = {
       ...member,
-      mobileMasked: "+86***8888",
+      mobile: "+8613812348888",
       mobileVerified: true,
       mobileVerificationStatus: "VERIFIED",
     };
@@ -157,7 +157,8 @@ describe("international member admin list", () => {
       },
     });
     await h.openEdit(row);
-    expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/members/internal-uuid/profile");
+    expect(h.api.get).toHaveBeenNthCalledWith(1, "/members/internal-uuid/profile");
+    expect(h.api.get).toHaveBeenNthCalledWith(2, "/commerce-employees");
     expect(h.dialogVisible.value).toBe(true);
     expect(h.dialogTitle.value).toBe("编辑会员 10001");
     expect(h.form.value).toMatchObject({
@@ -188,6 +189,7 @@ describe("international member admin list", () => {
       status: "ACTIVE",
       mobileVerified: true,
       emailVerified: true,
+      referralEmployeeId: null,
       expectedUpdatedAt: "2026-09-11T00:00:00.000Z",
     });
     expect(h.confirm).toHaveBeenCalledOnce();
@@ -203,12 +205,69 @@ describe("international member admin list", () => {
 
   it("renders the member-filled profile fields with friendly Chinese controls", () => {
     const sfc = readFileSync(new URL("./views/ResourceView.vue", import.meta.url), "utf8");
-    for (const label of ["会员填写的基本资料", "姓名/昵称", "出生日期", "身高", "体重", "头像", "修改登录密码", "新密码"]) {
+    for (const label of ["会员填写的基本资料", "姓名/昵称", "出生日期", "身高", "体重", "头像", "推广上级 ID", "当前积分", "调整金额", "调整原因", "修改登录密码", "新密码"]) {
       expect(sfc).toContain(label);
     }
     expect(sfc).not.toContain("确认新密码");
     expect(sfc).toContain('value-format="YYYY-MM-DD"');
     expect(sfc).toContain(':disabled-date="memberBirthdayDisabled"');
+  });
+
+  it("loads active promoter choices and saves the employee ID without forcing a password change", async () => {
+    const h = harness();
+    const employeeId = "00000000-0000-4000-8000-000000000456";
+    h.api.get
+      .mockResolvedValueOnce({
+        data: { data: {
+          id: member.id,
+          memberNo: member.memberNo,
+          nickname: member.nickname,
+          status: "ACTIVE",
+          mobile: "+8613812348888",
+          mobileVerified: false,
+          email: "member@example.invalid",
+          emailVerified: false,
+          referralEmployeeId: null,
+          verificationVersion: member.verificationVersion,
+        } },
+      })
+      .mockResolvedValueOnce({
+        data: { data: [
+          { id: employeeId, name: "Promoter B", referralCode: "TEAM-B", active: true },
+          { id: "00000000-0000-4000-8000-000000000999", name: "Inactive", referralCode: "OLD", active: false },
+        ] },
+      });
+    await h.openEdit(member);
+    expect(h.memberReferralOptions.value).toEqual([
+      expect.objectContaining({ id: employeeId, active: true }),
+    ]);
+    h.form.value.referralEmployeeId = employeeId;
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledWith("/members/internal-uuid/profile", expect.objectContaining({
+      referralEmployeeId: employeeId,
+    }));
+    expect(h.confirm).not.toHaveBeenCalled();
+  });
+
+  it("adjusts member points from the editor with a reason and idempotency key", async () => {
+    const h = harness();
+    h.api.get.mockResolvedValueOnce({ data: { data: {
+      id: member.id, memberNo: member.memberNo, nickname: member.nickname, status: "ACTIVE",
+      mobile: "+8613812348888", mobileVerified: false, email: "member@example.invalid", emailVerified: false,
+      pointBalanceCents: 1200, verificationVersion: member.verificationVersion,
+    } } });
+    h.api.post.mockResolvedValueOnce({ data: { data: { balanceCents: 1450, version: 2 } } });
+    await h.openEdit(member);
+    h.form.value.pointAdjustment = "2.50";
+    h.form.value.pointAdjustmentReason = "客服补偿";
+    await h.save();
+    expect(h.confirm).toHaveBeenCalledWith(expect.stringContaining("增加 2.50 元"), "确认调整积分", expect.objectContaining({ confirmButtonText: "确认调整" }));
+    expect(h.api.post).toHaveBeenCalledWith("/members/internal-uuid/points-adjustments", {
+      deltaCents: 250,
+      reason: "客服补偿",
+      idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+    expect(h.messages.success).toHaveBeenCalledWith("会员资料与积分已保存");
   });
 
   it("submits a single admin-entered new password after the final safety confirmation", async () => {

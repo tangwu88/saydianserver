@@ -107,7 +107,7 @@ describe("global WeChat gate, callback and consent", () => {
   });
   it("builds only the configured official authorization and does not mutate native/mini/WeCom identity", async () => {
     const h = harness(); const result = await h.h5.authorize({ returnTo: "/pages/profile/index", codeChallenge: sha256(verifier), consentVersion: "legal-v1", locale: "en" });
-    const url = new URL(result.authorizeUrl); expect(url.searchParams.get("appid")).toBe(appId); expect(url.searchParams.get("redirect_uri")).toBe(redirectUri); expect(url.searchParams.get("scope")).toBe("snsapi_base");
+    const url = new URL(result.authorizeUrl); expect(url.searchParams.get("appid")).toBe(appId); expect(url.searchParams.get("redirect_uri")).toBe(redirectUri); expect(url.searchParams.get("scope")).toBe("snsapi_userinfo");
     expect(h.db.user.update).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
   });
   it("keeps authorization unavailable for missing/currently replaced legal documents", async () => {
@@ -124,13 +124,17 @@ describe("global WeChat gate, callback and consent", () => {
   });
   it("requires the phone step for an already scoped verified-email identity", async () => {
     const h = harness(); h.state.identities.push({ id: randomUUID(), appId, openId: "official-openid-one", userId: memberId });
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ openid: "official-openid-one", access_token: "synthetic", scope: "snsapi_base" })));
+    vi.mocked(fetch).mockImplementation(async (input) => String(input).includes("/sns/userinfo")
+      ? new Response(JSON.stringify({ openid: "official-openid-one", nickname: "WeChat member", headimgurl: "https://cdn.example.invalid/avatar.png" }))
+      : new Response(JSON.stringify({ openid: "official-openid-one", access_token: "synthetic", scope: "snsapi_userinfo" })));
     expect(await h.h5.login({ code: "test-code", state: stateText, codeVerifier: verifier, consentVersion: "legal-v1", locale: "en" })).toMatchObject({ requiresAccountBinding: true, requiresMobileBinding: true, requiresPhoneBinding: true });
     expect(h.auth.issueMallSession).not.toHaveBeenCalled(); expect(h.db.user.update).not.toHaveBeenCalled();
   });
   it("does not grant a known but unverified identity a mall session", async () => {
     const h = harness(true, false); h.state.identities.push({ id: randomUUID(), appId, openId: "official-openid-one", userId: memberId });
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ openid: "official-openid-one", access_token: "synthetic", scope: "snsapi_base" })));
+    vi.mocked(fetch).mockImplementation(async (input) => String(input).includes("/sns/userinfo")
+      ? new Response(JSON.stringify({ openid: "official-openid-one", nickname: "WeChat member", headimgurl: "https://cdn.example.invalid/avatar.png" }))
+      : new Response(JSON.stringify({ openid: "official-openid-one", access_token: "synthetic", scope: "snsapi_userinfo" })));
     expect(await h.h5.login({ code: "test-code", state: stateText, codeVerifier: verifier, consentVersion: "legal-v1" })).toMatchObject({ requiresAccountBinding: true, requiresMobileBinding: true });
     expect(h.auth.issueMallSession).not.toHaveBeenCalled(); expect(h.db.user.update).not.toHaveBeenCalled();
   });

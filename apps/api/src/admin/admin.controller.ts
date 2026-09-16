@@ -104,6 +104,17 @@ export class AdminController {
     return this.admin.updateMemberProfile(current, id, request.requestId, safeObject(input));
   }
 
+  @Post("members/:id/points-adjustments")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  adjustMemberPoints(
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Param("id") id: string,
+    @Req() request: RequestWithContext,
+    @Body() input: unknown,
+  ) {
+    return this.admin.adjustMemberPoints(current, id, request.requestId, safeObject(input));
+  }
+
   @Patch("members/:id/verification")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   updateMemberVerification(

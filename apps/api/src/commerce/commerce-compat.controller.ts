@@ -83,7 +83,7 @@ export class CommerceCompatibilityController {
   bindWechatH5Mobile(@Body() input: unknown) {
     const body = safeObject(input);
     return this.wechatH5.bindMobile({ bindTicket: String(body.bindTicket ?? ""), mobile: String(body.mobile ?? ""),
-      code: String(body.code ?? ""), consentVersion: String(body.consentVersion ?? "") });
+      code: String(body.code ?? ""), consentVersion: String(body.consentVersion ?? ""), wechatProfileProof: body.wechatProfileProof });
   }
 
   @Post("auth/wechat/h5/bind-account")

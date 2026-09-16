@@ -28,6 +28,7 @@ function userRow(overrides: Record<string, unknown> = {}) {
     status: "ACTIVE",
     referralEmployeeId: null as string | null,
     referralEmployee: null as { id: string; name: string; referralCode: string; active: boolean } | null,
+    pointAccount: { balanceCents: 1250, version: 2, updatedAt: initialUpdatedAt } as { balanceCents: number; version: number; updatedAt: Date } | null,
     createdAt: new Date("2026-09-09T00:00:00.000Z"),
     _count: { healthRecords: 0, devices: 0 },
     ...overrides,
@@ -93,6 +94,8 @@ describe("international member contact verification administration", () => {
       emailVerificationStatus: "VERIFIED",
       emailVerifiedAt: "2026-09-10T00:00:00.000Z",
       verificationVersion: initialUpdatedAt.toISOString(),
+      mobile: row.mobile,
+      pointBalanceCents: 1250,
     });
     expect(item.mobileMasked).not.toBe(row.mobile);
     expect(item.emailMasked).not.toBe(row.email);
@@ -150,6 +153,8 @@ describe("international member contact verification administration", () => {
       heightCm: 168.5,
       weightKg: 56.2,
       verificationVersion: initialUpdatedAt.toISOString(),
+      pointBalanceCents: 1250,
+      pointAccountVersion: 2,
     });
     expect(h.auditLog.create).toHaveBeenCalledExactlyOnceWith({
       data: expect.objectContaining({
@@ -161,7 +166,7 @@ describe("international member contact verification administration", () => {
         afterJson: {
           mobilePresent: true,
           emailPresent: true,
-          fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification", "referralEmployeeId"],
+          fields: ["nickname", "avatarUrl", "gender", "birthday", "heightCm", "weightKg", "mobile", "email", "status", "verification", "referralEmployeeId", "pointBalanceCents"],
         },
       }),
     });
@@ -459,7 +464,7 @@ describe("international member contact verification administration", () => {
     ).rejects.toThrow("注销流程中的会员不能手工编辑");
   });
 
-  it("keeps raw member profile reads and edits restricted to global super administrators", async () => {
+  it("keeps raw member profile reads and edits restricted to super administrators in both editions", async () => {
     const denied = updateHarness();
     const operator = {
       id: "operator",
@@ -471,8 +476,7 @@ describe("international member contact verification administration", () => {
     expect(denied.prisma.$transaction).not.toHaveBeenCalled();
 
     vi.stubEnv("APP_REALM", "domestic");
-    await expect(denied.service.memberProfile(superAdmin, denied.current()!.id, "r")).rejects.toThrow("仅用于国际版");
-    await expect(denied.service.updateMemberProfile(superAdmin, denied.current()!.id, "r", {})).rejects.toThrow("仅用于国际版");
+    await expect(denied.service.memberProfile(superAdmin, denied.current()!.id, "r")).resolves.toMatchObject({ mobile: "+8613812348888" });
   });
 
   it("supports revoking one channel without changing the other channel", async () => {
@@ -493,7 +497,7 @@ describe("international member contact verification administration", () => {
     });
   });
 
-  it("rejects missing contacts, stale pages, non-super-admins and domestic requests", async () => {
+  it("rejects missing contacts, stale pages and non-super-admins while allowing domestic super-admin verification", async () => {
     const missing = updateHarness({ email: null, emailVerifiedAt: null });
     await expect(
       missing.service.updateMemberVerification(superAdmin, missing.current()!.id, "r", {
@@ -531,6 +535,6 @@ describe("international member contact verification administration", () => {
         verified: true,
         expectedUpdatedAt: initialUpdatedAt.toISOString(),
       }),
-    ).rejects.toThrow("仅用于国际版");
+    ).resolves.toMatchObject({ mobile: "+8613812348888", mobileVerified: true });
   });
 });

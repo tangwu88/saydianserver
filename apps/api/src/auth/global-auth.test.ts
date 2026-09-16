@@ -43,7 +43,7 @@ function harness() {
   const prisma: any = { ...tx, $transaction: async (run: any) => { const snapshot = structuredClone({ records, users, throttles }); try { return await run(tx); } catch (error) { records = snapshot.records; users = snapshot.users; throttles = snapshot.throttles; throw error; } } };
   const issueSession = vi.fn(async (id: string) => { sessions.push(id); const user = users.get(id); return { accessToken: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + 900_000).toISOString(), member: { id, nickname: user.nickname ?? "Test", locale: user.locale ?? "en" } }; });
   const issueMallSession = vi.fn(async (id: string) => { sessions.push(id); const user = users.get(id); return { token: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + 900_000).toISOString(), user: { id, nickname: user.nickname ?? "Test", mobile: user.mobile ?? null, avatarUrl: null } }; });
-  const auth: any = { issueSession, issueMallSession, login: vi.fn(async () => ({ accessToken: "synthetic-access" })) };
+  const auth: any = { issueSession, issueMallSession, login: vi.fn(async () => ({ accessToken: "synthetic-access" })), bindReferral: vi.fn(async () => ({ bound: true })) };
   const service = new GlobalAuthService(prisma, delivery as any, auth);
   return { service, prisma, delivery, auth, tx, sessions, records: () => records, users: () => users };
 }
@@ -121,6 +121,13 @@ describe("global registration challenges", () => {
     expect(stored.passwordHash).toBeNull();
     expect(h.tx.consentRecord.upsert).toHaveBeenCalledTimes(2);
     await expect(h.service.loginWithCode({ channel, identifier: entered, challengeId: challenge.challengeId, code: sent.code, consentVersion: "v1", locale: "en" })).rejects.toThrow("expired");
+  });
+  it("binds a captured promoter when an international member completes code login", async () => {
+    const h = harness();
+    const challenge = await h.service.requestLoginCode({ channel: "sms", identifier: "+1 202 555 0123", locale: "en" });
+    const sent = h.delivery.send.mock.calls[0]![0];
+    const session = await h.service.loginWithCode({ channel: "sms", identifier: "+1 202 555 0123", challengeId: challenge.challengeId, code: sent.code, consentVersion: "v1", locale: "en", referralCode: "TEAM01" });
+    expect(h.auth.bindReferral).toHaveBeenCalledWith(session.user.id, "TEAM01");
   });
   it("supports domestic passwordless email login without weakening phone normalization", async () => {
     vi.stubEnv("APP_REALM", "domestic");

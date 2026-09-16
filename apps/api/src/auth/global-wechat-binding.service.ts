@@ -10,10 +10,12 @@ import { isUuid, safeObject, secureEqual, sha256 } from "../common/crypto";
 import { globalError, globalIdentity, globalLocale, maskedIdentifier } from "./global-identity";
 import { globalLegalBundle } from "./global-legal";
 import { globalWechatPhoneTestEnabled, requireGlobalWechatH5, requireGlobalWechatPhoneTest } from "./global-wechat-policy";
+import { verifiedWechatProfile, wechatProfileBackfill, type WechatH5Profile } from "./wechat-h5-profile";
+import { isOwnPromoter } from "../common/member-promoter-identity";
 
 const purpose = "wechat_bind";
 const phoneTestPurpose = "wechat_phone_test";
-type Ticket = { tokenHash: string; appId: string; openId: string; unionId: string | null; expiresAt: Date; consumedAt: Date | null; returnTo: string };
+type Ticket = { tokenHash: string; appId: string; openId: string; unionId: string | null; referralCode: string | null; expiresAt: Date; consumedAt: Date | null; returnTo: string };
 
 @Injectable()
 export class GlobalWechatBindingService {
@@ -29,7 +31,7 @@ export class GlobalWechatBindingService {
     return document;
   }
 
-  async linkedUser(appId: string, openId: string, version: string, locale: unknown) {
+  async linkedUser(appId: string, openId: string, version: string, locale: unknown, profile: WechatH5Profile = { nickname: null, avatarUrl: null }, referralCode: string | null = null) {
     requireGlobalWechatH5();
     const initial = await this.prisma.wechatOfficialIdentity.findUnique({ where: { appId_openId: { appId, openId } } });
     if (!initial) return null;
@@ -44,6 +46,9 @@ export class GlobalWechatBindingService {
       if (!user || user.status !== UserStatus.ACTIVE) throw inactive();
       if (!user.mobileVerifiedAt && !(globalWechatPhoneTestEnabled() && user.mobile)) return null;
       const legal = await this.legal(version, locale, tx);
+      const profileData = wechatProfileBackfill(user, profile);
+      if (Object.keys(profileData).length) await tx.user.update({ where: { id: user.id }, data: profileData });
+      await this.bindReferral(tx, user.id, referralCode);
       await recordConsent(tx, user.id, legal.consentVersion, legal.locale);
       return user.id;
     });
@@ -71,6 +76,8 @@ export class GlobalWechatBindingService {
       await lockIdentity(tx, appId, ticket.openId);
       const legal = await this.legal(body.consentVersion, body.locale, tx);
       await this.attach(tx, ticket, current.id);
+      const profileData = wechatProfileBackfill(current, verifiedWechatProfile(body.wechatProfileProof, String(body.bindTicket ?? "")));
+      if (Object.keys(profileData).length) await tx.user.update({ where: { id: current.id }, data: profileData });
       await recordConsent(tx, current.id, legal.consentVersion, legal.locale);
       return current.id;
     }).catch(identityConflict);
@@ -165,8 +172,9 @@ export class GlobalWechatBindingService {
         await tx.userSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
       }
       const verified = identity.channel === "email" ? { emailVerifiedAt: new Date() } : { mobileVerifiedAt: new Date() };
-      const saved = user ? await tx.user.update({ where: { id: user.id }, data: verified })
-        : await tx.user.create({ data: { ...where, ...verified, passwordHash, nickname: nickname || "Saydian user", locale: globalLocale(body.locale ?? challenge.locale) } });
+      const profile = verifiedWechatProfile(body.wechatProfileProof, String(body.bindTicket ?? ""));
+      const saved = user ? await tx.user.update({ where: { id: user.id }, data: { ...verified, ...wechatProfileBackfill(user, profile) } })
+        : await tx.user.create({ data: { ...where, ...verified, passwordHash, nickname: profile.nickname || nickname || "Saydian user", ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}), locale: globalLocale(body.locale ?? challenge.locale) } });
       await this.attach(tx, ticket, saved.id);
       await recordConsent(tx, saved.id, legal.consentVersion, legal.locale);
       return { invalid: false as const, userId: saved.id };
@@ -246,9 +254,10 @@ export class GlobalWechatBindingService {
       const legal = await this.legal(body.consentVersion, body.locale ?? challenge.locale, tx);
       if ((await tx.globalVerificationChallenge.updateMany({ where: { id: challengeId, consumedAt: null, attempts: { lt: 5 }, expiresAt: { gt: new Date() } }, data: { consumedAt: new Date() } })).count !== 1) return { invalid: true as const };
       if (user && !temporary && !user.mobileVerifiedAt) await tx.userSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+      const profile = verifiedWechatProfile(body.wechatProfileProof, String(body.bindTicket ?? ""));
       const data = { mobile: identity.identifier, ...(!temporary ? { mobileVerifiedAt: new Date() } : {}) };
-      const saved = user ? await tx.user.update({ where: { id: user.id }, data })
-        : await tx.user.create({ data: { ...data, passwordHash: null, nickname: "Saydian user", locale: globalLocale(body.locale ?? challenge.locale) } });
+      const saved = user ? await tx.user.update({ where: { id: user.id }, data: { ...data, ...wechatProfileBackfill(user, profile) } })
+        : await tx.user.create({ data: { ...data, passwordHash: null, nickname: profile.nickname || "Saydian user", ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}), locale: globalLocale(body.locale ?? challenge.locale) } });
       await this.attach(tx, ticket, saved.id);
       await recordConsent(tx, saved.id, legal.consentVersion, legal.locale);
       return { invalid: false as const, userId: saved.id };
@@ -280,6 +289,17 @@ export class GlobalWechatBindingService {
     const claimed = await tx.commerceWechatBindTicket.updateMany({ where: { tokenHash: ticket.tokenHash, appId: ticket.appId, consumedAt: null, expiresAt: { gt: new Date() } }, data: { consumedAt: new Date() } });
     if (claimed.count !== 1) throw invalidTicket();
     if (!linked) await tx.wechatOfficialIdentity.create({ data: { userId, appId: ticket.appId, openId: ticket.openId, unionId: ticket.unionId, verifiedAt: new Date() } });
+    await this.bindReferral(tx, userId, ticket.referralCode);
+  }
+
+  private async bindReferral(tx: Prisma.TransactionClient, userId: string, referralCode: string | null) {
+    if (!referralCode) return;
+    const [member, employee] = await Promise.all([
+      tx.user.findUnique({ where: { id: userId }, select: { id: true, mobile: true, mobileVerifiedAt: true, referralEmployeeId: true } }),
+      tx.commerceEmployee.findFirst({ where: { referralCode, active: true }, select: { id: true, name: true, wecomUserId: true, mobile: true } }),
+    ]);
+    if (!member || member.referralEmployeeId || !employee || isOwnPromoter(member, employee)) return;
+    await tx.user.updateMany({ where: { id: userId, referralEmployeeId: null }, data: { referralEmployeeId: employee.id } });
   }
 
   async session(userId: string, returnTo: string, appId: string) {

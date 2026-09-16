@@ -41,6 +41,12 @@
   font-size: 24rpx;
   font-weight: 500;
 }
+
+/* H5 tab bar: larger touch targets and icons while preserving safe-area space. */
+uni-tabbar .uni-tabbar-bottom { min-height: 66px; padding-bottom: env(safe-area-inset-bottom); }
+uni-tabbar .uni-tabbar__item { min-height: 64px; }
+uni-tabbar .uni-tabbar__icon { width: 27px !important; height: 27px !important; margin-top: 6px; }
+uni-tabbar .uni-tabbar__label { font-size: 13px !important; line-height: 20px; }
 .primary-btn,
 .outline-btn,
 .danger-btn {

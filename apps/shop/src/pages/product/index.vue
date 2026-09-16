@@ -44,12 +44,6 @@
             ><b>{{ quantity }}</b
             ><button aria-label="增加数量" :disabled="busy || !canPurchase || quantity >= selectedSku.stock" @click="quantity = Math.min(selectedSku?.stock || 1, quantity + 1)">＋</button></view
           ></view
-        ><view class="actions"
-          ><button class="outline-btn" :disabled="busy" @click="toggleFavorite"><UniIcons :type="product.favorite ? 'heart-filled' : 'heart'" color="currentColor" size="18" />{{
-            product.favorite ? "已收藏" : "收藏"
-          }}</button
-          ><button class="outline-btn" :disabled="busy || !canPurchase" @click="addCart"><UniIcons type="cart" color="currentColor" size="18" />加入购物车</button
-          ><button class="primary-btn" :disabled="busy || !canPurchase" @click="buyNow"><UniIcons type="wallet-filled" color="currentColor" size="18" />{{ canPurchase ? '立即购买' : '暂时缺货' }}</button></view
         ></view
       ></view
     ><view class="container detail card"
@@ -68,6 +62,10 @@
           ><text class="small">{{ review.content }}</text></view
         ></view
       ></view
+    ><view class="fixed-buy-bar"><view class="actions"
+      ><button class="outline-btn" :disabled="busy" @click="toggleFavorite"><UniIcons :type="product.favorite ? 'heart-filled' : 'heart'" color="currentColor" size="20" />{{ product.favorite ? "已收藏" : "收藏" }}</button
+      ><button class="outline-btn" :disabled="busy || !canPurchase" @click="addCart"><UniIcons type="cart" color="currentColor" size="20" />加入购物车</button
+      ><button class="primary-btn" :disabled="busy || !canPurchase" @click="buyNow"><UniIcons type="wallet-filled" color="currentColor" size="20" />{{ canPurchase ? '立即购买' : '暂时缺货' }}</button></view></view
     ></view
   ><view v-else class="empty">{{ error || '正在加载商品…' }}<button v-if="error" @click="load">重新加载</button></view>
 </template>
@@ -246,7 +244,8 @@ async function toggleFavorite() {
 .poster-overlay{position:fixed;inset:0;z-index:1200;background:rgba(13,24,34,.72);display:grid;place-items:center;padding:20px}.poster-card{width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;padding:18px;background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.24)}.poster-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.poster-heading>b{font-size:18px}.poster-heading button{width:40px;min-height:40px;margin:0;padding:0;background:#f4f6f8;color:#374151;line-height:40px}.poster-loading{min-height:240px;display:grid;place-items:center;color:var(--muted)}.share-poster{display:block;width:100%;border-radius:12px;background:#f4f6f8}.poster-tip{display:block;margin:12px 0;color:var(--muted);font-size:13px;line-height:1.6;text-align:center}.poster-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.poster-actions button{margin:0;min-height:46px;font-size:14px}.poster-actions button,.product-shortcuts button,.actions button{display:flex;align-items:center;justify-content:center;gap:7px}
 .product-shortcuts {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px;}
 .product-shortcuts button {margin:0;padding:0 16px;min-height:44px;line-height:44px;font-size:14px;background:#fff;color:var(--green);}
-.actions button{width:100%;min-width:0;min-height:48px;font-size:14px;line-height:1.5;padding:12px 4px;margin:0;white-space:nowrap;}.actions button[disabled]{opacity:.55;}.quantity button{width:44px;min-height:44px;margin:0;padding:0;background:#fff;font-size:20px;line-height:44px;}.quantity button::after{border:0;}
+.actions button{width:100%;min-width:0;min-height:52px;font-size:14px;line-height:1.5;padding:12px 4px;margin:0;white-space:nowrap;}.actions button[disabled]{opacity:.55;}.quantity button{width:44px;min-height:44px;margin:0;padding:0;background:#fff;font-size:20px;line-height:44px;}.quantity button::after{border:0;}
+.page{padding-bottom:calc(96px + env(safe-area-inset-bottom))}.fixed-buy-bar{position:fixed;z-index:900;left:0;right:0;bottom:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid var(--line);box-shadow:0 -10px 28px rgba(20,36,50,.12);backdrop-filter:blur(10px)}
 .missing-image {display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;}
 .product-layout {
   display: grid;
@@ -416,7 +415,9 @@ async function toggleFavorite() {
     margin-top: 34px;
   }
   .actions {
-    margin-top: 30px;
+    width: min(720px, calc(100vw - 32px));
+    margin: 0 auto;
   }
+  .fixed-buy-bar{padding:12px 16px}
 }
 </style>

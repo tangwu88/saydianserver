@@ -13,7 +13,7 @@ import ContentImageField from "../components/ContentImageField.vue";
 import { globalDownloadEditorToManifest as downloadEditorToManifest, globalDownloadManifestToEditor as downloadManifestToEditor, createGlobalDownloadDraft, type DownloadManifestEditor } from "../global-download-setting";
 
 type Row = Record<string, any>;
-const memberColumns = ["memberNo", "emailMasked", "mobileMasked", "nickname", "status", "healthRecordCount", "deviceCount", "createdAt"];
+const memberColumns = ["avatarUrl", "memberNo", "emailMasked", "mobile", "nickname", "referrer", "pointBalanceCents", "status", "createdAt"];
 const memberPageSize = 30;
 const route = useRoute();
 const loading = ref(false);
@@ -26,6 +26,7 @@ const articleCategoryOptions = ref<Row[]>([]);
 const articleCategoriesReady = ref(false);
 const articleCategoryEditorResource = ref("");
 const originalArticleCategoryId = ref<string | null>(null);
+const memberReferralOptions = ref<Row[]>([]);
 const search = ref("");
 const commerceStatus = ref("");
 const currentPage = ref(1);
@@ -90,7 +91,11 @@ const fieldLabels: Record<string, string> = {
   memberNo: "会员编号",
   legacyMemberId: "旧会员编号",
   emailMasked: "邮箱",
+  mobile: "手机号",
   mobileMasked: "手机号",
+  avatarUrl: "头像",
+  referrer: "推广上级",
+  pointBalanceCents: "积分余额",
   nickname: "昵称",
   status: "状态",
   healthRecordCount: "健康记录数",
@@ -294,6 +299,30 @@ function render(value: unknown): string {
   return String(value);
 }
 
+function pointMoney(value: unknown): string {
+  const cents = Number(value);
+  return Number.isSafeInteger(cents) ? `¥${(cents / 100).toFixed(2)}` : "未开通";
+}
+
+function adjustmentKey(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function pointDeltaCents(value: unknown): number {
+  const text = String(value ?? "").trim();
+  if (!text) return 0;
+  if (!/^-?(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/.test(text)) throw new Error("积分调整金额最多保留两位小数");
+  const cents = Math.round(Number(text) * 100);
+  if (!Number.isSafeInteger(cents) || cents === 0) throw new Error("积分调整金额不能为0");
+  return cents;
+}
+
 function contactVerificationLabel(row: Row, channel: "mobile" | "email"): string {
   const status = String(row[`${channel}VerificationStatus`] ?? "");
   if (status === "VERIFIED") return "已验证";
@@ -392,8 +421,22 @@ async function openEdit(row: Row): Promise<void> {
     if (!canManageMemberVerification.value) return;
     dialogVisible.value = false;
     try {
-      const profile = responseData<Row>(await api.get(`/members/${encodeURIComponent(String(row.id))}/profile`));
+      const [profileResponse, employeesResponse] = await Promise.all([
+        api.get(`/members/${encodeURIComponent(String(row.id))}/profile`),
+        api.get("/commerce-employees"),
+      ]);
+      const profile = responseData<Row>(profileResponse);
+      const employeesData = responseData<unknown>(employeesResponse);
+      const employees = Array.isArray(employeesData)
+        ? employeesData
+        : Array.isArray((employeesData as Row | null)?.items)
+          ? (employeesData as Row).items
+          : [];
       if (requestId !== editorRequestId || requestedResource !== resource.value) return;
+      memberReferralOptions.value = employees.filter((item: Row) => item?.id && (item.active === true || item.id === profile.referralEmployeeId));
+      if (profile.referralEmployee?.id && !memberReferralOptions.value.some((item) => item.id === profile.referralEmployee.id)) {
+        memberReferralOptions.value.unshift(profile.referralEmployee);
+      }
       dialogMode.value = "edit";
       dialogTitle.value = `编辑会员 ${profile.memberNo ?? row.memberNo ?? ""}`.trim();
       form.value = {
@@ -409,6 +452,12 @@ async function openEdit(row: Row): Promise<void> {
         _originalEmail: profile.email ?? "",
         _originalMobileVerified: profile.mobileVerified === true,
         _originalEmailVerified: profile.emailVerified === true,
+        referralEmployeeId: profile.referralEmployeeId ?? null,
+        _originalReferralEmployeeId: profile.referralEmployeeId ?? null,
+        pointBalanceCents: profile.pointBalanceCents,
+        pointAdjustment: "",
+        pointAdjustmentReason: "",
+        _pointAdjustmentKey: adjustmentKey(),
         newPassword: "",
       };
       dialogVisible.value = true;
@@ -537,6 +586,16 @@ async function save(): Promise<void> {
         });
       }
       const newPassword = String(form.value.newPassword ?? "");
+      const deltaCents = pointDeltaCents(form.value.pointAdjustment);
+      const pointReason = String(form.value.pointAdjustmentReason ?? "").trim();
+      if (deltaCents && (pointReason.length < 2 || pointReason.length > 200)) throw new Error("调整积分时请填写2至200字原因");
+      if (deltaCents) {
+        await ElMessageBox.confirm(`确认将该会员积分${deltaCents > 0 ? "增加" : "扣减"} ${(Math.abs(deltaCents) / 100).toFixed(2)} 元？此操作会写入积分流水和审计日志。`, "确认调整积分", {
+          type: "warning",
+          confirmButtonText: "确认调整",
+          cancelButtonText: "取消",
+        });
+      }
       if (newPassword) {
         if (newPassword.length < 8) throw new Error("新密码至少需要8位");
         await ElMessageBox.confirm("确认修改该会员的登录密码？保存后该会员所有已登录设备都会退出，需要使用新密码重新登录。", "确认修改密码", {
@@ -557,10 +616,19 @@ async function save(): Promise<void> {
         status: form.value.status,
         mobileVerified: form.value.mobileVerified === true,
         emailVerified: form.value.emailVerified === true,
+        referralEmployeeId: form.value.referralEmployeeId || null,
         ...(newPassword ? { newPassword } : {}),
         expectedUpdatedAt: form.value.verificationVersion,
       };
       await api.patch(`/members/${encodeURIComponent(id)}/profile`, payload);
+      if (deltaCents) {
+        const adjusted = responseData<Row>(await api.post(`/members/${encodeURIComponent(id)}/points-adjustments`, {
+          deltaCents,
+          reason: pointReason,
+          idempotencyKey: form.value._pointAdjustmentKey,
+        }));
+        form.value.pointBalanceCents = adjusted.balanceCents;
+      }
     } else if (resource.value === "integrations") {
       const secretsText = String(form.value.secretsText || "").trim();
       payload = {
@@ -593,7 +661,7 @@ async function save(): Promise<void> {
     } else {
       await api.post(`/${resource.value}`, payload);
     }
-    ElMessage.success(resource.value === "members" ? (form.value.newPassword ? "会员资料和密码已保存，原登录已退出" : "会员资料已保存") : "已保存");
+    ElMessage.success(resource.value === "members" ? (form.value.pointAdjustment ? "会员资料与积分已保存" : form.value.newPassword ? "会员资料和密码已保存，原登录已退出" : "会员资料已保存") : "已保存");
     dialogVisible.value = false;
     await load();
   } catch (error) {
@@ -932,16 +1000,18 @@ onBeforeUnmount(() => {
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
           <el-button v-if="createable" @click="openCreate">新增</el-button>
-          <span class="muted">敏感字段已在服务端脱敏；无权限时不会返回原始健康数据。</span>
+          <span class="muted">会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。</span>
         </div>
         <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
         <el-table v-if="!loadError" v-loading="loading" :data="rows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
-          <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" :min-width="resource === 'members' && ['emailMasked', 'mobileMasked'].includes(column) ? 230 : 145" show-overflow-tooltip>
+          <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" :min-width="resource === 'members' && ['emailMasked', 'mobile', 'referrer'].includes(column) ? 220 : column === 'avatarUrl' ? 78 : 145" show-overflow-tooltip>
             <template #default="scope">
-              <div v-if="resource === 'members' && ['emailMasked', 'mobileMasked'].includes(column)" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+              <el-avatar v-if="resource === 'members' && column === 'avatarUrl'" :size="38" :src="scope.row.avatarUrl || undefined">{{ String(scope.row.nickname || "会员").slice(0, 1) }}</el-avatar>
+              <span v-else-if="resource === 'members' && column === 'pointBalanceCents'">{{ pointMoney(scope.row.pointBalanceCents) }}</span>
+              <div v-else-if="resource === 'members' && ['emailMasked', 'mobile'].includes(column)" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
                 <span>{{ render(scope.row[column]) }}</span>
-                <el-tag size="small" :type="scope.row[column === 'mobileMasked' ? 'mobileVerified' : 'emailVerified'] ? 'success' : scope.row[column] ? 'warning' : 'info'">
-                  {{ contactVerificationLabel(scope.row, column === "mobileMasked" ? "mobile" : "email") }}
+                <el-tag size="small" :type="scope.row[column === 'mobile' ? 'mobileVerified' : 'emailVerified'] ? 'success' : scope.row[column] ? 'warning' : 'info'">
+                  {{ contactVerificationLabel(scope.row, column === "mobile" ? "mobile" : "email") }}
                 </el-tag>
               </div>
               <template v-else>{{ render(scope.row[column]) }}</template>
@@ -1038,7 +1108,7 @@ onBeforeUnmount(() => {
           <el-form-item label="体重"> <el-input-number v-model="form.weightKg" :min="10" :max="500" :precision="1" :step="0.1" controls-position="right" /><span class="muted" style="margin-left: 10px">千克，可留空</span> </el-form-item>
           <el-divider content-position="left">登录与联系方式</el-divider>
           <el-form-item label="手机号">
-            <el-input :model-value="form.mobile" clearable placeholder="带国家区号，如 +8613812345678" @input="onMemberContactInput('mobile', $event)" />
+            <el-input :model-value="form.mobile" clearable placeholder="国内填写11位手机号；国际号码请带国家区号" @input="onMemberContactInput('mobile', $event)" />
           </el-form-item>
           <el-form-item label="手机已核实">
             <el-switch v-model="form.mobileVerified" :disabled="!form.mobile" active-text="已验证" inactive-text="未验证" />
@@ -1052,6 +1122,25 @@ onBeforeUnmount(() => {
           <el-form-item label="账号状态">
             <el-select v-model="form.status"><el-option label="正常" value="ACTIVE" /><el-option label="停用" value="DISABLED" /></el-select>
           </el-form-item>
+          <el-form-item label="推广上级 ID">
+            <div style="width: 100%">
+              <el-select v-model="form.referralEmployeeId" clearable filterable placeholder="可搜索员工姓名、推广码或 ID；留空则清除" style="width: 100%">
+                <el-option
+                  v-for="item in memberReferralOptions"
+                  :key="item.id"
+                  :value="item.id"
+                  :label="`${item.name} · ${item.referralCode} · ${item.id}`"
+                  :disabled="item.active === false && item.id !== form._originalReferralEmployeeId"
+                />
+              </el-select>
+              <span class="muted">关联推广员工，只影响之后未携带有效推广链接的新订单；不会修改历史订单和奖金。</span>
+            </div>
+          </el-form-item>
+          <el-divider content-position="left">会员积分</el-divider>
+          <el-form-item label="当前积分"><b>{{ pointMoney(form.pointBalanceCents) }}</b></el-form-item>
+          <el-form-item label="调整金额"><el-input v-model="form.pointAdjustment" inputmode="decimal" placeholder="例如 20.00；扣减填写 -5.00" clearable><template #append>元</template></el-input></el-form-item>
+          <el-form-item label="调整原因"><el-input v-model="form.pointAdjustmentReason" maxlength="200" show-word-limit placeholder="调整积分时必填，会写入审计日志" /></el-form-item>
+          <el-alert title="积分按可抵扣金额管理。扣减后余额不能小于0，每次调整都会生成会员可见流水和后台审计记录。" type="info" :closable="false" show-icon />
           <el-divider content-position="left">修改登录密码</el-divider>
           <el-form-item label="新密码"><el-input v-model="form.newPassword" type="password" show-password maxlength="72" autocomplete="new-password" placeholder="留空则不修改；至少8位" /></el-form-item>
           <p class="muted">后台不能查看原密码。修改密码后，该会员所有已登录设备都会退出。保存操作会记录管理员、时间和变更字段，审计日志不会保存密码、完整手机号、邮箱或会员资料值。</p>

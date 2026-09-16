@@ -5,6 +5,7 @@ import { IntegrationState, PaymentChannel } from "@prisma/client";
 import { sha256 } from "../common/crypto";
 import { AuthService } from "./auth.service";
 import { WechatH5AuthService, officialRedirectUri, safeH5ReturnTo } from "./wechat-h5-auth.service";
+import { verifiedWechatProfile } from "./wechat-h5-profile";
 import { CommerceCapabilitiesService } from "../commerce/commerce-capabilities.service";
 import { PaymentProviderService, trustedPaymentUrl, commerceAlipayReturnUrl, commercePaymentReturnUrl } from "../billing/payment-provider.service";
 
@@ -34,9 +35,9 @@ function harness() {
   const auth = { issueMallSession: vi.fn().mockResolvedValue(session), consumeMobileBindingCode: vi.fn(), bindReferral: vi.fn() };
   const service = new WechatH5AuthService(prisma as any, auth as any, { resolve: vi.fn() } as any);
   vi.spyOn(service, "configured").mockResolvedValue(config);
-  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-    openid: ticket.openId, access_token: "synthetic-provider-token", scope: "snsapi_base",
-  })));
+  const fetchMock = vi.fn(async (input: URL | RequestInfo) => String(input).includes("/sns/userinfo")
+    ? new Response(JSON.stringify({ openid: ticket.openId, nickname: "微信会员", headimgurl: "https://cdn.example.invalid/wechat.png" }))
+    : new Response(JSON.stringify({ openid: ticket.openId, access_token: "synthetic-provider-token", scope: "snsapi_userinfo" })));
   vi.stubGlobal("fetch", fetchMock);
   return { service, db, prisma, auth, state, ticket, user, session, fetchMock };
 }
@@ -90,6 +91,10 @@ describe("official-account H5 contract", () => {
   it("returns a binding ticket, not a consumer token or anonymous User", async () => {
     const h = harness(); const result = await h.service.login(loginInput());
     expect(result.requiresMobileBinding).toBe(true);
+    expect((result as any).wechatProfile).toEqual({ nickname: "微信会员", avatarUrl: "https://cdn.example.invalid/wechat.png" });
+    expect(verifiedWechatProfile((result as any).wechatProfileProof, (result as any).bindTicket)).toEqual((result as any).wechatProfile);
+    expect(verifiedWechatProfile(`${(result as any).wechatProfileProof}tampered`, bindTicket)).toEqual({ nickname: null, avatarUrl: null });
+    expect(verifiedWechatProfile((result as any).wechatProfileProof, "c".repeat(64))).toEqual({ nickname: null, avatarUrl: null });
     expect(result).not.toHaveProperty("token");
     expect(h.auth.issueMallSession).not.toHaveBeenCalled();
     expect(h.db.user.create).not.toHaveBeenCalled();

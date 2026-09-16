@@ -4,7 +4,7 @@
     ><view class="container profile-layout"
       ><view
         ><view class="profile-hero card"
-          ><view class="avatar">S</view
+          ><view class="avatar"><image v-if="user?.avatarUrl" :src="user.avatarUrl" mode="aspectFill" /><text v-else>{{ user?.nickname?.slice(0, 1) || "S" }}</text></view
           ><view
             ><text>{{ user?.nickname || "欢迎来到赛电商城" }}</text
             ><text class="small">{{
@@ -131,7 +131,9 @@ async function logout() {
   justify-content: center;
   font-size: 48rpx;
   font-weight: 900;
+  overflow: hidden;
 }
+.avatar image { width: 100%; height: 100%; display: block; }
 .profile-hero > view:nth-child(2) {
   flex: 1;
 }

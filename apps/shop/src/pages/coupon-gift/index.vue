@@ -8,7 +8,8 @@
         <text class="value">{{ money(gift.coupon.value) }}</text>
         <text class="small">满 {{ money(gift.coupon.minimumSpendCents) }} 可用</text>
         <text class="small">有效期至 {{ date(gift.expiresAt) }}</text>
-        <view v-if="gift.status === 'RESERVED'" class="primary-btn" @click="claim">立即领取</view>
+        <view v-if="gift.status === 'RESERVED' && loggedIn" class="primary-btn" @click="claim">立即领取</view>
+        <view v-else-if="gift.status === 'RESERVED'" class="primary-btn" @click="loginToClaim">登录后领取</view>
         <view v-else class="disabled-btn">该券已领取或已失效</view>
       </view>
     </view>
@@ -18,13 +19,16 @@
 <script setup lang="ts">
 import { onLoad } from "@dcloudio/uni-app";
 import { ref } from "vue";
-import { api, money, toast } from "../../api";
+import { api, money, requireLogin, toast } from "../../api";
+import { isLoggedIn } from "../../session";
 
 const gift = ref<any>();
 const token = ref("");
+const loggedIn = ref(false);
 
 onLoad(async (options) => {
   token.value = String(options?.token || "");
+  loggedIn.value = isLoggedIn();
   try {
     gift.value = await api(`/storefront/coupon-gifts/${encodeURIComponent(token.value)}`);
   } catch (e) {
@@ -33,6 +37,7 @@ onLoad(async (options) => {
 });
 
 async function claim() {
+  if (!isLoggedIn()) return loginToClaim();
   try {
     await api(`/storefront/coupon-gifts/${encodeURIComponent(token.value)}/claim`, {
       method: "POST",
@@ -43,6 +48,10 @@ async function claim() {
   } catch (e) {
     toast(e);
   }
+}
+
+function loginToClaim() {
+  requireLogin(`/pages/coupon-gift/index?token=${encodeURIComponent(token.value)}`);
 }
 
 function date(value: string) {

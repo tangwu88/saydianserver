@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import {onShow,onHide} from '@dcloudio/uni-app';import{ref}from'vue';import DesktopHeader from '../../components/DesktopHeader.vue';import{api,money,mallSessionStamp}from'../../api';
 const data=ref<any>(),items=ref<any[]>([]),error=ref(''),busy=ref(false),failedMore=ref(false);let page=1,generation=0;
-const labels:Record<string,string>={ORDER_DEDUCT:'订单抵扣',ORDER_REDEMPTION:'订单抵扣',ORDER_CANCEL_RETURN:'取消订单返还',AFTER_SALE_RETURN:'售后返还',FULL_REFUND_RETURN:'退款返还',DEMO_TEST_CREDIT:'测试积分到账'};
+const labels:Record<string,string>={ORDER_DEDUCT:'订单抵扣',ORDER_REDEMPTION:'订单抵扣',ORDER_CANCEL_RETURN:'取消订单返还',AFTER_SALE_RETURN:'售后返还',FULL_REFUND_RETURN:'退款返还',DEMO_TEST_CREDIT:'测试积分到账',ADMIN_ADJUSTMENT:'后台积分调整'};
 onShow(()=>load());onHide(()=>{generation++;data.value=undefined;items.value=[];busy.value=false;});
 async function load(more=false){if(more&&busy.value)return;const current=++generation,session=mallSessionStamp();busy.value=true;error.value='';failedMore.value=more;const next=more?page+1:1;if(!more){data.value=undefined;items.value=[];page=1;}
   const valid=()=>current===generation&&session===mallSessionStamp();
