@@ -10,6 +10,8 @@ const id = "11111111-1111-4111-8111-111111111111";
 const employeeId = "22222222-2222-4222-8222-222222222222";
 const actorId = "33333333-3333-4333-8333-333333333333";
 const key = "test_apply_000000001";
+const application = (extra = {}) => ({ amountCents: 400, idempotencyKey: key, payoutMethod: "WECHAT",
+  accountName: "测试会员", payoutAccount: "wechat-test-account", bankName: "", ...extra });
 const review = (decision = "APPROVE", version = 0) => ({ decision, note: "财务已核验", version, idempotencyKey: `review_${decision}_00000001` });
 const receipt = (extra = {}) => ({ version: 1, idempotencyKey: "manual_receipt_00000001", providerTransferId: "original-transfer-001",
   recipientOpenId: "verified-openid", amountCents: 400, receiptReference: "archive/receipt-001", evidence: "原渠道真实回执已核验",
@@ -54,25 +56,26 @@ function fixture() {
     queue = task.then(() => undefined, () => undefined); return task;
   } };
   const service = new CommerceWithdrawalService(prisma as unknown as PrismaService);
-  return { service, tx, get state() { return state; }, apply: () => service.apply(employeeId, { amountCents: 400, idempotencyKey: key }) };
+  return { service, tx, get state() { return state; }, apply: () => service.apply(employeeId, application()) };
 }
 afterEach(() => vi.unstubAllEnvs());
 
 describe("withdrawal accounting and safety", () => {
-  it("freezes only verified balance once for concurrent same-key retries", async () => {
+  it("freezes available commission once and stores member-provided payout details", async () => {
     const f = fixture(); await Promise.all([f.apply(), f.apply()]);
     expect(f.state.wallet).toMatchObject({ availableCents: 600, withdrawingCents: 400, totalPaidCents: 0 });
     expect(f.state.rows).toHaveLength(1); expect(f.state.ledger).toHaveLength(1);
+    expect(f.state.rows[0].payoutIdentitySnapshot).toMatchObject({ payoutMethod: "WECHAT", accountName: "测试会员", payoutAccount: "wechat-test-account" });
     expect(f.tx.$queryRaw).toHaveBeenCalled();
-    await expect(f.service.apply(employeeId, { amountCents: 401, idempotencyKey: key })).rejects.toThrow("幂等键");
+    await expect(f.service.apply(employeeId, application({ amountCents: 401 }))).rejects.toThrow("幂等键");
   });
-  it("rejects debt, insufficient balance and unverified payout identity without writing", async () => {
+  it("rejects debt, insufficient balance and incomplete payout details without writing", async () => {
     const f = fixture(); f.state.wallet.debtCents = 1;
     await expect(f.apply()).rejects.toThrow("退款欠款");
     f.state.wallet.debtCents = 0; f.state.wallet.availableCents = 399;
     await expect(f.apply()).rejects.toThrow("余额不足");
-    f.state.wallet.availableCents = 1000; f.state.identity.verifiedAt = null;
-    await expect(f.apply()).rejects.toThrow("收款身份尚未核验");
+    f.state.wallet.availableCents = 1000;
+    await expect(f.service.apply(employeeId, application({ payoutAccount: "" }))).rejects.toThrow("收款账号");
     expect(f.state.ledger).toHaveLength(0);
   });
   it("maintenance refuses write but summary does not create a wallet or reveal payout identifiers", async () => {
@@ -84,19 +87,14 @@ describe("withdrawal accounting and safety", () => {
     expect(JSON.stringify(summary)).not.toContain("authorization-1");
     expect(f.tx.commerceEmployeeWallet.update).not.toHaveBeenCalled();
   });
-  it("approves without paying and registers exact external success only once", async () => {
-    const f = fixture(); await f.apply(); await f.service.review(id, actorId, review());
-    expect(f.state.wallet.totalPaidCents).toBe(0);
-    expect(f.state.rows[0]).toMatchObject({ status: "APPROVED", version: 1 });
-    await f.service.recordManualReceipt(id, actorId, receipt());
-    await f.service.recordManualReceipt(id, actorId, receipt());
+  it("approval marks the request withdrawn and deducts the frozen commission exactly once", async () => {
+    const f = fixture(); await f.apply(); await f.service.review(id, actorId, review()); await f.service.review(id, actorId, review());
     expect(f.state.wallet).toMatchObject({ availableCents: 600, withdrawingCents: 0, totalPaidCents: 400 });
-    expect(f.state.rows[0]).toMatchObject({ status: "SUCCEEDED", version: 2, providerTransferId: "original-transfer-001" });
-    expect(f.state.ledger).toHaveLength(3); expect(f.state.audit).toHaveLength(2);
-    await expect(f.service.recordManualReceipt(id, actorId, receipt({ amountCents: 401 }))).rejects.toThrow("幂等键");
+    expect(f.state.rows[0]).toMatchObject({ status: "SUCCEEDED", version: 1, reviewedById: actorId, reviewNote: "财务已核验" });
+    expect(f.state.ledger).toHaveLength(2); expect(f.state.audit).toHaveLength(1);
   });
-  it("rejects mismatched amount, identity, time or absent human confirmation", async () => {
-    const f = fixture(); await f.apply(); await f.service.review(id, actorId, review());
+  it("retains the historical manual-receipt gate for already-approved legacy rows", async () => {
+    const f = fixture(); await f.apply(); Object.assign(f.state.rows[0], { status: "APPROVED", version: 1, payoutIdentitySnapshot: { openId: "verified-openid" } });
     await expect(f.service.recordManualReceipt(id, actorId, receipt({ amountCents: 399 }))).rejects.toThrow("不一致");
     await expect(f.service.recordManualReceipt(id, actorId, receipt({ recipientOpenId: "stranger" }))).rejects.toThrow("不一致");
     expect(() => f.service.recordManualReceipt(id, actorId, receipt({ confirmedExternalResult: false }))).toThrow("不会发起打款");
@@ -114,12 +112,11 @@ describe("withdrawal accounting and safety", () => {
   it("stale versions and terminal transitions cannot move money", async () => {
     const f = fixture(); await f.apply(); await f.service.review(id, actorId, review());
     await expect(f.service.review(id, actorId, review("REJECT"))).rejects.toThrow("状态已变化");
-    await f.service.recordManualReceipt(id, actorId, receipt());
-    await expect(f.service.review(id, actorId, review("REJECT", 2))).rejects.toThrow("已有原供应商");
+    await expect(f.service.review(id, actorId, review("REJECT", 1))).rejects.toThrow("该状态不能拒绝");
     expect(f.state.wallet.totalPaidCents).toBe(400);
   });
   it("legacy in-flight records cannot create payouts or change provider IDs, only verify the original result", async () => {
-    const f = fixture(); await f.apply(); Object.assign(f.state.rows[0], { sourceSystem: "legacy_mall", executionOwner: "LEGACY_SYSTEM", status: "PROCESSING", providerTransferId: "legacy-original-9" });
+    const f = fixture(); await f.apply(); Object.assign(f.state.rows[0], { sourceSystem: "legacy_mall", executionOwner: "LEGACY_SYSTEM", status: "PROCESSING", providerTransferId: "legacy-original-9", payoutIdentitySnapshot: { openId: "verified-openid" } });
     await expect(f.service.review(id, actorId, review())).rejects.toThrow("尚未完成接管");
     await expect(f.service.recordManualReceipt(id, actorId, receipt({ version: 0 }))).rejects.toThrow("尚未完成接管");
     await expect(f.service.verifyLegacyResult(id, actorId, receipt({ version: 0 }))).rejects.toThrow("必须核验原供应商");
@@ -128,7 +125,7 @@ describe("withdrawal accounting and safety", () => {
     expect(f.state.wallet.totalPaidCents).toBe(400);
   });
   it("confirmed legacy failure releases funds but pending/unknown result cannot be recorded", async () => {
-    const f = fixture(); await f.apply(); Object.assign(f.state.rows[0], { sourceSystem: "legacy_mall", executionOwner: "LEGACY_SYSTEM", status: "WAIT_USER_CONFIRM", providerTransferId: "legacy-original-9" });
+    const f = fixture(); await f.apply(); Object.assign(f.state.rows[0], { sourceSystem: "legacy_mall", executionOwner: "LEGACY_SYSTEM", status: "WAIT_USER_CONFIRM", providerTransferId: "legacy-original-9", payoutIdentitySnapshot: { openId: "verified-openid" } });
     expect(() => f.service.verifyLegacyResult(id, actorId, receipt({ version: 0, result: "UNKNOWN" }))).toThrow("终态");
     await f.service.verifyLegacyResult(id, actorId, receipt({ version: 0, providerTransferId: "legacy-original-9", result: "FAILED" }));
     expect(f.state.rows[0].status).toBe("FAILED"); expect(f.state.wallet).toMatchObject({ availableCents: 1000, withdrawingCents: 0, totalPaidCents: 0 });
@@ -142,22 +139,24 @@ describe("withdrawal accounting and safety", () => {
     expect(f.state.wallet.withdrawingCents).toBe(400); expect(f.state.rows[0].status).toBe("SUBMITTED");
   });
   it("does not overdraw a migrated inconsistent hold", async () => {
-    const f = fixture(); await f.apply(); await f.service.review(id, actorId, review()); f.state.wallet.withdrawingCents = 399;
-    await expect(f.service.recordManualReceipt(id, actorId, receipt())).rejects.toThrow("冻结金额不足");
+    const f = fixture(); await f.apply(); f.state.wallet.withdrawingCents = 399;
+    await expect(f.service.review(id, actorId, review())).rejects.toThrow("冻结金额不足");
     expect(f.state.wallet.totalPaidCents).toBe(0);
   });
   it("duplicate external transfer uniqueness failure rolls back payment accounting", async () => {
-    const f = fixture(); await f.apply(); await f.service.review(id, actorId, review());
+    const f = fixture(); await f.apply(); Object.assign(f.state.rows[0], { status: "APPROVED", version: 1, payoutIdentitySnapshot: { openId: "verified-openid" } });
     f.tx.commerceWithdrawal.updateMany.mockRejectedValueOnce({ code: "P2002" });
     await expect(f.service.recordManualReceipt(id, actorId, receipt())).rejects.toThrow("转账单号已被使用");
     expect(f.state.wallet).toMatchObject({ withdrawingCents: 400, totalPaidCents: 0 });
     expect(f.state.rows[0].status).toBe("APPROVED");
   });
-  it("revoked identities and noninteger money cannot create a hold", async () => {
+  it("does not require a pre-verified identity but still rejects noninteger money", async () => {
     const f = fixture(); f.state.identity.revokedAt = new Date();
-    await expect(f.apply()).rejects.toThrow("收款身份尚未核验");
-    await expect(f.service.apply(employeeId, { amountCents: 10.5, idempotencyKey: key })).rejects.toThrow("必须为非负整数");
-    expect(f.state.ledger).toHaveLength(0);
+    await f.apply();
+    expect(f.state.rows).toHaveLength(1);
+    const another = fixture();
+    await expect(another.service.apply(employeeId, application({ amountCents: 10.5 }))).rejects.toThrow("必须为非负整数");
+    expect(another.state.ledger).toHaveLength(0);
   });
   it("uses guarded employee identity and restricts financial actions to finance and super admins", () => {
     expect(Reflect.getMetadata("__guards__", CommerceEmployeeWithdrawalController)).toContain(EmployeeAuthGuard);
@@ -165,20 +164,10 @@ describe("withdrawal accounting and safety", () => {
     expect(Reflect.getMetadata("path", CommerceEmployeeWithdrawalController)).toBe("api/saidian-mall/v1/wecom/me/withdrawals");
     expect(Reflect.getMetadata("path", CommerceAdminWithdrawalController.prototype.receipt)).toBe(":id/manual-receipt");
   });
-  it("honors configured minimum, daily limit, enabled flag and a single pending withdrawal", async () => {
-    const f = fixture(); f.state.plan.withdrawalEnabled = false;
-    await expect(f.apply()).rejects.toThrow("尚未启用");
-    f.state.plan.withdrawalEnabled = true; f.state.plan.minimumWithdrawCents = null;
-    await expect(f.apply()).rejects.toThrow("最低提现金额尚未配置");
-    f.state.plan.minimumWithdrawCents = 500;
-    await expect(f.apply()).rejects.toThrow("低于最低限额");
-    f.state.plan.minimumWithdrawCents = 100; f.state.dailyUsed = 4700;
-    await expect(f.apply()).rejects.toThrow("当日提现限额");
-    f.state.dailyUsed = 0; await f.apply();
-    await expect(f.service.apply(employeeId, { amountCents: 400, idempotencyKey: "another_apply_key_001" })).rejects.toThrow("已有提现处理中");
+  it("allows any positive available commission regardless of legacy plan limits and blocks a second pending request", async () => {
+    const f = fixture(); Object.assign(f.state.plan, { enabled: false, withdrawalEnabled: false, minimumWithdrawCents: 9999, dailyWithdrawLimitCents: 1 });
+    await f.apply();
+    await expect(f.service.apply(employeeId, application({ idempotencyKey: "another_apply_key_001" }))).rejects.toThrow("已有提现处理中");
     expect(f.state.wallet.withdrawingCents).toBe(400);
-    const where = f.tx.commerceWithdrawal.aggregate.mock.calls[0]?.[0]?.where;
-    expect(where?.createdAt.gte.getUTCHours()).toBe(16);
-    expect(where?.status.notIn).toEqual(["REJECTED", "CANCELLED"]);
   });
 });

@@ -14,27 +14,20 @@ export class CommerceWithdrawalService {
   constructor(private readonly prisma: PrismaService) {}
 
   async employeeSummary(employeeId: string) {
-    const dayStart = new Date(Math.floor((Date.now() + 8 * 60 * 60_000) / 86_400_000) * 86_400_000 - 8 * 60 * 60_000);
-    const [wallet, identity, withdrawals, plan, pendingCount, dailyUsed] = await Promise.all([
+    const [wallet, identity, withdrawals, plan, pendingCount] = await Promise.all([
       this.prisma.commerceEmployeeWallet.findUnique({ where: { employeeId } }),
       this.prisma.commerceEmployeePayoutIdentity.findUnique({ where: { employeeId } }),
       this.prisma.commerceWithdrawal.findMany({ where: { employeeId }, orderBy: { createdAt: "desc" }, take: 100 }),
       this.prisma.commerceCommissionPlan.findUnique({ where: { id: "default" } }),
       this.prisma.commerceWithdrawal.count({ where: { employeeId, status: { in: pending } } }),
-      this.prisma.commerceWithdrawal.aggregate({ where: { employeeId, createdAt: { gte: dayStart }, status: { notIn: ["REJECTED", "CANCELLED"] } }, _sum: { amountCents: true } }),
     ]);
     const identityVerified = Boolean(identity?.verifiedAt && identity.verificationEvidence && identity.openId && identity.authorizationId && identity.authorizationStatus === "ACTIVE" && !identity.revokedAt);
-    const planReady = Boolean(plan?.enabled && plan.withdrawalEnabled && plan.minimumWithdrawCents !== null && Number.isSafeInteger(plan.minimumWithdrawCents) && plan.minimumWithdrawCents > 0);
-    const dailyUsedCents = dailyUsed._sum.amountCents ?? 0;
-    const dailyLimit = plan?.dailyWithdrawLimitCents ?? null;
-    const dailyLimitValid = dailyLimit === null || (Number.isSafeInteger(dailyLimit) && dailyLimit > 0);
-    const dailyRemainingCents = dailyLimit === null ? null : Math.max(0, dailyLimit - dailyUsedCents);
-    const availableAmountCents = wallet ? Math.max(0, Math.min(wallet.availableCents, dailyRemainingCents ?? wallet.availableCents)) : null;
-    return { wallet, dailyUsedCents, dailyRemainingCents, availableAmountCents, identity: { verified: identityVerified, accountHint: identity ? mask(identity.openId) : null },
+    const availableAmountCents = wallet ? Math.max(0, wallet.availableCents) : null;
+    return { wallet, dailyUsedCents: 0, dailyRemainingCents: null, availableAmountCents, identity: { verified: identityVerified, accountHint: identity ? mask(identity.openId) : null },
       plan: { enabled: Boolean(plan?.enabled && plan.withdrawalEnabled), minimumWithdrawCents: plan?.minimumWithdrawCents ?? null,
         dailyWithdrawLimitCents: plan?.dailyWithdrawLimitCents ?? null, reviewRequired: true, settlementDays: plan?.settlementDays ?? null }, pendingCount,
-      canApply: Boolean(planReady && dailyLimitValid && pendingCount === 0 && identityVerified && wallet && wallet.debtCents === 0 && (availableAmountCents ?? 0) >= Math.max(1, plan?.minimumWithdrawCents ?? 1) && !businessWritesPaused(process.env)),
-      payoutMode: "MANUAL_RECEIPT_ONLY", withdrawals: withdrawals.map(publicWithdrawal) };
+      canApply: Boolean(pendingCount === 0 && wallet && wallet.debtCents === 0 && wallet.availableCents > 0 && !businessWritesPaused(process.env)),
+      payoutMode: "MEMBER_PROVIDED_MANUAL_REVIEW", withdrawals: withdrawals.map(publicWithdrawal) };
   }
 
   async adminList(input: unknown) {
@@ -48,7 +41,7 @@ export class CommerceWithdrawalService {
       this.prisma.commerceWithdrawal.findMany({ where, include: { employee: { select: { name: true, wecomUserId: true } } }, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }),
       this.prisma.commerceWithdrawal.count({ where }),
     ]);
-    return { items: rows.map((row) => ({ ...publicWithdrawal(row), employee: row.employee })), total, page, pageSize };
+    return { items: rows.map((row) => ({ ...publicWithdrawal(row), employee: row.employee, payoutDetails: adminPayoutDetails(row) })), total, page, pageSize };
   }
 
   async apply(employeeId: string, input: unknown) {
@@ -56,7 +49,8 @@ export class CommerceWithdrawalService {
     const body = safeObject(input);
     const amountCents = positive(body.amountCents, "提现金额（分）", 2_000_000_000);
     const idempotencyKey = key(body.idempotencyKey);
-    const requestHash = sha256(JSON.stringify({ employeeId, amountCents }));
+    const payoutDetails = parsePayoutDetails(body);
+    const requestHash = sha256(JSON.stringify({ employeeId, amountCents, payoutDetails }));
     return this.prisma.$transaction(async (tx) => {
       // Same lock order is used by all withdrawal transitions and commission refunds.
       const wallet = await lockWallet(tx, employeeId);
@@ -65,34 +59,18 @@ export class CommerceWithdrawalService {
         if (existing.employeeId !== employeeId || existing.requestHash !== requestHash) throw new ConflictException("幂等键已用于不同提现申请");
         return publicWithdrawal(existing);
       }
-      const plan = await tx.commerceCommissionPlan.findUnique({ where: { id: "default" } });
-      if (!plan?.enabled || !plan.withdrawalEnabled) throw new ServiceUnavailableException("奖金提现尚未启用");
-      if (!Number.isSafeInteger(plan.minimumWithdrawCents) || plan.minimumWithdrawCents === null || plan.minimumWithdrawCents <= 0) throw new ServiceUnavailableException("最低提现金额尚未配置");
-      if (amountCents < plan.minimumWithdrawCents) throw new BadRequestException("提现金额低于最低限额");
       if (await tx.commerceWithdrawal.count({ where: { employeeId, status: { in: pending } } })) throw new ConflictException("已有提现处理中，请等待原提现完成");
-      if (plan.dailyWithdrawLimitCents !== null) {
-        if (!Number.isSafeInteger(plan.dailyWithdrawLimitCents) || plan.dailyWithdrawLimitCents <= 0) throw new ServiceUnavailableException("每日提现限额配置无效");
-        const dayStart = new Date(Math.floor((Date.now() + 8 * 60 * 60_000) / 86_400_000) * 86_400_000 - 8 * 60 * 60_000);
-        const used = await tx.commerceWithdrawal.aggregate({ where: { employeeId, createdAt: { gte: dayStart },
-          status: { notIn: ["REJECTED", "CANCELLED"] } }, _sum: { amountCents: true } });
-        if ((used._sum.amountCents ?? 0) + amountCents > plan.dailyWithdrawLimitCents) throw new BadRequestException("超过当日提现限额（北京时间）");
-      }
       const employee = await tx.commerceEmployee.findUnique({ where: { id: employeeId } });
       if (!employee?.active) throw new ConflictException("推广账户当前不可申请提现");
       if (wallet.debtCents !== 0) throw new ConflictException("存在退款欠款，结清后才能申请提现");
       if (wallet.availableCents < amountCents) throw new ConflictException("可提现余额不足");
       if (wallet.withdrawingCents + amountCents > 2_147_483_647) throw new ConflictException("提现累计金额超过当前账本范围，请联系财务核验");
-      const identity = await tx.commerceEmployeePayoutIdentity.findUnique({ where: { employeeId } });
-      if (!identity?.verifiedAt || !identity.verificationEvidence || !identity.openId || !identity.authorizationId || identity.authorizationStatus !== "ACTIVE" || identity.revokedAt) {
-        throw new ServiceUnavailableException("收款身份尚未核验，请联系管理员完成原收款身份核验");
-      }
       const held = await tx.commerceEmployeeWallet.updateMany({ where: { employeeId, debtCents: 0, availableCents: { gte: amountCents } },
         data: { availableCents: { decrement: amountCents }, withdrawingCents: { increment: amountCents } } });
       if (held.count !== 1) throw new ConflictException("余额已变化，请刷新后重试");
       const row = await tx.commerceWithdrawal.create({ data: { employeeId, amountCents, idempotencyKey, requestHash,
         sourceSystem: "canonical", executionOwner: "NEW_SYSTEM", status: "SUBMITTED",
-        payoutIdentitySnapshot: { openId: identity.openId, authorizationId: identity.authorizationId,
-          verifiedAt: identity.verifiedAt.toISOString(), verificationEvidence: identity.verificationEvidence },
+        payoutIdentitySnapshot: payoutDetails,
       } });
       await tx.commerceCommissionLedger.create({ data: { employeeId, withdrawalId: row.id, type: "WITHDRAW_HOLD",
         availableDeltaCents: -amountCents, withdrawingDeltaCents: amountCents, idempotencyKey: `withdrawal-hold:${row.id}` } });
@@ -109,10 +87,11 @@ export class CommerceWithdrawalService {
       ownNew(row);
       if (decision === "APPROVE" && row.status !== "SUBMITTED") throw new ConflictException("仅待审核提现可批准");
       if (decision === "REJECT" && !["SUBMITTED", "APPROVED"].includes(row.status)) throw new ConflictException("该状态不能拒绝；在途付款须核验原回执");
-      const data = { status: decision === "APPROVE" ? "APPROVED" : "REJECTED", reviewedById: actorId, reviewedAt: new Date(), reviewNote: note,
-        ...(decision === "REJECT" ? { completedAt: new Date() } : {}) };
+      const reviewedAt = new Date();
+      const data = { status: "REJECTED", reviewedById: actorId, reviewedAt, reviewNote: note, completedAt: reviewedAt };
       if (decision === "REJECT") return { data, ...(await this.release(tx, row)) };
-      return { data, type: "WITHDRAW_APPROVE", availableDeltaCents: 0, withdrawingDeltaCents: 0, debtDeltaCents: 0, paidDeltaCents: 0 };
+      const completed = await this.completeReviewedWithdrawal(tx, row, reviewedAt);
+      return { ...completed, data: { ...completed.data, reviewedById: actorId, reviewedAt, reviewNote: note } };
     });
   }
 
@@ -151,6 +130,16 @@ export class CommerceWithdrawalService {
     return { data: { status: "SUCCEEDED", providerTransferId: receipt.providerTransferId, receiptReference: receipt.receiptReference,
       verificationEvidence: receipt.evidence, paidAt: new Date(receipt.completedAt), completedAt: new Date(receipt.completedAt) }, type: "WITHDRAW_SUCCESS", availableDeltaCents: 0,
       withdrawingDeltaCents: -row.amountCents, paidDeltaCents: row.amountCents, debtDeltaCents: 0 };
+  }
+
+  private async completeReviewedWithdrawal(tx: Tx, row: CommerceWithdrawal, completedAt: Date): Promise<TransitionResult> {
+    const wallet = await tx.commerceEmployeeWallet.findUnique({ where: { employeeId: row.employeeId } });
+    if (!wallet || wallet.totalPaidCents + row.amountCents > 2_147_483_647) throw new ConflictException("累计付款金额超出当前账本范围，请联系财务核验");
+    const updated = await tx.commerceEmployeeWallet.updateMany({ where: { employeeId: row.employeeId, withdrawingCents: { gte: row.amountCents } },
+      data: { withdrawingCents: { decrement: row.amountCents }, totalPaidCents: { increment: row.amountCents } } });
+    if (updated.count !== 1) throw new ConflictException("提现冻结金额不足，必须先核验佣金账本");
+    return { data: { status: "SUCCEEDED", paidAt: completedAt, completedAt }, type: "WITHDRAW_SUCCESS",
+      availableDeltaCents: 0, withdrawingDeltaCents: -row.amountCents, paidDeltaCents: row.amountCents, debtDeltaCents: 0 };
   }
 
   private async release(tx: Tx, row: CommerceWithdrawal) {
@@ -227,11 +216,30 @@ async function lockWallet(tx: Tx, employeeId: string) {
   return wallet;
 }
 function publicWithdrawal(row: CommerceWithdrawal) {
+  const payout = adminPayoutDetails(row);
   return { id: row.id, withdrawalNo: row.withdrawalNo, employeeId: row.employeeId, legacyId: row.legacyId, sourceSystem: row.sourceSystem,
     executionOwner: row.executionOwner, amountCents: row.amountCents, status: row.status, version: row.version,
-    accountHint: mask(String(safeObject(row.payoutIdentitySnapshot).openId ?? "")), providerTransferId: row.providerTransferId,
+    payoutMethod: payout.payoutMethod, accountName: payout.accountName, accountHint: mask(payout.payoutAccount), providerTransferId: row.providerTransferId,
     receiptReference: row.receiptReference, reviewNote: row.reviewNote, createdAt: row.createdAt, reviewedAt: row.reviewedAt,
     paidAt: row.paidAt, completedAt: row.completedAt, pending: pending.includes(row.status) };
+}
+function adminPayoutDetails(row: CommerceWithdrawal) {
+  const snapshot = safeObject(row.payoutIdentitySnapshot);
+  const legacyOpenId = String(snapshot.openId ?? "").trim();
+  return {
+    payoutMethod: String(snapshot.payoutMethod ?? (legacyOpenId ? "WECHAT" : "")),
+    accountName: String(snapshot.accountName ?? ""),
+    payoutAccount: String(snapshot.payoutAccount ?? legacyOpenId),
+    bankName: String(snapshot.bankName ?? ""),
+  };
+}
+function parsePayoutDetails(body: Record<string, unknown>) {
+  const payoutMethod = String(body.payoutMethod ?? "").toUpperCase();
+  if (!["WECHAT", "ALIPAY", "BANK"].includes(payoutMethod)) throw new BadRequestException("请选择微信、支付宝或银行卡收款方式");
+  const accountName = requiredText(body.accountName, "收款人姓名", 80);
+  const payoutAccount = requiredText(body.payoutAccount, "收款账号", 128);
+  const bankName = payoutMethod === "BANK" ? requiredText(body.bankName, "开户银行", 120) : optionalText(body.bankName, "开户银行", 120);
+  return { source: "MEMBER_SUBMITTED", payoutMethod, accountName, payoutAccount, bankName };
 }
 function mask(value: string) { return value ? `${value.slice(0, 3)}***${value.slice(-3)}` : null; }
 function key(value: unknown) {
@@ -242,6 +250,10 @@ function key(value: unknown) {
 function requiredText(value: unknown, label: string, max: number) {
   if (typeof value !== "string" || !value.trim() || value.trim().length > max || /[\u0000-\u0008]/.test(value)) throw new BadRequestException(`${label}必填且长度不超过 ${max}`);
   return value.trim();
+}
+function optionalText(value: unknown, label: string, max: number) {
+  if (value === undefined || value === null || value === "") return "";
+  return requiredText(value, label, max);
 }
 function nonNegative(value: unknown, label: string) {
   const number = typeof value === "number" ? value : typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;

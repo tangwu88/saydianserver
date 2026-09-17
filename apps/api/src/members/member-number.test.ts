@@ -38,7 +38,7 @@ describe("member display numbers", () => {
     vi.stubEnv("APP_REALM", "global");
     const findMany = vi.fn(async (_query: any) => [user]);
     const count = vi.fn(async (_query: any) => 1);
-    const service = new AdminService({ user: { findMany, count }, $transaction: (queries: Promise<unknown>[]) => Promise.all(queries) } as any, {} as any);
+    const service = new AdminService({ user: { findMany, count }, commerceEmployee: { findMany: async () => [] }, $transaction: (queries: Promise<unknown>[]) => Promise.all(queries) } as any, {} as any);
     const result = await service.members(" 27 ", 2, 10);
     expect(result).toMatchObject({ items: [{ id: user.id, memberNo: "27", emailMasked: "q***@example.invalid" }], total: 1, page: 2, pageSize: 10 });
     const query = findMany.mock.calls[0]![0] as any;
@@ -52,7 +52,7 @@ describe("member display numbers", () => {
   it("does not treat an email or out-of-range search as an integer database filter", async () => {
     vi.stubEnv("APP_REALM", "global");
     const findMany = vi.fn(async (_query: any) => []);
-    const service = new AdminService({ user: { findMany, count: async () => 0 }, $transaction: (queries: Promise<unknown>[]) => Promise.all(queries) } as any, {} as any);
+    const service = new AdminService({ user: { findMany, count: async () => 0 }, commerceEmployee: { findMany: async () => [] }, $transaction: (queries: Promise<unknown>[]) => Promise.all(queries) } as any, {} as any);
     for (const search of ["qa@example.invalid", "9999999999999999999999999", "-1"]) await service.members(search);
     for (const [query] of findMany.mock.calls as unknown as [any][]) expect(query.where.OR.some((part: any) => "compatibilityId" in part)).toBe(false);
   });

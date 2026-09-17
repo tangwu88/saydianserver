@@ -85,8 +85,8 @@ describe("employee dashboard filters", () => {
   });
 });
 
-describe("employee withdrawal summary agrees with application limits", () => {
-  it("does not advertise eligibility when the remaining daily allowance is below the minimum", async () => {
+describe("employee withdrawal summary agrees with available commission", () => {
+  it("allows available commission without legacy daily/minimum limits and never exposes the stored identity", async () => {
     const db = {
       commerceEmployeeWallet: { findUnique: async () => ({ availableCents: 1000, debtCents: 0 }) },
       commerceEmployeePayoutIdentity: { findUnique: async () => ({ verifiedAt: now, verificationEvidence: "test",
@@ -96,7 +96,7 @@ describe("employee withdrawal summary agrees with application limits", () => {
         dailyWithdrawLimitCents: 500, settlementDays: 7 }) },
     };
     const result = await new CommerceWithdrawalService(db as unknown as PrismaService).employeeSummary("employee-1");
-    expect(result.dailyRemainingCents).toBe(50); expect(result.availableAmountCents).toBe(50);
-    expect(result.canApply).toBe(false); expect(JSON.stringify(result)).not.toContain("do-not-expose");
+    expect(result.dailyRemainingCents).toBeNull(); expect(result.availableAmountCents).toBe(1000);
+    expect(result.canApply).toBe(true); expect(JSON.stringify(result)).not.toContain("do-not-expose");
   });
 });

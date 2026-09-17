@@ -17,6 +17,7 @@ import { parseGlobalDownloadManifest } from "../support/global-download-manifest
 import { withCategoryNumbers } from "./article-category-number";
 import { cancelCommerceOrderInTransaction } from "../commerce/commerce-order-cancellation";
 import { importJushuitanProductBySku } from "./jushuitan-product-import";
+import { memberPromoterExternalId } from "../common/member-promoter-identity";
 
 const adminOrderPaymentSelect = {
   id: true,
@@ -171,9 +172,19 @@ export class AdminService {
     const page = Math.min(Math.max(Math.trunc(Number(pageInput)) || 1, 1), 1_000_000);
     const pageSize = Math.min(Math.max(Math.trunc(Number(pageSizeInput)) || 30, 1), 100);
     const memberNo = /^[1-9]\d{0,9}$/.test(search) && Number(search) <= 2_147_483_647 ? Number(search) : null;
+    const promotionMatches = search
+      ? await this.prisma.commerceEmployee.findMany({
+          where: { referralCode: { contains: search, mode: "insensitive" } },
+          select: { id: true, wecomUserId: true },
+        })
+      : [];
+    const promotedMemberIds = promotionMatches
+      .map((item) => /^member:([0-9a-f-]{36})$/i.exec(item.wecomUserId)?.[1])
+      .filter((id): id is string => Boolean(id));
+    const promotionEmployeeIds = promotionMatches.map((item) => item.id);
     const where = search
       ? {
-          OR: [{ nickname: { contains: search, mode: "insensitive" as const } }, { mobile: { contains: search } }, { legacyMemberId: { contains: search } }, ...(isGlobalRealm() ? [{ email: { contains: search, mode: "insensitive" as const } }] : []), ...(memberNo !== null ? [{ compatibilityId: memberNo }] : [])],
+          OR: [{ nickname: { contains: search, mode: "insensitive" as const } }, { mobile: { contains: search } }, { legacyMemberId: { contains: search } }, ...(isGlobalRealm() ? [{ email: { contains: search, mode: "insensitive" as const } }] : []), ...(memberNo !== null ? [{ compatibilityId: memberNo }] : []), ...(promotedMemberIds.length ? [{ id: { in: promotedMemberIds } }] : []), ...(promotionEmployeeIds.length ? [{ referralEmployeeId: { in: promotionEmployeeIds } }] : [])],
         }
       : {};
     const [items, total] = await this.prisma.$transaction([
@@ -184,20 +195,32 @@ export class AdminService {
         take: pageSize,
         include: {
           _count: { select: { healthRecords: true, devices: true } },
-          referralEmployee: { select: { id: true, name: true, referralCode: true, active: true, wecomUserId: true } },
+          referralEmployee: { select: { id: true, name: true, mobile: true, avatarUrl: true, referralCode: true, active: true, wecomUserId: true } },
           pointAccount: { select: { balanceCents: true } },
         },
       }),
       this.prisma.user.count({ where }),
     ]);
+    const ownPromoters = items.length
+      ? await this.prisma.commerceEmployee.findMany({
+          where: { wecomUserId: { in: items.map((item) => memberPromoterExternalId(item.id)) } },
+          select: { wecomUserId: true, referralCode: true, active: true },
+        })
+      : [];
+    const promotionByUserId = new Map(
+      ownPromoters.map((item) => [item.wecomUserId.slice("member:".length), item]),
+    );
     return {
       items: items.map((item) => ({
         ...this.memberVerificationFields(item),
         legacyMemberId: item.legacyMemberId,
         nickname: item.nickname,
         avatarUrl: item.avatarUrl,
+        promotionCode: promotionByUserId.get(item.id)?.referralCode ?? null,
+        promotionActive: promotionByUserId.get(item.id)?.active ?? null,
         referralEmployeeId: item.referralEmployeeId,
         referralEmployee: item.referralEmployee,
+        referrerProfile: item.referralEmployee,
         referrer: item.referralEmployee ? `${item.referralEmployee.name} · ${item.referralEmployee.referralCode}` : null,
         pointBalanceCents: item.pointAccount?.balanceCents ?? null,
         status: item.status,
