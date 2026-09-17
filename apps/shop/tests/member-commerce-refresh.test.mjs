@@ -32,9 +32,21 @@ test("coupon gifts produce a poster, survive login and are visible during checko
   assert.match(read("pages/checkout/index.vue"), /showBenefits=ref\(true\)/);
 });
 
-test("home categories use visual cards and keep the all-products action right aligned", () => {
+test("home categories stay in one horizontal row and keep the all-products action right aligned", () => {
   const home = read("pages/home/index.vue");
   assert.match(home, /class="category-icon"/);
   assert.match(home, /border-radius:16px/);
-  assert.match(home, /\.section-title \.text-button\{width:auto;margin-left:auto/);
+  assert.match(home, /\.catalog-side \{ display:flex; flex-wrap:nowrap/);
+  assert.match(home, /overflow-x:auto/);
+  assert.match(home, /\.section-title>text\{flex:1/);
+  assert.match(home, /margin:0 0 0 auto!important/);
+});
+
+test("withdrawal form captures payout details and explains the frozen commission lifecycle", () => {
+  const panel = read("components/EmployeeWithdrawalPanel.vue");
+  for (const field of ["payoutMethod", "accountName", "payoutAccount", "bankName"]) assert.match(panel, new RegExp(field));
+  assert.match(panel, /有可用佣金即可申请/);
+  assert.match(panel, /后台审核通过后显示为已提现/);
+  assert.match(panel, /已提交，佣金已冻结/);
+  assert.match(panel, /SUCCEEDED: "已提现"/);
 });

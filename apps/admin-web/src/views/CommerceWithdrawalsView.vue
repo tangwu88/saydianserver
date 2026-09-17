@@ -5,9 +5,11 @@ import { api, readableError, responseData } from "../api";
 
 type Withdrawal = { id: string; employeeId: string; employee: { name: string }; amountCents: number; status: string;
   executionOwner: string; sourceSystem: string; version: number; accountHint: string | null; providerTransferId: string | null;
-  receiptReference: string | null; createdAt: string; reviewNote: string | null };
-const labels: Record<string, string> = { SUBMITTED: "待审核", APPROVED: "已审核，待登记回执", PROCESSING: "供应商处理中",
-  WAIT_USER_CONFIRM: "等待收款确认", SUCCEEDED: "已付款", FAILED: "已失败并释放冻结", REJECTED: "已拒绝", CANCELLED: "已取消" };
+  receiptReference: string | null; createdAt: string; reviewNote: string | null;
+  payoutDetails: { payoutMethod: string; accountName: string; payoutAccount: string; bankName: string } };
+const labels: Record<string, string> = { SUBMITTED: "待审核（佣金已冻结）", APPROVED: "历史已审核，待登记回执", PROCESSING: "供应商处理中",
+  WAIT_USER_CONFIRM: "等待收款确认", SUCCEEDED: "已提现", FAILED: "已失败并释放冻结", REJECTED: "已拒绝并退回", CANCELLED: "已取消" };
+const payoutLabels: Record<string, string> = { WECHAT: "微信", ALIPAY: "支付宝", BANK: "银行卡" };
 const rows = ref<Withdrawal[]>([]), total = ref(0), page = ref(1), status = ref(""), loading = ref(false), busy = ref(false);
 const active = ref<Withdrawal>(), action = ref<"APPROVE" | "REJECT" | "MANUAL" | "VERIFY">("APPROVE"), visible = ref(false);
 const form = reactive({ note: "", providerTransferId: "", amountCents: 0, recipientOpenId: "", receiptReference: "", evidence: "", completedAt: "", result: "SUCCEEDED", confirmedExternalResult: false, idempotencyKey: "" });
@@ -33,7 +35,7 @@ async function save() {
     await api.post(`/commerce/withdrawals/${active.value.id}/${endpoint}`, review
       ? { decision: action.value, note: form.note, version: active.value.version, idempotencyKey: form.idempotencyKey }
       : { ...form, version: active.value.version, completedAt: form.completedAt ? new Date(form.completedAt).toISOString() : "" });
-    ElMessage.success(review ? "审核已记录" : "核验结果已入账；本系统未发起任何转账");
+    ElMessage.success(review ? (action.value === "APPROVE" ? "审核通过，已记为已提现" : "已拒绝并退回可用佣金") : "核验结果已入账；本系统未发起任何转账");
     visible.value = false; await load();
   } catch (error) { ElMessage.error(readableError(error)); }
   finally { busy.value = false; }
@@ -43,8 +45,8 @@ onMounted(load);
 
 <template>
   <section class="page">
-    <h1 class="page-title">员工提现</h1>
-    <el-alert title="仅财务或超级管理员可操作。系统只冻结余额、审核及登记真实付款回执，不发起自动转账；迁入在途提现不得重新付款。" type="warning" :closable="false" />
+    <h1 class="page-title">用户提现</h1>
+    <el-alert title="用户提交时已冻结对应佣金。审核通过前请核对收款信息并完成线下付款；通过后系统记为已提现并扣除冻结佣金。系统不会自动发起第三方转账。" type="warning" :closable="false" />
     <div class="toolbar">
       <el-select v-model="status" clearable placeholder="全部状态" style="width: 230px" @change="page = 1; load()"><el-option v-for="(label, key) in labels" :key="key" :value="key" :label="label" /></el-select>
       <el-button :loading="loading" @click="load">刷新</el-button>
@@ -53,12 +55,14 @@ onMounted(load);
       <el-table-column label="员工" min-width="120"><template #default="{ row }">{{ row.employee.name }}</template></el-table-column>
       <el-table-column prop="id" label="提现编号" min-width="180" show-overflow-tooltip />
       <el-table-column label="金额（元）" width="110"><template #default="{ row }">{{ money(row.amountCents) }}</template></el-table-column>
-      <el-table-column prop="accountHint" label="核验收款身份" width="145" />
+      <el-table-column label="收款信息" min-width="240"><template #default="{ row }">
+        <div class="payout-detail"><b>{{ payoutLabels[row.payoutDetails?.payoutMethod] || row.payoutDetails?.payoutMethod || "历史账户" }}</b><span>{{ row.payoutDetails?.accountName || "未记录姓名" }} · {{ row.payoutDetails?.payoutAccount || row.accountHint || "未记录账号" }}</span><span v-if="row.payoutDetails?.bankName">{{ row.payoutDetails.bankName }}</span></div>
+      </template></el-table-column>
       <el-table-column label="状态 / 所有权" min-width="190"><template #default="{ row }">{{ labels[row.status] || row.status }}<div class="muted">{{ row.executionOwner === 'NEW_SYSTEM' ? '新系统已接管' : '原系统锁定，待核验' }}</div></template></el-table-column>
       <el-table-column prop="providerTransferId" label="原转账单号" min-width="150" show-overflow-tooltip />
       <el-table-column label="操作" width="250"><template #default="{ row }">
         <template v-if="row.executionOwner === 'NEW_SYSTEM' && !row.providerTransferId">
-          <el-button v-if="row.status === 'SUBMITTED'" size="small" @click="open(row, 'APPROVE')">批准</el-button>
+          <el-button v-if="row.status === 'SUBMITTED'" size="small" type="primary" @click="open(row, 'APPROVE')">审核通过</el-button>
           <el-button v-if="['SUBMITTED', 'APPROVED'].includes(row.status)" size="small" type="danger" plain @click="open(row, 'REJECT')">拒绝</el-button>
           <el-button v-if="row.status === 'APPROVED'" size="small" type="primary" @click="open(row, 'MANUAL')">登记付款回执</el-button>
         </template>
@@ -66,10 +70,16 @@ onMounted(load);
       </template></el-table-column>
     </el-table>
     <el-pagination v-model:current-page="page" :page-size="30" :total="total" layout="prev, pager, next, total" @current-change="load" />
-    <el-dialog v-model="visible" :title="action === 'APPROVE' ? '批准提现（不会打款）' : action === 'REJECT' ? '拒绝并释放冻结' : action === 'VERIFY' ? '核验原供应商终态' : '登记已完成的人工付款'" width="min(720px, 94vw)" :close-on-click-modal="!busy" :show-close="!busy">
+    <el-dialog v-model="visible" :title="action === 'APPROVE' ? '审核通过并确认已提现' : action === 'REJECT' ? '拒绝并释放冻结' : action === 'VERIFY' ? '核验原供应商终态' : '登记已完成的人工付款'" width="min(720px, 94vw)" :close-on-click-modal="!busy" :show-close="!busy">
       <el-form label-width="125px" :disabled="busy">
         <el-form-item label="提现金额">¥ {{ money(active?.amountCents || 0) }}</el-form-item>
-        <el-form-item v-if="action === 'APPROVE' || action === 'REJECT'" label="审核说明"><el-input v-model="form.note" type="textarea" :rows="3" maxlength="1000" /></el-form-item>
+        <el-form-item v-if="active?.payoutDetails" label="收款信息">
+          <div class="payout-detail"><b>{{ payoutLabels[active.payoutDetails.payoutMethod] || active.payoutDetails.payoutMethod }}</b><span>{{ active.payoutDetails.accountName }} · {{ active.payoutDetails.payoutAccount }}</span><span v-if="active.payoutDetails.bankName">{{ active.payoutDetails.bankName }}</span></div>
+        </el-form-item>
+        <template v-if="action === 'APPROVE' || action === 'REJECT'">
+          <el-alert v-if="action === 'APPROVE'" title="确认前请先按上方收款信息完成线下付款。确认后前端会立即显示“已提现”，冻结佣金转入累计已付。" type="warning" :closable="false" />
+          <el-form-item label="审核说明"><el-input v-model="form.note" type="textarea" :rows="3" maxlength="1000" placeholder="必填，例如：已核对收款信息并完成线下付款" /></el-form-item>
+        </template>
         <template v-else>
           <el-alert title="必须先在原供应商/实际付款渠道核实结果，再登记。请勿为原在途提现重新付款；失败结果会释放冻结并优先抵还退款欠款。" :closable="false" type="warning" />
           <el-form-item label="原转账单号"><el-input v-model="form.providerTransferId" :disabled="action === 'VERIFY'" /></el-form-item>
@@ -86,4 +96,4 @@ onMounted(load);
     </el-dialog>
   </section>
 </template>
-<style scoped>.toolbar { display: flex; gap: 12px; margin: 18px 0; }.el-pagination { margin-top: 18px; }.el-alert { margin-bottom: 16px; }</style>
+<style scoped>.toolbar { display: flex; gap: 12px; margin: 18px 0; }.el-pagination { margin-top: 18px; }.el-alert { margin-bottom: 16px; }.payout-detail{display:grid;gap:3px}.payout-detail span{color:#667085;font-size:12px;overflow-wrap:anywhere}</style>

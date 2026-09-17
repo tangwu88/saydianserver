@@ -80,6 +80,13 @@ describe("international member contact verification administration", () => {
         findMany: vi.fn(async () => [row]),
         count: vi.fn(async () => 1),
       },
+      commerceEmployee: {
+        findMany: vi.fn(async () => [{
+          wecomUserId: `member:${row.id}`,
+          referralCode: "A1B2C3D4E5",
+          active: true,
+        }]),
+      },
       $transaction: vi.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
     };
     const result = await new AdminService(prisma as any, {} as any).members();
@@ -96,9 +103,58 @@ describe("international member contact verification administration", () => {
       verificationVersion: initialUpdatedAt.toISOString(),
       mobile: row.mobile,
       pointBalanceCents: 1250,
+      promotionCode: "A1B2C3D4E5",
+      promotionActive: true,
     });
     expect(item.mobileMasked).not.toBe(row.mobile);
     expect(item.emailMasked).not.toBe(row.email);
+  });
+
+  it("searches member and upstream referral codes and returns the full upstream profile", async () => {
+    const upstreamMemberId = "00000000-0000-4000-8000-000000000456";
+    const row = userRow({
+      referralEmployeeId,
+      referralEmployee: {
+        id: referralEmployeeId,
+        name: "上级会员",
+        mobile: "13812345678",
+        avatarUrl: "https://cdn.example.invalid/referrer.png",
+        referralCode: "UPSTREAM01",
+        active: true,
+        wecomUserId: `member:${upstreamMemberId}`,
+      },
+    });
+    const findUsers = vi.fn(async (_input: any) => [row]);
+    const findPromoters = vi.fn()
+      .mockResolvedValueOnce([
+        { id: referralEmployeeId, wecomUserId: `member:${upstreamMemberId}` },
+        { id: "00000000-0000-4000-8000-000000000789", wecomUserId: `member:${row.id}` },
+      ])
+      .mockResolvedValueOnce([{ wecomUserId: `member:${row.id}`, referralCode: "UPSTREAM01", active: true }]);
+    const prisma = {
+      user: { findMany: findUsers, count: vi.fn(async () => 1) },
+      commerceEmployee: { findMany: findPromoters },
+      $transaction: vi.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
+    };
+
+    const result = await new AdminService(prisma as any, {} as any).members("STREAM");
+
+    expect(findPromoters.mock.calls[0]?.[0]).toMatchObject({
+      where: { referralCode: { contains: "STREAM", mode: "insensitive" } },
+    });
+    expect(findUsers.mock.calls[0]?.[0]?.where.OR).toEqual(expect.arrayContaining([
+      { id: { in: expect.arrayContaining([row.id]) } },
+      { referralEmployeeId: { in: expect.arrayContaining([referralEmployeeId]) } },
+    ]));
+    expect(result.items[0]).toMatchObject({
+      promotionCode: "UPSTREAM01",
+      referrerProfile: {
+        name: "上级会员",
+        mobile: "13812345678",
+        avatarUrl: "https://cdn.example.invalid/referrer.png",
+        referralCode: "UPSTREAM01",
+      },
+    });
   });
 
   it("lets a super administrator confirm a stored contact and writes a PII-free audit record", async () => {

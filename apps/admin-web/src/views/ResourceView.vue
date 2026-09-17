@@ -13,7 +13,7 @@ import ContentImageField from "../components/ContentImageField.vue";
 import { globalDownloadEditorToManifest as downloadEditorToManifest, globalDownloadManifestToEditor as downloadManifestToEditor, createGlobalDownloadDraft, type DownloadManifestEditor } from "../global-download-setting";
 
 type Row = Record<string, any>;
-const memberColumns = ["avatarUrl", "memberNo", "emailMasked", "mobile", "nickname", "referrer", "pointBalanceCents", "status", "createdAt"];
+const memberColumns = ["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "referrerProfile", "pointBalanceCents", "status", "createdAt"];
 const memberPageSize = 30;
 const route = useRoute();
 const loading = ref(false);
@@ -94,7 +94,8 @@ const fieldLabels: Record<string, string> = {
   mobile: "手机号",
   mobileMasked: "手机号",
   avatarUrl: "头像",
-  referrer: "推广上级",
+  promotionCode: "推广码",
+  referrerProfile: "推广上级",
   pointBalanceCents: "积分余额",
   nickname: "昵称",
   status: "状态",
@@ -996,7 +997,7 @@ onBeforeUnmount(() => {
       <CommerceWorkspace v-if="isCommerceResource" v-model:search="search" :resource="resource" :rows="rows" :meta="resourceMeta" :loading="loading" :createable="createable" @refresh="refreshCommerce" @page-change="changeCommercePage" @status-change="changeCommerceStatus" @create="openCreate" @edit="openEdit" @refund="refundAfterSale" @ship="openShipment" @shipping-refund="requestShippingRefund" @run-action="runAction" @batch-products="batchProducts" />
       <template v-else>
         <div class="toolbar">
-          <el-input v-if="searchable" v-model="search" placeholder="邮箱、会员编号、手机号或昵称" clearable style="width: 300px" @keyup.enter="searchMembers" @clear="searchMembers" />
+          <el-input v-if="searchable" v-model="search" placeholder="邮箱、会员编号、手机号、昵称或推广码" clearable style="width: 340px" @keyup.enter="searchMembers" @clear="searchMembers" />
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
           <el-button v-if="createable" @click="openCreate">新增</el-button>
@@ -1004,9 +1005,24 @@ onBeforeUnmount(() => {
         </div>
         <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
         <el-table v-if="!loadError" v-loading="loading" :data="rows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
-          <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" :min-width="resource === 'members' && ['emailMasked', 'mobile', 'referrer'].includes(column) ? 220 : column === 'avatarUrl' ? 78 : 145" show-overflow-tooltip>
+          <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" :min-width="resource === 'members' && column === 'referrerProfile' ? 280 : resource === 'members' && ['emailMasked', 'mobile'].includes(column) ? 220 : column === 'avatarUrl' ? 78 : 145" :show-overflow-tooltip="!(resource === 'members' && column === 'referrerProfile')">
             <template #default="scope">
               <el-avatar v-if="resource === 'members' && column === 'avatarUrl'" :size="38" :src="scope.row.avatarUrl || undefined">{{ String(scope.row.nickname || "会员").slice(0, 1) }}</el-avatar>
+              <div v-else-if="resource === 'members' && column === 'promotionCode'" style="display: grid; gap: 4px">
+                <span>{{ scope.row.promotionCode || "未生成" }}</span>
+                <el-tag v-if="scope.row.promotionCode && scope.row.promotionActive === false" size="small" type="danger">已停用</el-tag>
+              </div>
+              <div v-else-if="resource === 'members' && column === 'referrerProfile'" class="member-referrer">
+                <template v-if="scope.row.referrerProfile">
+                  <el-avatar :size="38" :src="scope.row.referrerProfile.avatarUrl || undefined">{{ String(scope.row.referrerProfile.name || "上级").slice(0, 1) }}</el-avatar>
+                  <div>
+                    <b>{{ scope.row.referrerProfile.name || "未填写昵称" }}</b>
+                    <span>{{ scope.row.referrerProfile.mobile || "未填写手机号" }}</span>
+                    <span>推广码：{{ scope.row.referrerProfile.referralCode }}</span>
+                  </div>
+                </template>
+                <span v-else class="muted">无推广上级</span>
+              </div>
               <span v-else-if="resource === 'members' && column === 'pointBalanceCents'">{{ pointMoney(scope.row.pointBalanceCents) }}</span>
               <div v-else-if="resource === 'members' && ['emailMasked', 'mobile'].includes(column)" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
                 <span>{{ render(scope.row[column]) }}</span>
@@ -1446,3 +1462,9 @@ onBeforeUnmount(() => {
     </el-dialog>
   </section>
 </template>
+<style scoped>
+.member-referrer { display: flex; align-items: center; gap: 10px; min-height: 42px; }
+.member-referrer > div { display: grid; gap: 2px; min-width: 0; }
+.member-referrer b, .member-referrer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-referrer span { color: #667085; font-size: 12px; }
+</style>

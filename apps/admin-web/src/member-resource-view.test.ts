@@ -78,6 +78,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
     route,
     watch,
     onBeforeUnmount,
+    sfc,
   };
 }
 
@@ -94,13 +95,17 @@ function deferred<T>() {
 describe("international member admin list", () => {
   it("shows fixed numeric-ID columns, including on empty lists", async () => {
     const h = harness();
-    expect(h.columns.value).toEqual(["avatarUrl", "memberNo", "emailMasked", "mobile", "nickname", "referrer", "pointBalanceCents", "status", "createdAt"]);
+    expect(h.columns.value).toEqual(["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "referrerProfile", "pointBalanceCents", "status", "createdAt"]);
+    expect(h.sfc).toContain("邮箱、会员编号、手机号、昵称或推广码");
+    expect(h.sfc).toContain("scope.row.referrerProfile.avatarUrl");
+    expect(h.sfc).toContain("scope.row.referrerProfile.mobile");
+    expect(h.sfc).toContain("scope.row.referrerProfile.referralCode");
     expect(h.columns.value).not.toContain("id");
     await h.load();
     expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/members", {
       params: { page: 1, pageSize: 30 },
     });
-    expect(h.columns.value).toHaveLength(9);
+    expect(h.columns.value).toHaveLength(10);
     expect(h.resourceMeta.value.total).toBe(0);
   });
 

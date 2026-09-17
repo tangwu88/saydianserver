@@ -1210,14 +1210,14 @@ test("global account removes the redundant order shortcuts but keeps member prom
   assert.equal(h.requests.length, 0);
 });
 
-test("global mobile home wraps category navigation and member promotion keeps a deterministic return path", () => {
+test("global mobile home keeps category navigation on one horizontal row and member promotion keeps a deterministic return path", () => {
   const home = readFileSync(resolve(source, "pages/home/index.vue"), "utf8");
   assert.match(home, /class="catalog-side" role="navigation" aria-label="商品分类"/);
-  assert.match(home, /\.catalog-side\s*\{[^}]*display:grid;[^}]*repeat\(auto-fit,minmax\(142px,1fr\)\)/);
+  assert.match(home, /\.catalog-side\s*\{[^}]*display:flex;[^}]*flex-wrap:nowrap/);
   assert.match(home, /class="category-icon"/);
-  assert.match(home, /\.section-title \.text-button\{width:auto;margin-left:auto/);
+  assert.match(home, /\.section-title \.text-button\{[^}]*margin:0 0 0 auto!important/);
   assert.match(home, /\.category-name\s*\{[^}]*text-overflow:ellipsis/);
-  assert.doesNotMatch(home, /\.catalog-side\s*\{[^}]*overflow:auto/);
+  assert.match(home, /\.catalog-side\s*\{[^}]*overflow-x:auto/);
 
   const promotion = readFileSync(resolve(source, "pages/employee/index.vue"), "utf8");
   const brandIdentity = readFileSync(resolve(source, "components/BrandIdentity.vue"), "utf8");
