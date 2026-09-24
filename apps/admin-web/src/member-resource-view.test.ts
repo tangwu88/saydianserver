@@ -42,6 +42,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     get: vi.fn(async (..._args: any[]): Promise<any> => envelope()),
     patch: vi.fn(async () => ({})),
     post: vi.fn(async () => ({})),
+    delete: vi.fn(async () => ({})),
   };
   const messages = { error: vi.fn(), success: vi.fn() };
   const prompt = vi.fn(async (..._args: any[]): Promise<any> => ({
@@ -68,7 +69,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     downloadEditorToManifest: globalDownloadEditorToManifest,
     downloadManifestToEditor: globalDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -816,6 +817,24 @@ describe("administrator commerce and service editor improvements", () => {
     expect(h.sfc).toContain('v-if="erpLookupError"');
     expect(h.sfc).toContain(':title="erpLookupError"');
     expect(h.sfc).toContain('@input="erpLookupError = \'\'"');
+  });
+
+  it("confirms and deletes a product before refreshing the list", async () => {
+    const h = harness();
+    h.route.params.resource = "commerce-products";
+    h.api.get.mockResolvedValueOnce(envelope([], 0));
+
+    await h.deleteCommerceProduct({ id: "product-1", displayName: "测试手表" });
+
+    expect(h.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("测试手表"),
+      "删除商品",
+      expect.objectContaining({ confirmButtonText: "确认删除" }),
+    );
+    expect(h.api.delete).toHaveBeenCalledWith("/commerce-products/product-1");
+    expect(h.messages.success).toHaveBeenCalledWith("商品已删除");
+    expect(h.api.get).toHaveBeenCalledWith("/commerce-products", { params: { page: 1 } });
+    expect(h.sfc).toContain('@delete-product="deleteCommerceProduct"');
   });
 
   it("opens a new coupon with a valid 30-day period and blocks missing dates before the API call", async () => {

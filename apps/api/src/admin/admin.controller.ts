@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -325,6 +326,12 @@ export class AdminController {
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
   updateCommerceProduct(@Param("id") id: string, @Body() input: unknown) {
     return this.admin.saveCommerceProduct(id, input);
+  }
+
+  @Delete("commerce-products/:id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  deleteCommerceProduct(@Param("id") id: string) {
+    return this.admin.deleteCommerceProduct(id);
   }
 
   @Get("commerce-categories")

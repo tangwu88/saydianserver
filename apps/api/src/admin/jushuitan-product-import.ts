@@ -145,111 +145,120 @@ export async function importJushuitanProductBySku(
           : {}),
       },
     );
-    const productRow = exactSkuRow(
-      jushuitanRows(productResponse),
-      requestedSku,
-    );
+    const initialProductRows = jushuitanRows(productResponse);
+    const productRow = exactSkuRow(initialProductRows, requestedSku);
     if (!productRow) {
       await markIntegrationVerified(prisma, "jushuitan");
       throw new NotFoundException(`聚水潭未找到 SKU：${requestedSku}`);
     }
-    const mapped = mapJushuitanProduct(productRow);
-
-    const inventoryResponse = await callJushuitan(
+    const requestedProduct = mapJushuitanProduct(productRow);
+    const spuRows = await queryJushuitanSpuRows(
       settings,
-      settings.inventoryOperation,
-      {
-        sku_ids: requestedSku,
-        page_index: 1,
-        page_size: 100,
-        ...(settings.inventoryOperation.startsWith("/")
-          ? { has_lock_qty: true }
-          : {}),
-      },
+      requestedProduct.erpItemId,
     );
-    const inventoryRow = exactSkuRow(
-      jushuitanRows(inventoryResponse),
-      requestedSku,
+    const familyRows = uniqueSkuRows(
+      [...initialProductRows, ...spuRows].filter(
+        (row) => itemId(row) === requestedProduct.erpItemId,
+      ),
     );
-    if (!inventoryRow) {
+    const mappedProducts = familyRows.map(mapJushuitanProduct);
+    if (!mappedProducts.some((item) => sameSku(item.erpSkuId, requestedSku))) {
       throw new ServiceUnavailableException(
-        "聚水潭已返回商品资料，但未返回该 SKU 的库存；本次没有导入，请稍后重试",
+        "聚水潭款式查询未返回刚才定位的 SKU；本次没有导入，请稍后重试",
       );
     }
-    const stock = inventoryStock(inventoryRow);
+
+    const inventoryRows = await queryJushuitanInventoryRows(
+      settings,
+      mappedProducts.map((item) => item.erpSkuId),
+    );
+    const inventoryBySku = new Map(
+      inventoryRows.map((row) => [normalizedSku(row), row]),
+    );
+    const missingInventory = mappedProducts.filter(
+      (item) => !inventoryBySku.has(item.erpSkuId.toLowerCase()),
+    );
+    if (missingInventory.length) {
+      throw new ServiceUnavailableException(
+        `聚水潭已返回商品资料，但有 ${missingInventory.length} 个同款 SKU 未返回库存；本次没有导入，请稍后重试`,
+      );
+    }
+    const stockBySku = new Map(
+      mappedProducts.map((item) => [
+        item.erpSkuId,
+        inventoryStock(inventoryBySku.get(item.erpSkuId.toLowerCase())!),
+      ]),
+    );
     await markIntegrationVerified(prisma, "jushuitan");
 
     const saved = await prisma.$transaction(async (tx) => {
       const existingProduct = await tx.commerceProduct.findUnique({
-        where: { erpItemId: mapped.erpItemId },
+        where: { erpItemId: requestedProduct.erpItemId },
       });
       if (existingProduct && existingProduct.source !== "ERP") {
         throw new ConflictException(
           "ERP 款式编码与本地商品冲突，请先核对商品编码",
         );
       }
-      const existingSku = await tx.commerceSku.findUnique({
-        where: { erpSkuId: mapped.erpSkuId },
-        include: { product: { select: { source: true } } },
-      });
-      if (existingSku && existingSku.product.source !== "ERP") {
-        throw new ConflictException("ERP SKU 与本地商品规格冲突，请先核对 SKU");
+      for (const mapped of mappedProducts) {
+        const existingSku = await tx.commerceSku.findUnique({
+          where: { erpSkuId: mapped.erpSkuId },
+          include: {
+            product: { select: { source: true, erpItemId: true } },
+          },
+        });
+        if (
+          existingSku &&
+          (existingSku.product.source !== "ERP" ||
+            existingSku.product.erpItemId !== mapped.erpItemId)
+        ) {
+          throw new ConflictException(
+            `ERP SKU ${mapped.erpSkuId} 与其他本地商品规格冲突，请先核对 SKU`,
+          );
+        }
       }
 
       const product = await tx.commerceProduct.upsert({
-        where: { erpItemId: mapped.erpItemId },
+        where: { erpItemId: requestedProduct.erpItemId },
         create: {
-          erpItemId: mapped.erpItemId,
+          erpItemId: requestedProduct.erpItemId,
           source: "ERP",
-          name: mapped.name,
-          displayName: mapped.name,
-          subtitle: mapped.shortName,
-          brand: mapped.brand,
-          coverImage: mapped.image,
-          gallery: mapped.gallery,
-          tags: mapped.tags,
+          name: requestedProduct.name,
+          displayName: requestedProduct.name,
+          subtitle: requestedProduct.shortName,
+          brand: requestedProduct.brand,
+          coverImage: requestedProduct.image,
+          gallery: requestedProduct.gallery,
+          tags: requestedProduct.tags,
           status: ProductStatus.DRAFT,
-          erpModifiedAt: mapped.modifiedAt,
+          erpModifiedAt: requestedProduct.modifiedAt,
         },
         update: {
-          name: mapped.name,
-          erpModifiedAt: mapped.modifiedAt,
-          ...(existingProduct?.displayName ? {} : { displayName: mapped.name }),
-          ...(existingProduct?.subtitle || !mapped.shortName
+          name: requestedProduct.name,
+          erpModifiedAt: requestedProduct.modifiedAt,
+          ...(existingProduct?.displayName
             ? {}
-            : { subtitle: mapped.shortName }),
-          ...(existingProduct?.brand || !mapped.brand
+            : { displayName: requestedProduct.name }),
+          ...(existingProduct?.subtitle || !requestedProduct.shortName
             ? {}
-            : { brand: mapped.brand }),
-          ...(existingProduct?.coverImage || !mapped.image
+            : { subtitle: requestedProduct.shortName }),
+          ...(existingProduct?.brand || !requestedProduct.brand
             ? {}
-            : { coverImage: mapped.image }),
-          ...(existingProduct?.gallery.length || !mapped.gallery.length
+            : { brand: requestedProduct.brand }),
+          ...(existingProduct?.coverImage || !requestedProduct.image
             ? {}
-            : { gallery: mapped.gallery }),
-          ...(existingProduct?.tags.length || !mapped.tags.length
+            : { coverImage: requestedProduct.image }),
+          ...(existingProduct?.gallery.length ||
+          !requestedProduct.gallery.length
             ? {}
-            : { tags: mapped.tags }),
+            : { gallery: requestedProduct.gallery }),
+          ...(existingProduct?.tags.length || !requestedProduct.tags.length
+            ? {}
+            : { tags: requestedProduct.tags }),
         },
       });
-      await tx.commerceSku.upsert({
-        where: { erpSkuId: mapped.erpSkuId },
-        create: {
-          productId: product.id,
-          erpItemId: mapped.erpItemId,
-          erpSkuId: mapped.erpSkuId,
-          specification: mapped.specification,
-          barcode: mapped.barcode,
-          image: mapped.image,
-          salePriceCents: mapped.salePriceCents,
-          marketPriceCents: mapped.marketPriceCents,
-          costPriceCents: mapped.costPriceCents,
-          stock,
-          weightGrams: mapped.weightGrams,
-          enabled: mapped.enabled,
-          erpModifiedAt: mapped.modifiedAt,
-        },
-        update: {
+      for (const mapped of mappedProducts) {
+        const skuData = {
           productId: product.id,
           erpItemId: mapped.erpItemId,
           specification: mapped.specification,
@@ -258,11 +267,23 @@ export async function importJushuitanProductBySku(
           salePriceCents: mapped.salePriceCents,
           marketPriceCents: mapped.marketPriceCents,
           costPriceCents: mapped.costPriceCents,
-          stock,
+          stock: stockBySku.get(mapped.erpSkuId)!,
           weightGrams: mapped.weightGrams,
           enabled: mapped.enabled,
           erpModifiedAt: mapped.modifiedAt,
+        };
+        await tx.commerceSku.upsert({
+          where: { erpSkuId: mapped.erpSkuId },
+          create: { ...skuData, erpSkuId: mapped.erpSkuId },
+          update: skuData,
+        });
+      }
+      await tx.commerceSku.updateMany({
+        where: {
+          productId: product.id,
+          erpSkuId: { notIn: mappedProducts.map((item) => item.erpSkuId) },
         },
+        data: { enabled: false, stock: 0 },
       });
       return tx.commerceProduct.findUniqueOrThrow({
         where: { id: product.id },
@@ -274,9 +295,18 @@ export async function importJushuitanProductBySku(
       ...saved,
       erpLookup: {
         requestedSku,
+        erpItemId: requestedProduct.erpItemId,
+        skuCount: mappedProducts.length,
         fetchedAt: new Date().toISOString(),
         product: selectedFields(productRow, PRODUCT_FIELDS),
-        inventory: selectedFields(inventoryRow, INVENTORY_FIELDS),
+        inventory: selectedFields(
+          inventoryBySku.get(requestedProduct.erpSkuId.toLowerCase())!,
+          INVENTORY_FIELDS,
+        ),
+        products: familyRows.map((row) => selectedFields(row, PRODUCT_FIELDS)),
+        inventories: inventoryRows.map((row) =>
+          selectedFields(row, INVENTORY_FIELDS),
+        ),
       },
     };
   } catch (error) {
@@ -287,6 +317,53 @@ export async function importJushuitanProductBySku(
         : "聚水潭实时查询失败，请稍后重试",
     );
   }
+}
+
+async function queryJushuitanSpuRows(
+  settings: JushuitanSettings,
+  erpItemId: string,
+): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const response = await callJushuitan(settings, settings.skuOperation, {
+      i_ids: [erpItemId],
+      page_index: page,
+      page_size: 100,
+      ...(settings.skuOperation.startsWith("/")
+        ? { flds: "purchase_price,pics", loadSkuBin: true }
+        : {}),
+    });
+    const pageRows = jushuitanRows(response);
+    rows.push(...pageRows);
+    if (!hasNextPage(response) || pageRows.length === 0) return rows;
+  }
+  throw new ServiceUnavailableException(
+    "聚水潭同款 SKU 数量超过安全分页上限；本次没有导入",
+  );
+}
+
+async function queryJushuitanInventoryRows(
+  settings: JushuitanSettings,
+  skuIds: string[],
+): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  for (let offset = 0; offset < skuIds.length; offset += 100) {
+    const batch = skuIds.slice(offset, offset + 100);
+    const response = await callJushuitan(
+      settings,
+      settings.inventoryOperation,
+      {
+        sku_ids: batch.join(","),
+        page_index: 1,
+        page_size: 100,
+        ...(settings.inventoryOperation.startsWith("/")
+          ? { has_lock_qty: true }
+          : {}),
+      },
+    );
+    rows.push(...jushuitanRows(response));
+  }
+  return uniqueSkuRows(rows);
 }
 
 async function jushuitanSettings(
@@ -516,6 +593,35 @@ function exactSkuRow(
           .toLowerCase() === requestedSku.toLowerCase(),
     )
   );
+}
+
+function itemId(row: Record<string, unknown>): string {
+  return String(row.i_id ?? row.iId ?? "").trim();
+}
+
+function normalizedSku(row: Record<string, unknown>): string {
+  return String(row.sku_id ?? row.skuId ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function sameSku(left: string, right: string): boolean {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+function uniqueSkuRows(
+  rows: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const unique = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const sku = normalizedSku(row);
+    if (sku) unique.set(sku, row);
+  }
+  return [...unique.values()];
+}
+
+function hasNextPage(result: Record<string, unknown>): boolean {
+  return result.has_next === true || safeObject(result.data).has_next === true;
 }
 
 function inventoryStock(row: Record<string, unknown>): number {

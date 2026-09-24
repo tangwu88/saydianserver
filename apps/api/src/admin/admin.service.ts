@@ -1268,6 +1268,29 @@ export class AdminService {
     });
   }
 
+  async deleteCommerceProduct(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const product = await tx.commerceProduct.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          skus: { select: { id: true } },
+          _count: { select: { orderItems: true, reviews: true } },
+        },
+      });
+      if (!product) throw new NotFoundException("商品不存在");
+      if (product._count.orderItems > 0 || product._count.reviews > 0) {
+        throw new ConflictException("该商品已有订单或评价记录，不能删除；请改为归档以保留业务历史");
+      }
+      const skuIds = product.skus.map((sku) => sku.id);
+      if (skuIds.length) await tx.commerceCartItem.deleteMany({ where: { skuId: { in: skuIds } } });
+      await tx.commerceFavorite.deleteMany({ where: { productId: id } });
+      await tx.commerceProduct.delete({ where: { id } });
+      return { id, name: product.name, deleted: true };
+    });
+  }
+
   async quickUpdateCommerceProductSkus(productId: string, input: unknown) {
     const body = safeObject(input);
     if (!Array.isArray(body.skus) || body.skus.length === 0 || body.skus.length > 100) {

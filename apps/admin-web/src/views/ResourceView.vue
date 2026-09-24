@@ -592,6 +592,35 @@ async function loadCommerceProductBySku(): Promise<void> {
   }
 }
 
+async function deleteCommerceProduct(row: Row): Promise<void> {
+  const id = String(row.id ?? "").trim();
+  if (!id) {
+    ElMessage.error("商品编号无效，请刷新后重试");
+    return;
+  }
+  const name = String(row.displayName || row.name || row.erpItemId || "该商品");
+  try {
+    await ElMessageBox.confirm(
+      `确认永久删除“${name}”？删除后无法恢复；已有订单或评价的商品将被系统拦截，请改用归档。`,
+      "删除商品",
+      {
+        confirmButtonText: "确认删除",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+  } catch {
+    return;
+  }
+  try {
+    await api.delete(`/commerce-products/${encodeURIComponent(id)}`);
+    ElMessage.success("商品已删除");
+    await load();
+  } catch (error) {
+    ElMessage.error(readableError(error));
+  }
+}
+
 async function save(): Promise<void> {
   if (needsArticleCategories.value && (!articleCategoriesReady.value || articleCategoryEditorResource.value !== resource.value)) {
     ElMessage.error("请重新打开编辑窗口，等待分类加载成功后保存");
@@ -1030,7 +1059,7 @@ onBeforeUnmount(() => {
   <section class="page">
     <h1 class="page-title">{{ title }}</h1>
     <div class="resource-content">
-      <CommerceWorkspace v-if="isCommerceResource" v-model:search="search" :resource="resource" :rows="rows" :meta="resourceMeta" :loading="loading" :createable="createable" @refresh="refreshCommerce" @page-change="changeCommercePage" @status-change="changeCommerceStatus" @create="openCreate" @edit="openEdit" @refund="refundAfterSale" @ship="openShipment" @shipping-refund="requestShippingRefund" @run-action="runAction" @batch-products="batchProducts" />
+      <CommerceWorkspace v-if="isCommerceResource" v-model:search="search" :resource="resource" :rows="rows" :meta="resourceMeta" :loading="loading" :createable="createable" @refresh="refreshCommerce" @page-change="changeCommercePage" @status-change="changeCommerceStatus" @create="openCreate" @edit="openEdit" @delete-product="deleteCommerceProduct" @refund="refundAfterSale" @ship="openShipment" @shipping-refund="requestShippingRefund" @run-action="runAction" @batch-products="batchProducts" />
       <template v-else>
         <div class="toolbar">
           <el-input v-if="searchable" v-model="search" placeholder="邮箱、会员编号、手机号、昵称或推广码" clearable style="width: 340px" @keyup.enter="searchMembers" @clear="searchMembers" />

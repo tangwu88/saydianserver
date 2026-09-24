@@ -1457,9 +1457,9 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
-      "summary": "按SKU实时获取并导入ERP商品",
-      "request": "{sku:单个ERP SKU，最多100字符}；不读取本地同步列表作为资料来源",
-      "response": "聚水潭商品与库存均成功后新增或刷新草稿商品，并返回完整已知ERP字段；未配置、无权限、未找到或库存缺失时不导入",
+      "summary": "按SKU定位SPU并实时导入ERP商品",
+      "request": "{sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存",
+      "response": "聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入",
       "dependency": "聚水潭商品查询与库存查询",
       "successStatus": 201,
       "contract": {
@@ -1698,6 +1698,41 @@
       "request": "id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?}",
       "response": "展示资料；ERP编号、内部名称、SKU和库存不会被覆盖",
       "dependency": "主库商城/聚水潭",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.deleteCommerceProduct",
+      "method": "DELETE",
+      "path": "/api/saydian-app/admin/v1/commerce-products/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "永久删除未产生业务历史的商品",
+      "request": "id=商品UUID；删除前需由后台二次确认",
+      "response": "无订单或评价时清理购物车、收藏及商品SKU后返回{deleted:true}；已有订单或评价返回409并要求归档",
+      "dependency": "主库商城",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
