@@ -20,6 +20,7 @@ const loading = ref(false);
 const loadError = ref("");
 const saving = ref(false);
 const erpLookupBusy = ref(false);
+const erpLookupError = ref("");
 const rows = ref<Row[]>([]);
 const resourceMeta = ref<Row>({});
 const categoryOptions = ref<Row[]>([]);
@@ -358,6 +359,7 @@ async function openCreate(): Promise<void> {
   if (["commerce-products", "commerce-categories"].includes(resource.value)) await ensureCommerceCategories();
   if (requestId !== editorRequestId || requestedResource !== resource.value) return;
   originalArticleCategoryId.value = null;
+  erpLookupError.value = "";
   dialogMode.value = "edit";
   dialogTitle.value = `新增${title.value}`;
   const defaults: Record<string, Row> = {
@@ -560,9 +562,11 @@ async function loadCommerceProductBySku(): Promise<void> {
   if (erpLookupBusy.value) return;
   const sku = String(form.value._erpLookupSku ?? "").trim();
   if (!sku) {
-    ElMessage.error("请填写 ERP SKU");
+    erpLookupError.value = "请填写 ERP SKU";
+    ElMessage.error(erpLookupError.value);
     return;
   }
+  erpLookupError.value = "";
   erpLookupBusy.value = true;
   try {
     const product = responseData<Row>(await api.post("/commerce-products/erp-import", { sku }));
@@ -580,7 +584,9 @@ async function loadCommerceProductBySku(): Promise<void> {
     ElMessage.success("已从 ERP 实时获取并导入商品资料");
   } catch (error) {
     form.value._erpLookupPending = true;
-    ElMessage.error(readableError(error));
+    const message = readableError(error);
+    erpLookupError.value = message.includes("聚水潭未找到 SKU") ? `${message}。请在聚水潭确认完整 SKU 编码后重试。` : message;
+    ElMessage.error(erpLookupError.value);
   } finally {
     erpLookupBusy.value = false;
   }
@@ -1240,9 +1246,10 @@ onBeforeUnmount(() => {
         <template v-else-if="resource === 'commerce-products'">
           <template v-if="form._erpLookupPending">
             <el-alert title="填写 ERP SKU 后，系统会实时调用聚水潭商品与库存接口；两项都成功才会按草稿导入，不依赖同步任务。" type="info" :closable="false" show-icon />
+            <el-alert v-if="erpLookupError" :title="erpLookupError" type="error" :closable="false" show-icon style="margin-top: 12px" />
             <el-form-item label="ERP SKU（必填）">
               <div style="display: flex; width: 100%; gap: 12px">
-                <el-input v-model="form._erpLookupSku" placeholder="填写 ERP 系统中的 SKU" clearable @keyup.enter="loadCommerceProductBySku" />
+                <el-input v-model="form._erpLookupSku" placeholder="填写 ERP 系统中的 SKU" clearable @input="erpLookupError = ''" @keyup.enter="loadCommerceProductBySku" />
                 <el-button type="primary" :loading="erpLookupBusy" @click="loadCommerceProductBySku">获取 ERP 资料</el-button>
               </div>
             </el-form-item>

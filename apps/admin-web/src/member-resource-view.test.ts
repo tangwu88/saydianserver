@@ -22,7 +22,7 @@ const member = {
 };
 
 // Exercise the actual SFC logic with controlled network completion order.
-function harness(roles = ["SUPER_ADMIN"]) {
+function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可用，请检查后重试") {
   const sfc = readFileSync(new URL("./views/ResourceView.vue", import.meta.url), "utf8");
   const source = ts.createSourceFile("view.ts", sfc.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1]!, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const printer = ts.createPrinter();
@@ -63,12 +63,12 @@ function harness(roles = ["SUPER_ADMIN"]) {
     ElMessage: messages,
     ElMessageBox: { prompt, confirm },
     responseData: (response: any) => response.data.data,
-    readableError: () => "网络不可用，请检查后重试",
+    readableError: () => readableErrorMessage,
     createGlobalDownloadDraft,
     downloadEditorToManifest: globalDownloadEditorToManifest,
     downloadManifestToEditor: globalDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -797,6 +797,25 @@ describe("administrator commerce and service editor improvements", () => {
       tags: ["健康"],
     }));
     expect(h.api.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps ERP lookup failures visible inside the product dialog", async () => {
+    const h = harness(["SUPER_ADMIN"], "聚水潭未找到 SKU：sd-watch-w8");
+    h.route.params.resource = "commerce-products";
+    h.api.get.mockResolvedValueOnce({ data: { data: [] } });
+    await h.openCreate();
+    expect(h.erpLookupError.value).toBe("");
+
+    h.form.value._erpLookupSku = "sd-watch-w8";
+    h.api.post.mockRejectedValueOnce(new Error("provider rejected the SKU"));
+    await h.loadCommerceProductBySku();
+
+    expect(h.form.value._erpLookupPending).toBe(true);
+    expect(h.erpLookupError.value).toBe("聚水潭未找到 SKU：sd-watch-w8。请在聚水潭确认完整 SKU 编码后重试。");
+    expect(h.messages.error).toHaveBeenLastCalledWith("聚水潭未找到 SKU：sd-watch-w8。请在聚水潭确认完整 SKU 编码后重试。");
+    expect(h.sfc).toContain('v-if="erpLookupError"');
+    expect(h.sfc).toContain(':title="erpLookupError"');
+    expect(h.sfc).toContain('@input="erpLookupError = \'\'"');
   });
 
   it("opens a new coupon with a valid 30-day period and blocks missing dates before the API call", async () => {
