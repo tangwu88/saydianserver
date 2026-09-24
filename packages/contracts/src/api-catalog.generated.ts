@@ -23984,6 +23984,31 @@ export const apiCatalog = {
         "source": "apps/api/src/support/support.controller.ts",
         "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
+    },
+    {
+      "key": "UniversalLinksController.association",
+      "method": "GET",
+      "path": "/.well-known/apple-app-site-association",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/universal-links.controller.ts",
+      "summary": "Apple Universal Links 关联文件",
+      "request": "无请求体",
+      "response": "Apple AASA 原始 JSON；仅允许赛电正式包打开 /wechat/*",
+      "dependency": "固定 App ID 与已部署 HTTPS 域名",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/universal-links.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
     }
   ]
 } as const;

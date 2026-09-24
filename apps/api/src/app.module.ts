@@ -21,6 +21,7 @@ import { MembersModule } from "./members/members.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { StatusController } from "./status.controller";
 import { SupportModule } from "./support/support.module";
+import { UniversalLinksController } from "./universal-links.controller";
 
 @Module({
   imports: [
@@ -43,7 +44,7 @@ import { SupportModule } from "./support/support.module";
     ApiDocumentationModule,
     LegacyModule,
   ],
-  controllers: [StatusController],
+  controllers: [StatusController, UniversalLinksController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule implements NestModule {
