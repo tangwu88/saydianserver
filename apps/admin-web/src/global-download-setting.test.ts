@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createGlobalDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestFromPublicData, globalDownloadManifestToEditor } from "./global-download-setting";
+import {
+  createGlobalDownloadDraft,
+  globalDownloadEditorToManifest,
+  globalDownloadManifestFromPublicData,
+  globalDownloadManifestToEditor,
+  sayRingDownloadEditorToManifest,
+  sayRingDownloadManifestFromPublicData,
+  sayRingDownloadManifestToEditor,
+} from "./global-download-setting";
 
 const manifest = {
   schemaVersion: 1, audience: "internal_test", realm: "global", publishedAt: "2026-09-10T00:00:00Z",
@@ -48,5 +56,59 @@ describe("international download settings", () => {
   it("keeps shared filename and hash validation for international downloads", () => {
     const editor = globalDownloadManifestToEditor(manifest); editor.releases.android.fileName = "other.apk";
     expect(() => globalDownloadEditorToManifest(editor)).toThrow(/文件名/);
+  });
+
+  it("keeps Say Ring package identities isolated from the older global App", () => {
+    const sayRingManifest = {
+      ...manifest,
+      releases: manifest.releases.map(release => ({
+        ...release,
+        packageId:
+          release.platform === "harmonyos"
+            ? "cn.saydian.ring.hm"
+            : "cn.saydian.ring",
+      })),
+    };
+    const parsed = sayRingDownloadManifestFromPublicData(sayRingManifest);
+    const editor = sayRingDownloadManifestToEditor(parsed);
+    const saved = sayRingDownloadEditorToManifest(editor);
+    expect(saved.releases).toMatchObject([
+      { platform: "android", packageId: "cn.saydian.ring" },
+      { platform: "ios", packageId: "cn.saydian.ring" },
+      { platform: "harmonyos", packageId: "cn.saydian.ring.hm" },
+    ]);
+    expect(() => globalDownloadManifestFromPublicData(sayRingManifest)).toThrow(
+      /标识/,
+    );
+    expect(() => sayRingDownloadManifestFromPublicData(manifest)).toThrow(/标识/);
+  });
+
+  it("derives the hidden coming-soon Harmony identity from the Android version", () => {
+    const editor = createGlobalDownloadDraft();
+    editor.publishedAt = "2026-09-27T00:00:00Z";
+    editor.releases.android = {
+      ...editor.releases.android,
+      versionName: "0.1.22",
+      buildNumber: 1005,
+      status: "available",
+      url: "/global/down/files/SayRing-0.1.22.apk",
+      fileName: "SayRing-0.1.22.apk",
+      sizeBytes: 12345,
+      sha256: "b".repeat(64),
+    };
+    editor.releases.ios = {
+      ...editor.releases.ios,
+      versionName: "0.1.22",
+      buildNumber: 1005,
+    };
+
+    const saved = sayRingDownloadEditorToManifest(editor);
+    expect(saved.releases[2]).toMatchObject({
+      platform: "harmonyos",
+      packageId: "cn.saydian.ring.hm",
+      versionName: "0.1.22",
+      buildNumber: 1005,
+      status: "coming_soon",
+    });
   });
 });

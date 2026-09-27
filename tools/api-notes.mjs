@@ -96,7 +96,7 @@ export const notes = {
   "AiController.history": entry("本人 AI 历史", "sessionId 可选客户端会话标识", "最近 20 个会话及消息"),
   "AiController.send": entry("AI 提问", "{content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en", "{id,conversationId,role,content,createdAt}", "AI 供应商；未配置返回 503；语言指令不改变健康安全边界"),
   "SupportController.config": entry("客服配置", undefined, "客服配置或未配置状态"),
-  "SupportController.appUpdate": entry("App 下载与更新配置", undefined, "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际仅global_app_update，强制realm=global及逐项独立packageId，直包仅/global/down/files/；无配置404"),
+  "SupportController.appUpdate": entry("App 下载与更新配置", "国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单", "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId，直包仅/global/down/files/；无配置404"),
   "SupportController.feedback": entry("提交反馈", "{content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项}", "{id,status}"),
   "FilesController.upload": entry("上传图片", "multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP", "{id,url,...}", "私有对象存储"),
   "FilesController.uploadEcg": entry("上传 ECG 压缩文件", "multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用", "ECG 对象键和摘要；原始波形非公开", "私有对象存储"),

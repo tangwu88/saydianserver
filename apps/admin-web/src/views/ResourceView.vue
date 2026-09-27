@@ -10,7 +10,15 @@ import MemberHealthData from "../components/MemberHealthData.vue";
 import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
 import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
 import ContentImageField from "../components/ContentImageField.vue";
-import { globalDownloadEditorToManifest as downloadEditorToManifest, globalDownloadManifestToEditor as downloadManifestToEditor, createGlobalDownloadDraft, type DownloadManifestEditor } from "../global-download-setting";
+import {
+  createGlobalDownloadDraft,
+  createSayRingDownloadDraft,
+  globalDownloadEditorToManifest,
+  globalDownloadManifestToEditor,
+  sayRingDownloadEditorToManifest,
+  sayRingDownloadManifestToEditor,
+  type DownloadManifestEditor,
+} from "../global-download-setting";
 
 type Row = Record<string, any>;
 const memberColumns = ["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "referrerProfile", "pointBalanceCents", "status", "createdAt"];
@@ -57,6 +65,19 @@ const downloadPlatformOptions = [
   { key: "ios", label: "iPhone", packageLabel: "TestFlight / App Store" },
   { key: "harmonyos", label: "HarmonyOS", packageLabel: "HAP" },
 ] as const;
+const visibleDownloadPlatformOptions = computed(() =>
+  form.value.key === "say_ring_app_update"
+    ? downloadPlatformOptions.filter((platform) => platform.key !== "harmonyos")
+    : downloadPlatformOptions,
+);
+const appUpdateSettingKeys = new Set(["global_app_update", "say_ring_app_update"]);
+const isAppUpdateSetting = (key: unknown): boolean => appUpdateSettingKeys.has(String(key ?? ""));
+const createDownloadDraft = (key: unknown): DownloadManifestEditor =>
+  String(key) === "say_ring_app_update" ? createSayRingDownloadDraft() : createGlobalDownloadDraft();
+const downloadManifestToEditor = (key: unknown, value: unknown): DownloadManifestEditor =>
+  String(key) === "say_ring_app_update" ? sayRingDownloadManifestToEditor(value) : globalDownloadManifestToEditor(value);
+const downloadEditorToManifest = (key: unknown, editor: DownloadManifestEditor) =>
+  String(key) === "say_ring_app_update" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor);
 const titles: Record<string, string> = {
   members: "会员",
   care: "远程关爱",
@@ -275,6 +296,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
   const definitions = [
     { key: "global_support", name: "国际版客服" },
     { key: "global_app_update", name: "国际版 App 更新" },
+    { key: "say_ring_app_update", name: "Say Ring App 更新" },
   ];
   return definitions.map((definition) => {
     const row = loadedRows.find((item) => item.key === definition.key);
@@ -488,9 +510,9 @@ async function openEdit(row: Row): Promise<void> {
     audienceAllActive: row.audience?.allActive === true,
     audienceUserIds: Array.isArray(row.audience?.userIds) ? row.audience.userIds.join("\n") : "",
   };
-  if (row.key === "global_app_update") {
+  if (isAppUpdateSetting(row.key)) {
     try {
-      nextForm.downloadEditor = row._unconfigured ? createGlobalDownloadDraft() : downloadManifestToEditor(row.value);
+      nextForm.downloadEditor = row._unconfigured ? createDownloadDraft(row.key) : downloadManifestToEditor(row.key, row.value);
     } catch (error) {
       ElMessage.error(error instanceof Error ? error.message : "App 下载配置无法读取");
       return;
@@ -705,7 +727,7 @@ async function save(): Promise<void> {
       };
       await api.patch(`/integrations/${encodeURIComponent(String(form.value.key))}`, payload);
     } else if (resource.value === "settings") {
-      const settingValue = form.value.key === "global_app_update" ? downloadEditorToManifest(form.value.downloadEditor as DownloadManifestEditor) : JSON.parse(String(form.value.valueText || "{}"));
+      const settingValue = isAppUpdateSetting(form.value.key) ? downloadEditorToManifest(form.value.key, form.value.downloadEditor as DownloadManifestEditor) : JSON.parse(String(form.value.valueText || "{}"));
       payload = {
         value: settingValue,
         public: form.value.public !== false,
@@ -1162,7 +1184,7 @@ onBeforeUnmount(() => {
       </el-form>
       <template #footer><el-button :disabled="feedbackSaving" @click="feedbackVisible = false">关闭</el-button><el-button type="primary" :loading="feedbackSaving" @click="saveFeedback">保存处理结果</el-button></template>
     </el-dialog>
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="dialogMode === 'health' ? 'min(960px, 94vw)' : resource === 'settings' && form.key === 'global_app_update' ? '980px' : ['articles', 'legal-documents'].includes(resource) ? 'min(980px, 94vw)' : '720px'" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="dialogMode === 'health' ? 'min(960px, 94vw)' : resource === 'settings' && isAppUpdateSetting(form.key) ? '980px' : ['articles', 'legal-documents'].includes(resource) ? 'min(980px, 94vw)' : '720px'" destroy-on-close>
       <div v-if="dialogMode === 'health'">
         <MemberHealthData :mode="healthMode" :rows="detailRows" :member-no="healthMember.memberNo" />
         <MemberHealthReportPanel v-if="dialogVisible && healthMode === 'summary' && canReadRawHealth" :key="healthMember.id" :member-id="healthMember.id" />
@@ -1453,15 +1475,15 @@ onBeforeUnmount(() => {
           <el-alert v-if="form._unconfigured" title="此项尚未配置。当前内容仅为本次编辑草稿，尚未保存或公开；请填写真实配置后保存。" type="info" :closable="false" show-icon />
           <el-form-item label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
           <el-form-item label="公开"><el-switch v-model="form.public" /></el-form-item>
-          <template v-if="form.key === 'global_app_update' && form.downloadEditor">
-            <el-alert title="保存后国际版 App 会读取新配置。此处不上传安装包；Android/HarmonyOS 文件需先放入服务器国际版下载目录。" type="warning" :closable="false" show-icon />
+          <template v-if="isAppUpdateSetting(form.key) && form.downloadEditor">
+            <el-alert :title="form.key === 'say_ring_app_update' ? '保存后仅 Say Ring 会读取此配置。此处不上传安装包；APK 需先放入服务器国际版下载目录。' : '保存后国际版 App 会读取新配置。此处不上传安装包；Android/HarmonyOS 文件需先放入服务器国际版下载目录。'" type="warning" :closable="false" show-icon />
             <el-form-item label="发布时间" class="download-published-at">
               <el-input v-model="form.downloadEditor.publishedAt" placeholder="ISO 8601，如 2026-09-06T00:00:00+08:00">
                 <template #append><el-button @click="setDownloadPublishedNow">设为现在</el-button></template>
               </el-input>
             </el-form-item>
             <div class="download-setting-grid">
-              <section v-for="platform in downloadPlatformOptions" :key="platform.key" class="download-platform-card">
+              <section v-for="platform in visibleDownloadPlatformOptions" :key="platform.key" class="download-platform-card">
                 <header>
                   <strong>{{ platform.label }}</strong>
                   <el-tag size="small" :type="form.downloadEditor.releases[platform.key].status === 'available' ? 'success' : 'info'">

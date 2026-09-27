@@ -71,6 +71,44 @@ describe("public App download manifest", () => {
       await expect(serviceWith({ public: true, value }).appUpdateConfig()).rejects.toBeInstanceOf(ServiceUnavailableException);
     }
   });
+  it("routes Say Ring to its own package-bound manifest", async () => {
+    vi.stubEnv("APP_REALM", "global");
+    const sayRingManifest = {
+      ...validManifest,
+      realm: "global",
+      releases: validManifest.releases.map(release => ({
+        ...release,
+        packageId: release.platform === "harmonyos" ? "cn.saydian.ring.hm" : "cn.saydian.ring",
+        ...(release.destination
+          ? { destination: { ...release.destination, url: `/global${release.destination.url}` } }
+          : {}),
+      })),
+    };
+    const findUnique = vi.fn(async ({ where }: any) =>
+      where.key === "say_ring_app_update"
+        ? { public: true, value: sayRingManifest }
+        : null,
+    );
+    const service = new SupportService(
+      { appSetting: { findUnique } } as any,
+      {} as any,
+    );
+
+    await expect(service.appUpdateConfig("say-ring")).resolves.toMatchObject({
+      realm: "global",
+      releases: [
+        { packageId: "cn.saydian.ring" },
+        { packageId: "cn.saydian.ring" },
+        { packageId: "cn.saydian.ring.hm" },
+      ],
+    });
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { key: "say_ring_app_update" },
+    });
+    await expect(service.appUpdateConfig("unknown-product")).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
   it("returns 404 until a public manifest is published", async () => {
     await expect(serviceWith(null).appUpdateConfig()).rejects.toBeInstanceOf(
       NotFoundException,

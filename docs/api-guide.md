@@ -159,6 +159,8 @@ PushInstallation 必填 installationId、registrationId、platform(android/ios)�
 
 Android/HarmonyOS 直接下载只允许同源 `/down/files/`，并必须提供与不可变文件一致的文件名、字节数和 SHA-256。iPhone 只允许真实 `testflight.apple.com` 或 `apps.apple.com` HTTPS 地址，不允许网页直装 IPA。完整当前配置见 `deploy/app-update.internal-test.json`。
 
+国际环境中，Say Ring 使用 `GET /api/saydian-app/v2/support/app-update?product=say-ring`，后台配置键为 `say_ring_app_update`，Android/iOS 包标识固定为 `cn.saydian.ring`；不带 `product` 的旧国际 App 继续读取 `global_app_update`。推送设备登记同样携带 `product=say-ring`，服务端内部路由到 `say_ring_push` 极光配置，不能与旧 App 的 `push` 凭据或 Registration ID 混用。
+
 “集成中心”只显示公开配置和 `hasSecret`，敏感字段通过 `secrets` 写入后由 `INTEGRATION_MASTER_KEY` 以 AES-256-GCM 加密；列表、详情、日志和接口响应均不回显明文。选择“启用”只允许服务尝试调用，界面仍显示“尚未通过真实调用”；只有短信、AI、支付、企业微信、推送、聚水潭或文件服务获得真实成功响应后才记录检测时间。修改公开配置或密钥会清除原检测状态。轮换主密钥前必须先设计解密/重加密迁移，不能直接替换。
 
 “接口中心”的方法、路径、鉴权和签名由代码目录生成，后台只能编辑中文说明、示例、错误处理、标签及弃用信息。流程为草稿 → 提交审核 → 超级管理员发布；可回滚到与当前路由签名一致的历史版本。代码改变路由后旧说明会标记过期，`pnpm api:docs:check` 会阻止缺少说明的提交。

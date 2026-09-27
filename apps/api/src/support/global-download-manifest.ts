@@ -1,12 +1,29 @@
 import { parseDownloadManifest } from "@saydian/app-contracts";
 import { safeObject } from "../common/crypto";
 
-const packageIds: Record<string, string> = { android: "cn.saydian.app.global", ios: "cn.saydian.app.global", harmonyos: "cn.saydian.app.global.hm" };
+export type GlobalDownloadProduct = "saydian-global" | "say-ring";
+
+const packageIdsByProduct: Record<GlobalDownloadProduct, Record<string, string>> = {
+  "saydian-global": {
+    android: "cn.saydian.app.global",
+    ios: "cn.saydian.app.global",
+    harmonyos: "cn.saydian.app.global.hm",
+  },
+  "say-ring": {
+    android: "cn.saydian.ring",
+    ios: "cn.saydian.ring",
+    harmonyos: "cn.saydian.ring.hm",
+  },
+};
 
 /** Metadata must be explicitly published for the independent application; never add identity to domestic metadata. */
-export function parseGlobalDownloadManifest(input: unknown) {
+export function parseGlobalDownloadManifest(
+  input: unknown,
+  product: GlobalDownloadProduct = "saydian-global",
+) {
   const body = safeObject(input);
   if (body.realm !== "global" || !Array.isArray(body.releases)) throw new Error("A global release manifest is required.");
+  const packageIds = packageIdsByProduct[product];
   const publishedReleases = body.releases;
   const releases = publishedReleases.map(value => {
     const release = safeObject(value);

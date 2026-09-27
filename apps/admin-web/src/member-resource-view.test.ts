@@ -3,7 +3,14 @@ import ts from "typescript";
 import { computed, reactive, ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { canAdminResource } from "@saydian/app-contracts";
-import { createGlobalDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor } from "./global-download-setting";
+import {
+  createGlobalDownloadDraft,
+  createSayRingDownloadDraft,
+  globalDownloadEditorToManifest,
+  globalDownloadManifestToEditor,
+  sayRingDownloadEditorToManifest,
+  sayRingDownloadManifestToEditor,
+} from "./global-download-setting";
 
 const envelope = (items: Record<string, unknown>[] = [], total = items.length) => ({ data: { data: { items, total, page: 1, pageSize: 30 } } });
 const member = {
@@ -66,8 +73,11 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     responseData: (response: any) => response.data.data,
     readableError: () => readableErrorMessage,
     createGlobalDownloadDraft,
-    downloadEditorToManifest: globalDownloadEditorToManifest,
-    downloadManifestToEditor: globalDownloadManifestToEditor,
+    createSayRingDownloadDraft,
+    globalDownloadEditorToManifest,
+    globalDownloadManifestToEditor,
+    sayRingDownloadEditorToManifest,
+    sayRingDownloadManifestToEditor,
   };
   const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
   return {
@@ -480,7 +490,7 @@ describe("international settings first configuration", () => {
     h.route.params.resource = "settings";
     h.api.get.mockResolvedValueOnce({ data: { data: [] } });
     await h.load();
-    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "global_app_update"]);
+    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "global_app_update", "say_ring_app_update"]);
     expect(h.rows.value.every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
     expect(h.columns.value).toEqual(["name", "configuration", "public", "updatedAt"]);
     expect(h.api.patch).not.toHaveBeenCalled();

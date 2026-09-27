@@ -23369,12 +23369,19 @@
       "path": "/api/saydian-app/v2/support/app-update",
       "auth": "public",
       "roles": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "v2",
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "App 下载与更新配置",
-      "request": "无请求体",
-      "response": "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际仅global_app_update，强制realm=global及逐项独立packageId，直包仅/global/down/files/；无配置404",
+      "request": "国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单",
+      "response": "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId，直包仅/global/down/files/；无配置404",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {

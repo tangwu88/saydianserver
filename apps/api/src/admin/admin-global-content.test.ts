@@ -18,6 +18,15 @@ function manifest() {
   };
 }
 
+function sayRingManifest() {
+  const value = manifest();
+  value.releases = value.releases.map(release => ({
+    ...release,
+    packageId: release.platform === "harmonyos" ? "cn.saydian.ring.hm" : "cn.saydian.ring",
+  }));
+  return value;
+}
+
 function harness() {
   const appSetting = {
     findMany: vi.fn().mockResolvedValue([]),
@@ -41,10 +50,10 @@ beforeEach(() => vi.stubEnv("APP_REALM", "global"));
 afterEach(() => vi.unstubAllEnvs());
 
 describe("global admin support and download configuration", () => {
-  it("lists only the two keys that the global application actually reads", async () => {
+  it("lists support plus independent update keys for both global applications", async () => {
     const h = harness();
     await h.service.settings();
-    expect(h.appSetting.findMany).toHaveBeenCalledWith({ where: { key: { in: ["global_support", "global_app_update"] } }, orderBy: { key: "asc" } });
+    expect(h.appSetting.findMany).toHaveBeenCalledWith({ where: { key: { in: ["global_support", "global_app_update", "say_ring_app_update"] } }, orderBy: { key: "asc" } });
   });
 
   it("saves global support publication without aliasing it to domestic support", async () => {
@@ -73,6 +82,25 @@ describe("global admin support and download configuration", () => {
       { platform: "harmonyos", packageId: "cn.saydian.app.global.hm" },
     ] });
     expect(h.appSetting.upsert.mock.calls[0]?.[0].where).toEqual({ key: "global_app_update" });
+  });
+
+  it("saves Say Ring metadata only under the Say Ring setting key", async () => {
+    const h = harness();
+    const saved = await h.service.updateSetting("say_ring_app_update", {
+      value: sayRingManifest(),
+      public: true,
+    });
+    expect(saved.value).toMatchObject({
+      realm: "global",
+      releases: [
+        { platform: "android", packageId: "cn.saydian.ring" },
+        { platform: "ios", packageId: "cn.saydian.ring" },
+        { platform: "harmonyos", packageId: "cn.saydian.ring.hm" },
+      ],
+    });
+    expect(h.appSetting.upsert.mock.calls[0]?.[0].where).toEqual({
+      key: "say_ring_app_update",
+    });
   });
 
   it.each(["realm", "package", "path"])("rejects a manifest with the wrong %s before persistence", (field) => {
