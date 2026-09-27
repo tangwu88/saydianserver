@@ -1,9 +1,11 @@
 import { downloadPlatforms, type DownloadManifestContract } from "@saydian/app-contracts/download";
-import { downloadEditorToManifest, downloadManifestFromPublicData, downloadManifestToEditor, type DownloadManifestEditor } from "./download-setting";
+import { downloadEditorToManifest, downloadManifestFromPublicData as parseDownloadManifestFromPublicData, downloadManifestToEditor, type DownloadManifestEditor } from "./download-setting";
 
 export type { DownloadManifestEditor } from "./download-setting";
 
-const packageIds = { android: "cn.saydian.app.global", ios: "cn.saydian.app.global", harmonyos: "cn.saydian.app.global.hm" } as const;
+const globalPackageIds = { android: "cn.saydian.app.global", ios: "cn.saydian.app.global", harmonyos: "cn.saydian.app.global.hm" } as const;
+const sayRingPackageIds = { android: "cn.saydian.ring", ios: "cn.saydian.ring", harmonyos: "cn.saydian.ring.hm" } as const;
+type PackageIds = Record<(typeof downloadPlatforms)[number], string>;
 
 export function createGlobalDownloadDraft(): DownloadManifestEditor {
   return {
@@ -21,7 +23,7 @@ function domesticValidationPath(url: string): string {
   return url.slice("/global".length);
 }
 
-function withGlobalIdentity(manifest: DownloadManifestContract) {
+function withGlobalIdentity(manifest: DownloadManifestContract, packageIds: PackageIds) {
   return {
     ...manifest,
     realm: "global" as const,
@@ -33,7 +35,7 @@ function withGlobalIdentity(manifest: DownloadManifestContract) {
   };
 }
 
-export function globalDownloadManifestFromPublicData(input: unknown) {
+function downloadManifestFromPublicData(input: unknown, packageIds: PackageIds) {
   const wrapper = input as Record<string, unknown> | null;
   const candidate = wrapper && typeof wrapper === "object" && "value" in wrapper ? wrapper.value : input;
   if (!candidate || typeof candidate !== "object") throw new Error("国际版下载配置必须是 JSON 对象");
@@ -48,11 +50,11 @@ export function globalDownloadManifestFromPublicData(input: unknown) {
       ? { ...release, destination: { ...release.destination, url: domesticValidationPath(String(release.destination.url ?? "")) } }
       : release;
   });
-  return withGlobalIdentity(downloadManifestFromPublicData({ ...body, releases }));
+  return withGlobalIdentity(parseDownloadManifestFromPublicData({ ...body, releases }), packageIds);
 }
 
-export function globalDownloadManifestToEditor(input: unknown): DownloadManifestEditor {
-  const manifest = globalDownloadManifestFromPublicData(input);
+function manifestToEditor(input: unknown, packageIds: PackageIds): DownloadManifestEditor {
+  const manifest = downloadManifestFromPublicData(input, packageIds);
   const editor = downloadManifestToEditor({
     ...manifest,
     releases: manifest.releases.map(release => ({
@@ -66,7 +68,7 @@ export function globalDownloadManifestToEditor(input: unknown): DownloadManifest
   return editor;
 }
 
-export function globalDownloadEditorToManifest(editor: DownloadManifestEditor) {
+function editorToManifest(editor: DownloadManifestEditor, packageIds: PackageIds) {
   const releases = Object.fromEntries(downloadPlatforms.map(platform => {
     const release = editor.releases[platform];
     return [platform, {
@@ -74,5 +76,49 @@ export function globalDownloadEditorToManifest(editor: DownloadManifestEditor) {
       ...(platform !== "ios" && release.status === "available" ? { url: domesticValidationPath(release.url) } : {}),
     }];
   })) as DownloadManifestEditor["releases"];
-  return withGlobalIdentity(downloadEditorToManifest({ ...editor, releases }));
+  return withGlobalIdentity(downloadEditorToManifest({ ...editor, releases }), packageIds);
+}
+
+export function globalDownloadManifestFromPublicData(input: unknown) {
+  return downloadManifestFromPublicData(input, globalPackageIds);
+}
+
+export function globalDownloadManifestToEditor(input: unknown): DownloadManifestEditor {
+  return manifestToEditor(input, globalPackageIds);
+}
+
+export function globalDownloadEditorToManifest(editor: DownloadManifestEditor) {
+  return editorToManifest(editor, globalPackageIds);
+}
+
+export const createSayRingDownloadDraft = createGlobalDownloadDraft;
+
+export function sayRingDownloadManifestFromPublicData(input: unknown) {
+  return downloadManifestFromPublicData(input, sayRingPackageIds);
+}
+
+export function sayRingDownloadManifestToEditor(input: unknown): DownloadManifestEditor {
+  return manifestToEditor(input, sayRingPackageIds);
+}
+
+export function sayRingDownloadEditorToManifest(editor: DownloadManifestEditor) {
+  const android = editor.releases.android;
+  const harmonyos = editor.releases.harmonyos;
+  const normalized =
+    harmonyos.status === "coming_soon" &&
+    !harmonyos.versionName.trim() &&
+    harmonyos.buildNumber == null
+      ? {
+          ...editor,
+          releases: {
+            ...editor.releases,
+            harmonyos: {
+              ...harmonyos,
+              versionName: android.versionName,
+              buildNumber: android.buildNumber,
+            },
+          },
+        }
+      : editor;
+  return editorToManifest(normalized, sayRingPackageIds);
 }

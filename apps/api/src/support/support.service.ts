@@ -92,11 +92,26 @@ export class SupportService {
     );
   }
 
-  async appUpdateConfig() {
-    const setting = await this.prisma.appSetting.findUnique({ where: { key: isGlobalRealm() ? "global_app_update" : "app_update" } });
+  async appUpdateConfig(productInput?: string) {
+    const product = String(productInput ?? "").trim().toLowerCase();
+    let key = "app_update";
+    let globalProduct: "saydian-global" | "say-ring" = "saydian-global";
+    if (isGlobalRealm()) {
+      if (!product || product === "saydian-global") {
+        key = "global_app_update";
+      } else if (product === "say-ring") {
+        key = "say_ring_app_update";
+        globalProduct = "say-ring";
+      } else {
+        throw new NotFoundException("暂未发布更新信息");
+      }
+    }
+    const setting = await this.prisma.appSetting.findUnique({ where: { key } });
     if (!setting?.public) throw new NotFoundException("暂未发布更新信息");
     try {
-      return isGlobalRealm() ? parseGlobalDownloadManifest(setting.value) : parseDownloadManifest(setting.value);
+      return isGlobalRealm()
+        ? parseGlobalDownloadManifest(setting.value, globalProduct)
+        : parseDownloadManifest(setting.value);
     } catch {
       throw new ServiceUnavailableException("下载信息暂时不可用");
     }

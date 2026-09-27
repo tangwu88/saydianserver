@@ -68,13 +68,21 @@ export class NotificationsService {
     const installationId = String(body.installationId ?? body.installation_id ?? "").trim();
     const registrationId = String(body.registrationId ?? body.registration_id ?? "").trim();
     const platform = String(body.platform ?? "").toLowerCase();
-    const provider = String(body.provider ?? "jpush").toLowerCase();
+    const requestedProvider = String(body.provider ?? "jpush").toLowerCase();
+    const product = String(body.product ?? "").trim().toLowerCase();
     if (!installationId || !registrationId || !["android", "ios", "harmony"].includes(platform)) {
       throw new BadRequestException("通知设备信息不完整");
     }
-    if (!new Set(["jpush", "apns", "disabled"]).has(provider)) {
+    if (!new Set(["jpush", "apns", "disabled"]).has(requestedProvider)) {
       throw new BadRequestException("通知服务类型不正确");
     }
+    if (isGlobalRealm() && product && product !== "say-ring") {
+      throw new BadRequestException("通知产品标识不正确");
+    }
+    const provider =
+      isGlobalRealm() && product === "say-ring" && requestedProvider === "jpush"
+        ? "jpush_say_ring"
+        : requestedProvider;
     const installation = await this.prisma.pushInstallation.upsert({
       where: { installationId },
       create: {

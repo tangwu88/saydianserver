@@ -1069,7 +1069,7 @@ export class AdminService {
     return this.prisma.appSetting.findMany({
       where: {
         key: {
-          in: isGlobalRealm() ? ["global_support", "global_app_update"] : ["support", "app_update", "legacy_app_update"],
+          in: isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update"] : ["support", "app_update", "legacy_app_update"],
         },
       },
       orderBy: { key: "asc" },
@@ -1077,7 +1077,7 @@ export class AdminService {
   }
 
   updateSetting(key: string, input: unknown) {
-    const allowedKeys = isGlobalRealm() ? ["global_support", "global_app_update"] : ["support", "app_update", "legacy_app_update"];
+    const allowedKeys = isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update"] : ["support", "app_update", "legacy_app_update"];
     if (!allowedKeys.includes(key)) {
       throw new NotFoundException("设置项不存在");
     }
@@ -1086,9 +1086,13 @@ export class AdminService {
     if (!Object.keys(value).length) {
       throw new BadRequestException("设置内容不能为空");
     }
-    if (key === "app_update" || key === "global_app_update") {
+    if (key === "app_update" || key === "global_app_update" || key === "say_ring_app_update") {
       try {
-        value = (key === "global_app_update" ? parseGlobalDownloadManifest(value) : parseDownloadManifest(value)) as unknown as Record<string, unknown>;
+        value = (key === "global_app_update"
+          ? parseGlobalDownloadManifest(value)
+          : key === "say_ring_app_update"
+            ? parseGlobalDownloadManifest(value, "say-ring")
+            : parseDownloadManifest(value)) as unknown as Record<string, unknown>;
       } catch (error) {
         throw new BadRequestException(error instanceof Error ? error.message : "App 下载配置无效");
       }

@@ -29,8 +29,8 @@ export class SupportController {
   }
 
   @Get("app-update")
-  appUpdate() {
-    return this.support.appUpdateConfig();
+  appUpdate(@Query("product") product?: string) {
+    return this.support.appUpdateConfig(product);
   }
 
   @Post("feedback")

@@ -35,6 +35,8 @@ export class JPushProvider implements PushProvider {
     private readonly appKey: string,
     private readonly masterSecret: string,
     private readonly prisma?: PrismaClient,
+    private readonly registrationProvider = "jpush",
+    private readonly integrationKey = "push",
   ) {}
 
   async deliver(
@@ -42,7 +44,7 @@ export class JPushProvider implements PushProvider {
     payload: SafePushPayloadContract,
   ): Promise<void> {
     const groups = new Map<string, string[]>();
-    for (const item of installations.filter(item => item.provider === "jpush")) {
+    for (const item of installations.filter(item => item.provider === this.registrationProvider)) {
       const alert = process.env.APP_REALM === "global" ? globalPushAlert(item.locale) : "Saydian赛电有一条新消息";
       groups.set(alert, [...(groups.get(alert) ?? []), item.registrationId]);
     }
@@ -77,7 +79,36 @@ export class JPushProvider implements PushProvider {
       throw new Error(`JPush delivery failed with HTTP ${response.status}`);
     }
     }
-    if (this.prisma) await markWorkerIntegrationVerified(this.prisma, "push");
+    if (this.prisma) await markWorkerIntegrationVerified(this.prisma, this.integrationKey);
+  }
+}
+
+type RoutedPushTarget = {
+  registrationProvider: string;
+  provider: PushProvider;
+};
+
+export class RoutedPushProvider implements PushProvider {
+  constructor(private readonly targets: RoutedPushTarget[]) {}
+
+  async deliver(
+    installations: PushInstallation[],
+    payload: SafePushPayloadContract,
+  ): Promise<void> {
+    const deliveries = this.targets
+      .map(target => ({
+        target,
+        installations: installations.filter(
+          installation => installation.provider === target.registrationProvider,
+        ),
+      }))
+      .filter(delivery => delivery.installations.length > 0);
+    if (deliveries.length === 0 && installations.length > 0) {
+      throw new Error("Push provider is unconfigured for this application");
+    }
+    for (const delivery of deliveries) {
+      await delivery.target.provider.deliver(delivery.installations, payload);
+    }
   }
 }
 
@@ -90,32 +121,85 @@ export class DisabledPushProvider implements PushProvider {
 export async function pushProviderFromConfiguration(
   prisma: PrismaClient,
 ): Promise<PushProvider> {
-  const integration = await prisma.integrationConfig.findUnique({
+  const legacyIntegration = await prisma.integrationConfig.findUnique({
     where: { key: "push" },
   });
-  const publicConfig = asObject(integration?.publicConfig);
-  const provider = String(
-    publicConfig.provider ?? process.env.PUSH_PROVIDER ?? "disabled",
+  const legacyProvider = String(
+    asObject(legacyIntegration?.publicConfig).provider ??
+      process.env.PUSH_PROVIDER ??
+      "disabled",
   )
     .trim()
     .toLowerCase();
-  if (provider === "mock") return new MockPushProvider();
-  if (integration?.state !== IntegrationState.CONFIGURED) {
-    return new DisabledPushProvider();
-  }
-  if (provider === "jpush") {
-    const secrets = await resolveWorkerSecrets(prisma, "push", {
-      appKey: "JPUSH_APP_KEY",
-      masterSecret: "JPUSH_MASTER_SECRET",
+  if (legacyProvider === "mock") return new MockPushProvider();
+
+  const targets: RoutedPushTarget[] = [];
+  const legacyTarget = await configuredJPushTarget(
+    prisma,
+    "push",
+    "jpush",
+    "JPUSH_APP_KEY",
+    "JPUSH_MASTER_SECRET",
+    legacyIntegration,
+  );
+  if (legacyTarget) targets.push(legacyTarget);
+
+  if (process.env.APP_REALM === "global") {
+    const sayRingIntegration = await prisma.integrationConfig.findUnique({
+      where: { key: "say_ring_push" },
     });
-    const appKey = secrets.appKey ?? "";
-    const masterSecret = secrets.masterSecret ?? "";
-    if (!appKey || !masterSecret) {
-      throw new Error("JPush selected but credentials are unconfigured");
-    }
-    return new JPushProvider(appKey, masterSecret, prisma);
+    const sayRingTarget = await configuredJPushTarget(
+      prisma,
+      "say_ring_push",
+      "jpush_say_ring",
+      "SAY_RING_JPUSH_APP_KEY",
+      "SAY_RING_JPUSH_MASTER_SECRET",
+      sayRingIntegration,
+    );
+    if (sayRingTarget) targets.push(sayRingTarget);
   }
-  return new DisabledPushProvider();
+
+  return targets.length > 0
+    ? new RoutedPushProvider(targets)
+    : new DisabledPushProvider();
+}
+
+async function configuredJPushTarget(
+  prisma: PrismaClient,
+  integrationKey: string,
+  registrationProvider: string,
+  appKeyEnvironment: string,
+  masterSecretEnvironment: string,
+  integration: {
+    state: IntegrationState;
+    publicConfig: unknown;
+  } | null,
+): Promise<RoutedPushTarget | null> {
+  const provider = String(asObject(integration?.publicConfig).provider ?? "disabled")
+    .trim()
+    .toLowerCase();
+  if (integration?.state !== IntegrationState.CONFIGURED || provider !== "jpush") {
+    return null;
+  }
+  const secrets = await resolveWorkerSecrets(prisma, integrationKey, {
+    appKey: appKeyEnvironment,
+    masterSecret: masterSecretEnvironment,
+  });
+  const appKey = secrets.appKey ?? "";
+  const masterSecret = secrets.masterSecret ?? "";
+  if (!appKey || !masterSecret) {
+    throw new Error(`${integrationKey} JPush credentials are unconfigured`);
+  }
+  return {
+    registrationProvider,
+    provider: new JPushProvider(
+      appKey,
+      masterSecret,
+      prisma,
+      registrationProvider,
+      integrationKey,
+    ),
+  };
 }
 
 function asObject(value: unknown): Record<string, unknown> {
