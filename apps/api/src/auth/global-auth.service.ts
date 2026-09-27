@@ -11,10 +11,16 @@ import { GlobalVerificationDeliveryService } from "./global-verification-deliver
 import { globalError, globalIdentity, globalLocale, globalLocales, maskedIdentifier, type VerificationPurpose } from "./global-identity";
 import { globalLegalBundle } from "./global-legal";
 import { businessWritesPaused } from "@saydian/app-contracts";
+import { GlobalWechatAppService } from "./global-wechat-app.service";
 
 @Injectable()
 export class GlobalAuthService {
-  constructor(private readonly prisma: PrismaService, private readonly delivery: GlobalVerificationDeliveryService, private readonly auth: AuthService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly delivery: GlobalVerificationDeliveryService,
+    private readonly auth: AuthService,
+    private readonly wechatApp?: GlobalWechatAppService,
+  ) {}
 
   async capabilities(locale?: string) {
     this.requireGlobal();
@@ -23,6 +29,17 @@ export class GlobalAuthService {
     const deliveryOpen = !businessWritesPaused(process.env);
     const unverifiedRegistration = this.unverifiedRegistrationEnabled();
     const registrationOpen = Boolean(legal) && deliveryOpen;
+    const wechatApp = this.wechatApp
+      ? await this.wechatApp.capability({
+          legalReady: Boolean(legal),
+          deliveryOpen,
+          smsReady: ready.sms,
+        })
+      : {
+          enabled: false,
+          appId: null,
+          phoneBindingAvailable: false,
+        };
     return {
       realm: "global",
       defaultLocale: "en",
@@ -36,6 +53,7 @@ export class GlobalAuthService {
         email: ready.email && deliveryOpen,
         sms: ready.sms && deliveryOpen,
         defaultChannel: "sms",
+        wechatApp,
       },
       recovery: { email: ready.email && deliveryOpen, sms: ready.sms && deliveryOpen },
       smsCountries: ready.smsCountries,

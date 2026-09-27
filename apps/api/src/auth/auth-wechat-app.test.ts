@@ -10,6 +10,7 @@ import type {
 } from "./wechat-app-auth.service";
 
 const identity: WechatAppIdentity = {
+  appId: "wx1234567890abcdef",
   openId: "app-open-id",
   unionId: "shared-union-id",
   nickname: "微信昵称",

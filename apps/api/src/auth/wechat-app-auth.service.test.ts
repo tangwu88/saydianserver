@@ -77,6 +77,7 @@ describe("native WeChat authorization", () => {
     });
 
     expect(identity).toEqual({
+      appId: "wx1234567890abcdef",
       openId: "provider-open-id",
       unionId: "provider-union-id",
       nickname: "微信用户昵称",
@@ -144,6 +145,7 @@ describe("native WeChat authorization", () => {
     await expect(
       auth.exchange({ code: "one-time-code", state, platform: "harmony" }),
     ).resolves.toEqual({
+      appId: "wx1234567890abcdef",
       openId: "expected-open-id",
       unionId: null,
       nickname: "微信用户",
