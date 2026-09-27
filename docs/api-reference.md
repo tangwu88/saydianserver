@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **356 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **358 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -163,16 +163,18 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（108）
+## V2 App 接口（110）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
-| `GET /api/saydian-app/v2/auth/capabilities` | 国际账号可用能力 | public | query:locale?；locale可选；仅APP_REALM=global | {realm,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；verificationRequired=false只表示当前注册暂免验证码；recovery仍要求已验收渠道且不在写入维护期 | 国际独立数据库、已审协议及显式注册开关 |
+| `GET /api/saydian-app/v2/auth/capabilities` | 国际账号可用能力 | public | query:locale?；locale可选；仅APP_REALM=global | {realm,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},login:{email,sms,wechatApp:{enabled,appId,phoneBindingAvailable}},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；微信仅返回公开AppID，不返回AppSecret；verificationRequired=false只表示当前注册暂免验证码 | 国际独立数据库、已审协议、验证码渠道及微信移动应用配置 |
 | `POST /api/saydian-app/v2/auth/verification-code` | 国际邮箱/手机号验证码 | public | {channel:email\|sms,identifier,purpose:register\|reset_password,locale?}；sms必须E.164 | {challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}；不返回验证码 | 独立email_otp/sms_global webhook |
 | `POST /api/saydian-app/v2/auth/register-with-code` | 国际已验证账号注册 | public | {challengeId,code,password,nickname?,consentVersion,locale?}；consentVersion必须来自当前已审协议 | Session；国际UUID账号，与国内账号不互通 | 已送达未消费的国际验证码与已发布协议 |
 | `POST /api/saydian-app/v2/auth/register` | 账号注册 | public | 国内环境仍阻止裸密码注册；国际环境仅在GLOBAL_UNVERIFIED_REGISTRATION_ENABLED=true时接受{channel,identifier,password,nickname?,consentVersion,locale?} | 国际环境签发Session，但联系方式保持未验证；关闭临时开关后未验证会话不可续期 | 国际独立数据库、已审协议与显式临时开关；需验证联系方式的商城能力仍阻断 |
 | `POST /api/saydian-app/v2/auth/login` | 密码登录 | public | 国内{mobile/username,password}；国际{channel:email\|sms,identifier,password} | Session；国际member含emailMasked/phoneMasked/locale可选字段 | 核心服务 |
-| `POST /api/saydian-app/v2/auth/wechat-login` | 原生微信授权登录 | public | {code,state,platform:android/ios/harmony,consentAccepted:true,consentVersion}；只提交一次性 code，密钥仅在服务端 | Session；手机号仍未验证时不得映射商城身份 | 微信开放平台移动应用 |
+| `POST /api/saydian-app/v2/auth/wechat-login` | 原生微信授权登录 | public | {code,state,platform:android/ios/harmony,consentAccepted:true,consentVersion,locale?}；只提交一次性 code，密钥仅在服务端 | 已绑定且已验证手机号返回Session；首次授权返回{requiresPhoneBinding,bindTicket,expiresIn,wechatProfile,wechatProfileProof}，不创建未验证会员 | 微信开放平台移动应用 |
+| `POST /api/saydian-app/v2/auth/wechat-phone-code` | 原生微信首次登录申请手机验证码 | public | {bindTicket,identifier:E.164手机号,consentVersion,locale?} | {challengeId,expiresIn,retryAfter,maskedIdentifier}；验证码不回显，票据和手机号共同限频 | 有效微信绑定票据、已审协议和真实短信渠道 |
+| `POST /api/saydian-app/v2/auth/wechat-bind-phone` | 原生微信首次登录绑定手机号 | public | {bindTicket,challengeId,code:6位数字,consentVersion,locale?,wechatProfileProof} | Session；验证码、微信票据和配置均一次性校验；同手机号映射H5现有会员，OpenID/UnionID冲突409且不自动合并 | 有效微信绑定票据和未消费短信验证码 |
 | `POST /api/saydian-app/v2/auth/sms-code` | 发送验证码 | public | {mobile,usage:register/reset_password} | 发送状态；不返回验证码 | 短信供应商 |
 | `POST /api/saydian-app/v2/auth/register-with-sms` | 短信注册 | public | {mobile,code,password,nickname?,consentVersion} | Session | 短信供应商 |
 | `POST /api/saydian-app/v2/auth/reset-password` | 验证码重置密码 | public | 国内{mobile,code,password/newPassword}；国际{challengeId,code,password} | Session；旧会话失效 | 对应部署的验证码供应商 |

@@ -4043,8 +4043,8 @@ export const apiCatalog = {
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "国际账号可用能力",
       "request": "locale可选；仅APP_REALM=global",
-      "response": "{realm,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；verificationRequired=false只表示当前注册暂免验证码；recovery仍要求已验收渠道且不在写入维护期",
-      "dependency": "国际独立数据库、已审协议及显式注册开关",
+      "response": "{realm,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},login:{email,sms,wechatApp:{enabled,appId,phoneBindingAvailable}},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；微信仅返回公开AppID，不返回AppSecret；verificationRequired=false只表示当前注册暂免验证码",
+      "dependency": "国际独立数据库、已审协议、验证码渠道及微信移动应用配置",
       "successStatus": 200,
       "contract": {
         "status": "request-reviewed",
@@ -4806,8 +4806,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "原生微信授权登录",
-      "request": "{code,state,platform:android/ios/harmony,consentAccepted:true,consentVersion}；只提交一次性 code，密钥仅在服务端",
-      "response": "Session；手机号仍未验证时不得映射商城身份",
+      "request": "{code,state,platform:android/ios/harmony,consentAccepted:true,consentVersion,locale?}；只提交一次性 code，密钥仅在服务端",
+      "response": "已绑定且已验证手机号返回Session；首次授权返回{requiresPhoneBinding,bindTicket,expiresIn,wechatProfile,wechatProfileProof}，不创建未验证会员",
       "dependency": "微信开放平台移动应用",
       "successStatus": 201,
       "contract": {
@@ -4919,6 +4919,70 @@ export const apiCatalog = {
         "contentType": "application/json",
         "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts",
         "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "AuthController.wechatPhoneCode",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/auth/wechat-phone-code",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/auth/auth.controller.ts",
+      "summary": "原生微信首次登录申请手机验证码",
+      "request": "{bindTicket,identifier:E.164手机号,consentVersion,locale?}",
+      "response": "{challengeId,expiresIn,retryAfter,maskedIdentifier}；验证码不回显，票据和手机号共同限频",
+      "dependency": "有效微信绑定票据、已审协议和真实短信渠道",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/auth/auth.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AuthController.wechatBindPhone",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/auth/wechat-bind-phone",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/auth/auth.controller.ts",
+      "summary": "原生微信首次登录绑定手机号",
+      "request": "{bindTicket,challengeId,code:6位数字,consentVersion,locale?,wechatProfileProof}",
+      "response": "Session；验证码、微信票据和配置均一次性校验；同手机号映射H5现有会员，OpenID/UnionID冲突409且不自动合并",
+      "dependency": "有效微信绑定票据和未消费短信验证码",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/auth/auth.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
     },
     {

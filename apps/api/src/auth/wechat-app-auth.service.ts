@@ -15,6 +15,7 @@ const providerTimeoutMs = 15_000;
 const validPlatforms = new Set(["android", "harmony", "ios"]);
 
 export interface WechatAppIdentity {
+  appId: string;
   openId: string;
   unionId: string | null;
   nickname: string;
@@ -87,6 +88,7 @@ export class WechatAppAuthService {
       boundedIdentifier(trustedProfile.unionid) ?? boundedIdentifier(access.unionid);
     await markIntegrationVerified(this.prisma, "wechat_login");
     return {
+      appId,
       openId,
       unionId,
       nickname: cleanDisplayText(trustedProfile.nickname) || "微信用户",

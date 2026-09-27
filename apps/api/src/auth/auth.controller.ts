@@ -14,11 +14,16 @@ import { safeObject } from "../common/crypto";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { GlobalAuthService } from "./global-auth.service";
 import { Throttle } from "@nestjs/throttler";
+import { GlobalWechatAppService } from "./global-wechat-app.service";
 
 @ApiTags("auth")
 @Controller("api/saydian-app/v2/auth")
 export class AuthController {
-  constructor(private readonly auth: AuthService, private readonly globalAuth: GlobalAuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly globalAuth: GlobalAuthService,
+    private readonly globalWechatApp: GlobalWechatAppService,
+  ) {}
 
   @Get("capabilities")
   capabilities(@Query("locale") locale?: string) { return this.globalAuth.capabilities(locale); }
@@ -57,6 +62,7 @@ export class AuthController {
 
   @Post("wechat-login")
   wechatLogin(@Body() input: unknown) {
+    if (isGlobalRealm()) return this.globalWechatApp.login(input);
     const body = safeObject(input);
     return this.auth.loginWechatApp({
       code: String(body.code ?? ""),
@@ -66,6 +72,18 @@ export class AuthController {
       consentVersion: String(body.consentVersion ?? ""),
       consentSource: "app_v2_wechat",
     });
+  }
+
+  @Post("wechat-phone-code")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  wechatPhoneCode(@Body() input: unknown) {
+    return this.globalWechatApp.requestPhoneCode(input);
+  }
+
+  @Post("wechat-bind-phone")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  wechatBindPhone(@Body() input: unknown) {
+    return this.globalWechatApp.bindPhone(input);
   }
 
   @Post("sms-code")
