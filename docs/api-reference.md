@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **360 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **348 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -163,7 +163,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（111）
+## V2 App 接口（99）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -267,7 +267,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（104）
+## 管理后台接口（105）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
