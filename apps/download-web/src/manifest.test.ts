@@ -57,4 +57,29 @@ describe("download manifest API compatibility", () => {
   it("rejects missing manifest data", () => {
     expect(() => manifestFromApiData({ public: true })).toThrow();
   });
+
+  it("normalizes global Say Ring package URLs for the dedicated page", () => {
+    const global = {
+      ...manifest,
+      realm: "global",
+      releases: manifest.releases.map((release) => ({
+        ...release,
+        packageId:
+          release.platform === "harmonyos"
+            ? "cn.saydian.ring.hm"
+            : "cn.saydian.ring",
+        ...(release.destination
+          ? {
+              destination: {
+                ...release.destination,
+                url: `/global${release.destination.url}`,
+              },
+            }
+          : {}),
+      })),
+    };
+    expect(manifestFromApiData(global).releases[0]?.destination?.url).toBe(
+      "/global/down/files/Saydian-Android-0.1.19-build23-QA.apk",
+    );
+  });
 });

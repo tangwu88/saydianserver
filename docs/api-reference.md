@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **358 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **360 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -163,7 +163,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（110）
+## V2 App 接口（111）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -272,13 +272,14 @@
 | `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
 | `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本 | 重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还 | AI供应商 |
 | `GET /api/saydian-app/v2/support/config` | 客服配置 | public | 无请求体 | 客服配置或未配置状态 | 核心服务 |
-| `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | query:product?；国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单 | DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId，直包仅/global/down/files/；无配置404 | 核心服务 |
+| `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | query:product?；国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单 | DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无配置404 | 核心服务 |
+| `GET /api/saydian-app/v2/support/app-package/:fileName` | Say Ring 公开安装包 | public | path:fileName；fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名 | 安装包原始文件流，含 Content-Length、ETag 和 nosniff | 已配置对象存储 |
 | `POST /api/saydian-app/v2/support/feedback` | 提交反馈 | member | {content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项} | {id,status} | 核心服务 |
 | `POST /api/saydian-app/v2/files` | 上传图片 | member | file:file，query:purpose?；multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP | {id,url,...} | 私有对象存储 |
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（103）
+## 管理后台接口（104）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -288,6 +289,7 @@
 | `PATCH /api/saydian-app/admin/v1/health-reports/:id` | 超级管理员复核并编辑已生成健康报告 | admin: SUPER_ADMIN | path:id；id=报告UUID；仅SUPER_ADMIN；{content:{overview,trends:[{metric,text}],suggestions,limitations},expectedUpdatedAt}；指标、顺序和证据ID不可修改 | 更新后的报告正文；使用乐观锁，版本冲突返回409；HEALTH_REPORT_UPDATE审计只保存内容散列和变更章节，不保存报告正文 | 已生成READY报告；内容仅供日常健康管理参考 |
 | `POST /api/saydian-app/admin/v1/auth/login` | 后台登录 | public | JSON {username,password} | AdminSession；不能与 App Token 混用 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/content-images` | 上传后台文章或协议图片 | admin: SUPER_ADMIN, CONTENT_EDITOR | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR | {id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥 | 已配置对象存储 |
+| `POST /api/saydian-app/admin/v1/app-packages` | 上传 Say Ring 安装包 | admin: SUPER_ADMIN, APP_OPERATIONS | file:file，query:platform；platform=android/harmonyos；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS | {fileName,url,sizeBytes,sha256}；上传成功后仍需保存版本配置才发布 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量 | 核心服务 |

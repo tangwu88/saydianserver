@@ -215,6 +215,47 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.uploadAppPackage",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/app-packages",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "上传 Say Ring 安装包",
+      "request": "platform=android/harmonyos；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS",
+      "response": "{fileName,url,sizeBytes,sha256}；上传成功后仍需保存版本配置才发布",
+      "dependency": "已配置对象存储",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.logout",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/auth/logout",
@@ -23853,8 +23894,40 @@ export const apiCatalog = {
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "App 下载与更新配置",
       "request": "国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单",
-      "response": "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId，直包仅/global/down/files/；无配置404",
+      "response": "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无配置404",
       "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SupportController.appPackage",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/app-package/:fileName",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "fileName",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "Say Ring 公开安装包",
+      "request": "fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名",
+      "response": "安装包原始文件流，含 Content-Length、ETag 和 nosniff",
+      "dependency": "已配置对象存储",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

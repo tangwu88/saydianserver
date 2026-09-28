@@ -19,11 +19,7 @@ import {
   CurrentAdmin,
   type RequestWithContext,
 } from "../common/request-context";
-import {
-  AdminAuthGuard,
-  AdminAuthService,
-  AdminRoles,
-} from "./admin-auth";
+import { AdminAuthGuard, AdminAuthService, AdminRoles } from "./admin-auth";
 import { AdminService } from "./admin.service";
 import { AdminAuditInterceptor } from "./admin-audit.interceptor";
 import { SupportService } from "../support/support.service";
@@ -36,7 +32,10 @@ export class AdminLoginController {
   @Post("login")
   login(@Body() input: unknown) {
     const body = safeObject(input);
-    return this.auth.login(String(body.username ?? ""), String(body.password ?? ""));
+    return this.auth.login(
+      String(body.username ?? ""),
+      String(body.password ?? ""),
+    );
   }
 }
 
@@ -53,9 +52,31 @@ export class AdminController {
 
   @Post("content-images")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_EDITOR)
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
-  uploadContentImage(@CurrentAdmin() current: { id: string }, @UploadedFile() file: Express.Multer.File) {
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    }),
+  )
+  uploadContentImage(
+    @CurrentAdmin() current: { id: string },
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     return this.support.uploadAdminContentImage(current.id, file);
+  }
+
+  @Post("app-packages")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 128 * 1024 * 1024, files: 1 },
+    }),
+  )
+  uploadAppPackage(
+    @CurrentAdmin() current: { id: string },
+    @UploadedFile() file: Express.Multer.File,
+    @Query("platform") platform: string,
+  ) {
+    return this.support.uploadAdminAppPackage(current.id, file, platform);
   }
 
   @Post("auth/logout")
@@ -65,8 +86,14 @@ export class AdminController {
   }
 
   @Get("auth/me")
-  currentAdmin(@CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
-    return { id: current.id, role: current.role, roles: current.roles ?? [current.role] };
+  currentAdmin(
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+  ) {
+    return {
+      id: current.id,
+      role: current.role,
+      roles: current.roles ?? [current.role],
+    };
   }
 
   @Get("dashboard")
@@ -80,7 +107,11 @@ export class AdminController {
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
   ) {
-    return this.admin.members(search, Number(page ?? 1), Number(pageSize ?? 30));
+    return this.admin.members(
+      search,
+      Number(page ?? 1),
+      Number(pageSize ?? 30),
+    );
   }
 
   @Get("members/:id/profile")
@@ -101,7 +132,12 @@ export class AdminController {
     @Req() request: RequestWithContext,
     @Body() input: unknown,
   ) {
-    return this.admin.updateMemberProfile(current, id, request.requestId, safeObject(input));
+    return this.admin.updateMemberProfile(
+      current,
+      id,
+      request.requestId,
+      safeObject(input),
+    );
   }
 
   @Post("members/:id/points-adjustments")
@@ -112,7 +148,12 @@ export class AdminController {
     @Req() request: RequestWithContext,
     @Body() input: unknown,
   ) {
-    return this.admin.adjustMemberPoints(current, id, request.requestId, safeObject(input));
+    return this.admin.adjustMemberPoints(
+      current,
+      id,
+      request.requestId,
+      safeObject(input),
+    );
   }
 
   @Patch("members/:id/verification")
@@ -123,7 +164,12 @@ export class AdminController {
     @Req() request: RequestWithContext,
     @Body() input: unknown,
   ) {
-    return this.admin.updateMemberVerification(current, id, request.requestId, safeObject(input));
+    return this.admin.updateMemberVerification(
+      current,
+      id,
+      request.requestId,
+      safeObject(input),
+    );
   }
 
   @Get("members/:id/health-summary")
@@ -170,7 +216,11 @@ export class AdminController {
     AdminRole.APP_OPERATIONS,
     AdminRole.CUSTOMER_SERVICE,
   )
-  updateFeedback(@Param("id") id: string, @Body() input: unknown, @CurrentAdmin() current: NonNullable<RequestWithContext["authAdmin"]>) {
+  updateFeedback(
+    @Param("id") id: string,
+    @Body() input: unknown,
+    @CurrentAdmin() current: NonNullable<RequestWithContext["authAdmin"]>,
+  ) {
     return this.admin.updateFeedback(id, input, current);
   }
 
@@ -220,7 +270,11 @@ export class AdminController {
   }
 
   @Get("audit-logs")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.HEALTH_AUDITOR, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.HEALTH_AUDITOR,
+    AdminRole.READ_ONLY,
+  )
   audits(@Query("page") page?: string) {
     return this.admin.audits(Number(page ?? 1));
   }
@@ -288,7 +342,13 @@ export class AdminController {
   }
 
   @Get("commerce-products")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.FINANCE,
+    AdminRole.CUSTOMER_SERVICE,
+    AdminRole.READ_ONLY,
+  )
   commerceProducts(
     @Query("search") search?: string,
     @Query("page") page?: string,
@@ -317,7 +377,10 @@ export class AdminController {
 
   @Patch("commerce-products/:id/skus")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
-  quickUpdateCommerceProductSkus(@Param("id") id: string, @Body() input: unknown) {
+  quickUpdateCommerceProductSkus(
+    @Param("id") id: string,
+    @Body() input: unknown,
+  ) {
     return this.admin.quickUpdateCommerceProductSkus(id, input);
   }
 
@@ -328,7 +391,13 @@ export class AdminController {
   }
 
   @Get("commerce-categories")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.FINANCE,
+    AdminRole.CUSTOMER_SERVICE,
+    AdminRole.READ_ONLY,
+  )
   commerceCategories() {
     return this.admin.commerceCategories();
   }
@@ -346,7 +415,11 @@ export class AdminController {
   }
 
   @Get("commerce-banners")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.READ_ONLY,
+  )
   commerceBanners() {
     return this.admin.commerceBanners();
   }
@@ -364,19 +437,31 @@ export class AdminController {
   }
 
   @Get("commerce-business-configs")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.READ_ONLY,
+  )
   commerceBusinessConfigs() {
     return this.admin.commerceBusinessConfigs();
   }
 
   @Patch("commerce-business-configs/:key")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
-  updateCommerceBusinessConfig(@Param("key") key: string, @Body() input: unknown) {
+  updateCommerceBusinessConfig(
+    @Param("key") key: string,
+    @Body() input: unknown,
+  ) {
     return this.admin.updateCommerceBusinessConfig(key, input);
   }
 
   @Get("commerce-reviews")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.CUSTOMER_SERVICE,
+    AdminRole.READ_ONLY,
+  )
   commerceReviews() {
     return this.admin.commerceReviews();
   }
@@ -392,14 +477,25 @@ export class AdminController {
   }
 
   @Get("commerce-orders")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.FINANCE,
+    AdminRole.CUSTOMER_SERVICE,
+    AdminRole.READ_ONLY,
+  )
   commerceOrders(
     @CurrentAdmin() current: { role: string; roles?: string[] },
     @Query("status") status?: string,
     @Query("page") page?: string,
     @Query("search") search?: string,
   ) {
-    return this.admin.commerceOrders(status, Number(page ?? 1), search ?? "", current);
+    return this.admin.commerceOrders(
+      status,
+      Number(page ?? 1),
+      search ?? "",
+      current,
+    );
   }
 
   @Patch("commerce-orders/:id")
@@ -416,7 +512,12 @@ export class AdminController {
     @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
     @Req() request: RequestWithContext,
   ) {
-    return this.admin.manuallySettleCommerceOrder(id, input, current, request.requestId);
+    return this.admin.manuallySettleCommerceOrder(
+      id,
+      input,
+      current,
+      request.requestId,
+    );
   }
 
   @Post("commerce-orders/:id/close")
@@ -432,15 +533,20 @@ export class AdminController {
 
   @Get("commerce-orders/:id/fulfillment-preview")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
-  commerceFulfillmentPreview(@Param("id") id: string,
-    @CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
+  commerceFulfillmentPreview(
+    @Param("id") id: string,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+  ) {
     return this.admin.commerceFulfillmentPreview(id, current);
   }
 
   @Post("commerce-orders/:id/shipments")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
-  createCommerceShipment(@Param("id") id: string, @Body() input: unknown,
-    @CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
+  createCommerceShipment(
+    @Param("id") id: string,
+    @Body() input: unknown,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+  ) {
     return this.admin.createCommerceShipment(id, input, current);
   }
 
@@ -452,13 +558,22 @@ export class AdminController {
 
   @Post("commerce-orders/:id/shipping-refunds")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
-  createShippingRefund(@Param("id") id: string, @Body() input: unknown,
-    @CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
+  createShippingRefund(
+    @Param("id") id: string,
+    @Body() input: unknown,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+  ) {
     return this.admin.createShippingRefund(id, input, current);
   }
 
   @Get("commerce-after-sales")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.FINANCE,
+    AdminRole.CUSTOMER_SERVICE,
+    AdminRole.READ_ONLY,
+  )
   commerceAfterSales(@Query("status") status?: string) {
     return this.admin.commerceAfterSales(status);
   }
@@ -470,13 +585,21 @@ export class AdminController {
     AdminRole.CUSTOMER_SERVICE,
     AdminRole.FINANCE,
   )
-  updateCommerceAfterSale(@Param("id") id: string, @Body() input: unknown,
-    @CurrentAdmin() current: { id: string; role: string; roles?: string[] }) {
+  updateCommerceAfterSale(
+    @Param("id") id: string,
+    @Body() input: unknown,
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+  ) {
     return this.admin.updateCommerceAfterSale(id, input, current);
   }
 
   @Get("commerce-coupons")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.CUSTOMER_SERVICE,
+    AdminRole.READ_ONLY,
+  )
   commerceCoupons() {
     return this.admin.commerceCoupons();
   }
@@ -494,7 +617,12 @@ export class AdminController {
   }
 
   @Get("commerce-employees")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.FINANCE,
+    AdminRole.READ_ONLY,
+  )
   commerceEmployees() {
     return this.admin.commerceEmployees();
   }
@@ -517,7 +645,12 @@ export class AdminController {
   }
 
   @Get("commerce-jobs")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.INTEGRATION_ADMIN, AdminRole.READ_ONLY)
+  @AdminRoles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.COMMERCE_OPERATIONS,
+    AdminRole.INTEGRATION_ADMIN,
+    AdminRole.READ_ONLY,
+  )
   commerceJobs(@Query("status") status?: string) {
     return this.admin.commerceJobs(status);
   }

@@ -32,7 +32,10 @@ export function parseGlobalDownloadManifest(
     const destination = safeObject(release.destination);
     if (destination.kind !== "direct") return release;
     const path = String(destination.url ?? "");
-    if (!path.startsWith("/global/down/files/")) throw new Error("The global package path is required.");
+    if (!path.startsWith("/global/down/files/") &&
+        !path.startsWith("/global/api/saydian-app/v2/support/app-package/")) {
+      throw new Error("The global package path is required.");
+    }
     return { ...release, destination: { ...destination, url: path.slice("/global".length) } };
   });
   const manifest = parseDownloadManifest({ ...body, releases });

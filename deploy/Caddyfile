@@ -19,6 +19,10 @@
     reverse_proxy admin:8080
   }
 
+  handle /say-ring* {
+    reverse_proxy admin:8080
+  }
+
   handle /saidian-mall/* {
     reverse_proxy admin:8080
   }

@@ -10,15 +10,7 @@ import MemberHealthData from "../components/MemberHealthData.vue";
 import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
 import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
 import ContentImageField from "../components/ContentImageField.vue";
-import {
-  createGlobalDownloadDraft,
-  createSayRingDownloadDraft,
-  globalDownloadEditorToManifest,
-  globalDownloadManifestToEditor,
-  sayRingDownloadEditorToManifest,
-  sayRingDownloadManifestToEditor,
-  type DownloadManifestEditor,
-} from "../global-download-setting";
+import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor, type DownloadManifestEditor } from "../global-download-setting";
 
 type Row = Record<string, any>;
 const memberColumns = ["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "referrerProfile", "pointBalanceCents", "status", "createdAt"];
@@ -59,24 +51,18 @@ const healthReportRow = ref<Row | null>(null);
 const feedbackVisible = ref(false);
 const feedbackSaving = ref(false);
 const feedbackForm = ref<Row>({});
+const packageUploading = ref<Record<string, boolean>>({});
 const downloadPlatformOptions = [
   { key: "android", label: "Android", packageLabel: "APK" },
   { key: "ios", label: "iPhone", packageLabel: "TestFlight / App Store" },
   { key: "harmonyos", label: "HarmonyOS", packageLabel: "HAP" },
 ] as const;
-const visibleDownloadPlatformOptions = computed(() =>
-  form.value.key === "say_ring_app_update"
-    ? downloadPlatformOptions.filter((platform) => platform.key !== "harmonyos")
-    : downloadPlatformOptions,
-);
+const visibleDownloadPlatformOptions = computed(() => downloadPlatformOptions);
 const appUpdateSettingKeys = new Set(["global_app_update", "say_ring_app_update"]);
 const isAppUpdateSetting = (key: unknown): boolean => appUpdateSettingKeys.has(String(key ?? ""));
-const createDownloadDraft = (key: unknown): DownloadManifestEditor =>
-  String(key) === "say_ring_app_update" ? createSayRingDownloadDraft() : createGlobalDownloadDraft();
-const downloadManifestToEditor = (key: unknown, value: unknown): DownloadManifestEditor =>
-  String(key) === "say_ring_app_update" ? sayRingDownloadManifestToEditor(value) : globalDownloadManifestToEditor(value);
-const downloadEditorToManifest = (key: unknown, editor: DownloadManifestEditor) =>
-  String(key) === "say_ring_app_update" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor);
+const createDownloadDraft = (key: unknown): DownloadManifestEditor => (String(key) === "say_ring_app_update" ? createSayRingDownloadDraft() : createGlobalDownloadDraft());
+const downloadManifestToEditor = (key: unknown, value: unknown): DownloadManifestEditor => (String(key) === "say_ring_app_update" ? sayRingDownloadManifestToEditor(value) : globalDownloadManifestToEditor(value));
+const downloadEditorToManifest = (key: unknown, editor: DownloadManifestEditor) => (String(key) === "say_ring_app_update" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor));
 const titles: Record<string, string> = {
   members: "会员",
   care: "远程关爱",
@@ -440,17 +426,10 @@ async function openEdit(row: Row): Promise<void> {
     if (!canManageMemberVerification.value) return;
     dialogVisible.value = false;
     try {
-      const [profileResponse, employeesResponse] = await Promise.all([
-        api.get(`/members/${encodeURIComponent(String(row.id))}/profile`),
-        api.get("/commerce-employees"),
-      ]);
+      const [profileResponse, employeesResponse] = await Promise.all([api.get(`/members/${encodeURIComponent(String(row.id))}/profile`), api.get("/commerce-employees")]);
       const profile = responseData<Row>(profileResponse);
       const employeesData = responseData<unknown>(employeesResponse);
-      const employees = Array.isArray(employeesData)
-        ? employeesData
-        : Array.isArray((employeesData as Row | null)?.items)
-          ? (employeesData as Row).items
-          : [];
+      const employees = Array.isArray(employeesData) ? employeesData : Array.isArray((employeesData as Row | null)?.items) ? (employeesData as Row).items : [];
       if (requestId !== editorRequestId || requestedResource !== resource.value) return;
       memberReferralOptions.value = employees.filter((item: Row) => item?.id && (item.active === true || item.id === profile.referralEmployeeId));
       if (profile.referralEmployee?.id && !memberReferralOptions.value.some((item) => item.id === profile.referralEmployee.id)) {
@@ -675,11 +654,13 @@ async function save(): Promise<void> {
       };
       await api.patch(`/members/${encodeURIComponent(id)}/profile`, payload);
       if (deltaCents) {
-        const adjusted = responseData<Row>(await api.post(`/members/${encodeURIComponent(id)}/points-adjustments`, {
-          deltaCents,
-          reason: pointReason,
-          idempotencyKey: form.value._pointAdjustmentKey,
-        }));
+        const adjusted = responseData<Row>(
+          await api.post(`/members/${encodeURIComponent(id)}/points-adjustments`, {
+            deltaCents,
+            reason: pointReason,
+            idempotencyKey: form.value._pointAdjustmentKey,
+          }),
+        );
         form.value.pointBalanceCents = adjusted.balanceCents;
       }
     } else if (resource.value === "integrations") {
@@ -736,6 +717,38 @@ function fillDownloadUrl(platform: "android" | "ios" | "harmonyos"): void {
   const editor = form.value.downloadEditor as DownloadManifestEditor | undefined;
   const release = editor?.releases[platform];
   if (release?.fileName) release.url = `/global/down/files/${release.fileName.trim()}`;
+}
+
+async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  if (platform === "ios") return;
+  const file = input.files?.[0];
+  if (!file) return;
+  const expectedExtension = platform === "android" ? ".apk" : ".hap";
+  if (!file.name.toLowerCase().endsWith(expectedExtension)) {
+    ElMessage.error(`请选择 ${expectedExtension.toUpperCase()} 安装包`);
+    input.value = "";
+    return;
+  }
+  packageUploading.value = { ...packageUploading.value, [platform]: true };
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const uploaded = responseData<Row>(await api.post(`/app-packages?platform=${encodeURIComponent(platform)}`, body, { timeout: 5 * 60_000 }));
+    const editor = form.value.downloadEditor as DownloadManifestEditor;
+    const release = editor.releases[platform];
+    release.destinationKind = "direct";
+    release.fileName = String(uploaded.fileName ?? "");
+    release.url = String(uploaded.url ?? "");
+    release.sizeBytes = Number(uploaded.sizeBytes ?? 0);
+    release.sha256 = String(uploaded.sha256 ?? "");
+    ElMessage.success("安装包上传成功，保存设置后正式发布");
+  } catch (error) {
+    ElMessage.error(readableError(error));
+  } finally {
+    packageUploading.value = { ...packageUploading.value, [platform]: false };
+    input.value = "";
+  }
 }
 
 function payloadForResource(current: string, source: Row): Row {
@@ -805,7 +818,11 @@ function pick(source: Row, fields: string[]): Row {
 }
 
 function openFeedback(row: Row): void {
-  feedbackForm.value = { ...row, replyContent: String(row.replyContent ?? ""), status: String(row.status ?? "OPEN") };
+  feedbackForm.value = {
+    ...row,
+    replyContent: String(row.replyContent ?? ""),
+    status: String(row.status ?? "OPEN"),
+  };
   feedbackVisible.value = true;
 }
 
@@ -1140,11 +1157,17 @@ onBeforeUnmount(() => {
         <el-descriptions-item label="会员">{{ feedbackForm.memberNickname || "未填写昵称" }}{{ feedbackForm.memberNo ? ` · 会员 ${feedbackForm.memberNo}` : "" }}</el-descriptions-item>
         <el-descriptions-item label="问题分类">{{ render(feedbackForm.category) }}</el-descriptions-item>
         <el-descriptions-item label="提交时间">{{ render(feedbackForm.createdAt) }}</el-descriptions-item>
-        <el-descriptions-item label="反馈内容"><div style="white-space: pre-wrap; overflow-wrap: anywhere">{{ feedbackForm.content }}</div></el-descriptions-item>
+        <el-descriptions-item label="反馈内容"
+          ><div style="white-space: pre-wrap; overflow-wrap: anywhere">
+            {{ feedbackForm.content }}
+          </div></el-descriptions-item
+        >
         <el-descriptions-item v-if="feedbackForm.contact" label="联系方式">{{ feedbackForm.contact }}</el-descriptions-item>
       </el-descriptions>
       <el-form label-width="90px" style="margin-top: 18px">
-        <el-form-item label="处理状态"><el-select v-model="feedbackForm.status" style="width: 100%"><el-option label="待处理" value="OPEN" /><el-option label="处理中" value="IN_PROGRESS" /><el-option label="已解决" value="RESOLVED" /><el-option label="已关闭" value="CLOSED" /></el-select></el-form-item>
+        <el-form-item label="处理状态"
+          ><el-select v-model="feedbackForm.status" style="width: 100%"><el-option label="待处理" value="OPEN" /><el-option label="处理中" value="IN_PROGRESS" /><el-option label="已解决" value="RESOLVED" /><el-option label="已关闭" value="CLOSED" /></el-select
+        ></el-form-item>
         <el-form-item label="回复会员"><el-input v-model="feedbackForm.replyContent" type="textarea" :rows="6" maxlength="2000" show-word-limit placeholder="填写后，会员可在 H5 客服中心查看回复" /></el-form-item>
       </el-form>
       <template #footer><el-button :disabled="feedbackSaving" @click="feedbackVisible = false">关闭</el-button><el-button type="primary" :loading="feedbackSaving" @click="saveFeedback">保存处理结果</el-button></template>
@@ -1193,20 +1216,18 @@ onBeforeUnmount(() => {
           <el-form-item label="推广上级 ID">
             <div style="width: 100%">
               <el-select v-model="form.referralEmployeeId" clearable filterable placeholder="可搜索员工姓名、推广码或 ID；留空则清除" style="width: 100%">
-                <el-option
-                  v-for="item in memberReferralOptions"
-                  :key="item.id"
-                  :value="item.id"
-                  :label="`${item.name} · ${item.referralCode} · ${item.id}`"
-                  :disabled="item.active === false && item.id !== form._originalReferralEmployeeId"
-                />
+                <el-option v-for="item in memberReferralOptions" :key="item.id" :value="item.id" :label="`${item.name} · ${item.referralCode} · ${item.id}`" :disabled="item.active === false && item.id !== form._originalReferralEmployeeId" />
               </el-select>
               <span class="muted">关联推广员工，只影响之后未携带有效推广链接的新订单；不会修改历史订单和奖金。</span>
             </div>
           </el-form-item>
           <el-divider content-position="left">会员积分</el-divider>
-          <el-form-item label="当前积分"><b>{{ pointMoney(form.pointBalanceCents) }}</b></el-form-item>
-          <el-form-item label="调整金额"><el-input v-model="form.pointAdjustment" inputmode="decimal" placeholder="例如 20.00；扣减填写 -5.00" clearable><template #append>元</template></el-input></el-form-item>
+          <el-form-item label="当前积分"
+            ><b>{{ pointMoney(form.pointBalanceCents) }}</b></el-form-item
+          >
+          <el-form-item label="调整金额"
+            ><el-input v-model="form.pointAdjustment" inputmode="decimal" placeholder="例如 20.00；扣减填写 -5.00" clearable><template #append>元</template></el-input></el-form-item
+          >
           <el-form-item label="调整原因"><el-input v-model="form.pointAdjustmentReason" maxlength="200" show-word-limit placeholder="调整积分时必填，会写入审计日志" /></el-form-item>
           <el-alert title="积分按可抵扣金额管理。扣减后余额不能小于0，每次调整都会生成会员可见流水和后台审计记录。" type="info" :closable="false" show-icon />
           <el-form-item label="新密码"><el-input v-model="form.newPassword" type="password" show-password maxlength="72" autocomplete="new-password" placeholder="留空则不修改；至少8位" /></el-form-item>
@@ -1270,9 +1291,13 @@ onBeforeUnmount(() => {
           </template>
           <template v-else>
             <el-alert v-if="form.source === 'ERP'" title="ERP 名称、编码、SKU、售价和库存已从聚水潭实时刷新；此处保存商城展示资料，后续同步仍会更新 ERP 权威字段。" type="success" :closable="false" show-icon />
-            <el-form-item label="商品来源"><el-tag>{{ form.source === "LOCAL" ? "本地商品" : "ERP同步商品" }}</el-tag></el-form-item>
+            <el-form-item label="商品来源"
+              ><el-tag>{{ form.source === "LOCAL" ? "本地商品" : "ERP同步商品" }}</el-tag></el-form-item
+            >
             <el-form-item v-if="form.source === 'ERP'" label="匹配 SKU">
-              <el-space wrap><el-tag v-for="sku in form.skus" :key="sku.id || sku.erpSkuId" type="info">{{ sku.erpSkuId }}</el-tag></el-space>
+              <el-space wrap
+                ><el-tag v-for="sku in form.skus" :key="sku.id || sku.erpSkuId" type="info">{{ sku.erpSkuId }}</el-tag></el-space
+              >
             </el-form-item>
             <el-form-item v-if="form._erpSnapshotText" label="ERP 实时资料">
               <el-collapse style="width: 100%">
@@ -1296,13 +1321,34 @@ onBeforeUnmount(() => {
             <el-form-item v-if="form.source === 'LOCAL'" label="商品规格">
               <div style="width: 100%">
                 <el-table :data="form.skus" border>
-                  <el-table-column label="规格"><template #default="scope"><el-input v-model="scope.row.specification" /></template></el-table-column>
-                  <el-table-column label="SKU编码"><template #default="scope"><el-input v-model="scope.row.erpSkuId" placeholder="自动生成" /></template></el-table-column>
-                  <el-table-column label="售价（分）" width="145"><template #default="scope"><el-input-number v-model="scope.row.salePriceCents" :min="1" controls-position="right" style="width: 120px" /></template></el-table-column>
-                  <el-table-column label="库存" width="130"><template #default="scope"><el-input-number v-model="scope.row.stock" :min="0" controls-position="right" style="width: 105px" /></template></el-table-column>
-                  <el-table-column label="启用" width="65"><template #default="scope"><el-switch v-model="scope.row.enabled" /></template></el-table-column>
+                  <el-table-column label="规格"
+                    ><template #default="scope"><el-input v-model="scope.row.specification" /></template
+                  ></el-table-column>
+                  <el-table-column label="SKU编码"
+                    ><template #default="scope"><el-input v-model="scope.row.erpSkuId" placeholder="自动生成" /></template
+                  ></el-table-column>
+                  <el-table-column label="售价（分）" width="145"
+                    ><template #default="scope"><el-input-number v-model="scope.row.salePriceCents" :min="1" controls-position="right" style="width: 120px" /></template
+                  ></el-table-column>
+                  <el-table-column label="库存" width="130"
+                    ><template #default="scope"><el-input-number v-model="scope.row.stock" :min="0" controls-position="right" style="width: 105px" /></template
+                  ></el-table-column>
+                  <el-table-column label="启用" width="65"
+                    ><template #default="scope"><el-switch v-model="scope.row.enabled" /></template
+                  ></el-table-column>
                 </el-table>
-                <el-button style="margin-top: 8px" @click="form.skus.push({ specification: '', salePriceCents: 1, stock: 0, enabled: true })">添加规格</el-button>
+                <el-button
+                  style="margin-top: 8px"
+                  @click="
+                    form.skus.push({
+                      specification: '',
+                      salePriceCents: 1,
+                      stock: 0,
+                      enabled: true,
+                    })
+                  "
+                  >添加规格</el-button
+                >
               </div>
             </el-form-item>
             <el-form-item label="状态"
@@ -1439,7 +1485,7 @@ onBeforeUnmount(() => {
           <el-form-item label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
           <el-form-item label="公开"><el-switch v-model="form.public" /></el-form-item>
           <template v-if="isAppUpdateSetting(form.key) && form.downloadEditor">
-            <el-alert :title="form.key === 'say_ring_app_update' ? '保存后仅 Say Ring 会读取此配置。此处不上传安装包；APK 需先放入服务器国际版下载目录。' : '保存后国际版 App 会读取新配置。此处不上传安装包；Android/HarmonyOS 文件需先放入服务器国际版下载目录。'" type="warning" :closable="false" show-icon />
+            <el-alert :title="form.key === 'say_ring_app_update' ? '保存后仅 Say Ring 会读取此配置。Android 与 HarmonyOS 可上传安装包或填写应用市场链接。' : '保存后国际版 App 会读取新配置。Android/HarmonyOS 可配置安装包或应用市场链接。'" type="warning" :closable="false" show-icon />
             <el-form-item label="发布时间" class="download-published-at">
               <el-input v-model="form.downloadEditor.publishedAt" placeholder="ISO 8601，如 2026-09-06T00:00:00+08:00">
                 <template #append><el-button @click="setDownloadPublishedNow">设为现在</el-button></template>
@@ -1477,24 +1523,41 @@ onBeforeUnmount(() => {
                   </el-form-item>
                 </template>
                 <template v-else-if="form.downloadEditor.releases[platform.key].status === 'available'">
-                  <el-form-item label="文件名">
-                    <el-input v-model="form.downloadEditor.releases[platform.key].fileName" :placeholder="platform.packageLabel + ' 版本化文件名'" />
+                  <el-form-item label="获取方式">
+                    <el-select v-model="form.downloadEditor.releases[platform.key].destinationKind">
+                      <el-option label="上传安装包" value="direct" />
+                      <el-option label="应用市场链接" value="market" />
+                    </el-select>
                   </el-form-item>
-                  <el-form-item label="下载链接">
-                    <el-input v-model="form.downloadEditor.releases[platform.key].url" placeholder="/global/down/files/文件名" />
-                  </el-form-item>
-                  <el-button class="download-url-button" plain @click="fillDownloadUrl(platform.key)">按文件名生成链接</el-button>
-                  <el-form-item label="字节数">
-                    <el-input-number v-model="form.downloadEditor.releases[platform.key].sizeBytes" :min="1" :step="1" controls-position="right" />
-                  </el-form-item>
-                  <el-form-item label="SHA-256">
-                    <el-input v-model="form.downloadEditor.releases[platform.key].sha256" type="textarea" :rows="3" maxlength="64" show-word-limit />
-                  </el-form-item>
+                  <template v-if="form.downloadEditor.releases[platform.key].destinationKind === 'market'">
+                    <el-form-item label="应用市场链接">
+                      <el-input v-model="form.downloadEditor.releases[platform.key].url" placeholder="https://..." />
+                    </el-form-item>
+                  </template>
+                  <template v-else>
+                    <el-form-item v-if="form.key === 'say_ring_app_update'" label="上传安装包">
+                      <input :accept="platform.key === 'android' ? '.apk' : '.hap'" type="file" :disabled="packageUploading[platform.key]" @change="uploadAppPackage(platform.key, $event)" />
+                      <span v-if="packageUploading[platform.key]">正在上传并计算校验值…</span>
+                    </el-form-item>
+                    <el-form-item label="文件名">
+                      <el-input v-model="form.downloadEditor.releases[platform.key].fileName" :placeholder="platform.packageLabel + ' 版本化文件名'" />
+                    </el-form-item>
+                    <el-form-item label="下载链接">
+                      <el-input v-model="form.downloadEditor.releases[platform.key].url" placeholder="后台上传后自动填写，或使用 /global/down/files/文件名" />
+                    </el-form-item>
+                    <el-button class="download-url-button" plain @click="fillDownloadUrl(platform.key)">按文件名生成链接</el-button>
+                    <el-form-item label="字节数">
+                      <el-input-number v-model="form.downloadEditor.releases[platform.key].sizeBytes" :min="1" :step="1" controls-position="right" />
+                    </el-form-item>
+                    <el-form-item label="SHA-256">
+                      <el-input v-model="form.downloadEditor.releases[platform.key].sha256" type="textarea" :rows="3" maxlength="64" show-word-limit />
+                    </el-form-item>
+                  </template>
                 </template>
                 <p v-else class="download-coming-note">待开放状态不会保存下载链接，前台按钮自动禁用。</p>
               </section>
             </div>
-            <el-alert title="Android/HarmonyOS 只允许 /global/down/files/ 同源地址；iPhone 只允许官方 TestFlight 或 App Store HTTPS 链接。" type="info" :closable="false" />
+            <el-alert title="Android/HarmonyOS 安装包使用同源下载地址，也可填写 HTTPS 应用市场链接；iPhone 只允许官方 TestFlight 或 App Store 链接。" type="info" :closable="false" />
           </template>
           <el-form-item v-else label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="12" /></el-form-item>
         </template>
@@ -1513,8 +1576,25 @@ onBeforeUnmount(() => {
   </section>
 </template>
 <style scoped>
-.member-referrer { display: flex; align-items: center; gap: 10px; min-height: 42px; }
-.member-referrer > div { display: grid; gap: 2px; min-width: 0; }
-.member-referrer b, .member-referrer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.member-referrer span { color: #667085; font-size: 12px; }
+.member-referrer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+}
+.member-referrer > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.member-referrer b,
+.member-referrer span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.member-referrer span {
+  color: #667085;
+  font-size: 12px;
+}
 </style>

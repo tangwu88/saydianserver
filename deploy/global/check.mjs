@@ -114,7 +114,8 @@ check(/proxy_set_header X-App-Realm "";/.test(nginx) && /proxy_set_header X-Real
 check(/location \^~ \/global\/\s*\{\s*return 404;\s*\}/.test(nginx), "Unpublished global pages must not fall through to domestic routes");
 check(!/saydianapp-api|saydianapp-admin/.test(nginx), "Global routes must not target domestic services");
 check(adminDockerfile.includes("--filter @saydian/app-contracts build && pnpm --filter @saydian/app-admin-web build"), "Admin image must build contracts and the admin frontend");
-check(!/apps\/(?:download-web|api|worker)|COPY\s+\.\s+\./.test(adminDockerfile), "Global static image must not copy unrelated applications or the entire repository");
+check(!/apps\/(?:api|worker)|COPY\s+\.\s+\./.test(adminDockerfile), "Global static image must not copy server applications or the entire repository");
+check(adminDockerfile.includes("--filter @saydian/app-download-web build") && adminDockerfile.includes("COPY --from=build /workspace/apps/download-web/dist /usr/share/nginx/html/down"), "Global static image must build and copy the reviewed download page only");
 check(adminDockerfile.includes("RUN VITE_APP_REALM=global VITE_API_BASE=/global/api/saidian-mall/v1 VITE_PUBLIC_BASE=/global/saidian-mall/ pnpm --filter @saydian/app-shop build:h5"), "H5 must use independently scoped build variables without changing admin build configuration");
 check(adminDockerfile.includes("COPY --from=build /workspace/apps/shop/dist/build/h5 /usr/share/nginx/html/global/saidian-mall"), "Global H5 must be copied into its own static tree");
 check(adminDockerfile.includes("FROM nginxinc/nginx-unprivileged:") && adminDockerfile.includes("ENV VITE_BASE_PATH=/admin/"), "Admin runtime must be unprivileged and use the existing /admin/ public path");
@@ -122,6 +123,8 @@ check(adminDockerfile.includes("COPY --from=build /workspace/apps/admin-web/dist
 check(adminNginx.includes("listen 8080;") && adminNginx.includes("location /admin/ {") && adminNginx.includes("try_files $uri $uri/ /admin/index.html;"), "Admin must serve SPA navigation under /admin/");
 check(/location = \/admin\/index\.html\s*\{[^}]*try_files \$uri =404;[^}]*Cache-Control "no-store"/s.test(adminNginx), "Admin HTML must exist and disable caching");
 check(/location \^~ \/admin\/assets\/\s*\{[^}]*try_files \$uri =404;/s.test(adminNginx), "Missing static assets must return 404 rather than SPA HTML");
+check(/location = \/say-ring\s*\{[^}]*try_files \/down\/index\.html =404;[^}]*Cache-Control "no-store"/s.test(adminNginx), "Say Ring must serve the reviewed download page without SPA fallthrough");
+check(/location \^~ \/down\/assets\/\s*\{[^}]*try_files \$uri =404;/s.test(adminNginx), "Download assets must return real 404s instead of HTML");
 check(!/proxy_pass|fastcgi_pass|uwsgi_pass|scgi_pass/.test(adminNginx), "Static admin must not proxy API requests or receive service credentials");
 check(/location \/\s*\{\s*return 404;\s*\}/.test(adminNginx), "Static admin must not serve other application paths");
 check(nginx.includes("location ^~ /global/saidian-mall/") && nginx.includes("proxy_pass http://global-admin:8080;"), "Only the fixed global H5 prefix may use the global static upstream");

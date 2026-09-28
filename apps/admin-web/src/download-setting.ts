@@ -77,6 +77,15 @@ export function downloadEditorToManifest(
         },
       };
     }
+    if (release.destinationKind === "market") {
+      return {
+        ...base,
+        destination: {
+          kind: "market" as const,
+          url: release.url,
+        },
+      };
+    }
     return {
       ...base,
       destination: {
