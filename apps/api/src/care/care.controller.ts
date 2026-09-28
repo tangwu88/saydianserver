@@ -67,7 +67,8 @@ export class CareController {
     @Query("from") from: string | undefined,
     @Query("to") to: string | undefined,
     @Req() request: RequestWithContext,
+    @Query("includeDailySummaries") includeDailySummaries?: string,
   ) {
-    return this.care.preview(user.id, id, metric, from, to, request.requestId);
+    return this.care.preview(user.id, id, metric, from, to, request.requestId, undefined, includeDailySummaries === "true");
   }
 }

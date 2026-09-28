@@ -16,11 +16,27 @@ function harness() {
     $executeRaw: vi.fn(async () => 1),
     healthRecord: {
       findUnique: vi.fn(async ({ where }: any) => rows.find(r => r.userId === where.userId_clientRecordId.userId && r.clientRecordId === where.userId_clientRecordId.clientRecordId) ?? null),
-      create: vi.fn(async ({ data }: any) => { const row = { id: rowId, ...data, ecgArtifact: null }; rows.push(row); return row; }),
-      findMany: vi.fn(async () => rows),
+      create: vi.fn(async ({ data }: any) => { const row = { id: `${String(rows.length + 2).repeat(8)}-2222-4222-a222-222222222222`, ...data, supersededAt: null, ecgArtifact: null }; rows.push(row); return row; }),
+      findMany: vi.fn(async ({ where }: any = {}) => rows.filter((row) => {
+        if (where?.userId && row.userId !== where.userId) return false;
+        if (where?.aggregationLocalDate && row.aggregationLocalDate !== where.aggregationLocalDate) return false;
+        if (where?.sourceDeviceKey && row.sourceDeviceKey !== where.sourceDeviceKey) return false;
+        if (where?.metric && row.metric !== where.metric) return false;
+        if (where?.AND && !where.AND.some((part: any) => part.OR)) return row.aggregationKind == null;
+        if (where?.AND && row.aggregationKind != null && row.supersededAt != null) return false;
+        return true;
+      }).sort((a, b) => b.observedAt.valueOf() - a.observedAt.valueOf() || b.id.localeCompare(a.id))),
+      updateMany: vi.fn(async ({ where, data }: any) => {
+        for (const row of rows) if (where.id.in.includes(row.id) && row.supersededAt == null) row.supersededAt = data.supersededAt;
+      }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const row = rows.find(item => item.id === where.id);
+        if (row) Object.assign(row, data);
+        return row;
+      }),
     },
     idempotencyRecord: {
-      findUnique: vi.fn(async ({ where }: any) => idempotency.find(r => r.key === where.userId_scope_key.key) ?? null),
+      findUnique: vi.fn(async ({ where }: any) => idempotency.find(r => r.key === where.userId_scope_key.key && r.userId === where.userId_scope_key.userId && r.scope === where.userId_scope_key.scope) ?? null),
       create: vi.fn(async ({ data }: any) => { if (failCommit) throw new Error("synthetic storage failure"); idempotency.push(data); return data; }),
     },
     deviceBinding: { findUnique: vi.fn(async () => null) },
@@ -134,6 +150,82 @@ describe("health ingestion durable idempotency", () => {
     expect(source).not.toHaveProperty("origin");
     expect(source).not.toHaveProperty("measurementSource");
     expect(source).not.toHaveProperty("rawVersion");
+  });
+
+  it("keeps immutable daily revisions and lists only the newest version for new clients", async () => {
+    const h = harness();
+    const base = {
+      ...inputRecord("daily-1000"), metric: "steps", values: { value: 1000 },
+      source: { platform: "android", deviceId: "U19-A", measurementSource: "wearable" },
+      aggregation: { kind: "daily_summary", localDate: "2026-09-28" },
+      observedAt: "2026-09-28T01:00:00.000Z",
+    };
+    await h.service.ingestBatch(userId, "daily-first-key", { records: [base] });
+    await h.service.ingestBatch(userId, "daily-second-key", { records: [{
+      ...base, id: "daily-2000", values: { value: 2000 }, observedAt: "2026-09-28T02:00:00.000Z",
+    }] });
+    await h.service.ingestBatch(userId, "daily-repeat-key", { records: [{
+      ...base, id: "daily-2000", values: { value: 2000 }, observedAt: "2026-09-28T02:00:00.000Z",
+    }] });
+    expect(h.rows()).toHaveLength(2);
+    expect(h.rows()[0].supersededAt).toBeInstanceOf(Date);
+    expect((await h.service.list(userId)).items).toHaveLength(0);
+    const visible = await h.service.list(userId, "steps", 50, undefined, true);
+    expect(visible.items.map((item: any) => item.values.value)).toEqual([2000]);
+    expect(visible.items[0]?.aggregation).toEqual({ kind: "daily_summary", localDate: "2026-09-28" });
+  });
+
+  const daily = (id: string, value: number | null, observedAt = "2026-09-28T02:00:00.000Z") => ({
+    ...inputRecord(id), metric: "steps", values: { value }, observedAt,
+    source: { platform: "android", deviceId: "U19-A", measurementSource: "wearable" },
+    aggregation: { kind: "daily_summary", localDate: "2026-09-28" },
+  });
+
+  it("rejects an unreadable revision without superseding the previous daily total", async () => {
+    const h = harness();
+    await h.service.ingestBatch(userId, "valid-daily-key", { records: [daily("valid", 2000)] });
+    const result = await h.service.ingestBatch(userId, "invalid-daily-key", { records: [daily("invalid", null, "2026-09-28T03:00:00.000Z")] });
+    expect(result.acceptedIds).toEqual([]);
+    expect(result.rejected[0]?.code).toBe("invalid_aggregation");
+    expect(h.rows()).toHaveLength(1);
+    expect(h.rows()[0].supersededAt).toBeNull();
+    expect((await h.service.list(userId, "steps", 50, undefined, true)).items[0]?.values).toEqual({ value: 2000 });
+  });
+
+  it("keeps a late offline daily revision immutable but invisible and retries the original response", async () => {
+    const h = harness(), current = daily("current", 2000), older = daily("offline", 1000, "2026-09-28T01:00:00.000Z");
+    await h.service.ingestBatch(userId, "current-daily-key", { records: [current] });
+    const response = await h.service.ingestBatch(userId, "offline-daily-key", { records: [older] });
+    expect(response.acceptedIds).toEqual([older.id]);
+    expect(h.rows()[1].supersededAt).toBeInstanceOf(Date);
+    expect(h.rows()[1].observedAt.toISOString()).toBe(older.observedAt);
+    expect(await h.service.ingestBatch(userId, "offline-daily-key", { records: [older] })).toEqual(response);
+    expect(h.rows()).toHaveLength(2);
+    expect((await h.service.list(userId, "steps", 50, undefined, true)).items.map((item: any) => item.values.value)).toEqual([2000]);
+    const retimed = await h.service.ingestBatch(userId, "retimed-daily-key", { records: [{ ...older, observedAt: current.observedAt }] });
+    expect(retimed.rejected[0]?.code).toBe("record_conflict");
+  });
+
+  it("replaces sleep revisions without averaging or changing their device-owned date", async () => {
+    const h = harness(), base = { ...daily("sleep-6", 0), metric: "sleep", values: { hours: 6 }, observedAt: "2026-09-27T23:00:00.000Z" };
+    await h.service.ingestBatch(userId, "sleep-six-key", { records: [base] });
+    await h.service.ingestBatch(userId, "sleep-seven-key", { records: [{ ...base, id: "sleep-7", values: { hours: 7 }, observedAt: "2026-09-28T02:00:00.000Z" }] });
+    const items = (await h.service.list(userId, "sleep", 50, undefined, true)).items;
+    expect(items).toHaveLength(1);
+    expect(items[0]?.values).toEqual({ hours: 7 });
+    expect(items[0]?.aggregation).toEqual(base.aggregation);
+    expect(h.rows()[0].values).toEqual({ hours: 6 });
+    expect(h.rows()[0].observedAt.toISOString()).toBe(base.observedAt);
+  });
+
+  it("scopes revisions by member and device even when record IDs and idempotency keys match", async () => {
+    const h = harness(), otherUser = "99999999-9999-4999-a999-999999999999", record = daily("shared-id", 1000);
+    await h.service.ingestBatch(userId, "shared-daily-key", { records: [record] });
+    await h.service.ingestBatch(otherUser, "shared-daily-key", { records: [{ ...record, values: { value: 3000 } }] });
+    await h.service.ingestBatch(userId, "second-watch-key", { records: [{ ...record, id: "other-watch", values: { value: 2000 }, source: { ...record.source, deviceId: "U19-B" } }] });
+    expect(h.rows().every(row => row.supersededAt === null)).toBe(true);
+    expect((await h.service.list(userId, "steps", 50, undefined, true)).items.map((item: any) => item.values.value)).toEqual([2000, 1000]);
+    expect((await h.service.list(otherUser, "steps", 50, undefined, true)).items.map((item: any) => item.values.value)).toEqual([3000]);
   });
 });
 describe("health stable timestamp/id pagination", () => {

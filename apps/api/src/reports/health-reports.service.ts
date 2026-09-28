@@ -31,6 +31,7 @@ import {
   type EvidenceRecord,
   type HealthEvidence,
 } from "../health/health-evidence";
+import { dailySummaryPeriodWhere } from "../health/daily-summary-period";
 
 const REPORT_WINDOW_DAYS = 30;
 const MINIMUM_DISTINCT_DAYS = 3;
@@ -442,11 +443,16 @@ export class HealthReportsService {
   }
 
   private async loadEvidenceRecords(userId: string, from: Date, to: Date, db: Prisma.TransactionClient = this.prisma) {
+    const profile = await db.healthProfile.findUnique({ where: { userId }, select: { timezone: true } });
+    const daily = dailySummaryPeriodWhere(from, to, profile?.timezone, true);
     const records = await db.healthRecord.findMany({
       where: {
         userId,
-        observedAt: { gte: from, lte: to },
         quality: { not: DataQuality.INVALID },
+        OR: [
+          { aggregationKind: null, observedAt: { gte: from, lte: to } },
+          ...(daily ? [daily] : []),
+        ],
       },
       orderBy: { observedAt: "asc" },
       take: 20_000,
@@ -462,6 +468,8 @@ export class HealthReportsService {
         quality: record.quality,
         sourceModel: record.sourceModel,
         hasEcgArtifact: Boolean(record.ecgArtifact),
+        aggregationLocalDate: record.aggregationKind === "daily_summary"
+          ? record.aggregationLocalDate : null,
       }),
     );
   }

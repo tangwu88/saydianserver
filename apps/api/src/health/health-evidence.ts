@@ -9,6 +9,7 @@ export type EvidenceRecord = {
   quality: string;
   sourceModel?: string | null;
   hasEcgArtifact?: boolean;
+  aggregationLocalDate?: string | null;
 };
 
 export type MetricEvidence = {
@@ -121,8 +122,29 @@ const measurementDefinitions: Partial<Record<HealthMetric, MeasurementDefinition
 };
 
 export function buildHealthEvidence(records: EvidenceRecord[]): HealthEvidence {
-  const validRecordIds: string[] = [];
   const invalidRecordIds: string[] = [];
+  // Validate before choosing a daily winner: a later unreadable snapshot must
+  // not remove usable evidence from the same watch day.
+  records = records.filter((record) => {
+    const metric = metricNames[record.metric];
+    if (metric && isUsableRecord(record, metric)) return true;
+    invalidRecordIds.push(record.id);
+    return false;
+  });
+  // Two watches can each report a full daily total. Use one observed snapshot
+  // per metric/day rather than treating both as additive measurements.
+  const latestDaily = new Map<string, EvidenceRecord>();
+  for (const record of records) {
+    if (!record.aggregationLocalDate) continue;
+    const key = `${record.metric}|${record.aggregationLocalDate}`;
+    const current = latestDaily.get(key);
+    if (!current || current.observedAt < record.observedAt) {
+      latestDaily.set(key, record);
+    }
+  }
+  records = records.filter((record) => !record.aggregationLocalDate ||
+    latestDaily.get(`${record.metric}|${record.aggregationLocalDate}`) === record);
+  const validRecordIds: string[] = [];
   const days = new Set<string>();
   const grouped = new Map<
     HealthMetric,
@@ -130,13 +152,9 @@ export function buildHealthEvidence(records: EvidenceRecord[]): HealthEvidence {
   >();
 
   for (const record of records) {
-    const metric = metricNames[record.metric];
-    if (!metric || !isUsableRecord(record, metric)) {
-      invalidRecordIds.push(record.id);
-      continue;
-    }
+    const metric = metricNames[record.metric]!;
     validRecordIds.push(record.id);
-    days.add(localDay(record.observedAt, record.timezoneOffsetMinutes));
+    days.add(recordDay(record));
     const group = grouped.get(metric) ?? {
       records: [],
       values: [],
@@ -155,7 +173,7 @@ export function buildHealthEvidence(records: EvidenceRecord[]): HealthEvidence {
       const latest = group.records[0]!;
       const latestValue = representativeValue(metric, latest.values);
       const total = group.values.reduce((sum, value) => sum + value, 0);
-      const metricDays = new Set(group.records.map(record => localDay(record.observedAt, record.timezoneOffsetMinutes)));
+      const metricDays = new Set(group.records.map(record => recordDay(record)));
       return {
         metric,
         recordIds: group.records.map((record) => record.id),
@@ -185,7 +203,7 @@ function buildMeasurements(metric: HealthMetric, records: EvidenceRecord[]): Mea
   return (measurementDefinitions[metric] ?? []).flatMap((definition) => {
     const samples = records.flatMap(record => {
       const value = measurementValue(definition, record.values);
-      return value === null ? [] : [{ value, date: localDay(record.observedAt, record.timezoneOffsetMinutes), observedAt: record.observedAt }];
+      return value === null ? [] : [{ value, date: recordDay(record), observedAt: record.observedAt }];
     });
     if (!samples.length) return [];
     samples.sort((left, right) => left.observedAt.valueOf() - right.observedAt.valueOf());
@@ -268,6 +286,10 @@ function localDay(observedAt: Date, timezoneOffsetMinutes: number): string {
   return new Date(observedAt.valueOf() + timezoneOffsetMinutes * 60_000)
     .toISOString()
     .slice(0, 10);
+}
+
+function recordDay(record: EvidenceRecord): string {
+  return record.aggregationLocalDate ?? localDay(record.observedAt, record.timezoneOffsetMinutes);
 }
 
 function firstNumber(values: Record<string, unknown>, keys: string[]): number | null {

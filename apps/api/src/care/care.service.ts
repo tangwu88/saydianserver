@@ -17,6 +17,7 @@ import { PrismaService } from "../common/prisma.service";
 import { normalizedMobile, safeObject } from "../common/crypto";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { normalizedEmail } from "../auth/global-identity";
+import { dailySummaryPeriodWhere } from "../health/daily-summary-period";
 
 const metricMap: Record<HealthMetric, PrismaHealthMetric> = {
   sleep: PrismaHealthMetric.SLEEP,
@@ -229,6 +230,7 @@ export class CareService {
     toInput?: string,
     requestId = "unknown",
     page?: number,
+    includeDailySummaries = false,
   ) {
     const metric = metricMap[metricInput as HealthMetric];
     if (!metric) throw new BadRequestException("健康指标不正确");
@@ -268,11 +270,18 @@ export class CareService {
     if (Number.isNaN(from.valueOf()) || Number.isNaN(to.valueOf()) || from >= to) {
       throw new BadRequestException("查询时间范围不正确");
     }
+    const profile = includeDailySummaries
+      ? await this.prisma.healthProfile.findUnique({ where: { userId: relationship.recipientId }, select: { timezone: true } })
+      : null;
+    const daily = includeDailySummaries ? dailySummaryPeriodWhere(from, to, profile?.timezone) : null;
     const records = await this.prisma.healthRecord.findMany({
       where: {
         userId: relationship.recipientId,
         metric,
-        observedAt: { gte: from, lt: to },
+        OR: [
+          { aggregationKind: null, observedAt: { gte: from, lt: to } },
+          ...(daily ? [daily] : []),
+        ],
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
       skip: page ? (page - 1) * 30 : 0,
@@ -285,6 +294,9 @@ export class CareService {
       observedAt: record.observedAt.toISOString(),
       timezoneOffsetMinutes: record.timezoneOffsetMinutes,
       values: record.values,
+      ...(record.aggregationKind === "daily_summary" && record.aggregationLocalDate
+        ? { aggregation: { kind: "daily_summary", localDate: record.aggregationLocalDate } }
+        : {}),
       unit: record.unit,
       quality: record.quality.toLowerCase(),
     }));

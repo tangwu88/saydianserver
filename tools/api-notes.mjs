@@ -10,7 +10,7 @@ const mall = "主库商城；支付操作还依赖已验收的支付渠道配置
 const category = "{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID";
 const article = "{title,contentHtml,summary?,coverUrl?,categoryId?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID";
 const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；同类型仅一个激活版本";
-const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册";
+const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；手表日汇总可选aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}，修订须新ID且保留实际读取时间；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
   "AdminHealthReportsController.availability": entry("检查会员AI健康报告生成条件", "memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR", "{canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,memberConsentBypass,availableCredits,latestReport}；SUPER_ADMIN后台生成不以会员App同意为前置，HEALTH_AUDITOR仍须当前同意；未知条件不伪装可用；不返回密钥，不探测外部服务", "有效数据、报告次数、已配置AI和未暂停Worker；审核员另需会员当前同意"),
@@ -59,7 +59,8 @@ export const notes = {
   "MembersController.goals": entry("活动目标", undefined, "{steps,distanceMeters,caloriesKcal}；未知为 null"),
   "MembersController.saveGoals": entry("保存活动目标", "{steps,distanceMeters,caloriesKcal}；缺省字段置 null，客户端应提交完整目标", "活动目标"),
   "HealthController.ingestBatch": entry("健康批量同步", healthBatch, batchResult),
-  "HealthController.list": entry("本人健康历史", "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间", "{items,nextCursor}；按采集时间和UUID稳定分页，相同采集时间记录不丢页"),
+  "HealthController.capabilities": entry("读取健康同步能力", undefined, "{dailySummaryVersions:true}；客户端仅在明确支持时上传每日汇总，404或失败不视为已同步", "已执行每日汇总增量迁移的服务"),
+  "HealthController.list": entry("本人健康历史", "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间；includeDailySummaries=true显式包含各手表最新日汇总，缺省不返回日汇总", "{items,nextCursor}；先过滤过期日汇总版本，再按采集时间和UUID稳定分页；日汇总返回aggregation:{kind:daily_summary,localDate}，相同采集时间记录不丢页"),
   "HealthController.warningRules": entry("读取阈值提醒", undefined, "规则数组；未获取阈值为 null"),
   "HealthController.warnings": entry("读取提醒事件", "limit 默认 50", "提醒数组；仅阈值提醒，不是诊断"),
   "HealthController.saveWarningRules": entry("保存阈值提醒", "{rules:[{metric,enabled,lowThreshold?,highThreshold?,secondaryHighThreshold?,shareWithCare?}]}；目前仅本人的提醒闭环", "保存后的规则数组"),
@@ -81,7 +82,7 @@ export const notes = {
   "CareController.respond": entry("接受或拒绝邀请", "id=关系 UUID；{accepted:boolean}；仅收件人可操作", "CareRelationship；接受后仍需逐指标授权"),
   "CareController.savePermissions": entry("共享本人指标", "id=关系 UUID；{metrics:规范指标数组,expiresAt?:ISO8601}；仅数据所属人；[] 撤销全部指标", "CareRelationship"),
   "CareController.revoke": entry("撤销关爱关系", "id=关系 UUID；任一参与方可撤销", "CareRelationship；撤销后不能查询"),
-  "CareController.preview": entry("按授权查看健康数据", "id=关系 UUID；metric 必填；from/to=ISO8601；缺省近 7 天；左闭右开", "HealthRecord[]；逐指标授权并记录审计，拒绝 403"),
+  "CareController.preview": entry("按授权查看健康数据", "id=关系 UUID；metric 必填；from/to=ISO8601；缺省近 7 天；左闭右开；includeDailySummaries=true显式纳入日汇总，缺省及旧接口排除", "HealthRecord[]；普通记录按observedAt，日汇总按被关爱人已保存时区对应的所属日期筛选，未知时区排除日汇总；筛选/折叠后分页，逐指标授权并记录审计，拒绝 403"),
   "NotificationsController.list": entry("消息列表", "page 默认 1；pageSize 默认 30", "分页消息"),
   "NotificationsController.unread": entry("未读数", undefined, "{count}"),
   "NotificationsController.preferences": entry("读取通知偏好", undefined, "{transactionalEnabled,marketingEnabled,updatedAt}；营销通知默认关闭"),

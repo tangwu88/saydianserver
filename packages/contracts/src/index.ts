@@ -151,6 +151,8 @@ export interface HealthRecordInputContract {
   unit?: string;
   quality?: "unknown" | "valid" | "suspect" | "invalid";
   source: HealthRecordSourceContract;
+  /** Immutable version of one watch-owned calendar day's cumulative total. */
+  aggregation?: { kind: "daily_summary"; localDate: string };
   ecgArtifact?: {
     sampleRateHz: number;
     sampleCount: number;

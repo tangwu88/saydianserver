@@ -5,6 +5,7 @@ import {
   type HealthRecordRejectionContract,
 } from "@saydian/app-contracts";
 import { safeObject } from "../common/crypto";
+import { isUsableRecord } from "./health-evidence";
 
 const allowedPlatforms = new Set([
   "android",
@@ -75,6 +76,27 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
   if (!["unknown", "valid", "suspect", "invalid"].includes(quality)) {
     return rejected(id, "invalid_quality", "数据质量标识不正确");
   }
+  const aggregationRaw = raw.aggregation == null ? null : safeObject(raw.aggregation);
+  let aggregation: HealthRecordInputContract["aggregation"];
+  if (aggregationRaw) {
+    const localDate = aggregationRaw.localDate;
+    const dateObject = typeof localDate === "string"
+      ? new Date(`${localDate}T00:00:00.000Z`) : new Date(NaN);
+    const localDateValid = typeof localDate === "string"
+      && /^\d{4}-\d{2}-\d{2}$/.test(localDate)
+      && Number.isFinite(dateObject.valueOf())
+      && dateObject.toISOString().slice(0, 10) === localDate;
+    if (aggregationRaw.kind !== "daily_summary" || !localDateValid
+      || !["steps", "sleep", "distance", "calories"].includes(metric)
+      || !sourceRaw.deviceId || measurementSource !== "wearable"
+      || !isUsableRecord({
+        id, metric, observedAt, timezoneOffsetMinutes, values,
+        quality: quality.toUpperCase(),
+      }, metric)) {
+      return rejected(id, "invalid_aggregation", "每日数据不完整");
+    }
+    aggregation = { kind: "daily_summary", localDate: localDate as string };
+  }
   const source: HealthRecordInputContract["source"] = {
     platform: platform as HealthRecordInputContract["source"]["platform"],
     ...(sourceRaw.deviceId ? { deviceId: String(sourceRaw.deviceId) } : {}),
@@ -116,6 +138,7 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
       ...(raw.unit ? { unit: String(raw.unit) } : {}),
       quality: quality as NonNullable<HealthRecordInputContract["quality"]>,
       source,
+      ...(aggregation ? { aggregation } : {}),
       ...(ecgArtifact ? { ecgArtifact } : {}),
     },
   };

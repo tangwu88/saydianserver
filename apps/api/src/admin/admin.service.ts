@@ -595,7 +595,13 @@ export class AdminService {
   async healthSummary(userId: string) {
     const grouped = await this.prisma.healthRecord.groupBy({
       by: ["metric"],
-      where: { userId },
+      where: {
+        userId,
+        OR: [
+          { aggregationKind: null },
+          { aggregationKind: "daily_summary", supersededAt: null },
+        ],
+      },
       _count: { _all: true },
       _min: { observedAt: true },
       _max: { observedAt: true },

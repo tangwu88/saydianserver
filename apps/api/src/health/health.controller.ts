@@ -27,14 +27,20 @@ export class HealthController {
     return this.health.ingestBatch(user.id, idempotencyKey?.trim() ?? "", body);
   }
 
+  @Get("capabilities")
+  capabilities() {
+    return { dailySummaryVersions: true };
+  }
+
   @Get("records")
   list(
     @CurrentUser() user: AuthenticatedUser,
     @Query("metric") metric?: string,
     @Query("limit") limit?: string,
     @Query("before") before?: string,
+    @Query("includeDailySummaries") includeDailySummaries?: string,
   ) {
-    return this.health.list(user.id, metric, Number(limit ?? 50), before);
+    return this.health.list(user.id, metric, Number(limit ?? 50), before, includeDailySummaries === "true");
   }
 
   @Get("warning-rules")

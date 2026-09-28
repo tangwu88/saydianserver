@@ -75,4 +75,31 @@ describe("health report evidence", () => {
     ] });
     expect(JSON.stringify(evidence.metrics)).not.toContain("privateNote");
   });
+
+  it("uses the watch calendar day and never adds two watches' full daily totals", () => {
+    const evidence = buildHealthEvidence([
+      { id: "a", metric: "STEPS", observedAt: new Date("2026-09-27T23:00:00Z"), timezoneOffsetMinutes: 480, values: { value: 1000 }, quality: "VALID", aggregationLocalDate: "2026-09-28" },
+      { id: "b", metric: "STEPS", observedAt: new Date("2026-09-28T02:00:00Z"), timezoneOffsetMinutes: 480, values: { value: 2000 }, quality: "VALID", aggregationLocalDate: "2026-09-28" },
+    ]);
+    expect(evidence.metrics[0]?.recordCount).toBe(1);
+    expect(evidence.metrics[0]?.latestValue).toBe(2000);
+    expect(evidence.metrics[0]?.measurements[0]?.dailyAverages).toEqual([
+      { date: "2026-09-28", value: 2000, sampleCount: 1 },
+    ]);
+  });
+
+  it.each([
+    { values: { value: null }, quality: "UNKNOWN" },
+    { values: { value: "not-recorded" }, quality: "UNKNOWN" },
+    { values: { value: 300000 }, quality: "VALID" },
+    { values: { value: 2500 }, quality: "INVALID" },
+  ])("does not let a newer unusable daily record hide valid evidence: %j", (newer) => {
+    const evidence = buildHealthEvidence([
+      { id: "older-valid", metric: "STEPS", observedAt: new Date("2026-09-28T01:00:00Z"), timezoneOffsetMinutes: 480, values: { value: 2000 }, quality: "VALID", aggregationLocalDate: "2026-09-28" },
+      { id: "newer-invalid", metric: "STEPS", observedAt: new Date("2026-09-28T02:00:00Z"), timezoneOffsetMinutes: 480, ...newer, aggregationLocalDate: "2026-09-28" },
+    ]);
+    expect(evidence.validRecordIds).toEqual(["older-valid"]);
+    expect(evidence.invalidRecordIds).toEqual(["newer-invalid"]);
+    expect(evidence.metrics[0]?.latestValue).toBe(2000);
+  });
 });

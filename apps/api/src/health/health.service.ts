@@ -129,6 +129,7 @@ export class HealthService {
     metricInput?: string,
     limitInput = 50,
     beforeInput?: string,
+    includeDailySummaries = false,
   ) {
     const metric = metricInput ? metricMap[metricInput as HealthMetric] : undefined;
     if (metricInput && !metric) throw new BadRequestException("健康指标不正确");
@@ -141,7 +142,12 @@ export class HealthService {
       where: {
         userId,
         ...(metric ? { metric } : {}),
-        ...before,
+        AND: [
+          before,
+          includeDailySummaries
+            ? { OR: [{ aggregationKind: null }, { aggregationKind: "daily_summary", supersededAt: null }] }
+            : { aggregationKind: null },
+        ],
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
       take: limit,
@@ -154,6 +160,9 @@ export class HealthService {
         observedAt: record.observedAt.toISOString(),
         timezoneOffsetMinutes: record.timezoneOffsetMinutes,
         values: record.values,
+        ...(record.aggregationKind === "daily_summary" && record.aggregationLocalDate
+          ? { aggregation: { kind: "daily_summary", localDate: record.aggregationLocalDate } }
+          : {}),
         unit: record.unit,
         quality: record.quality.toLowerCase(),
         source: {
@@ -230,7 +239,7 @@ export class HealthService {
 
   async legacyRecords(userId: string, metrics: HealthMetric[], from?: Date, to?: Date, page?: number) {
     const records = await this.prisma.healthRecord.findMany({
-      where: { userId, metric: { in: metrics.map((metric) => metricMap[metric]) },
+      where: { userId, metric: { in: metrics.map((metric) => metricMap[metric]) }, aggregationKind: null,
         ...((from || to) ? { observedAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } } : {}),
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
@@ -320,6 +329,8 @@ export class HealthService {
       sourceRawVersion: record.source.rawVersion ?? null,
       deviceBindingId: deviceBinding?.id ?? null,
       sourceDeviceKey: record.source.deviceId ? sha256(`${userId}:${record.source.deviceId}`) : null,
+      aggregationKind: record.aggregation?.kind ?? null,
+      aggregationLocalDate: record.aggregation?.localDate ?? null,
     };
     const existing = await tx.healthRecord.findUnique({
       where: { userId_clientRecordId: { userId, clientRecordId: record.id } },
@@ -357,6 +368,33 @@ export class HealthService {
       }
     }
     const created = await tx.healthRecord.create({ data });
+    if (record.aggregation) {
+      // The per-member ingest lock serializes revisions. Older offline versions
+      // remain immutable evidence but cannot replace a newer visible snapshot.
+      const siblings = await tx.healthRecord.findMany({
+        where: {
+          userId,
+          sourceDeviceKey: data.sourceDeviceKey,
+          metric: data.metric,
+          aggregationKind: "daily_summary",
+          aggregationLocalDate: record.aggregation.localDate,
+        },
+        orderBy: [{ observedAt: "desc" }, { id: "desc" }],
+        select: { id: true },
+      });
+      const winningId = siblings[0]?.id;
+      if (winningId && siblings.length > 1) {
+        await tx.healthRecord.updateMany({
+          where: { id: { in: siblings.slice(1).map((item) => item.id) }, supersededAt: null },
+          data: { supersededAt: new Date() },
+        });
+      }
+      if (winningId !== created.id) {
+        await tx.healthRecord.update({
+          where: { id: created.id }, data: { supersededAt: new Date() },
+        });
+      }
+    }
     if (record.ecgArtifact && file) {
       await tx.ecgArtifact.create({
         data: {
@@ -374,6 +412,7 @@ export class HealthService {
     userId: string,
     record: HealthRecordInputContract,
   ): Promise<void> {
+    if (record.aggregation != null) return;
     const metric = metricMap[record.metric];
     const rule = await tx.healthWarningRule.findUnique({
       where: { userId_metric: { userId, metric } },

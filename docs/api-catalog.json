@@ -6443,13 +6443,19 @@
           "name": "to",
           "type": "string | undefined",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "includeDailySummaries",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/care/care.controller.ts",
       "summary": "按授权查看健康数据",
-      "request": "id=关系 UUID；metric 必填；from/to=ISO8601；缺省近 7 天；左闭右开",
-      "response": "HealthRecord[]；逐指标授权并记录审计，拒绝 403",
+      "request": "id=关系 UUID；metric 必填；from/to=ISO8601；缺省近 7 天；左闭右开；includeDailySummaries=true显式纳入日汇总，缺省及旧接口排除",
+      "response": "HealthRecord[]；普通记录按observedAt，日汇总按被关爱人已保存时区对应的所属日期筛选，未知时区排除日汇总；筛选/折叠后分页，逐指标授权并记录审计，拒绝 403",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -20033,10 +20039,35 @@
       "envelope": "v2",
       "source": "apps/api/src/health/health.controller.ts",
       "summary": "健康批量同步",
-      "request": "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册",
+      "request": "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；手表日汇总可选aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}，修订须新ID且保留实际读取时间；详细记录结构见调用手册",
       "response": "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收",
       "dependency": "核心服务",
       "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health/health.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "HealthController.capabilities",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/capabilities",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/health/health.controller.ts",
+      "summary": "读取健康同步能力",
+      "request": "无请求体",
+      "response": "{dailySummaryVersions:true}；客户端仅在明确支持时上传每日汇总，404或失败不视为已同步",
+      "dependency": "已执行每日汇总增量迁移的服务",
+      "successStatus": 200,
       "contract": {
         "status": "unreviewed",
         "requestSchema": null,
@@ -20072,13 +20103,19 @@
           "name": "before",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "includeDailySummaries",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/health/health.controller.ts",
       "summary": "本人健康历史",
-      "request": "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间",
-      "response": "{items,nextCursor}；按采集时间和UUID稳定分页，相同采集时间记录不丢页",
+      "request": "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间；includeDailySummaries=true显式包含各手表最新日汇总，缺省不返回日汇总",
+      "response": "{items,nextCursor}；先过滤过期日汇总版本，再按采集时间和UUID稳定分页；日汇总返回aggregation:{kind:daily_summary,localDate}，相同采集时间记录不丢页",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -21456,7 +21493,7 @@
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/legacy/legacy-member.controller.ts",
       "summary": "旧前缀批量健康同步",
-      "request": "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册；V1 缺少幂等头时使用请求摘要",
+      "request": "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；手表日汇总可选aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}，修订须新ID且保留实际读取时间；详细记录结构见调用手册；V1 缺少幂等头时使用请求摘要",
       "response": "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收",
       "dependency": "核心服务",
       "successStatus": 201,
