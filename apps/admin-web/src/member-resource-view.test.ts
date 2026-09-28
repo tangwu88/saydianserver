@@ -119,6 +119,17 @@ describe("international member admin list", () => {
     expect(h.resourceMeta.value.total).toBe(0);
   });
 
+  it("keeps device columns readable when no connection has been reported yet", async () => {
+    const h = harness();
+    h.route.params.resource = "devices";
+    expect(h.columns.value).toEqual(["memberNo", "memberNickname", "displayName", "vendor", "model", "firmware", "capabilities", "boundAt", "lastSeenAt", "status"]);
+    await h.load();
+    expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/devices", { params: {} });
+    expect(h.sfc).toContain("原始设备标识仅按会员作用域单向哈希保存");
+    expect(h.sfc).toContain("resource === 'devices' && column === 'capabilities'");
+    expect(h.sfc).toContain("resource === 'devices' && column === 'status'");
+  });
+
   it("searches and pages on the server while preserving zero counts and missing values", async () => {
     const h = harness();
     h.currentPage.value = 4;

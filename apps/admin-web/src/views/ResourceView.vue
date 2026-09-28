@@ -155,6 +155,11 @@ const fieldLabels: Record<string, string> = {
   lastError: "失败原因",
   attempt: "重试次数",
   firmware: "固件版本",
+  vendor: "设备厂商",
+  model: "设备型号",
+  capabilities: "设备能力",
+  boundAt: "绑定时间",
+  lastSeenAt: "最近连接",
   imageUrl: "图片地址",
   targetUrl: "跳转地址",
   enabled: "启用",
@@ -202,6 +207,7 @@ const columns = computed(() => {
   if (resource.value === "feedback") return ["memberNo", "memberNickname", "category", "content", "status", "replyContent", "createdAt"];
   if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
   if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
+  if (resource.value === "devices") return ["memberNo", "memberNickname", "displayName", "vendor", "model", "firmware", "capabilities", "boundAt", "lastSeenAt", "status"];
   const first = rows.value[0];
   return first
     ? Object.keys(first)
@@ -307,6 +313,37 @@ function render(value: unknown): string {
   if (typeof value === "boolean") return value ? "是" : "否";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+function deviceCapabilities(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((capability) => String(capability ?? "").trim()).filter(Boolean)
+    : [];
+}
+
+function deviceCapabilityLabel(value: string): string {
+  const labels: Record<string, string> = {
+    "metric:heart_rate": "心率",
+    "metric:blood_oxygen": "血氧",
+    "metric:blood_pressure": "血压",
+    "metric:sleep": "睡眠",
+    "metric:steps": "步数",
+    "metric:calories": "卡路里",
+    "metric:distance": "距离",
+    "metric:temperature": "体温",
+    "metric:ecg": "心电",
+    "feature:watch_faces": "表盘中心",
+    "feature:photo_watch_face": "照片表盘",
+    "feature:find_watch": "查找设备",
+    "feature:camera": "相机遥控",
+    "feature:phone_calls": "电话",
+    "feature:notifications": "消息通知",
+    "feature:alarms": "闹钟",
+    "support:sport_pause": "运动暂停",
+    "support:background_sync": "后台同步",
+    "support:ota": "固件升级",
+  };
+  return labels[value] || value;
 }
 
 function pointMoney(value: unknown): string {
@@ -1070,7 +1107,7 @@ onBeforeUnmount(() => {
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
           <el-button v-if="createable" @click="openCreate">新增</el-button>
-          <span class="muted">会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。</span>
+          <span class="muted">{{ resource === "devices" ? "设备由国际 App 在连接就绪时上报；“最近连接”表示最近一次客户端成功上报。原始设备标识仅按会员作用域单向哈希保存，后台不展示 MAC 或序列号。" : "会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。" }}</span>
         </div>
         <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
         <el-table v-if="!loadError" v-loading="loading" :data="rows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
@@ -1099,6 +1136,11 @@ onBeforeUnmount(() => {
                   {{ contactVerificationLabel(scope.row, column === "mobile" ? "mobile" : "email") }}
                 </el-tag>
               </div>
+              <div v-else-if="resource === 'devices' && column === 'capabilities'" style="display: flex; gap: 6px; flex-wrap: wrap">
+                <el-tag v-for="capability in deviceCapabilities(scope.row[column])" :key="capability" size="small" effect="plain">{{ deviceCapabilityLabel(capability) }}</el-tag>
+                <span v-if="!deviceCapabilities(scope.row[column]).length" class="muted">未上报</span>
+              </div>
+              <el-tag v-else-if="resource === 'devices' && column === 'status'" size="small" :type="scope.row.status === 'BOUND' ? 'success' : 'info'">{{ scope.row.status === "BOUND" ? "已绑定" : scope.row.status === "UNBOUND" ? "已解绑" : render(scope.row.status) }}</el-tag>
               <template v-else>{{ render(scope.row[column]) }}</template>
             </template>
           </el-table-column>
