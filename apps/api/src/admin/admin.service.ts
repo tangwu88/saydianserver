@@ -742,22 +742,36 @@ export class AdminService {
     });
   }
 
-  devices() {
-    return this.prisma.deviceBinding.findMany({
+  async devices() {
+    const rows = await this.prisma.deviceBinding.findMany({
       select: {
-        id: true,
         vendor: true,
         model: true,
         displayName: true,
         firmware: true,
         capabilities: true,
+        boundAt: true,
         lastSeenAt: true,
         unboundAt: true,
-        user: { select: { id: true, nickname: true } },
+        user: { select: { compatibilityId: true, nickname: true } },
       },
       orderBy: { lastSeenAt: "desc" },
       take: 500,
     });
+    return rows.map((row) => ({
+      memberNo: String(row.user.compatibilityId),
+      memberNickname: row.user.nickname ?? "未填写昵称",
+      displayName: row.displayName,
+      vendor: row.vendor,
+      model: row.model,
+      firmware: row.firmware,
+      capabilities: Array.isArray(row.capabilities)
+        ? row.capabilities.filter((capability): capability is string => typeof capability === "string")
+        : [],
+      boundAt: row.boundAt.toISOString(),
+      lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+      status: row.unboundAt ? "UNBOUND" : "BOUND",
+    }));
   }
 
   async feedback(status?: string) {
