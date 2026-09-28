@@ -160,4 +160,45 @@ describe("public contracts", () => {
       }),
     ).toThrow(/iPhone/);
   });
+
+  it("accepts HTTPS market links and backend-hosted package paths", () => {
+    const manifest = parseDownloadManifest({
+      schemaVersion: 1,
+      audience: "internal_test",
+      publishedAt: "2026-09-28T00:00:00+08:00",
+      releases: [
+        {
+          platform: "android",
+          versionName: "1.0.0",
+          buildNumber: 10,
+          status: "available",
+          destination: {
+            kind: "market",
+            url: "https://example.com/apps/say-ring",
+          },
+        },
+        {
+          platform: "ios",
+          versionName: "1.0.0",
+          buildNumber: 10,
+          status: "coming_soon",
+        },
+        {
+          platform: "harmonyos",
+          versionName: "1.0.0",
+          buildNumber: 10,
+          status: "available",
+          destination: {
+            kind: "direct",
+            url: "/api/saydian-app/v2/support/app-package/say-ring-10.hap",
+            fileName: "say-ring-10.hap",
+            sizeBytes: 123,
+            sha256: "a".repeat(64),
+          },
+        },
+      ],
+    });
+    expect(manifest.releases[0]?.destination?.kind).toBe("market");
+    expect(manifest.releases[2]?.destination?.url).toContain("app-package");
+  });
 });

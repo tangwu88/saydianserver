@@ -14,6 +14,15 @@ const labels: Record<DownloadPlatform, string> = {
   ios: "iPhone",
   harmonyos: "HarmonyOS",
 };
+const isSayRing =
+  window.location.pathname === "/say-ring" ||
+  window.location.pathname.startsWith("/say-ring/");
+const pagePath = isSayRing ? "/say-ring" : "/down";
+const manifestEndpoint = isSayRing
+  ? "/global/api/saydian-app/v2/support/app-update?product=say-ring"
+  : "/api/saydian-app/v2/support/app-update";
+
+configurePage();
 
 const visitorPlatform = detectVisitorPlatform(
   navigator.userAgent,
@@ -28,7 +37,7 @@ void loadManifest();
 async function loadManifest(): Promise<void> {
   const status = requiredElement<HTMLElement>("#manifest-status");
   try {
-    const response = await fetch("/api/saydian-app/v2/support/app-update", {
+    const response = await fetch(manifestEndpoint, {
       cache: "no-store",
       headers: { Accept: "application/json" },
     });
@@ -123,7 +132,7 @@ function highlightVisitorPlatform(): void {
 async function renderQrCode(): Promise<void> {
   const canvas = requiredElement<HTMLCanvasElement>("#page-qr");
   try {
-    await QRCode.toCanvas(canvas, `${window.location.origin}/down`, {
+    await QRCode.toCanvas(canvas, `${window.location.origin}${pagePath}`, {
       width: 184,
       margin: 1,
       color: { dark: "#17191f", light: "#ffffff" },
@@ -132,6 +141,18 @@ async function renderQrCode(): Promise<void> {
   } catch {
     canvas.closest<HTMLElement>(".qr-panel")?.classList.add("is-hidden");
   }
+}
+
+function configurePage(): void {
+  if (!isSayRing) return;
+  document.title = "Say Ring App 下载";
+  requiredElement<HTMLElement>("#page-title").innerHTML =
+    "下载 <strong>Say Ring App</strong>";
+  requiredElement<HTMLElement>("#page-description").textContent =
+    "选择 Android、iPhone 或 HarmonyOS 版本，安装后连接并管理智能戒指。";
+  requiredElement<HTMLElement>("#page-eyebrow").textContent =
+    "Say Ring 官方下载";
+  requiredElement<HTMLImageElement>("#brand-lockup").alt = "Say Ring";
 }
 
 async function copyHash(

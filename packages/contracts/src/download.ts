@@ -1,7 +1,8 @@
 export const downloadPlatforms = ["android", "ios", "harmonyos"] as const;
 export type DownloadPlatform = (typeof downloadPlatforms)[number];
 export type DownloadReleaseStatus = "available" | "coming_soon";
-export type DownloadDestinationKind = "direct" | "testflight" | "app_store";
+export type DownloadDestinationKind =
+  "direct" | "market" | "testflight" | "app_store";
 
 export interface DownloadDestinationContract {
   kind: DownloadDestinationKind;
@@ -130,7 +131,19 @@ function parseDownloadDestination(
     }
     return { kind, url: target.toString() };
   }
-  if (kind !== "direct") throw new Error(`${platform} 只允许直接下载`);
+  if (kind === "market") {
+    let target: URL;
+    try {
+      target = new URL(url);
+    } catch {
+      throw new Error(`${platform} 应用市场地址无效`);
+    }
+    if (target.protocol !== "https:" || target.username || target.password) {
+      throw new Error(`${platform} 应用市场地址必须使用 HTTPS`);
+    }
+    return { kind, url: target.toString() };
+  }
+  if (kind !== "direct") throw new Error(`${platform} 下载方式无效`);
   const fileName = requiredString(
     source.fileName,
     `${platform}.destination.fileName`,
@@ -143,7 +156,11 @@ function parseDownloadDestination(
   ) {
     throw new Error(`${platform} 安装包文件名无效`);
   }
-  if (url !== `/down/files/${fileName}`)
+  const allowedDirectUrls = new Set([
+    `/down/files/${fileName}`,
+    `/api/saydian-app/v2/support/app-package/${fileName}`,
+  ]);
+  if (!allowedDirectUrls.has(url))
     throw new Error(`${platform} 下载地址必须与文件名一致`);
   const sizeBytes = source.sizeBytes;
   if (!Number.isInteger(sizeBytes) || Number(sizeBytes) <= 0)

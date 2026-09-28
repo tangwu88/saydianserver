@@ -33,6 +33,24 @@ export class SupportController {
     return this.support.appUpdateConfig(product);
   }
 
+  @Get("app-package/:fileName")
+  @RawResponse()
+  async appPackage(
+    @Param("fileName") fileName: string,
+    @Res() response: Response,
+  ) {
+    const file = await this.support.publicAppPackage(fileName);
+    response.setHeader("content-type", file.contentType);
+    response.setHeader("content-length", String(file.byteSize));
+    response.setHeader(
+      "content-disposition",
+      `attachment; filename="${fileName}"`,
+    );
+    response.setHeader("etag", `"${file.sha256}"`);
+    response.setHeader("x-content-type-options", "nosniff");
+    file.body.pipe(response);
+  }
+
   @Post("feedback")
   @UseGuards(UserAuthGuard)
   feedback(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
@@ -47,7 +65,9 @@ export class FilesController {
 
   @Post()
   @UseGuards(UserAuthGuard)
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
   upload(
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file: Express.Multer.File,
@@ -58,7 +78,9 @@ export class FilesController {
 
   @Post("ecg")
   @UseGuards(UserAuthGuard)
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
   uploadEcg(
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file: Express.Multer.File,
