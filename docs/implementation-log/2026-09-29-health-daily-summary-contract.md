@@ -30,4 +30,12 @@
 - `pnpm tools:test`：工具 10 项、H5 流程 61 项、国际 H5 契约/隔离 38 项通过。
 - `pnpm typecheck`、`pnpm build`、`git diff --check` 均通过。构建只出现既有 Sass 弃用和管理端大分块提示。
 - API 目录：349 条路由重新生成并通过 `pnpm api:docs:check`；`node deploy/global/check.mjs` 187 项结构检查通过，国际 H5 网关/临时手机号开关测试 8 项通过。
-- 本机没有 Docker/PostgreSQL，迁移文件尚未在本机真实执行。后续只允许在隔离 CI PostgreSQL 16 测试库先跑 `prisma migrate deploy`，成功前不得部署生产；带鉴权 HTTP 200 和真实非零日汇总回读也仍待独立测试账号验收。
+- GitHub PR CI 在 PostgreSQL 16 测试库成功执行全部 17 个迁移（含 `20260929110000_health_daily_summary_versions`），随后 seed、全量测试、构建、API smoke、鉴权 HTTP smoke 和容器构建全部通过；PR 自动部署按预期跳过。
+
+## 隔离 PostgreSQL / HTTP 验收
+
+- 在本机独立 PostgreSQL 数据目录 `u19-global-pgdata-20260929`、独立数据库 `saydian_u19_global` 上执行全部迁移和 seed；API 以 `APP_REALM=global`、revision `a3e4e5ee3ec254b229bfe7879163e2a5a7b5dd68` 启动于 `127.0.0.1:58082`。首次启动使用了非标准 issuer/audience 并被启动校验正确拒绝，改为国际域固定值后正常启动；这项修正只发生在隔离运行参数中。
+- `/health/ready` 返回数据库正常且 revision 匹配；未登录请求 `/api/saydian-app/v2/health/capabilities` 返回 401 而不是 404，证明路由存在且鉴权生效。隔离库加入合成本地协议后，用 `example.test` 合成会员注册成功；未输出或持久化账号密码、access token。
+- 登录请求能力接口返回 `dailySummaryVersions=true`、`dailySummaryVersion=1`。依次写入同设备、同指标、同日期的步数 v1=1000 与 v2=1200，两次 `acceptedIds` 均成功；幂等键重放返回相同业务结果。
+- V2 列表只回读 v2=1200，并完整回显 `unit=步`、`aggregation.kind=daily_summary`、`localDate=2026-09-29` 和采集来源元数据。数据库核对为 2 个不可变版本、1 个 active，active 记录是 v2。
+- 上述数据只存在于本机隔离数据库；没有连接、迁移或写入生产数据库。生产发布仍以 App 隔离真机回读为门禁，本轮不合并、不部署。
