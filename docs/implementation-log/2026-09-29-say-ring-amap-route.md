@@ -20,6 +20,7 @@
 - `pnpm tools:test`：通过；包含部署 shell 检查、自动发布保持维护状态、H5 流程与契约测试。
 - `pnpm build`：通过；后台 Vite 提示既有大包体积警告，不影响构建。
 - `git diff --check`：通过。当前分支与 `origin/main` 分叉，按约定只提交并推送当前分支，不通过 `tools/Publish-Change.ps1` 对 `main` 强推或覆盖。
+- 功能提交 `bf36c99546aa59aaaa949243fe270e0d64cbc056` 已推送至 `origin/codex/say-ring-harmony-download-page` 并通过 `git ls-remote` 核对；本补记会另作仅文档提交。`origin/main` 未更新，CI 及线上版本未验收，不能称为已部署。
 
 ## 待验收
 
