@@ -142,6 +142,12 @@ export interface HealthRecordSourceContract {
   rawVersion?: number;
 }
 
+export interface HealthAggregationContract {
+  kind: "daily_summary";
+  /** Calendar date reported by the source device, independent of upload time. */
+  localDate: string;
+}
+
 export interface HealthRecordInputContract {
   id: string;
   metric: HealthMetric;
@@ -150,6 +156,7 @@ export interface HealthRecordInputContract {
   values: Record<string, number | string | boolean | null>;
   unit?: string;
   quality?: "unknown" | "valid" | "suspect" | "invalid";
+  aggregation?: HealthAggregationContract;
   source: HealthRecordSourceContract;
   ecgArtifact?: {
     sampleRateHz: number;

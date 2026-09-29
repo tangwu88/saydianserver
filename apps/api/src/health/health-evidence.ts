@@ -8,6 +8,7 @@ export type EvidenceRecord = {
   values: unknown;
   quality: string;
   sourceModel?: string | null;
+  aggregationLocalDate?: string | null;
   hasEcgArtifact?: boolean;
 };
 
@@ -136,7 +137,7 @@ export function buildHealthEvidence(records: EvidenceRecord[]): HealthEvidence {
       continue;
     }
     validRecordIds.push(record.id);
-    days.add(localDay(record.observedAt, record.timezoneOffsetMinutes));
+    days.add(recordDay(record));
     const group = grouped.get(metric) ?? {
       records: [],
       values: [],
@@ -155,7 +156,7 @@ export function buildHealthEvidence(records: EvidenceRecord[]): HealthEvidence {
       const latest = group.records[0]!;
       const latestValue = representativeValue(metric, latest.values);
       const total = group.values.reduce((sum, value) => sum + value, 0);
-      const metricDays = new Set(group.records.map(record => localDay(record.observedAt, record.timezoneOffsetMinutes)));
+      const metricDays = new Set(group.records.map(recordDay));
       return {
         metric,
         recordIds: group.records.map((record) => record.id),
@@ -185,7 +186,7 @@ function buildMeasurements(metric: HealthMetric, records: EvidenceRecord[]): Mea
   return (measurementDefinitions[metric] ?? []).flatMap((definition) => {
     const samples = records.flatMap(record => {
       const value = measurementValue(definition, record.values);
-      return value === null ? [] : [{ value, date: localDay(record.observedAt, record.timezoneOffsetMinutes), observedAt: record.observedAt }];
+      return value === null ? [] : [{ value, date: recordDay(record), observedAt: record.observedAt }];
     });
     if (!samples.length) return [];
     samples.sort((left, right) => left.observedAt.valueOf() - right.observedAt.valueOf());
@@ -268,6 +269,11 @@ function localDay(observedAt: Date, timezoneOffsetMinutes: number): string {
   return new Date(observedAt.valueOf() + timezoneOffsetMinutes * 60_000)
     .toISOString()
     .slice(0, 10);
+}
+
+function recordDay(record: EvidenceRecord): string {
+  return record.aggregationLocalDate ??
+    localDay(record.observedAt, record.timezoneOffsetMinutes);
 }
 
 function firstNumber(values: Record<string, unknown>, keys: string[]): number | null {

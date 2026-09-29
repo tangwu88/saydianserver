@@ -31,6 +31,7 @@ import {
   type EvidenceRecord,
   type HealthEvidence,
 } from "../health/health-evidence";
+import { foldedHealthRecordPeriodWhere } from "../health/health-record-scope";
 
 const REPORT_WINDOW_DAYS = 30;
 const MINIMUM_DISTINCT_DAYS = 3;
@@ -445,8 +446,8 @@ export class HealthReportsService {
     const records = await db.healthRecord.findMany({
       where: {
         userId,
-        observedAt: { gte: from, lte: to },
         quality: { not: DataQuality.INVALID },
+        AND: [foldedHealthRecordPeriodWhere(from, to)],
       },
       orderBy: { observedAt: "asc" },
       take: 20_000,
@@ -461,6 +462,7 @@ export class HealthReportsService {
         values: record.values,
         quality: record.quality,
         sourceModel: record.sourceModel,
+        aggregationLocalDate: record.aggregationLocalDate,
         hasEcgArtifact: Boolean(record.ecgArtifact),
       }),
     );

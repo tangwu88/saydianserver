@@ -18,6 +18,10 @@ import type {
 import { PrismaService } from "../common/prisma.service";
 import { isUuid, safeObject, sha256 } from "../common/crypto";
 import { validateHealthRecord } from "./health-validation";
+import {
+  foldedHealthRecordWhere,
+  healthAggregationContract,
+} from "./health-record-scope";
 
 const metricMap: Record<HealthMetric, PrismaHealthMetric> = {
   sleep: PrismaHealthMetric.SLEEP,
@@ -141,7 +145,7 @@ export class HealthService {
       where: {
         userId,
         ...(metric ? { metric } : {}),
-        ...before,
+        AND: [foldedHealthRecordWhere(), before],
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
       take: limit,
@@ -156,6 +160,9 @@ export class HealthService {
         values: record.values,
         unit: record.unit,
         quality: record.quality.toLowerCase(),
+        ...(healthAggregationContract(record)
+          ? { aggregation: healthAggregationContract(record) }
+          : {}),
         source: {
           platform: record.sourcePlatform,
           model: record.sourceModel,
@@ -231,6 +238,9 @@ export class HealthService {
   async legacyRecords(userId: string, metrics: HealthMetric[], from?: Date, to?: Date, page?: number) {
     const records = await this.prisma.healthRecord.findMany({
       where: { userId, metric: { in: metrics.map((metric) => metricMap[metric]) },
+        // Legacy clients never negotiated versioned summaries and would count
+        // them as ordinary samples. Keep this compatibility surface raw-only.
+        aggregationKind: null,
         ...((from || to) ? { observedAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } } : {}),
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
@@ -255,7 +265,12 @@ export class HealthService {
 
   async legacyDetail(userId: string, metric: HealthMetric, identifier: string) {
     const record = await this.prisma.healthRecord.findFirst({
-      where: { userId, metric: metricMap[metric], OR: [...(isUuid(identifier) ? [{ id: identifier }] : []), { clientRecordId: identifier }] },
+      where: {
+        userId,
+        metric: metricMap[metric],
+        aggregationKind: null,
+        OR: [...(isUuid(identifier) ? [{ id: identifier }] : []), { clientRecordId: identifier }],
+      },
     });
     if (!record) throw new NotFoundException("健康记录不存在");
     return { id: record.clientRecordId, date: record.observedAt.toISOString(), ...safeObject(record.values) };
@@ -303,6 +318,9 @@ export class HealthService {
           where: { hardwareKey: sha256(`${userId}:${record.source.deviceId}`) },
         })
       : null;
+    const sourceDeviceKey = record.source.deviceId
+      ? sha256(`${userId}:${record.source.deviceId}`)
+      : null;
     const data = {
       userId,
       clientRecordId: record.id,
@@ -319,7 +337,9 @@ export class HealthService {
       sourceMeasurementSource: record.source.measurementSource ?? null,
       sourceRawVersion: record.source.rawVersion ?? null,
       deviceBindingId: deviceBinding?.id ?? null,
-      sourceDeviceKey: record.source.deviceId ? sha256(`${userId}:${record.source.deviceId}`) : null,
+      sourceDeviceKey,
+      aggregationKind: record.aggregation?.kind ?? null,
+      aggregationLocalDate: record.aggregation?.localDate ?? null,
     };
     const existing = await tx.healthRecord.findUnique({
       where: { userId_clientRecordId: { userId, clientRecordId: record.id } },
@@ -356,7 +376,35 @@ export class HealthService {
         throw new ConflictException("心电文件已关联其他记录，不能重复关联");
       }
     }
-    const created = await tx.healthRecord.create({ data });
+    let aggregationActive = false;
+    if (record.aggregation) {
+      const active = await tx.healthRecord.findFirst({
+        where: {
+          userId,
+          metric: metricMap[record.metric],
+          sourceDeviceKey: sourceDeviceKey!,
+          aggregationKind: record.aggregation.kind,
+          aggregationLocalDate: record.aggregation.localDate,
+          aggregationActive: true,
+        },
+        select: { id: true, clientRecordId: true, observedAt: true },
+      });
+      const observedAt = new Date(record.observedAt);
+      aggregationActive =
+        !active ||
+        observedAt > active.observedAt ||
+        (observedAt.valueOf() === active.observedAt.valueOf() &&
+          record.id.localeCompare(active.clientRecordId) > 0);
+      if (aggregationActive && active) {
+        await tx.healthRecord.updateMany({
+          where: { id: active.id, aggregationActive: true },
+          data: { aggregationActive: false },
+        });
+      }
+    }
+    const created = await tx.healthRecord.create({
+      data: { ...data, aggregationActive },
+    });
     if (record.ecgArtifact && file) {
       await tx.ecgArtifact.create({
         data: {
@@ -366,7 +414,9 @@ export class HealthService {
         },
       });
     }
-    await this.createWarningIfNeeded(tx, userId, record);
+    if (!record.aggregation) {
+      await this.createWarningIfNeeded(tx, userId, record);
+    }
   }
 
   private async createWarningIfNeeded(
