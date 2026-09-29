@@ -75,4 +75,22 @@ describe("health report evidence", () => {
     ] });
     expect(JSON.stringify(evidence.metrics)).not.toContain("privateNote");
   });
+
+  it("uses a daily summary localDate instead of its later upload timestamp", () => {
+    const evidence = buildHealthEvidence([
+      {
+        id: "daily-steps",
+        metric: "STEPS",
+        observedAt: new Date("2026-09-29T10:00:00Z"),
+        timezoneOffsetMinutes: 480,
+        aggregationLocalDate: "2026-09-27",
+        values: { value: 8_000 },
+        quality: "VALID",
+      },
+    ]);
+    expect(evidence.distinctDays).toBe(1);
+    expect(evidence.metrics[0]?.measurements[0]?.dailyAverages).toEqual([
+      { date: "2026-09-27", value: 8_000, sampleCount: 1 },
+    ]);
+  });
 });

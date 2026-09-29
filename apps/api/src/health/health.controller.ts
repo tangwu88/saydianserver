@@ -18,6 +18,14 @@ import { CurrentUser, type AuthenticatedUser } from "../common/request-context";
 export class HealthController {
   constructor(private readonly health: HealthService) {}
 
+  @Get("capabilities")
+  capabilities() {
+    return {
+      dailySummaryVersions: true,
+      dailySummaryVersion: 1,
+    };
+  }
+
   @Post("records/batch")
   ingestBatch(
     @CurrentUser() user: AuthenticatedUser,

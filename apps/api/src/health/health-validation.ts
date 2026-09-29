@@ -75,6 +75,28 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
   if (!["unknown", "valid", "suspect", "invalid"].includes(quality)) {
     return rejected(id, "invalid_quality", "数据质量标识不正确");
   }
+  const aggregationRaw = safeObject(raw.aggregation);
+  const hasAggregation = raw.aggregation != null;
+  const aggregationKind = String(aggregationRaw.kind ?? "");
+  const aggregationLocalDate = String(aggregationRaw.localDate ?? "");
+  const parsedAggregationDate = /^\d{4}-\d{2}-\d{2}$/.test(aggregationLocalDate)
+    ? new Date(`${aggregationLocalDate}T00:00:00.000Z`)
+    : null;
+  if (
+    hasAggregation &&
+    (aggregationKind !== "daily_summary" ||
+      !parsedAggregationDate ||
+      Number.isNaN(parsedAggregationDate.valueOf()) ||
+      parsedAggregationDate.toISOString().slice(0, 10) !== aggregationLocalDate ||
+      typeof sourceRaw.deviceId !== "string" ||
+      !sourceRaw.deviceId.trim())
+  ) {
+    return rejected(
+      id,
+      "invalid_aggregation",
+      "日汇总记录需要有效的本地日期和设备编号",
+    );
+  }
   const source: HealthRecordInputContract["source"] = {
     platform: platform as HealthRecordInputContract["source"]["platform"],
     ...(sourceRaw.deviceId ? { deviceId: String(sourceRaw.deviceId) } : {}),
@@ -115,6 +137,14 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
       values: values as HealthRecordInputContract["values"],
       ...(raw.unit ? { unit: String(raw.unit) } : {}),
       quality: quality as NonNullable<HealthRecordInputContract["quality"]>,
+      ...(hasAggregation
+        ? {
+            aggregation: {
+              kind: "daily_summary" as const,
+              localDate: aggregationLocalDate,
+            },
+          }
+        : {}),
       source,
       ...(ecgArtifact ? { ecgArtifact } : {}),
     },
