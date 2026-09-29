@@ -18,6 +18,7 @@ import { withCategoryNumbers } from "./article-category-number";
 import { cancelCommerceOrderInTransaction } from "../commerce/commerce-order-cancellation";
 import { importJushuitanProductBySku } from "./jushuitan-product-import";
 import { memberPromoterExternalId } from "../common/member-promoter-identity";
+import { foldedHealthRecordWhere } from "../health/health-record-scope";
 
 const adminOrderPaymentSelect = {
   id: true,
@@ -595,7 +596,7 @@ export class AdminService {
   async healthSummary(userId: string) {
     const grouped = await this.prisma.healthRecord.groupBy({
       by: ["metric"],
-      where: { userId },
+      where: { userId, AND: [foldedHealthRecordWhere()] },
       _count: { _all: true },
       _min: { observedAt: true },
       _max: { observedAt: true },

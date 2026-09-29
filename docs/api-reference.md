@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **360 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **361 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -48,7 +48,7 @@
 | `POST /api/v1/member/member/save` | 旧版修改资料 | member | Profile：nickname、head_portrait/avatarUrl、sex/gender、birthday、height/heightCm、weight/weightKg；仅提交需修改字段 | LegacyProfile | 核心服务 |
 | `GET /api/v1/member/member-mubiao/preview` | 旧版活动目标 | member | 无请求体 | {steps,juli,reliang} | 核心服务 |
 | `POST /api/v1/member/member-mubiao` | 旧版保存目标 | member | 表单 steps、juli(米)、reliang(kcal) | 规范目标对象；以重新读取为准 | 核心服务 |
-| `POST /api/v1/member/health-records/batch` | 旧前缀批量健康同步 | member | HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册；V1 缺少幂等头时使用请求摘要 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
+| `POST /api/v1/member/health-records/batch` | 旧前缀批量健康同步 | member | HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册；V1 缺少幂等头时使用请求摘要 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
 | `GET /api/v1/member/health-warning/preview` | 旧App预警开关与阈值 | member | 无请求体 | heart_auto/heart_num/blood_pressure_auto/blood_glucose_auto/body_temperature_auto；不提供诊断 | 核心服务 |
 | `POST /api/v1/member/health-warning` | 保存旧App预警配置 | member | multipart旧开关与heart_num；保留未暴露的阈值和共享配置；未配置阈值不得开启 | 旧预警配置 | 核心服务 |
 | `POST /api/v1/member/feedback` | 旧App意见反馈 | member | multipart type/content/contact/attachments；附件需本人所有 | {id,status} | 核心服务 |
@@ -163,7 +163,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（111）
+## V2 App 接口（112）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -245,8 +245,9 @@
 | `POST /api/saydian-app/v2/devices` | 绑定设备快照 | member | {deviceId/hardwareId,vendor,model,displayName/name,firmware?,capabilities?:string[],syncCursor?} | Device；不是服务端蓝牙连接 | 核心服务 |
 | `PATCH /api/saydian-app/v2/devices/:id/capabilities` | 更新设备能力及游标 | member | path:id；{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID | Device | 核心服务 |
 | `DELETE /api/saydian-app/v2/devices/:id` | 解绑设备 | member | path:id；id=绑定记录 UUID | {unbound:true}；保留历史健康数据 | 核心服务 |
-| `POST /api/saydian-app/v2/health/records/batch` | 健康批量同步 | member | header:idempotency-key；HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
-| `GET /api/saydian-app/v2/health/records` | 本人健康历史 | member | query:metric?，query:limit?，query:before?；metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间 | {items,nextCursor}；按采集时间和UUID稳定分页，相同采集时间记录不丢页 | 核心服务 |
+| `GET /api/saydian-app/v2/health/capabilities` | 健康同步能力 | member | 无请求体 | {dailySummaryVersions:true,dailySummaryVersion:1}；只表示服务端支持日汇总版本折叠，与普通设备能力无关 | 核心服务 |
+| `POST /api/saydian-app/v2/health/records/batch` | 健康批量同步 | member | header:idempotency-key；HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
+| `GET /api/saydian-app/v2/health/records` | 本人健康历史 | member | query:metric?，query:limit?，query:before?；metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间 | {items,nextCursor}；逐条记录保持原样；同会员/指标/设备/本地日期的日汇总只返回最新版本并回显aggregation | 核心服务 |
 | `GET /api/saydian-app/v2/health/warning-rules` | 读取阈值提醒 | member | 无请求体 | 规则数组；未获取阈值为 null | 核心服务 |
 | `GET /api/saydian-app/v2/health/warnings` | 读取提醒事件 | member | query:limit?；limit 默认 50 | 提醒数组；仅阈值提醒，不是诊断 | 核心服务 |
 | `POST /api/saydian-app/v2/health/warning-rules` | 保存阈值提醒 | member | {rules:[{metric,enabled,lowThreshold?,highThreshold?,secondaryHighThreshold?,shareWithCare?}]}；目前仅本人的提醒闭环 | 保存后的规则数组 | 核心服务 |
