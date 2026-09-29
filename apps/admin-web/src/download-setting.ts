@@ -59,6 +59,23 @@ export function downloadManifestToEditor(
 export function downloadEditorToManifest(
   editor: DownloadManifestEditor,
 ): DownloadManifestContract {
+  if (!editor.publishedAt.trim()) {
+    throw new Error("请填写发布时间，或点击“设为现在”");
+  }
+  const platformLabels: Record<DownloadPlatform, string> = {
+    android: "Android",
+    ios: "iPhone",
+    harmonyos: "HarmonyOS",
+  };
+  for (const platform of downloadPlatforms) {
+    const release = editor.releases[platform];
+    if (!release.versionName.trim()) {
+      throw new Error(`请填写 ${platformLabels[platform]} 版本号（待开放也需要版本号）`);
+    }
+    if (!Number.isInteger(release.buildNumber) || Number(release.buildNumber) <= 0) {
+      throw new Error(`请填写 ${platformLabels[platform]} 构建号（正整数）`);
+    }
+  }
   const releases = downloadPlatforms.map((platform) => {
     const release = editor.releases[platform];
     const base = {

@@ -1594,7 +1594,7 @@ onBeforeUnmount(() => {
                 <p v-else class="download-coming-note">待开放状态不会保存下载链接，前台按钮自动禁用。</p>
               </section>
             </div>
-            <el-alert title="Android/HarmonyOS 安装包使用同源下载地址，也可填写 HTTPS 应用市场链接；iPhone 只允许官方 TestFlight 或 App Store 链接。" type="info" :closable="false" />
+            <el-alert title="保存时需填写发布时间及三个平台的版本号、构建号；待开放平台不需要下载链接。Android/HarmonyOS 可使用同源安装包或 HTTPS 应用市场链接；iPhone 只允许官方 TestFlight 或 App Store 链接。" type="info" :closable="false" />
           </template>
           <el-form-item v-else label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="12" /></el-form-item>
         </template>

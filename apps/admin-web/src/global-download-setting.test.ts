@@ -56,7 +56,9 @@ describe("international download settings", () => {
       expect(release.buildNumber).toBeUndefined();
       expect(release.url).toBe("");
     }
-    expect(() => globalDownloadEditorToManifest(draft)).toThrow();
+    expect(() => globalDownloadEditorToManifest(draft)).toThrow("请填写发布时间");
+    draft.publishedAt = "2026-09-29T03:28:31.100Z";
+    expect(() => globalDownloadEditorToManifest(draft)).toThrow("请填写 Android 版本号");
     draft.releases.android.versionName = "local-unsaved-edit";
     expect(createGlobalDownloadDraft().releases.android.versionName).toBe("");
   });
@@ -143,6 +145,26 @@ describe("international download settings", () => {
       url: "https://example.com/say-ring",
     });
     expect(saved.releases[2]?.destination?.url).toContain("/global/api/");
+  });
+
+  it("converts the Say Ring editor values shown in the update dialog into a valid market release", () => {
+    const editor = createGlobalDownloadDraft();
+    editor.publishedAt = "2026-09-29T03:28:31.100Z";
+    for (const release of Object.values(editor.releases)) {
+      release.versionName = "0.1.2";
+      release.buildNumber = 1;
+    }
+    editor.releases.android.status = "available";
+    editor.releases.android.destinationKind = "market";
+    editor.releases.android.url = "https://www.baidu.com/";
+    const saved = sayRingDownloadEditorToManifest(editor);
+    expect(saved.releases[0]).toMatchObject({
+      packageId: "cn.saydian.ring",
+      versionName: "0.1.2",
+      destination: { kind: "market", url: "https://www.baidu.com/" },
+    });
+    expect(saved.releases[1]?.status).toBe("coming_soon");
+    expect(saved.releases[2]?.status).toBe("coming_soon");
   });
 
   it("keeps Say Ring package identities isolated from the older global App", () => {
