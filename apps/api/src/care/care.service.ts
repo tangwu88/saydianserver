@@ -17,6 +17,10 @@ import { PrismaService } from "../common/prisma.service";
 import { normalizedMobile, safeObject } from "../common/crypto";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { normalizedEmail } from "../auth/global-identity";
+import {
+  foldedHealthRecordPeriodWhere,
+  healthAggregationContract,
+} from "../health/health-record-scope";
 
 const metricMap: Record<HealthMetric, PrismaHealthMetric> = {
   sleep: PrismaHealthMetric.SLEEP,
@@ -272,7 +276,9 @@ export class CareService {
       where: {
         userId: relationship.recipientId,
         metric,
-        observedAt: { gte: from, lt: to },
+        // A historical summary belongs to aggregationLocalDate even when it
+        // was read from the watch and uploaded much later.
+        AND: [foldedHealthRecordPeriodWhere(from, to)],
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
       skip: page ? (page - 1) * 30 : 0,
@@ -287,6 +293,9 @@ export class CareService {
       values: record.values,
       unit: record.unit,
       quality: record.quality.toLowerCase(),
+      ...(healthAggregationContract(record)
+        ? { aggregation: healthAggregationContract(record) }
+        : {}),
     }));
   }
 

@@ -10,7 +10,7 @@ const mall = "主库商城；支付操作还依赖已验收的支付渠道配置
 const category = "{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID";
 const article = "{title,contentHtml,summary?,coverUrl?,categoryId?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID";
 const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；同类型仅一个激活版本";
-const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册";
+const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
   "SupportController.appDisplay": entry("读取 Say Ring AI 内容显示开关", "query product=say-ring；公开接口，禁止其他产品标识", "{product:'say-ring',hideAi:boolean}；true隐藏AI入口与内容；未配置默认false；仅读取已公开的say_ring_app_display并返回白名单字段；Cache-Control:no-store", "当前部署独立AppSetting；不读取AI密钥，不调用AI供应商"),
@@ -58,8 +58,9 @@ export const notes = {
   "MembersController.saveProfile": entry("修改本人资料", formProfile, "Profile"),
   "MembersController.goals": entry("活动目标", undefined, "{steps,distanceMeters,caloriesKcal}；未知为 null"),
   "MembersController.saveGoals": entry("保存活动目标", "{steps,distanceMeters,caloriesKcal}；缺省字段置 null，客户端应提交完整目标", "活动目标"),
+  "HealthController.capabilities": entry("健康同步能力", undefined, "{dailySummaryVersions:true,dailySummaryVersion:1}；只表示服务端支持日汇总版本折叠，与普通设备能力无关"),
   "HealthController.ingestBatch": entry("健康批量同步", healthBatch, batchResult),
-  "HealthController.list": entry("本人健康历史", "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间", "{items,nextCursor}；按采集时间和UUID稳定分页，相同采集时间记录不丢页"),
+  "HealthController.list": entry("本人健康历史", "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间", "{items,nextCursor}；逐条记录保持原样；同会员/指标/设备/本地日期的日汇总只返回最新版本并回显aggregation"),
   "HealthController.warningRules": entry("读取阈值提醒", undefined, "规则数组；未获取阈值为 null"),
   "HealthController.warnings": entry("读取提醒事件", "limit 默认 50", "提醒数组；仅阈值提醒，不是诊断"),
   "HealthController.saveWarningRules": entry("保存阈值提醒", "{rules:[{metric,enabled,lowThreshold?,highThreshold?,secondaryHighThreshold?,shareWithCare?}]}；目前仅本人的提醒闭环", "保存后的规则数组"),

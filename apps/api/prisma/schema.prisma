@@ -495,6 +495,11 @@ model HealthRecord {
   deviceBindingId         String?        @db.Uuid
   // Scoped device fingerprint also preserves identity before a device is bound.
   sourceDeviceKey         String?
+  // Versioned daily summaries retain every upload while only the newest
+  // version in each member/metric/device/local-date fold is query-visible.
+  aggregationKind         String?        @db.VarChar(32)
+  aggregationLocalDate    String?        @db.VarChar(10)
+  aggregationActive       Boolean        @default(false)
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
   user                    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -504,6 +509,7 @@ model HealthRecord {
   @@unique([userId, clientRecordId])
   @@index([userId, metric, observedAt])
   @@index([deviceBindingId, observedAt])
+  @@index([userId, aggregationKind, aggregationActive, aggregationLocalDate])
 }
 
 model EcgArtifact {
