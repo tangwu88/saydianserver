@@ -103,6 +103,27 @@ describe("global admin support and download configuration", () => {
     });
   });
 
+  it("saves a Say Ring Android market link and returns an actionable manifest validation error", async () => {
+    const h = harness();
+    const value: any = sayRingManifest();
+    value.publishedAt = "2026-09-29T03:28:31.100Z";
+    value.releases[0].versionName = "0.1.2";
+    value.releases[0].destination = { kind: "market", url: "https://www.baidu.com/" };
+    const saved = await h.service.updateSetting("say_ring_app_update", { value, public: true });
+    expect((saved.value as any).releases[0].destination).toEqual({ kind: "market", url: "https://www.baidu.com/" });
+
+    value.publishedAt = "";
+    let validationError: any;
+    try {
+      h.service.updateSetting("say_ring_app_update", { value });
+    } catch (error) { validationError = error; }
+    expect(validationError?.getResponse()).toMatchObject({
+      errorKey: "download_manifest_invalid",
+      message: "publishedAt 长度无效",
+    });
+    expect(h.appSetting.upsert).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["realm", "package", "path"])("rejects a manifest with the wrong %s before persistence", (field) => {
     const h = harness();
     const value = manifest();

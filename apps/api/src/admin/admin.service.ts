@@ -1108,7 +1108,10 @@ export class AdminService {
             ? parseGlobalDownloadManifest(value, "say-ring")
             : parseDownloadManifest(value)) as unknown as Record<string, unknown>;
       } catch (error) {
-        throw new BadRequestException(error instanceof Error ? error.message : "App 下载配置无效");
+        throw new BadRequestException({
+          errorKey: "download_manifest_invalid",
+          message: error instanceof Error ? error.message : "App 下载配置无效",
+        });
       }
     }
     if (key === "legacy_app_update") value = parseLegacyAppUpdate(value) as unknown as Record<string, unknown>;
