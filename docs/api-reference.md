@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **350 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **351 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -163,7 +163,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（101）
+## V2 App 接口（102）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -260,6 +260,7 @@
 | `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
 | `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本 | 重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还 | AI供应商 |
 | `GET /api/saydian-app/v2/support/config` | 客服配置 | public | 无请求体 | 客服配置或未配置状态 | 核心服务 |
+| `GET /api/saydian-app/v2/support/app-display` | 读取 Say Ring AI 内容显示开关 | public | query:product?；query product=say-ring；公开接口，禁止其他产品标识 | {product:'say-ring',hideAi:boolean}；true隐藏AI入口与内容；未配置默认false；仅读取已公开的say_ring_app_display并返回白名单字段；Cache-Control:no-store | 当前部署独立AppSetting；不读取AI密钥，不调用AI供应商 |
 | `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | query:product?；国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单 | DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无配置404 | 核心服务 |
 | `GET /api/saydian-app/v2/support/sport-map-config` | Say Ring 运动地图状态 | public | 无请求体；不返回高德密钥 | {provider:'amap',configured:boolean}；仅国际 Say Ring 地图已公开、启用且密钥存在时为 true | 核心服务 |
 | `POST /api/saydian-app/v2/support/sport-route-map` | Say Ring 高德运动轨迹图 | member | 会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点 | 高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图 | 高德 Web 服务坐标转换与静态地图 API |
@@ -312,8 +313,8 @@
 | `POST /api/saydian-app/admin/v1/admin-users` | 新建后台账号 | admin: SUPER_ADMIN | {username,displayName,password:至少12字符,role}；角色见调用手册 | 无密码账号信息 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/admin-users/:id` | 编辑后台账号 | admin: SUPER_ADMIN | path:id；{displayName?,role?,active?}；当前不支持修改密码 | 无密码账号信息 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/account-deletions` | 注销任务列表 | admin: SUPER_ADMIN, CUSTOMER_SERVICE | 无请求体 | 注销任务及遮蔽会员资料；非手动执行删除接口 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/settings` | 客服与更新设置 | admin | 无请求体 | key=support/app_update 的设置数组 | 核心服务 |
-| `PATCH /api/saydian-app/admin/v1/settings/:key` | 保存客服或更新设置 | admin: SUPER_ADMIN, APP_OPERATIONS | path:key；key=support/app_update；{value:非空JSON对象,public?:boolean}；app_update 必须通过 DownloadManifest v1 校验 | 设置对象；结构约定见调用手册 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/settings` | 客服、更新与 Say Ring 显示设置 | admin | 无请求体 | 按当前部署返回客服/更新设置，含独立say_ring_app_display显示开关 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/settings/:key` | 保存客服、更新或 Say Ring 显示设置 | admin: SUPER_ADMIN, APP_OPERATIONS | path:key；{value:非空JSON对象,public?:boolean}；更新配置必须通过 DownloadManifest v1 校验；say_ring_app_display仅接受{hideAi:boolean}且必须公开，true隐藏AI相关内容 | 设置对象；结构约定见调用手册 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/commerce-products` | 总后台商品列表 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:search?，query:page?，query:status?；search可查商品名或ERP编号；page默认1 | 主库商品、SKU及ERP库存快照；不直接改权威库存 | 主库商城/聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products` | 拒绝手工新增ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 请先通过聚水潭商品同步建立商品和SKU | HTTP 400；不会创建第二套库存 | 聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products/erp-import` | 按SKU定位SPU并实时导入ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存 | 聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入 | 聚水潭商品查询与库存查询 |

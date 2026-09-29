@@ -13,6 +13,7 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+  "SupportController.appDisplay": entry("读取 Say Ring AI 内容显示开关", "query product=say-ring；公开接口，禁止其他产品标识", "{product:'say-ring',hideAi:boolean}；true隐藏AI入口与内容；未配置默认false；仅读取已公开的say_ring_app_display并返回白名单字段；Cache-Control:no-store", "当前部署独立AppSetting；不读取AI密钥，不调用AI供应商"),
   "AdminHealthReportsController.availability": entry("检查会员AI健康报告生成条件", "memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR", "{canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,memberConsentBypass,availableCredits,latestReport}；SUPER_ADMIN后台生成不以会员App同意为前置，HEALTH_AUDITOR仍须当前同意；未知条件不伪装可用；不返回密钥，不探测外部服务", "有效数据、报告次数、已配置AI和未暂停Worker；审核员另需会员当前同意"),
   "AdminHealthReportsController.create": entry("后台申请生成或复用AI健康报告", "{memberId:UUID,idempotencyKey:8–160字符}；不创建付款；每次请求服务端复核条件", "{report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；SUPER_ADMIN可绕过会员App同意且审计memberConsentBypassed=true，HEALTH_AUDITOR不可绕过；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable", "已满足availability条件；第三方真实运行需独立验收"),
   "AdminHealthReportsController.detail": entry("后台查看健康报告进度和结果", "id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR", "报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文", "报告队列与读取审计；AI结果仅供健康管理参考"),
@@ -239,8 +240,8 @@ export const notes = {
   "AdminController.createAdmin": entry("新建后台账号", "{username,displayName,password:至少12字符,role}；角色见调用手册", "无密码账号信息"),
   "AdminController.updateAdmin": entry("编辑后台账号", "{displayName?,role?,active?}；当前不支持修改密码", "无密码账号信息"),
   "AdminController.deletionRequests": entry("注销任务列表", undefined, "注销任务及遮蔽会员资料；非手动执行删除接口"),
-  "AdminController.settings": entry("客服与更新设置", undefined, "key=support/app_update 的设置数组"),
-  "AdminController.updateSetting": entry("保存客服或更新设置", "key=support/app_update；{value:非空JSON对象,public?:boolean}；app_update 必须通过 DownloadManifest v1 校验", "设置对象；结构约定见调用手册"),
+  "AdminController.settings": entry("客服、更新与 Say Ring 显示设置", undefined, "按当前部署返回客服/更新设置，含独立say_ring_app_display显示开关"),
+  "AdminController.updateSetting": entry("保存客服、更新或 Say Ring 显示设置", "{value:非空JSON对象,public?:boolean}；更新配置必须通过 DownloadManifest v1 校验；say_ring_app_display仅接受{hideAi:boolean}且必须公开，true隐藏AI相关内容", "设置对象；结构约定见调用手册"),
   "AdminController.commerceProducts": entry("总后台商品列表", "search可查商品名或ERP编号；page默认1", "主库商品、SKU及ERP库存快照；不直接改权威库存", "主库商城/聚水潭"),
   "AdminController.createCommerceProduct": entry("拒绝手工新增ERP商品", "请先通过聚水潭商品同步建立商品和SKU", "HTTP 400；不会创建第二套库存", "聚水潭"),
   "AdminController.importCommerceProductBySku": entry("按SKU定位SPU并实时导入ERP商品", "{sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存", "聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入", "聚水潭商品查询与库存查询"),

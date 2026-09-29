@@ -54,7 +54,7 @@ describe("global admin support and download configuration", () => {
   it("lists support, updates and the independent Say Ring map setting", async () => {
     const h = harness();
     await h.service.settings();
-    expect(h.appSetting.findMany).toHaveBeenCalledWith({ where: { key: { in: ["global_support", "global_app_update", "say_ring_app_update", "say_ring_map"] } }, orderBy: { key: "asc" } });
+    expect(h.appSetting.findMany).toHaveBeenCalledWith({ where: { key: { in: ["global_support", "global_app_update", "say_ring_app_update", "say_ring_map", "say_ring_app_display"] } }, orderBy: { key: "asc" } });
   });
 
   it("encrypts the Say Ring AMap key separately from the public setting", async () => {
@@ -151,11 +151,37 @@ describe("global admin support and download configuration", () => {
     vi.stubEnv("APP_REALM", "domestic");
     const h = harness();
     await h.service.settings();
-    expect(h.appSetting.findMany).toHaveBeenCalledWith({ where: { key: { in: ["support", "app_update", "legacy_app_update"] } }, orderBy: { key: "asc" } });
+    expect(h.appSetting.findMany).toHaveBeenCalledWith({ where: { key: { in: ["support", "app_update", "legacy_app_update", "say_ring_app_display"] } }, orderBy: { key: "asc" } });
     await h.service.updateSetting("support", { value: { configured: false } });
     expect(h.appSetting.upsert.mock.calls[0]?.[0].where).toEqual({ key: "support" });
     expect(() => h.service.updateSetting("global_app_update", { value: manifest() })).toThrow("设置项不存在");
     expect(h.appSetting.upsert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Say Ring AI visibility administration", () => {
+  it.each(["global", "domestic"])("publishes the explicit flag in the %s realm", async (realm) => {
+    vi.stubEnv("APP_REALM", realm);
+    const h = harness();
+    for (const hideAi of [true, false]) {
+      const result = await h.service.updateSetting("say_ring_app_display", {
+        value: { hideAi, privateNote: "must-not-persist" }, public: true,
+      });
+      expect(result).toEqual({ key: "say_ring_app_display", value: { hideAi }, public: true });
+    }
+    expect(h.appSetting.upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["false", 0, null, undefined])("rejects an ambiguous flag %s without changing the setting", (hideAi) => {
+    const h = harness();
+    expect(() => h.service.updateSetting("say_ring_app_display", { value: { hideAi } })).toThrow("隐藏 AI 内容必须为开启或关闭");
+    expect(h.appSetting.upsert).not.toHaveBeenCalled();
+  });
+
+  it("does not save a hidden draft that an operator might mistake for an active switch", () => {
+    const h = harness();
+    expect(() => h.service.updateSetting("say_ring_app_display", { value: { hideAi: true }, public: false })).toThrow("显示设置必须公开");
+    expect(h.appSetting.upsert).not.toHaveBeenCalled();
   });
 });
 
