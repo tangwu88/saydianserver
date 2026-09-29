@@ -1083,7 +1083,7 @@ export class AdminService {
     return this.prisma.appSetting.findMany({
       where: {
         key: {
-          in: isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update"] : ["support", "app_update", "legacy_app_update"],
+          in: isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update", "say_ring_app_display"] : ["support", "app_update", "legacy_app_update", "say_ring_app_display"],
         },
       },
       orderBy: { key: "asc" },
@@ -1091,7 +1091,7 @@ export class AdminService {
   }
 
   updateSetting(key: string, input: unknown) {
-    const allowedKeys = isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update"] : ["support", "app_update", "legacy_app_update"];
+    const allowedKeys = isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update", "say_ring_app_display"] : ["support", "app_update", "legacy_app_update", "say_ring_app_display"];
     if (!allowedKeys.includes(key)) {
       throw new NotFoundException("设置项不存在");
     }
@@ -1099,6 +1099,15 @@ export class AdminService {
     let value = safeObject(body.value);
     if (!Object.keys(value).length) {
       throw new BadRequestException("设置内容不能为空");
+    }
+    if (key === "say_ring_app_display") {
+      if (typeof value.hideAi !== "boolean") {
+        throw new BadRequestException("隐藏 AI 内容必须为开启或关闭");
+      }
+      if (body.public === false) {
+        throw new BadRequestException("显示设置必须公开后才能在 App 生效");
+      }
+      value = { hideAi: value.hideAi };
     }
     if (key === "app_update" || key === "global_app_update" || key === "say_ring_app_update") {
       try {

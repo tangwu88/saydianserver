@@ -55,3 +55,34 @@ describe("public support configuration boundary", () => {
     expect(await h.service.supportConfig()).toEqual(unavailable);
   });
 });
+
+describe("Say Ring public AI visibility", () => {
+  it("preserves existing display behavior until a flag is published", async () => {
+    const h = harness([]);
+    expect(await h.service.appDisplayConfig("say-ring")).toEqual({ product: "say-ring", hideAi: false });
+    expect(h.findFirst).toHaveBeenCalledWith({ where: { key: "say_ring_app_display", public: true }, select: { value: true } });
+  });
+
+  it.each([true, false])("returns only the explicitly published boolean %s", async (hideAi) => {
+    const h = harness([{ key: "say_ring_app_display", public: true, value: { hideAi, privateNote: "not-public" } }]);
+    expect(await h.service.appDisplayConfig("say-ring")).toEqual({ product: "say-ring", hideAi });
+    expect(h.findUnique).not.toHaveBeenCalled();
+    expect(h.secrets.resolve).not.toHaveBeenCalled();
+  });
+
+  it("does not load private display configuration", async () => {
+    const h = harness([{ key: "say_ring_app_display", public: false, get value() { throw new Error("private value read"); } }]);
+    expect(await h.service.appDisplayConfig("say-ring")).toEqual({ product: "say-ring", hideAi: false });
+  });
+
+  it.each([undefined, "saydian-global", "another-app"])("refuses product %s without a settings read", async (product) => {
+    const h = harness([]);
+    await expect(h.service.appDisplayConfig(product)).rejects.toThrow("应用显示设置不存在");
+    expect(h.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("does not turn a malformed saved flag into a false success", async () => {
+    const h = harness([{ key: "say_ring_app_display", public: true, value: { hideAi: "true" } }]);
+    await expect(h.service.appDisplayConfig("say-ring")).rejects.toThrow("应用显示设置暂时无法读取");
+  });
+});

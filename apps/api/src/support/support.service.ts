@@ -111,6 +111,23 @@ export class SupportService {
     );
   }
 
+  async appDisplayConfig(productInput?: string) {
+    if (productInput !== "say-ring") {
+      throw new NotFoundException("应用显示设置不存在");
+    }
+    const setting = await this.prisma.appSetting.findFirst({
+      where: { key: "say_ring_app_display", public: true },
+      select: { value: true },
+    });
+    if (!setting) return { product: "say-ring", hideAi: false };
+    const value = safeObject(setting.value);
+    if (typeof value.hideAi !== "boolean") {
+      throw new ServiceUnavailableException("应用显示设置暂时无法读取");
+    }
+    // Whitelist the public display flag instead of returning arbitrary JSON.
+    return { product: "say-ring", hideAi: value.hideAi };
+  }
+
   async appUpdateConfig(productInput?: string) {
     const product = String(productInput ?? "")
       .trim()

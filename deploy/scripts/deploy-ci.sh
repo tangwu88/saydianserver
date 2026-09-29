@@ -8,6 +8,14 @@ revision=${RELEASE_SHA:?}
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || exit 1
 source_dir=${RELEASE_SOURCE:?}
 [[ "$source_dir" == "$root_dir"/releases/ci-* && -d "$source_dir/deploy" ]] || exit 1
+global_revision=
+if [[ -e "$source_dir/deploy/.global-revision" ]]; then
+  global_marker="$source_dir/deploy/.global-revision"
+  [[ -f "$global_marker" && ! -L "$global_marker" && "$(wc -c < "$global_marker")" -eq 41 ]]
+  global_revision=$(cat "$global_marker")
+  [[ "$global_revision" =~ ^[0-9a-f]{40}$ ]]
+  [[ ! -e "$source_dir/deploy/.package-only" && ! -e "$source_dir/deploy/.apply-reviewed-migrations" ]]
+fi
 source_downloads="$source_dir/deploy/downloads"
 download_packages=()
 if [[ -f "$source_downloads/SHA256SUMS" ]]; then
@@ -222,3 +230,9 @@ changed=false
 setting_changed=false
 trap - ERR INT TERM
 echo "Deployed $revision; maintenance mode preserved ($read_only); schema migrations not applied."
+# A separately requested international release must not roll back a successful
+# domestic release. The installed global service retains its own rollback logic.
+if [[ -n "$global_revision" ]]; then
+  timeout --signal=TERM --kill-after=15s 15m \
+    bash "$source_dir/deploy/scripts/trigger-global-deploy.sh" "$global_revision" "$revision"
+fi

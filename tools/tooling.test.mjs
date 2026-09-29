@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { findMissingConsumers } from "./check-client-contracts.mjs";
 import { fieldContracts } from "./api-field-contracts.mjs";
+import "./global-deployment.test.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bash = process.env.SAYDIAN_BASH || (process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash");

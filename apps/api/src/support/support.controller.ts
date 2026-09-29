@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Post,
   Query,
@@ -26,6 +27,12 @@ export class SupportController {
   @Get("config")
   config() {
     return this.support.supportConfig();
+  }
+
+  @Get("app-display")
+  @Header("Cache-Control", "no-store")
+  appDisplay(@Query("product") product?: string) {
+    return this.support.appDisplayConfig(product);
   }
 
   @Get("app-update")

@@ -60,6 +60,7 @@ const downloadPlatformOptions = [
 const visibleDownloadPlatformOptions = computed(() => downloadPlatformOptions);
 const appUpdateSettingKeys = new Set(["global_app_update", "say_ring_app_update"]);
 const isAppUpdateSetting = (key: unknown): boolean => appUpdateSettingKeys.has(String(key ?? ""));
+const isAppDisplaySetting = (key: unknown): boolean => key === "say_ring_app_display";
 const createDownloadDraft = (key: unknown): DownloadManifestEditor => (String(key) === "say_ring_app_update" ? createSayRingDownloadDraft() : createGlobalDownloadDraft());
 const downloadManifestToEditor = (key: unknown, value: unknown): DownloadManifestEditor => (String(key) === "say_ring_app_update" ? sayRingDownloadManifestToEditor(value) : globalDownloadManifestToEditor(value));
 const downloadEditorToManifest = (key: unknown, editor: DownloadManifestEditor) => (String(key) === "say_ring_app_update" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor));
@@ -288,6 +289,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
     { key: "global_support", name: "国际版客服" },
     { key: "global_app_update", name: "国际版 App 更新" },
     { key: "say_ring_app_update", name: "Say Ring App 更新" },
+    { key: "say_ring_app_display", name: "Say Ring 显示设置" },
   ];
   return definitions.map((definition) => {
     const row = loadedRows.find((item) => item.key === definition.key);
@@ -295,15 +297,16 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
       ? {
           ...row,
           name: definition.name,
-          configuration: row.value?.configured === false ? "未配置" : row.public ? "已公开" : "未公开",
+          configuration: isAppDisplaySetting(definition.key) ? (row.value?.hideAi === true ? "AI已隐藏" : "AI已显示") : row.value?.configured === false ? "未配置" : row.public ? "已公开" : "未公开",
         }
       : {
           ...definition,
-          configuration: "未配置",
+          configuration: isAppDisplaySetting(definition.key) ? "AI已显示（默认）" : "未配置",
           public: false,
           updatedAt: null,
           _unconfigured: true,
           ...(definition.key === "global_support" ? { value: { configured: false } } : {}),
+          ...(isAppDisplaySetting(definition.key) ? { value: { hideAi: false } } : {}),
         };
   });
 }
@@ -524,6 +527,7 @@ async function openEdit(row: Row): Promise<void> {
     audienceAllActive: row.audience?.allActive === true,
     audienceUserIds: Array.isArray(row.audience?.userIds) ? row.audience.userIds.join("\n") : "",
   };
+  if (isAppDisplaySetting(row.key)) nextForm.hideAi = row.value?.hideAi === true;
   if (isAppUpdateSetting(row.key)) {
     try {
       nextForm.downloadEditor = row._unconfigured ? createDownloadDraft(row.key) : downloadManifestToEditor(row.key, row.value);
@@ -710,10 +714,10 @@ async function save(): Promise<void> {
       };
       await api.patch(`/integrations/${encodeURIComponent(String(form.value.key))}`, payload);
     } else if (resource.value === "settings") {
-      const settingValue = isAppUpdateSetting(form.value.key) ? downloadEditorToManifest(form.value.key, form.value.downloadEditor as DownloadManifestEditor) : JSON.parse(String(form.value.valueText || "{}"));
+      const settingValue = isAppDisplaySetting(form.value.key) ? { hideAi: form.value.hideAi === true } : isAppUpdateSetting(form.value.key) ? downloadEditorToManifest(form.value.key, form.value.downloadEditor as DownloadManifestEditor) : JSON.parse(String(form.value.valueText || "{}"));
       payload = {
         value: settingValue,
-        public: form.value.public !== false,
+        public: isAppDisplaySetting(form.value.key) ? true : form.value.public !== false,
       };
       await api.patch(`/settings/${encodeURIComponent(String(form.value.key))}`, payload);
     } else if (resource.value === "commerce-business-configs") {
@@ -1523,10 +1527,14 @@ onBeforeUnmount(() => {
           <el-alert title="密钥使用主机外置主密钥加密，只能覆盖写入，不会在后台或接口中回显。修改配置会清除原检测时间；只有供应商真实调用成功后才显示已通过。" type="info" :closable="false" />
         </template>
         <template v-else-if="resource === 'settings'">
-          <el-alert v-if="form._unconfigured" title="此项尚未配置。当前内容仅为本次编辑草稿，尚未保存或公开；请填写真实配置后保存。" type="info" :closable="false" show-icon />
+          <el-alert v-if="form._unconfigured" :title="isAppDisplaySetting(form.key) ? '尚未保存显示设置，App 默认显示 AI 内容。调整开关并保存后生效。' : '此项尚未配置。当前内容仅为本次编辑草稿，尚未保存或公开；请填写真实配置后保存。'" type="info" :closable="false" show-icon />
           <el-form-item label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
-          <el-form-item label="公开"><el-switch v-model="form.public" /></el-form-item>
-          <template v-if="isAppUpdateSetting(form.key) && form.downloadEditor">
+          <el-form-item v-if="!isAppDisplaySetting(form.key)" label="公开"><el-switch v-model="form.public" /></el-form-item>
+          <template v-if="isAppDisplaySetting(form.key)">
+            <el-form-item label="隐藏 AI 内容"><el-switch v-model="form.hideAi" active-text="隐藏" inactive-text="显示" /></el-form-item>
+            <el-alert title="开启后，Say Ring App 隐藏 AI 问答、AI 健康报告及 AI 相关入口；关闭后恢复显示。保存后 App 会在重新打开或回到前台时刷新设置。" type="info" :closable="false" show-icon />
+          </template>
+          <template v-else-if="isAppUpdateSetting(form.key) && form.downloadEditor">
             <el-alert :title="form.key === 'say_ring_app_update' ? '保存后仅 Say Ring 会读取此配置。Android 与 HarmonyOS 可上传安装包或填写应用市场链接。' : '保存后国际版 App 会读取新配置。Android/HarmonyOS 可配置安装包或应用市场链接。'" type="warning" :closable="false" show-icon />
             <el-form-item label="发布时间" class="download-published-at">
               <el-input v-model="form.downloadEditor.publishedAt" placeholder="ISO 8601，如 2026-09-06T00:00:00+08:00">

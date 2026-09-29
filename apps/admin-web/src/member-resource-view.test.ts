@@ -501,8 +501,8 @@ describe("international settings first configuration", () => {
     h.route.params.resource = "settings";
     h.api.get.mockResolvedValueOnce({ data: { data: [] } });
     await h.load();
-    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "global_app_update", "say_ring_app_update"]);
-    expect(h.rows.value.every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
+    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "global_app_update", "say_ring_app_update", "say_ring_app_display"]);
+    expect(h.rows.value.slice(0, 3).every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
     expect(h.columns.value).toEqual(["name", "configuration", "public", "updatedAt"]);
     expect(h.api.patch).not.toHaveBeenCalled();
     expect(h.api.post).not.toHaveBeenCalled();
@@ -546,6 +546,62 @@ describe("international settings first configuration", () => {
     expect(rows[0].configuration).toBe("已公开");
     expect(rows[1]._unconfigured).toBe(true);
     expect(h.api.patch).not.toHaveBeenCalled();
+  });
+});
+
+describe("Say Ring AI display setting", () => {
+  it("defaults to visible and opening or cancelling the editor does not persist a setting", async () => {
+    const h = harness();
+    h.route.params.resource = "settings";
+    h.api.get.mockResolvedValueOnce({ data: { data: [] } });
+    await h.load();
+    const row = h.rows.value.find((item: any) => item.key === "say_ring_app_display");
+    expect(row).toMatchObject({ name: "Say Ring 显示设置", configuration: "AI已显示（默认）", value: { hideAi: false }, _unconfigured: true });
+    await h.openEdit(row);
+    expect(h.form.value.hideAi).toBe(false);
+    h.form.value.hideAi = true;
+    h.dialogVisible.value = false;
+    await h.openEdit(row);
+    expect(h.form.value.hideAi).toBe(false);
+    expect(h.api.patch).not.toHaveBeenCalled();
+    expect(h.api.post).not.toHaveBeenCalled();
+    expect(h.sfc).toContain('label="隐藏 AI 内容"');
+    expect(h.sfc).toContain('v-if="!isAppDisplaySetting(form.key)" label="公开"');
+  });
+
+  it.each([true, false])("saves hideAi=%s as a public boolean and reopens the persisted value", async (hideAi) => {
+    const h = harness();
+    h.route.params.resource = "settings";
+    const initialRows = await h.withDownloadSetting([]);
+    await h.openEdit(initialRows.find((item: any) => item.key === "say_ring_app_display"));
+    h.form.value.hideAi = hideAi;
+    h.form.value.public = false;
+    // Old generic JSON draft fields must not be sent from the dedicated switch editor.
+    h.form.value.valueText = '{"hideAi":"false","unrelated":"discard"}';
+    const savedRow = { key: "say_ring_app_display", public: true, value: { hideAi }, updatedAt: "2026-09-29T12:00:00Z" };
+    h.api.get.mockResolvedValueOnce({ data: { data: [savedRow] } });
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/settings/say_ring_app_display", { value: { hideAi }, public: true });
+    expect(h.dialogVisible.value).toBe(false);
+    const row = h.rows.value.find((item: any) => item.key === "say_ring_app_display");
+    expect(row.configuration).toBe(hideAi ? "AI已隐藏" : "AI已显示");
+    await h.openEdit(row);
+    expect(h.form.value.hideAi).toBe(hideAi);
+    expect(h.api.patch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the edited switch and error visible if save fails", async () => {
+    const h = harness();
+    h.route.params.resource = "settings";
+    const initialRows = await h.withDownloadSetting([]);
+    await h.openEdit(initialRows.find((item: any) => item.key === "say_ring_app_display"));
+    h.form.value.hideAi = true;
+    h.api.patch.mockRejectedValueOnce(new Error("synthetic save failure"));
+    await h.save();
+    expect(h.dialogVisible.value).toBe(true);
+    expect(h.form.value.hideAi).toBe(true);
+    expect(h.messages.error).toHaveBeenCalled();
+    expect(h.messages.success).not.toHaveBeenCalled();
   });
 });
 

@@ -1337,9 +1337,9 @@
       "parameters": [],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
-      "summary": "客服与更新设置",
+      "summary": "客服、更新与 Say Ring 显示设置",
       "request": "无请求体",
-      "response": "key=support/app_update 的设置数组",
+      "response": "按当前部署返回客服/更新设置，含独立say_ring_app_display显示开关",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -1378,8 +1378,8 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
-      "summary": "保存客服或更新设置",
-      "request": "key=support/app_update；{value:非空JSON对象,public?:boolean}；app_update 必须通过 DownloadManifest v1 校验",
+      "summary": "保存客服、更新或 Say Ring 显示设置",
+      "request": "{value:非空JSON对象,public?:boolean}；更新配置必须通过 DownloadManifest v1 校验；say_ring_app_display仅接受{hideAi:boolean}且必须公开，true隐藏AI相关内容",
       "response": "设置对象；结构约定见调用手册",
       "dependency": "核心服务",
       "successStatus": 200,
@@ -23863,6 +23863,38 @@
       "request": "无请求体",
       "response": "客服配置或未配置状态",
       "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SupportController.appDisplay",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/app-display",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "读取 Say Ring AI 内容显示开关",
+      "request": "query product=say-ring；公开接口，禁止其他产品标识",
+      "response": "{product:'say-ring',hideAi:boolean}；true隐藏AI入口与内容；未配置默认false；仅读取已公开的say_ring_app_display并返回白名单字段；Cache-Control:no-store",
+      "dependency": "当前部署独立AppSetting；不读取AI密钥，不调用AI供应商",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

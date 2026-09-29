@@ -40,6 +40,10 @@ on:
         description: Full main commit SHA that has passed CI
         required: true
         type: string
+      global_revision:
+        description: Optional verified latest global branch SHA; explicitly trigger the installed global deploy service
+        required: false
+        type: string
       download_url:
         description: Temporary GitHub release-assets HTTPS URL
         required: false
@@ -87,6 +91,7 @@ jobs:
       actions: read
     outputs:
       revision: ${{ steps.target.outputs.revision }}
+      global_revision: ${{ steps.target.outputs.global_revision }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -98,7 +103,9 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
           PACKAGE_ONLY: ${{ inputs.package_only }}
+          GLOBAL_REVISION: ${{ inputs.global_revision }}
         run: |
+          set -Eeuo pipefail
           [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$REVISION"
           if [[ "$APPLY_MIGRATIONS" == true ]]; then
@@ -111,6 +118,12 @@ jobs:
             test "$result" -ge 1
           fi
           echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+          if [[ -n "$GLOBAL_REVISION" ]]; then
+            [[ "$EVENT_NAME" == workflow_dispatch && "$PACKAGE_ONLY" != true && "$APPLY_MIGRATIONS" != true ]]
+            [[ "$GLOBAL_REVISION" =~ ^[0-9a-f]{40}$ ]]
+            test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/codex/global-api-foundation --jq .object.sha)" = "$GLOBAL_REVISION"
+            echo "global_revision=$GLOBAL_REVISION" >> "$GITHUB_OUTPUT"
+          fi
       - name: Fetch and verify optional release package
         if: inputs.download_url != ''
         env:
@@ -139,6 +152,47 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
+  verify-global:
+    needs: resolve
+    if: github.event_name == 'workflow_dispatch' && needs.resolve.outputs.global_revision != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.global_revision }}
+          fetch-depth: 0
+      - name: Verify global ancestry and unchanged database schema
+        env:
+          GLOBAL_REVISION: ${{ needs.resolve.outputs.global_revision }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GLOBAL_REVISION"
+          current=$(curl --fail --silent --max-time 15 https://app.saydian.cn/global/health/ready | jq -er 'select(.status == "ready" and .database == "ok") | .revision')
+          [[ "$current" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$current" "$GLOBAL_REVISION"
+          git diff --exit-code "$current" "$GLOBAL_REVISION" -- apps/api/prisma/schema.prisma apps/api/prisma/migrations
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Verify exact global source before invoking its installed deployer
+        run: |
+          set -Eeuo pipefail
+          pnpm install --frozen-lockfile
+          pnpm db:generate
+          pnpm api:docs:check
+          pnpm tools:test
+          pnpm typecheck
+          pnpm test
+          pnpm build
+          node deploy/global/check.mjs
+          docker compose -f deploy/global/compose.json config --no-interpolate --quiet
   images:
     needs: resolve
     if: inputs.package_only != true
@@ -168,11 +222,12 @@ jobs:
           tags: ghcr.io/tangwu88/saydianserver-${{ matrix.service }}:sha-${{ needs.resolve.outputs.revision }}
           labels: org.opencontainers.image.revision=${{ needs.resolve.outputs.revision }}
   deploy:
-    needs: [resolve, images]
+    needs: [resolve, images, verify-global]
     if: >-
       always() &&
       needs.resolve.result == 'success' &&
-      (needs.images.result == 'success' || inputs.package_only == true)
+      (needs.images.result == 'success' || inputs.package_only == true) &&
+      (needs.resolve.outputs.global_revision == '' || needs.verify-global.result == 'success')
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -201,6 +256,7 @@ jobs:
           APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
           PACKAGE_ONLY: ${{ inputs.package_only }}
           EVENT_NAME: ${{ github.event_name }}
+          GLOBAL_REVISION: ${{ needs.resolve.outputs.global_revision }}
         run: |
           set -Eeuo pipefail
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
@@ -214,6 +270,12 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$key_dir/known_hosts"
           chmod 600 "$key_dir/key" "$key_dir/known_hosts"
           git archive --format=tar HEAD deploy | tar -x -C "$bundle_dir"
+          if [[ -n "$GLOBAL_REVISION" ]]; then
+            [[ "$EVENT_NAME" == workflow_dispatch && "$PACKAGE_ONLY" != true && "$APPLY_MIGRATIONS" != true ]]
+            [[ "$GLOBAL_REVISION" =~ ^[0-9a-f]{40}$ ]]
+            test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/codex/global-api-foundation --jq .object.sha)" = "$GLOBAL_REVISION"
+            printf '%s\n' "$GLOBAL_REVISION" > "$bundle_dir/deploy/.global-revision"
+          fi
           if [[ -n "$DOWNLOAD_URL" ]]; then
             test -f download-package/SHA256SUMS
             mkdir -p "$bundle_dir/deploy/downloads"
@@ -249,3 +311,8 @@ jobs:
           actual=$(curl --fail --silent --max-time 15 https://app.saydian.cn/health/ready | jq -r .revision)
           test "$actual" = "$expected_revision"
           echo "### Verified production revision: $actual" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$GLOBAL_REVISION" ]]; then
+            global_actual=$(curl --fail --silent --max-time 15 https://app.saydian.cn/global/health/ready | jq -er 'select(.status == "ready" and .database == "ok") | .revision')
+            test "$global_actual" = "$GLOBAL_REVISION"
+            echo "### Verified international revision: $global_actual" >> "$GITHUB_STEP_SUMMARY"
+          fi
