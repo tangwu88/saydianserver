@@ -22,6 +22,7 @@ import { markIntegrationVerified } from "../common/integration-health";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { parseGlobalDownloadManifest } from "./global-download-manifest";
 import { canAdminResource } from "@saydian/app-contracts";
+import { parseSportRoute, renderAmapSportRoute } from "./sport-route-map";
 import {
   evidenceId,
   evidenceLimits,
@@ -109,6 +110,37 @@ export class SupportService {
           : "客服渠道暂时无法使用，请稍后再试",
       }
     );
+  }
+
+  async sportMapConfig() {
+    if (!isGlobalRealm()) return { provider: "amap", configured: false };
+    const setting = await this.prisma.appSetting.findFirst({
+      where: { key: "say_ring_map", public: true },
+      select: { value: true },
+    });
+    const value = safeObject(setting?.value);
+    if (value.provider !== "amap" || value.enabled !== true) {
+      return { provider: "amap", configured: false };
+    }
+    try {
+      const secrets = await this.integrationSecrets.resolve("say_ring_amap", {
+        webServiceKey: "SAY_RING_AMAP_WEB_SERVICE_KEY",
+      });
+      return { provider: "amap", configured: Boolean(secrets.webServiceKey) };
+    } catch {
+      return { provider: "amap", configured: false };
+    }
+  }
+
+  async sportRouteMap(input: unknown) {
+    const points = parseSportRoute(input);
+    const config = await this.sportMapConfig();
+    if (!config.configured) throw new ServiceUnavailableException("运动地图尚未配置");
+    const secrets = await this.integrationSecrets.resolve("say_ring_amap", {
+      webServiceKey: "SAY_RING_AMAP_WEB_SERVICE_KEY",
+    });
+    if (!secrets.webServiceKey) throw new ServiceUnavailableException("运动地图尚未配置");
+    return renderAmapSportRoute(points, secrets.webServiceKey);
   }
 
   async appUpdateConfig(productInput?: string) {

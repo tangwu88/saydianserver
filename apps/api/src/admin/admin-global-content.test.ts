@@ -43,17 +43,30 @@ function harness() {
   };
   const tx = { appSetting, legalDocument, globalLegalDocument };
   const prisma = { ...tx, $transaction: vi.fn(async (callback: any) => callback(tx)) };
-  return { ...tx, prisma, service: new AdminService(prisma as any, {} as any) };
+  const secrets = { save: vi.fn().mockResolvedValue(undefined) };
+  return { ...tx, prisma, secrets, service: new AdminService(prisma as any, secrets as any) };
 }
 
 beforeEach(() => vi.stubEnv("APP_REALM", "global"));
 afterEach(() => vi.unstubAllEnvs());
 
 describe("global admin support and download configuration", () => {
-  it("lists support plus independent update keys for both global applications", async () => {
+  it("lists support, updates and the independent Say Ring map setting", async () => {
     const h = harness();
     await h.service.settings();
-    expect(h.appSetting.findMany).toHaveBeenCalledWith({ where: { key: { in: ["global_support", "global_app_update", "say_ring_app_update"] } }, orderBy: { key: "asc" } });
+    expect(h.appSetting.findMany).toHaveBeenCalledWith({ where: { key: { in: ["global_support", "global_app_update", "say_ring_app_update", "say_ring_map"] } }, orderBy: { key: "asc" } });
+  });
+
+  it("encrypts the Say Ring AMap key separately from the public setting", async () => {
+    const h = harness();
+    const saved = await h.service.updateSetting("say_ring_map", {
+      value: { provider: "amap", enabled: true },
+      webServiceKey: "a".repeat(32),
+      public: true,
+    });
+    expect(h.secrets.save).toHaveBeenCalledWith("say_ring_amap", { webServiceKey: "a".repeat(32) });
+    expect(saved.value).toEqual({ provider: "amap", enabled: true, configured: true });
+    expect(JSON.stringify(h.appSetting.upsert.mock.calls[0]?.[0])).not.toContain("a".repeat(32));
   });
 
   it("saves global support publication without aliasing it to domestic support", async () => {

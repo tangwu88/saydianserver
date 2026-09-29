@@ -1083,7 +1083,7 @@ export class AdminService {
     return this.prisma.appSetting.findMany({
       where: {
         key: {
-          in: isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update"] : ["support", "app_update", "legacy_app_update"],
+          in: isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update", "say_ring_map"] : ["support", "app_update", "legacy_app_update"],
         },
       },
       orderBy: { key: "asc" },
@@ -1091,7 +1091,7 @@ export class AdminService {
   }
 
   updateSetting(key: string, input: unknown) {
-    const allowedKeys = isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update"] : ["support", "app_update", "legacy_app_update"];
+    const allowedKeys = isGlobalRealm() ? ["global_support", "global_app_update", "say_ring_app_update", "say_ring_map"] : ["support", "app_update", "legacy_app_update"];
     if (!allowedKeys.includes(key)) {
       throw new NotFoundException("设置项不存在");
     }
@@ -1099,6 +1099,25 @@ export class AdminService {
     let value = safeObject(body.value);
     if (!Object.keys(value).length) {
       throw new BadRequestException("设置内容不能为空");
+    }
+    if (key === "say_ring_map") {
+      const webServiceKey = String(body.webServiceKey ?? "").trim();
+      if (webServiceKey && !/^[A-Za-z0-9]{16,128}$/.test(webServiceKey)) {
+        throw new BadRequestException("高德 Web 服务 Key 格式无效");
+      }
+      value = {
+        provider: "amap",
+        enabled: value.enabled === true,
+        configured: Boolean(webServiceKey || value.configured === true),
+      };
+      const saveSetting = () => this.prisma.appSetting.upsert({
+        where: { key },
+        create: { key, value: value as Prisma.InputJsonValue, public: body.public === true },
+        update: { value: value as Prisma.InputJsonValue, public: body.public === true },
+      });
+      return webServiceKey
+        ? this.integrationSecrets.save("say_ring_amap", { webServiceKey }).then(saveSetting)
+        : saveSetting();
     }
     if (key === "app_update" || key === "global_app_update" || key === "say_ring_app_update") {
       try {
