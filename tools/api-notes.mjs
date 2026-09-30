@@ -98,6 +98,8 @@ export const notes = {
   "AiController.history": entry("本人 AI 历史", "sessionId 可选客户端会话标识", "最近 20 个会话及消息"),
   "AiController.send": entry("AI 提问", "{content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en", "{id,conversationId,role,content,createdAt}", "AI 供应商；未配置返回 503；语言指令不改变健康安全边界"),
   "SupportController.config": entry("客服配置", undefined, "客服配置或未配置状态"),
+  "SupportController.sportMapConfig": entry("Say Ring 运动地图状态", "无请求体；不返回高德密钥", "{provider:'amap',configured:boolean}；仅国际 Say Ring 地图已公开、启用且密钥存在时为 true"),
+  "SupportController.sportRouteMap": entry("Say Ring 高德运动轨迹图", "会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点", "高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图", "高德 Web 服务坐标转换与静态地图 API"),
   "SupportController.appUpdate": entry("App 下载与更新配置", "国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单", "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无配置404"),
   "SupportController.appPackage": entry("Say Ring 公开安装包", "fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名", "安装包原始文件流，含 Content-Length、ETag 和 nosniff", "已配置对象存储"),
   "SupportController.feedback": entry("提交反馈", "{content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项}", "{id,status}"),

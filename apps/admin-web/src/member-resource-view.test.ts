@@ -501,8 +501,8 @@ describe("international settings first configuration", () => {
     h.route.params.resource = "settings";
     h.api.get.mockResolvedValueOnce({ data: { data: [] } });
     await h.load();
-    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "global_app_update", "say_ring_app_update", "say_ring_app_display"]);
-    expect(h.rows.value.slice(0, 3).every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
+    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "global_app_update", "say_ring_app_update", "say_ring_app_display", "say_ring_map"]);
+    expect(h.rows.value.filter((row: any) => row.key !== "say_ring_app_display").every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
     expect(h.columns.value).toEqual(["name", "configuration", "public", "updatedAt"]);
     expect(h.api.patch).not.toHaveBeenCalled();
     expect(h.api.post).not.toHaveBeenCalled();

@@ -40,6 +40,23 @@ export class SupportController {
     return this.support.appUpdateConfig(product);
   }
 
+  @Get("sport-map-config")
+  sportMapConfig() {
+    return this.support.sportMapConfig();
+  }
+
+  @Post("sport-route-map")
+  @UseGuards(UserAuthGuard)
+  @RawResponse()
+  async sportRouteMap(@Body() input: unknown, @Res() response: Response) {
+    const image = await this.support.sportRouteMap(input);
+    response.setHeader("content-type", image.contentType);
+    response.setHeader("content-length", String(image.body.length));
+    response.setHeader("cache-control", "private, no-store");
+    response.setHeader("x-content-type-options", "nosniff");
+    response.end(image.body);
+  }
+
   @Get("app-package/:fileName")
   @RawResponse()
   async appPackage(

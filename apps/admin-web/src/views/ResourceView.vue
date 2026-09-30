@@ -290,6 +290,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
     { key: "global_app_update", name: "国际版 App 更新" },
     { key: "say_ring_app_update", name: "Say Ring App 更新" },
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
+    { key: "say_ring_map", name: "Say Ring 运动地图" },
   ];
   return definitions.map((definition) => {
     const row = loadedRows.find((item) => item.key === definition.key);
@@ -307,6 +308,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
           _unconfigured: true,
           ...(definition.key === "global_support" ? { value: { configured: false } } : {}),
           ...(isAppDisplaySetting(definition.key) ? { value: { hideAi: false } } : {}),
+          ...(definition.key === "say_ring_map" ? { value: { provider: "amap", enabled: false, configured: false } } : {}),
         };
   });
 }
@@ -519,6 +521,7 @@ async function openEdit(row: Row): Promise<void> {
     _isNew: false,
     publicConfigText: row.publicConfig ? JSON.stringify(row.publicConfig, null, 2) : "{}",
     secretsText: "",
+    mapWebServiceKey: "",
     clearSecrets: false,
     valueText: row.value ? JSON.stringify(row.value, null, 2) : "{}",
     galleryText: Array.isArray(row.gallery) ? row.gallery.join("\n") : "",
@@ -714,11 +717,18 @@ async function save(): Promise<void> {
       };
       await api.patch(`/integrations/${encodeURIComponent(String(form.value.key))}`, payload);
     } else if (resource.value === "settings") {
-      const settingValue = isAppDisplaySetting(form.value.key) ? { hideAi: form.value.hideAi === true } : isAppUpdateSetting(form.value.key) ? downloadEditorToManifest(form.value.key, form.value.downloadEditor as DownloadManifestEditor) : JSON.parse(String(form.value.valueText || "{}"));
-      payload = {
-        value: settingValue,
-        public: isAppDisplaySetting(form.value.key) ? true : form.value.public !== false,
-      };
+      const mapSetting = form.value.key === "say_ring_map";
+      const settingValue = mapSetting
+        ? { provider: "amap", enabled: form.value.value?.enabled === true, configured: form.value.value?.configured === true }
+        : isAppDisplaySetting(form.value.key)
+          ? { hideAi: form.value.hideAi === true }
+          : isAppUpdateSetting(form.value.key)
+          ? downloadEditorToManifest(form.value.key, form.value.downloadEditor as DownloadManifestEditor)
+          : JSON.parse(String(form.value.valueText || "{}"));
+      payload = { value: settingValue, public: isAppDisplaySetting(form.value.key) ? true : mapSetting ? form.value.public === true : form.value.public !== false };
+      if (mapSetting && String(form.value.mapWebServiceKey ?? "").trim()) {
+        payload.webServiceKey = String(form.value.mapWebServiceKey).trim();
+      }
       await api.patch(`/settings/${encodeURIComponent(String(form.value.key))}`, payload);
     } else if (resource.value === "commerce-business-configs") {
       const configKey = String(form.value.key ?? "").trim();
@@ -1608,6 +1618,12 @@ onBeforeUnmount(() => {
               </section>
             </div>
             <el-alert title="保存时需填写发布时间及三个平台的版本号、构建号；待开放平台不需要下载链接。Android/HarmonyOS 可使用同源安装包或 HTTPS 应用市场链接；iPhone 只允许官方 TestFlight 或 App Store 链接。" type="info" :closable="false" />
+          </template>
+          <template v-else-if="form.key === 'say_ring_map'">
+            <el-alert title="仅 Say Ring 运动详情使用高德静态地图。请申请“Web 服务 API”类型的 Key；密钥加密保存，不会在 App 或后台回显。未填 Key 时运动轨迹仍可记录。" type="info" :closable="false" show-icon />
+            <el-form-item label="启用地图"><el-switch v-model="form.value.enabled" /></el-form-item>
+            <el-form-item label="Key 状态"><el-tag :type="form.value?.configured ? 'success' : 'info'">{{ form.value?.configured ? '已保存' : '未配置' }}</el-tag></el-form-item>
+            <el-form-item label="高德 Web 服务 Key"><el-input v-model="form.mapWebServiceKey" type="password" show-password autocomplete="new-password" placeholder="填入新 Key；留空保持原 Key" /></el-form-item>
           </template>
           <el-form-item v-else label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="12" /></el-form-item>
         </template>

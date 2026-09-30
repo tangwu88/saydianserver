@@ -23941,6 +23941,63 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "SupportController.sportMapConfig",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/sport-map-config",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "Say Ring 运动地图状态",
+      "request": "无请求体；不返回高德密钥",
+      "response": "{provider:'amap',configured:boolean}；仅国际 Say Ring 地图已公开、启用且密钥存在时为 true",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SupportController.sportRouteMap",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/sport-route-map",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "Say Ring 高德运动轨迹图",
+      "request": "会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点",
+      "response": "高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图",
+      "dependency": "高德 Web 服务坐标转换与静态地图 API",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "SupportController.appPackage",
       "method": "GET",
       "path": "/api/saydian-app/v2/support/app-package/:fileName",
