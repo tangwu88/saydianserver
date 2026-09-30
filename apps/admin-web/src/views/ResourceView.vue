@@ -61,6 +61,37 @@ const visibleDownloadPlatformOptions = computed(() => downloadPlatformOptions);
 const appUpdateSettingKeys = new Set(["global_app_update", "say_ring_app_update"]);
 const isAppUpdateSetting = (key: unknown): boolean => appUpdateSettingKeys.has(String(key ?? ""));
 const isAppDisplaySetting = (key: unknown): boolean => key === "say_ring_app_display";
+const isGlobalSupportSetting = (key: unknown): boolean => key === "global_support";
+const supportPhonePattern = /^\+?[0-9][0-9 -]{4,20}$/;
+const supportEditorFromValue = (value: unknown): Row => {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? (value as Row) : {};
+  const legacyPhone = source.phone == null && (typeof source.configured === "number" || typeof source.configured === "string") ? String(source.configured).trim() : "";
+  return {
+    enabled: source.configured === true || Boolean(legacyPhone),
+    phone: String(source.phone ?? legacyPhone).trim(),
+    officialAccount: String(source.officialAccount ?? source.wechatOfficialAccount ?? "").trim(),
+    serviceHours: String(source.serviceHours ?? "").trim(),
+    message: String(source.message ?? "").trim(),
+  };
+};
+const supportEditorToValue = (editor: Row): Row => {
+  const phone = String(editor.phone ?? "").trim();
+  const officialAccount = String(editor.officialAccount ?? "").trim();
+  const serviceHours = String(editor.serviceHours ?? "").trim();
+  const message = String(editor.message ?? "").trim();
+  if (phone && !supportPhonePattern.test(phone)) throw new Error("客服电话格式无效");
+  if (officialAccount.length > 64) throw new Error("微信公众号最多 64 个字符");
+  if (serviceHours.length > 120) throw new Error("服务时间最多 120 个字符");
+  if (message.length > 240) throw new Error("客服说明最多 240 个字符");
+  if (editor.enabled === true && !phone && !officialAccount) throw new Error("启用客服前请填写客服电话或微信公众号");
+  return {
+    configured: editor.enabled === true,
+    ...(phone ? { phone } : {}),
+    ...(officialAccount ? { officialAccount } : {}),
+    ...(serviceHours ? { serviceHours } : {}),
+    ...(message ? { message } : {}),
+  };
+};
 const createDownloadDraft = (key: unknown): DownloadManifestEditor => (String(key) === "say_ring_app_update" ? createSayRingDownloadDraft() : createGlobalDownloadDraft());
 const downloadManifestToEditor = (key: unknown, value: unknown): DownloadManifestEditor => (String(key) === "say_ring_app_update" ? sayRingDownloadManifestToEditor(value) : globalDownloadManifestToEditor(value));
 const downloadEditorToManifest = (key: unknown, editor: DownloadManifestEditor) => (String(key) === "say_ring_app_update" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor));
@@ -294,11 +325,12 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
   ];
   return definitions.map((definition) => {
     const row = loadedRows.find((item) => item.key === definition.key);
+    const supportEditor = isGlobalSupportSetting(definition.key) && row ? supportEditorFromValue(row.value) : null;
     return row
       ? {
           ...row,
           name: definition.name,
-          configuration: isAppDisplaySetting(definition.key) ? (row.value?.hideAi === true ? "AI已隐藏" : "AI已显示") : row.value?.configured === false ? "未配置" : row.public ? "已公开" : "未公开",
+          configuration: isAppDisplaySetting(definition.key) ? (row.value?.hideAi === true ? "AI已隐藏" : "AI已显示") : isGlobalSupportSetting(definition.key) ? (supportEditor?.enabled && (supportEditor.phone || supportEditor.officialAccount) ? (row.public ? "客服已启用" : "客服未公开") : "客服未启用") : row.value?.configured === false ? "未配置" : row.public ? "已公开" : "未公开",
         }
       : {
           ...definition,
@@ -321,9 +353,7 @@ function render(value: unknown): string {
 }
 
 function deviceCapabilities(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.map((capability) => String(capability ?? "").trim()).filter(Boolean)
-    : [];
+  return Array.isArray(value) ? value.map((capability) => String(capability ?? "").trim()).filter(Boolean) : [];
 }
 
 function deviceCapabilityLabel(value: string): string {
@@ -531,6 +561,7 @@ async function openEdit(row: Row): Promise<void> {
     audienceUserIds: Array.isArray(row.audience?.userIds) ? row.audience.userIds.join("\n") : "",
   };
   if (isAppDisplaySetting(row.key)) nextForm.hideAi = row.value?.hideAi === true;
+  if (isGlobalSupportSetting(row.key)) nextForm.supportEditor = supportEditorFromValue(row.value);
   if (isAppUpdateSetting(row.key)) {
     try {
       nextForm.downloadEditor = row._unconfigured ? createDownloadDraft(row.key) : downloadManifestToEditor(row.key, row.value);
@@ -718,14 +749,24 @@ async function save(): Promise<void> {
       await api.patch(`/integrations/${encodeURIComponent(String(form.value.key))}`, payload);
     } else if (resource.value === "settings") {
       const mapSetting = form.value.key === "say_ring_map";
-      const settingValue = mapSetting
-        ? { provider: "amap", enabled: form.value.value?.enabled === true, configured: form.value.value?.configured === true }
-        : isAppDisplaySetting(form.value.key)
-          ? { hideAi: form.value.hideAi === true }
-          : isAppUpdateSetting(form.value.key)
-          ? downloadEditorToManifest(form.value.key, form.value.downloadEditor as DownloadManifestEditor)
-          : JSON.parse(String(form.value.valueText || "{}"));
-      payload = { value: settingValue, public: isAppDisplaySetting(form.value.key) ? true : mapSetting ? form.value.public === true : form.value.public !== false };
+      const globalSupportSetting = isGlobalSupportSetting(form.value.key);
+      const settingValue = globalSupportSetting
+        ? supportEditorToValue(form.value.supportEditor ?? {})
+        : mapSetting
+          ? {
+              provider: "amap",
+              enabled: form.value.value?.enabled === true,
+              configured: form.value.value?.configured === true,
+            }
+          : isAppDisplaySetting(form.value.key)
+            ? { hideAi: form.value.hideAi === true }
+            : isAppUpdateSetting(form.value.key)
+              ? downloadEditorToManifest(form.value.key, form.value.downloadEditor as DownloadManifestEditor)
+              : JSON.parse(String(form.value.valueText || "{}"));
+      payload = {
+        value: settingValue,
+        public: isAppDisplaySetting(form.value.key) ? true : mapSetting ? form.value.public === true : form.value.public !== false,
+      };
       if (mapSetting && String(form.value.mapWebServiceKey ?? "").trim()) {
         payload.webServiceKey = String(form.value.mapWebServiceKey).trim();
       }
@@ -1544,6 +1585,15 @@ onBeforeUnmount(() => {
             <el-form-item label="隐藏 AI 内容"><el-switch v-model="form.hideAi" active-text="隐藏" inactive-text="显示" /></el-form-item>
             <el-alert title="开启后，Say Ring App 隐藏 AI 问答、AI 健康报告及 AI 相关入口；关闭后恢复显示。保存后 App 会在重新打开或回到前台时刷新设置。" type="info" :closable="false" show-icon />
           </template>
+          <template v-else-if="isGlobalSupportSetting(form.key) && form.supportEditor">
+            <el-alert title="Say Ring 与国际版 App 的“联系客服”页面读取这里的客服电话和微信公众号。旧版误填在 configured 字段里的手机号会自动带入，保存后将转换为正确格式。" type="info" :closable="false" show-icon />
+            <el-form-item label="启用客服"><el-switch v-model="form.supportEditor.enabled" /></el-form-item>
+            <el-form-item label="客服电话"><el-input v-model="form.supportEditor.phone" maxlength="21" placeholder="如 4006386738" /></el-form-item>
+            <el-form-item label="微信公众号"><el-input v-model="form.supportEditor.officialAccount" maxlength="64" placeholder="如 赛电" /></el-form-item>
+            <el-form-item label="服务时间"><el-input v-model="form.supportEditor.serviceHours" maxlength="120" placeholder="如 工作日 09:00-18:00" /></el-form-item>
+            <el-form-item label="客服说明"><el-input v-model="form.supportEditor.message" type="textarea" :rows="3" maxlength="240" show-word-limit /></el-form-item>
+            <el-alert title="启用时至少填写客服电话或微信公众号；关闭后可保留联系方式，但 App 不会展示。" type="warning" :closable="false" />
+          </template>
           <template v-else-if="isAppUpdateSetting(form.key) && form.downloadEditor">
             <el-alert :title="form.key === 'say_ring_app_update' ? '保存后仅 Say Ring 会读取此配置。Android 与 HarmonyOS 可上传安装包或填写应用市场链接。' : '保存后国际版 App 会读取新配置。Android/HarmonyOS 可配置安装包或应用市场链接。'" type="warning" :closable="false" show-icon />
             <el-form-item label="发布时间" class="download-published-at">
@@ -1622,7 +1672,9 @@ onBeforeUnmount(() => {
           <template v-else-if="form.key === 'say_ring_map'">
             <el-alert title="仅 Say Ring 运动详情使用高德静态地图。请申请“Web 服务 API”类型的 Key；密钥加密保存，不会在 App 或后台回显。未填 Key 时运动轨迹仍可记录。" type="info" :closable="false" show-icon />
             <el-form-item label="启用地图"><el-switch v-model="form.value.enabled" /></el-form-item>
-            <el-form-item label="Key 状态"><el-tag :type="form.value?.configured ? 'success' : 'info'">{{ form.value?.configured ? '已保存' : '未配置' }}</el-tag></el-form-item>
+            <el-form-item label="Key 状态"
+              ><el-tag :type="form.value?.configured ? 'success' : 'info'">{{ form.value?.configured ? "已保存" : "未配置" }}</el-tag></el-form-item
+            >
             <el-form-item label="高德 Web 服务 Key"><el-input v-model="form.mapWebServiceKey" type="password" show-password autocomplete="new-password" placeholder="填入新 Key；留空保持原 Key" /></el-form-item>
           </template>
           <el-form-item v-else label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="12" /></el-form-item>
