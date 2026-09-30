@@ -17,6 +17,10 @@ export const appleAppSiteAssociation = Object.freeze({
           }),
         ]),
       }),
+      Object.freeze({
+        appID: "W7SXQ4A226.cn.saydian.ring",
+        paths: Object.freeze(["/global/wechat/sayring/*"]),
+      }),
     ]),
   }),
 });

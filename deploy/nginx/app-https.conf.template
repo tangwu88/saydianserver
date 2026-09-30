@@ -58,6 +58,21 @@ server {
     proxy_set_header X-Forwarded-Proto https;
   }
 
+  # Public, static Universal Link fallback only; never proxy OAuth codes to an
+  # API or log callback query strings. The existing global API routes stay intact.
+  location ^~ /global/wechat/sayring/ {
+    access_log off;
+    default_type "text/html; charset=utf-8";
+    add_header Cache-Control "no-store" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+    return 200 '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>赛电戒指</title><h1>赛电戒指</h1><p>请返回微信继续授权。若无法打开赛电戒指，请先安装最新版本。</p></html>';
+  }
+
   __SAYDIAN_GLOBAL_ROUTES__
 
   location / {

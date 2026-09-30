@@ -91,6 +91,7 @@ server {
   # BEGIN SAYDIAN GLOBAL ROUTES
   location = /global/health { proxy_pass http://global-api:8080/health/ready; }
   location = /global/saidian-mall { return 308 /global/saidian-mall/; }
+  location ^~ /global/ { return 404; }
   # END SAYDIAN GLOBAL ROUTES
   location / { proxy_pass http://old-api; }
 }
@@ -120,12 +121,29 @@ server {
   assert.equal(configured.match(/# BEGIN SAYDIAN GLOBAL ROUTES/g)?.length, 1);
   assert.equal(configured.match(/location = \/global\/health/g)?.length, 1);
   assert.equal(configured.match(/location = \/global\/saidian-mall/g)?.length, 1);
+  assert.equal(configured.match(/location \^~ \/global\/wechat\/sayring\//g)?.length, 1);
+  assert.match(configured, /location \^~ \/global\/ \{ return 404; \}/);
   assert.doesNotMatch(configured, /__SAYDIAN_GLOBAL_ROUTES__/);
   assert.match(configured, /proxy_pass http:\/\/saydianapp-api:8080/);
   const dockerCalls = fs.readFileSync(dockerLog, "utf8");
   assert.match(dockerCalls, /exec saydian-gateway-1 nginx -t/);
   assert.match(dockerCalls, /exec saydian-gateway-1 nginx -s reload/);
   fs.rmSync(temporary, { recursive: true, force: true });
+});
+
+test("Say Ring Universal Link fallback is narrow, static and does not log OAuth query strings", () => {
+  const gateway = fs.readFileSync(path.join(root, "deploy/nginx/app-https.conf.template"), "utf8");
+  const fallback = gateway.match(/location \^~ \/global\/wechat\/sayring\/ \{([^}]+)\}/)?.[1];
+  assert.ok(fallback, "missing the dedicated Say Ring fallback route");
+  assert.match(fallback, /access_log off;/);
+  assert.match(fallback, /default_type "text\/html; charset=utf-8";/);
+  assert.match(fallback, /add_header Cache-Control "no-store" always;/);
+  assert.match(fallback, /add_header Referrer-Policy "no-referrer" always;/);
+  assert.match(fallback, /add_header Content-Security-Policy "default-src 'none';/);
+  assert.match(fallback, /return 200 '<!doctype html>/);
+  assert.doesNotMatch(fallback, /proxy_pass|rewrite|\$|<script|https?:\/\//);
+  assert.doesNotMatch(gateway, /location \^~ \/global\/ \{/);
+  assert.equal(gateway.match(/__SAYDIAN_GLOBAL_ROUTES__/g)?.length, 1);
 });
 test("production Redis expands the configured password in its container shell", () => {
   const compose = fs.readFileSync(path.join(root, "deploy/compose.production.yaml"), "utf8");

@@ -5,7 +5,7 @@ import {
 } from "./universal-links.controller";
 
 describe("UniversalLinksController", () => {
-  it("publishes only the production Saydian app and WeChat callback path", () => {
+  it("keeps each production app restricted to its own WeChat callback path", () => {
     expect(new UniversalLinksController().association()).toBe(
       appleAppSiteAssociation,
     );
@@ -20,8 +20,27 @@ describe("UniversalLinksController", () => {
               { "/": "/wechat/*", comment: "Saydian WeChat callback" },
             ],
           },
+          {
+            appID: "W7SXQ4A226.cn.saydian.ring",
+            paths: ["/global/wechat/sayring/*"],
+          },
         ],
       },
     });
+  });
+
+  it("keeps the public association immutable and free of API response wrapping", () => {
+    const association = new UniversalLinksController().association();
+    expect(Object.keys(association)).toEqual(["applinks"]);
+    expect(Object.isFrozen(association)).toBe(true);
+    expect(Object.isFrozen(association.applinks)).toBe(true);
+    expect(Object.isFrozen(association.applinks.details)).toBe(true);
+    for (const detail of association.applinks.details) {
+      expect(Object.isFrozen(detail)).toBe(true);
+      expect(Object.isFrozen(detail.paths)).toBe(true);
+      expect(detail.paths).not.toContain("*");
+      expect(detail.paths).not.toContain("/*");
+      expect(detail.paths).not.toContain("/global/*");
+    }
   });
 });

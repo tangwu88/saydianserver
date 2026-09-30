@@ -24228,7 +24228,7 @@
       "source": "apps/api/src/universal-links.controller.ts",
       "summary": "Apple Universal Links 关联文件",
       "request": "无请求体",
-      "response": "Apple AASA 原始 JSON；仅允许赛电正式包打开 /wechat/*",
+      "response": "Apple AASA 原始 JSON；赛电正式包仅关联 /wechat/*，Say Ring 正式包仅关联 /global/wechat/sayring/*",
       "dependency": "固定 App ID 与已部署 HTTPS 域名",
       "successStatus": 200,
       "contract": {

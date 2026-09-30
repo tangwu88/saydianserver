@@ -40,7 +40,7 @@ export const notes = {
   "BillingAdminController.replayProviderEvents": entry("回放已验签支付回调", "{limit?:1–100}；先解除回调处理暂停；只回放已持久化且verifiedAt不空的事件", "{items:[{id,processed,error?}],remaining}；失败不算完成", "支付回调Inbox"),
   "StatusController.live": entry("进程存活", undefined, "{status,service,revision}"),
   "StatusController.ready": entry("数据库就绪", undefined, "{status,database,revision}；失败 HTTP 503；不证明供应商可用"),
-  "UniversalLinksController.association": entry("Apple Universal Links 关联文件", undefined, "Apple AASA 原始 JSON；仅允许赛电正式包打开 /wechat/*", "固定 App ID 与已部署 HTTPS 域名"),
+  "UniversalLinksController.association": entry("Apple Universal Links 关联文件", undefined, "Apple AASA 原始 JSON；赛电正式包仅关联 /wechat/*，Say Ring 正式包仅关联 /global/wechat/sayring/*", "固定 App ID 与已部署 HTTPS 域名"),
   "AuthController.register": entry("账号注册", "国内环境仍阻止裸密码注册；国际环境仅在GLOBAL_UNVERIFIED_REGISTRATION_ENABLED=true时接受{channel,identifier,password,nickname?,consentVersion,locale?}", "国际环境签发Session，但联系方式保持未验证；关闭临时开关后未验证会话不可续期", "国际独立数据库、已审协议与显式临时开关；需验证联系方式的商城能力仍阻断"),
   "AuthController.capabilities": entry("国际账号可用能力", "locale可选；仅APP_REALM=global", "{realm,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},login:{email,sms,wechatApp:{enabled,appId,phoneBindingAvailable}},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；微信仅返回公开AppID，不返回AppSecret；verificationRequired=false只表示当前注册暂免验证码", "国际独立数据库、已审协议、验证码渠道及微信移动应用配置"),
   "AuthController.verificationCode": entry("国际邮箱/手机号验证码", "{channel:email|sms,identifier,purpose:register|reset_password,locale?}；sms必须E.164", "{challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}；不返回验证码", "独立email_otp/sms_global webhook"),
