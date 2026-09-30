@@ -14,6 +14,7 @@ import { onCommerceOrderPaid, orderFulfillmentState, priceOrder, shippingRefundC
 import { createLocalShipment, localFulfillmentPreview } from "./local-fulfillment";
 import { protectLastSuperAdmin } from "./admin-account-policy";
 import { parseGlobalDownloadManifest } from "../support/global-download-manifest";
+import { parseGlobalSupportSetting } from "../support/global-support-config";
 import { withCategoryNumbers } from "./article-category-number";
 import { cancelCommerceOrderInTransaction } from "../commerce/commerce-order-cancellation";
 import { memberPromoterExternalId } from "../common/member-promoter-identity";
@@ -57,9 +58,17 @@ const memberProfileSelect = {
   status: true,
   referralEmployeeId: true,
   referralEmployee: {
-    select: { id: true, name: true, referralCode: true, active: true, wecomUserId: true },
+    select: {
+      id: true,
+      name: true,
+      referralCode: true,
+      active: true,
+      wecomUserId: true,
+    },
   },
-  pointAccount: { select: { balanceCents: true, version: true, updatedAt: true } },
+  pointAccount: {
+    select: { balanceCents: true, version: true, updatedAt: true },
+  },
   updatedAt: true,
 } satisfies Prisma.UserSelect;
 
@@ -178,9 +187,7 @@ export class AdminService {
           select: { id: true, wecomUserId: true },
         })
       : [];
-    const promotedMemberIds = promotionMatches
-      .map((item) => /^member:([0-9a-f-]{36})$/i.exec(item.wecomUserId)?.[1])
-      .filter((id): id is string => Boolean(id));
+    const promotedMemberIds = promotionMatches.map((item) => /^member:([0-9a-f-]{36})$/i.exec(item.wecomUserId)?.[1]).filter((id): id is string => Boolean(id));
     const promotionEmployeeIds = promotionMatches.map((item) => item.id);
     const where = search
       ? {
@@ -195,7 +202,17 @@ export class AdminService {
         take: pageSize,
         include: {
           _count: { select: { healthRecords: true, devices: true } },
-          referralEmployee: { select: { id: true, name: true, mobile: true, avatarUrl: true, referralCode: true, active: true, wecomUserId: true } },
+          referralEmployee: {
+            select: {
+              id: true,
+              name: true,
+              mobile: true,
+              avatarUrl: true,
+              referralCode: true,
+              active: true,
+              wecomUserId: true,
+            },
+          },
           pointAccount: { select: { balanceCents: true } },
         },
       }),
@@ -203,13 +220,15 @@ export class AdminService {
     ]);
     const ownPromoters = items.length
       ? await this.prisma.commerceEmployee.findMany({
-          where: { wecomUserId: { in: items.map((item) => memberPromoterExternalId(item.id)) } },
+          where: {
+            wecomUserId: {
+              in: items.map((item) => memberPromoterExternalId(item.id)),
+            },
+          },
           select: { wecomUserId: true, referralCode: true, active: true },
         })
       : [];
-    const promotionByUserId = new Map(
-      ownPromoters.map((item) => [item.wecomUserId.slice("member:".length), item]),
-    );
+    const promotionByUserId = new Map(ownPromoters.map((item) => [item.wecomUserId.slice("member:".length), item]));
     return {
       items: items.map((item) => ({
         ...this.memberVerificationFields(item),
@@ -311,9 +330,7 @@ export class AdminService {
     const heightCmInput = optionalProfileNumber("heightCm", 50, 250, "身高");
     const weightKgInput = optionalProfileNumber("weightKg", 10, 500, "体重");
     const hasReferralEmployee = hasField("referralEmployeeId");
-    const referralEmployeeIdInput = hasReferralEmployee
-      ? String(input.referralEmployeeId ?? "").trim() || null
-      : undefined;
+    const referralEmployeeIdInput = hasReferralEmployee ? String(input.referralEmployeeId ?? "").trim() || null : undefined;
     if (referralEmployeeIdInput && !isUuid(referralEmployeeIdInput)) {
       throw new BadRequestException("推广上级 ID 无效，请重新选择");
     }
@@ -352,12 +369,19 @@ export class AdminService {
         if (user.status === UserStatus.DELETION_PENDING || user.status === UserStatus.DELETED) {
           throw new ConflictException("注销流程中的会员不能手工编辑");
         }
-        const referralEmployee = referralEmployeeIdInput && referralEmployeeIdInput !== user.referralEmployeeId
-          ? await tx.commerceEmployee.findUnique({
-              where: { id: referralEmployeeIdInput },
-              select: { id: true, name: true, referralCode: true, active: true, wecomUserId: true },
-            })
-          : user.referralEmployee;
+        const referralEmployee =
+          referralEmployeeIdInput && referralEmployeeIdInput !== user.referralEmployeeId
+            ? await tx.commerceEmployee.findUnique({
+                where: { id: referralEmployeeIdInput },
+                select: {
+                  id: true,
+                  name: true,
+                  referralCode: true,
+                  active: true,
+                  wecomUserId: true,
+                },
+              })
+            : user.referralEmployee;
         if (referralEmployeeIdInput && referralEmployeeIdInput !== user.referralEmployeeId && (!referralEmployee || !referralEmployee.active)) {
           throw new BadRequestException("所选推广上级不存在或已停用");
         }
@@ -483,7 +507,9 @@ export class AdminService {
     if (!Number.isSafeInteger(deltaCents) || deltaCents === 0 || Math.abs(deltaCents) > 100_000_000) {
       throw new BadRequestException("积分调整金额须为非零整数分，单次不能超过100万元");
     }
-    const reason = String(input.reason ?? "").replace(/\s+/g, " ").trim();
+    const reason = String(input.reason ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (reason.length < 2 || reason.length > 200) throw new BadRequestException("请填写2至200字的积分调整原因");
     const idempotencyKey = String(input.idempotencyKey ?? "").trim();
     if (!isUuid(idempotencyKey)) throw new BadRequestException("积分调整请求编号无效");
@@ -491,31 +517,87 @@ export class AdminService {
 
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId}::uuid FOR UPDATE`;
-      const member = await tx.user.findUnique({ where: { id: userId }, select: { id: true, compatibilityId: true, status: true } });
+      const member = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true, compatibilityId: true, status: true },
+      });
       if (!member) throw new NotFoundException("会员不存在");
       if (member.status === UserStatus.DELETION_PENDING || member.status === UserStatus.DELETED) throw new ConflictException("注销流程中的会员不能调整积分");
 
-      const existing = await tx.commercePointLedger.findUnique({ where: { idempotencyKey: ledgerKey }, select: { userId: true, deltaCents: true, type: true } });
+      const existing = await tx.commercePointLedger.findUnique({
+        where: { idempotencyKey: ledgerKey },
+        select: { userId: true, deltaCents: true, type: true },
+      });
       if (existing) {
         if (existing.userId !== userId || existing.deltaCents !== deltaCents || existing.type !== "ADMIN_ADJUSTMENT") throw new ConflictException("积分调整请求编号已被使用");
-        const account = await tx.commercePointAccount.findUnique({ where: { userId }, select: { balanceCents: true, version: true, updatedAt: true } });
-        return { memberNo: String(member.compatibilityId), deltaCents, balanceCents: account?.balanceCents ?? 0, version: account?.version ?? 0, updatedAt: account?.updatedAt.toISOString() ?? null, repeated: true };
+        const account = await tx.commercePointAccount.findUnique({
+          where: { userId },
+          select: { balanceCents: true, version: true, updatedAt: true },
+        });
+        return {
+          memberNo: String(member.compatibilityId),
+          deltaCents,
+          balanceCents: account?.balanceCents ?? 0,
+          version: account?.version ?? 0,
+          updatedAt: account?.updatedAt.toISOString() ?? null,
+          repeated: true,
+        };
       }
 
-      await tx.commercePointAccount.upsert({ where: { userId }, create: { userId }, update: {} });
+      await tx.commercePointAccount.upsert({
+        where: { userId },
+        create: { userId },
+        update: {},
+      });
       await tx.$queryRaw`SELECT "userId" FROM "CommercePointAccount" WHERE "userId" = ${userId}::uuid FOR UPDATE`;
-      const account = await tx.commercePointAccount.findUniqueOrThrow({ where: { userId }, select: { balanceCents: true, version: true } });
+      const account = await tx.commercePointAccount.findUniqueOrThrow({
+        where: { userId },
+        select: { balanceCents: true, version: true },
+      });
       const nextBalance = account.balanceCents + deltaCents;
       if (!Number.isSafeInteger(nextBalance) || nextBalance < 0) throw new BadRequestException("扣减后积分余额不能小于0");
       if (nextBalance > 2_000_000_000) throw new BadRequestException("积分余额超过系统上限");
-      const updated = await tx.commercePointAccount.update({ where: { userId }, data: { balanceCents: nextBalance, version: { increment: 1 } }, select: { balanceCents: true, version: true, updatedAt: true } });
-      await tx.commercePointLedger.create({ data: { userId, deltaCents, type: "ADMIN_ADJUSTMENT", idempotencyKey: ledgerKey } });
-      await tx.auditLog.create({ data: {
-        actorType: "ADMIN", actorId: current.id, action: "MEMBER_POINTS_ADJUSTMENT", entityType: "COMMERCE_POINT_ACCOUNT", entityId: userId, requestId,
-        beforeJson: { balanceCents: account.balanceCents, version: account.version },
-        afterJson: { deltaCents, balanceCents: updated.balanceCents, version: updated.version, reason },
-      } });
-      return { memberNo: String(member.compatibilityId), deltaCents, balanceCents: updated.balanceCents, version: updated.version, updatedAt: updated.updatedAt.toISOString(), repeated: false };
+      const updated = await tx.commercePointAccount.update({
+        where: { userId },
+        data: { balanceCents: nextBalance, version: { increment: 1 } },
+        select: { balanceCents: true, version: true, updatedAt: true },
+      });
+      await tx.commercePointLedger.create({
+        data: {
+          userId,
+          deltaCents,
+          type: "ADMIN_ADJUSTMENT",
+          idempotencyKey: ledgerKey,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: current.id,
+          action: "MEMBER_POINTS_ADJUSTMENT",
+          entityType: "COMMERCE_POINT_ACCOUNT",
+          entityId: userId,
+          requestId,
+          beforeJson: {
+            balanceCents: account.balanceCents,
+            version: account.version,
+          },
+          afterJson: {
+            deltaCents,
+            balanceCents: updated.balanceCents,
+            version: updated.version,
+            reason,
+          },
+        },
+      });
+      return {
+        memberNo: String(member.compatibilityId),
+        deltaCents,
+        balanceCents: updated.balanceCents,
+        version: updated.version,
+        updatedAt: updated.updatedAt.toISOString(),
+        repeated: false,
+      };
     });
   }
 
@@ -694,7 +776,7 @@ export class AdminService {
 
   async updateFeedback(id: string, input: unknown, current: { id: string }) {
     const body = safeObject(input);
-    if (Object.keys(body).some(field => !["status", "assignedTo", "replyContent"].includes(field))) {
+    if (Object.keys(body).some((field) => !["status", "assignedTo", "replyContent"].includes(field))) {
       throw new BadRequestException("反馈处理包含不支持的字段");
     }
     const status = String(body.status ?? "").toUpperCase() as FeedbackStatus;
@@ -702,7 +784,11 @@ export class AdminService {
       throw new BadRequestException("反馈状态不正确");
     }
     const hasReply = Object.prototype.hasOwnProperty.call(body, "replyContent");
-    const replyContent = hasReply ? String(body.replyContent ?? "").replace(/[\u0000-\u001f]+/g, " ").trim() : "";
+    const replyContent = hasReply
+      ? String(body.replyContent ?? "")
+          .replace(/[\u0000-\u001f]+/g, " ")
+          .trim()
+      : "";
     if (hasReply && (replyContent.length < 2 || replyContent.length > 2_000)) {
       throw new BadRequestException("回复内容需为2至2000字");
     }
@@ -1095,6 +1181,13 @@ export class AdminService {
       }
       value = { hideAi: value.hideAi };
     }
+    if (key === "global_support") {
+      try {
+        value = parseGlobalSupportSetting(value) as unknown as Record<string, unknown>;
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : "客服配置无效");
+      }
+    }
     if (key === "say_ring_map") {
       const webServiceKey = String(body.webServiceKey ?? "").trim();
       if (webServiceKey && !/^[A-Za-z0-9]{16,128}$/.test(webServiceKey)) {
@@ -1105,22 +1198,24 @@ export class AdminService {
         enabled: value.enabled === true,
         configured: Boolean(webServiceKey || value.configured === true),
       };
-      const saveSetting = () => this.prisma.appSetting.upsert({
-        where: { key },
-        create: { key, value: value as Prisma.InputJsonValue, public: body.public === true },
-        update: { value: value as Prisma.InputJsonValue, public: body.public === true },
-      });
-      return webServiceKey
-        ? this.integrationSecrets.save("say_ring_amap", { webServiceKey }).then(saveSetting)
-        : saveSetting();
+      const saveSetting = () =>
+        this.prisma.appSetting.upsert({
+          where: { key },
+          create: {
+            key,
+            value: value as Prisma.InputJsonValue,
+            public: body.public === true,
+          },
+          update: {
+            value: value as Prisma.InputJsonValue,
+            public: body.public === true,
+          },
+        });
+      return webServiceKey ? this.integrationSecrets.save("say_ring_amap", { webServiceKey }).then(saveSetting) : saveSetting();
     }
     if (key === "app_update" || key === "global_app_update" || key === "say_ring_app_update") {
       try {
-        value = (key === "global_app_update"
-          ? parseGlobalDownloadManifest(value)
-          : key === "say_ring_app_update"
-            ? parseGlobalDownloadManifest(value, "say-ring")
-            : parseDownloadManifest(value)) as unknown as Record<string, unknown>;
+        value = (key === "global_app_update" ? parseGlobalDownloadManifest(value) : key === "say_ring_app_update" ? parseGlobalDownloadManifest(value, "say-ring") : parseDownloadManifest(value)) as unknown as Record<string, unknown>;
       } catch (error) {
         throw new BadRequestException({
           errorKey: "download_manifest_invalid",
@@ -1162,12 +1257,7 @@ export class AdminService {
             : {}),
       ...(searchText
         ? {
-            OR: [
-              { name: { contains: searchText, mode: "insensitive" } },
-              { displayName: { contains: searchText, mode: "insensitive" } },
-              { erpItemId: { contains: searchText } },
-              { skus: { some: { erpSkuId: searchText } } },
-            ],
+            OR: [{ name: { contains: searchText, mode: "insensitive" } }, { displayName: { contains: searchText, mode: "insensitive" } }, { erpItemId: { contains: searchText } }, { skus: { some: { erpSkuId: searchText } } }],
           }
         : {}),
     };
@@ -1520,9 +1610,7 @@ export class AdminService {
     return {
       items: items.map((order) => ({
         ...order,
-        recipientMobile: (current.roles?.length ? current.roles : [current.role]).includes(AdminRole.SUPER_ADMIN)
-          ? order.recipientMobile
-          : maskMobile(order.recipientMobile),
+        recipientMobile: (current.roles?.length ? current.roles : [current.role]).includes(AdminRole.SUPER_ADMIN) ? order.recipientMobile : maskMobile(order.recipientMobile),
         user: { ...order.user, mobile: maskMobile(order.user.mobile) },
       })),
       total,
@@ -1767,12 +1855,7 @@ export class AdminService {
     );
   }
 
-  async closeCommerceOrder(
-    id: string,
-    input: unknown,
-    current: { id: string; role: string; roles?: string[] },
-    requestId?: string,
-  ) {
+  async closeCommerceOrder(id: string, input: unknown, current: { id: string; role: string; roles?: string[] }, requestId?: string) {
     const roles = current.roles?.length ? current.roles : [current.role];
     if (!isGlobalRealm()) throw new NotFoundException("此功能仅供国际版后台使用");
     if (!current.id || !roles.includes(AdminRole.SUPER_ADMIN)) throw new ForbiddenException("只有超级管理员可以关闭订单");
@@ -1789,51 +1872,85 @@ export class AdminService {
     const scope = "admin_order_close_v1";
     const requestHash = sha256(JSON.stringify({ id, note, orderVersion, actorId: current.id }));
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${id}::uuid FOR UPDATE`;
-      const order = await tx.commerceOrder.findUnique({
-        where: { id },
-        include: { items: true },
-      });
-      if (!order) throw new NotFoundException("订单不存在");
-      const previousRequest = await tx.idempotencyRecord.findUnique({
-        where: { userId_scope_key: { userId: order.userId, scope, key: idempotencyKey } },
-      });
-      if (previousRequest) {
-        if (previousRequest.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
-        const saved = await tx.commerceOrder.findUniqueOrThrow({ where: { id }, include: adminOrderDetailInclude });
-        return { ...saved, recipientMobile: saved.recipientMobile, reused: true };
-      }
-      if (order.version !== orderVersion) throw new ConflictException("订单已更新，请刷新后重试");
-      const closedAt = new Date();
-      const adminRemark = [order.adminRemark, `[后台关闭订单 ${closedAt.toISOString()}] ${note}`].filter(Boolean).join("\n");
-      await cancelCommerceOrderInTransaction(tx, order, { expectedVersion: orderVersion, adminRemark, cancelledAt: closedAt });
-      await tx.auditLog.create({
-        data: {
-          actorType: "ADMIN",
-          actorId: current.id,
-          action: "COMMERCE_ORDER_CLOSED",
-          entityType: "COMMERCE_ORDER",
-          entityId: id,
-          requestId: requestId ?? null,
-          beforeJson: { status: order.status, version: order.version },
-          afterJson: { status: CommerceOrderStatus.CANCELLED, version: order.version + 1, note },
-        },
-      });
-      await tx.idempotencyRecord.create({
-        data: {
-          userId: order.userId,
-          scope,
-          key: idempotencyKey,
-          requestHash,
-          responseCode: 201,
-          responseBody: { orderId: id, status: CommerceOrderStatus.CANCELLED },
-          expiresAt: new Date(closedAt.valueOf() + 30 * 86_400_000),
-        },
-      });
-      const saved = await tx.commerceOrder.findUniqueOrThrow({ where: { id }, include: adminOrderDetailInclude });
-      return { ...saved, recipientMobile: saved.recipientMobile, reused: false };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${id}::uuid FOR UPDATE`;
+        const order = await tx.commerceOrder.findUnique({
+          where: { id },
+          include: { items: true },
+        });
+        if (!order) throw new NotFoundException("订单不存在");
+        const previousRequest = await tx.idempotencyRecord.findUnique({
+          where: {
+            userId_scope_key: {
+              userId: order.userId,
+              scope,
+              key: idempotencyKey,
+            },
+          },
+        });
+        if (previousRequest) {
+          if (previousRequest.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
+          const saved = await tx.commerceOrder.findUniqueOrThrow({
+            where: { id },
+            include: adminOrderDetailInclude,
+          });
+          return {
+            ...saved,
+            recipientMobile: saved.recipientMobile,
+            reused: true,
+          };
+        }
+        if (order.version !== orderVersion) throw new ConflictException("订单已更新，请刷新后重试");
+        const closedAt = new Date();
+        const adminRemark = [order.adminRemark, `[后台关闭订单 ${closedAt.toISOString()}] ${note}`].filter(Boolean).join("\n");
+        await cancelCommerceOrderInTransaction(tx, order, {
+          expectedVersion: orderVersion,
+          adminRemark,
+          cancelledAt: closedAt,
+        });
+        await tx.auditLog.create({
+          data: {
+            actorType: "ADMIN",
+            actorId: current.id,
+            action: "COMMERCE_ORDER_CLOSED",
+            entityType: "COMMERCE_ORDER",
+            entityId: id,
+            requestId: requestId ?? null,
+            beforeJson: { status: order.status, version: order.version },
+            afterJson: {
+              status: CommerceOrderStatus.CANCELLED,
+              version: order.version + 1,
+              note,
+            },
+          },
+        });
+        await tx.idempotencyRecord.create({
+          data: {
+            userId: order.userId,
+            scope,
+            key: idempotencyKey,
+            requestHash,
+            responseCode: 201,
+            responseBody: {
+              orderId: id,
+              status: CommerceOrderStatus.CANCELLED,
+            },
+            expiresAt: new Date(closedAt.valueOf() + 30 * 86_400_000),
+          },
+        });
+        const saved = await tx.commerceOrder.findUniqueOrThrow({
+          where: { id },
+          include: adminOrderDetailInclude,
+        });
+        return {
+          ...saved,
+          recipientMobile: saved.recipientMobile,
+          reused: false,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   commerceFulfillmentPreview(orderId: string, current: { id: string; role: string; roles?: string[] }) {

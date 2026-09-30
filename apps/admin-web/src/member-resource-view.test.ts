@@ -3,14 +3,7 @@ import ts from "typescript";
 import { computed, reactive, ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { canAdminResource } from "@saydian/app-contracts";
-import {
-  createGlobalDownloadDraft,
-  createSayRingDownloadDraft,
-  globalDownloadEditorToManifest,
-  globalDownloadManifestToEditor,
-  sayRingDownloadEditorToManifest,
-  sayRingDownloadManifestToEditor,
-} from "./global-download-setting";
+import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor } from "./global-download-setting";
 
 const envelope = (items: Record<string, unknown>[] = [], total = items.length) => ({ data: { data: { items, total, page: 1, pageSize: 30 } } });
 const member = {
@@ -234,7 +227,57 @@ describe("international member admin list", () => {
     const employeeId = "00000000-0000-4000-8000-000000000456";
     h.api.get
       .mockResolvedValueOnce({
-        data: { data: {
+        data: {
+          data: {
+            id: member.id,
+            memberNo: member.memberNo,
+            nickname: member.nickname,
+            status: "ACTIVE",
+            mobile: "+8613812348888",
+            mobileVerified: false,
+            email: "member@example.invalid",
+            emailVerified: false,
+            referralEmployeeId: null,
+            verificationVersion: member.verificationVersion,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              id: employeeId,
+              name: "Promoter B",
+              referralCode: "TEAM-B",
+              active: true,
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000999",
+              name: "Inactive",
+              referralCode: "OLD",
+              active: false,
+            },
+          ],
+        },
+      });
+    await h.openEdit(member);
+    expect(h.memberReferralOptions.value).toEqual([expect.objectContaining({ id: employeeId, active: true })]);
+    h.form.value.referralEmployeeId = employeeId;
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledWith(
+      "/members/internal-uuid/profile",
+      expect.objectContaining({
+        referralEmployeeId: employeeId,
+      }),
+    );
+    expect(h.confirm).not.toHaveBeenCalled();
+  });
+
+  it("adjusts member points from the editor with a reason and idempotency key", async () => {
+    const h = harness();
+    h.api.get.mockResolvedValueOnce({
+      data: {
+        data: {
           id: member.id,
           memberNo: member.memberNo,
           nickname: member.nickname,
@@ -243,36 +286,14 @@ describe("international member admin list", () => {
           mobileVerified: false,
           email: "member@example.invalid",
           emailVerified: false,
-          referralEmployeeId: null,
+          pointBalanceCents: 1200,
           verificationVersion: member.verificationVersion,
-        } },
-      })
-      .mockResolvedValueOnce({
-        data: { data: [
-          { id: employeeId, name: "Promoter B", referralCode: "TEAM-B", active: true },
-          { id: "00000000-0000-4000-8000-000000000999", name: "Inactive", referralCode: "OLD", active: false },
-        ] },
-      });
-    await h.openEdit(member);
-    expect(h.memberReferralOptions.value).toEqual([
-      expect.objectContaining({ id: employeeId, active: true }),
-    ]);
-    h.form.value.referralEmployeeId = employeeId;
-    await h.save();
-    expect(h.api.patch).toHaveBeenCalledWith("/members/internal-uuid/profile", expect.objectContaining({
-      referralEmployeeId: employeeId,
-    }));
-    expect(h.confirm).not.toHaveBeenCalled();
-  });
-
-  it("adjusts member points from the editor with a reason and idempotency key", async () => {
-    const h = harness();
-    h.api.get.mockResolvedValueOnce({ data: { data: {
-      id: member.id, memberNo: member.memberNo, nickname: member.nickname, status: "ACTIVE",
-      mobile: "+8613812348888", mobileVerified: false, email: "member@example.invalid", emailVerified: false,
-      pointBalanceCents: 1200, verificationVersion: member.verificationVersion,
-    } } });
-    h.api.post.mockResolvedValueOnce({ data: { data: { balanceCents: 1450, version: 2 } } });
+        },
+      },
+    });
+    h.api.post.mockResolvedValueOnce({
+      data: { data: { balanceCents: 1450, version: 2 } },
+    });
     await h.openEdit(member);
     h.form.value.pointAdjustment = "2.50";
     h.form.value.pointAdjustmentReason = "客服补偿";
@@ -496,8 +517,51 @@ describe("international settings first configuration", () => {
     expect(h.api.patch).not.toHaveBeenCalled();
     expect(h.api.post).not.toHaveBeenCalled();
     await h.openEdit(h.rows.value[0]);
-    expect(JSON.parse(h.form.value.valueText)).toEqual({ configured: false });
+    expect(h.form.value.supportEditor).toEqual({
+      enabled: false,
+      phone: "",
+      officialAccount: "",
+      serviceHours: "",
+      message: "",
+    });
     expect(h.form.value.public).toBe(false);
+  });
+
+  it("repairs the legacy numeric support field through the dedicated editor", async () => {
+    const h = harness();
+    h.route.params.resource = "settings";
+    const rows = await h.withDownloadSetting([
+      {
+        key: "global_support",
+        public: true,
+        value: { configured: 13600136000 },
+        updatedAt: "2026-09-30T00:00:00Z",
+      },
+    ]);
+    expect(rows[0].configuration).toBe("客服已启用");
+    await h.openEdit(rows[0]);
+    expect(h.form.value.supportEditor).toEqual({
+      enabled: true,
+      phone: "13600136000",
+      officialAccount: "",
+      serviceHours: "",
+      message: "",
+    });
+    h.form.value.supportEditor.officialAccount = "赛电";
+    h.form.value.supportEditor.serviceHours = "工作日 09:00-18:00";
+    h.api.get.mockResolvedValueOnce({ data: { data: [] } });
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/settings/global_support", {
+      value: {
+        configured: true,
+        phone: "13600136000",
+        officialAccount: "赛电",
+        serviceHours: "工作日 09:00-18:00",
+      },
+      public: true,
+    });
+    expect(h.sfc).toContain('label="客服电话"');
+    expect(h.sfc).toContain('label="微信公众号"');
   });
 
   it("opens an unpublished blank update draft and cannot submit it without real release details", async () => {
@@ -526,13 +590,13 @@ describe("international settings first configuration", () => {
     const existing = {
       key: "global_support",
       public: true,
-      value: { configured: true, email: "support@example.invalid" },
+      value: { configured: true, officialAccount: "赛电" },
       updatedAt: "2026-09-10T00:00:00Z",
     };
     const rows = await h.withDownloadSetting([existing]);
     expect(rows[0]).toMatchObject(existing);
     expect(rows[0]._unconfigured).toBeUndefined();
-    expect(rows[0].configuration).toBe("已公开");
+    expect(rows[0].configuration).toBe("客服已启用");
     expect(rows[1]._unconfigured).toBe(true);
     expect(h.api.patch).not.toHaveBeenCalled();
   });
@@ -545,7 +609,12 @@ describe("Say Ring AI display setting", () => {
     h.api.get.mockResolvedValueOnce({ data: { data: [] } });
     await h.load();
     const row = h.rows.value.find((item: any) => item.key === "say_ring_app_display");
-    expect(row).toMatchObject({ name: "Say Ring 显示设置", configuration: "AI已显示（默认）", value: { hideAi: false }, _unconfigured: true });
+    expect(row).toMatchObject({
+      name: "Say Ring 显示设置",
+      configuration: "AI已显示（默认）",
+      value: { hideAi: false },
+      _unconfigured: true,
+    });
     await h.openEdit(row);
     expect(h.form.value.hideAi).toBe(false);
     h.form.value.hideAi = true;
@@ -567,7 +636,12 @@ describe("Say Ring AI display setting", () => {
     h.form.value.public = false;
     // Old generic JSON draft fields must not be sent from the dedicated switch editor.
     h.form.value.valueText = '{"hideAi":"false","unrelated":"discard"}';
-    const savedRow = { key: "say_ring_app_display", public: true, value: { hideAi }, updatedAt: "2026-09-29T12:00:00Z" };
+    const savedRow = {
+      key: "say_ring_app_display",
+      public: true,
+      value: { hideAi },
+      updatedAt: "2026-09-29T12:00:00Z",
+    };
     h.api.get.mockResolvedValueOnce({ data: { data: [savedRow] } });
     await h.save();
     expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/settings/say_ring_app_display", { value: { hideAi }, public: true });
@@ -829,7 +903,14 @@ describe("administrator commerce and service editor improvements", () => {
           displayName: "商城智能手表",
           gallery: ["https://cdn.example.invalid/1.png"],
           tags: ["健康"],
-          skus: [{ id: "erp-sku-1", erpSkuId: "ERP-SKU-001", specification: "黑色", stock: 9 }],
+          skus: [
+            {
+              id: "erp-sku-1",
+              erpSkuId: "ERP-SKU-001",
+              specification: "黑色",
+              stock: 9,
+            },
+          ],
           status: "DRAFT",
           erpLookup: {
             requestedSku: "ERP-SKU-001",
@@ -840,7 +921,11 @@ describe("administrator commerce and service editor improvements", () => {
       },
     });
     await h.openCreate();
-    expect(h.form.value).toMatchObject({ source: "ERP", _erpLookupPending: true, _erpLookupSku: "" });
+    expect(h.form.value).toMatchObject({
+      source: "ERP",
+      _erpLookupPending: true,
+      _erpLookupSku: "",
+    });
     await h.save();
     expect(h.api.post).not.toHaveBeenCalled();
     expect(h.messages.error).toHaveBeenCalledWith("请先填写 SKU 并获取 ERP 商品资料");
@@ -858,11 +943,14 @@ describe("administrator commerce and service editor improvements", () => {
     });
     expect(h.form.value._erpSnapshotText).toContain('"qty": 9');
     await h.save();
-    expect(h.api.patch).toHaveBeenCalledWith("/commerce-products/erp-product-1", expect.objectContaining({
-      displayName: "商城智能手表",
-      gallery: ["https://cdn.example.invalid/1.png"],
-      tags: ["健康"],
-    }));
+    expect(h.api.patch).toHaveBeenCalledWith(
+      "/commerce-products/erp-product-1",
+      expect.objectContaining({
+        displayName: "商城智能手表",
+        gallery: ["https://cdn.example.invalid/1.png"],
+        tags: ["健康"],
+      }),
+    );
     expect(h.api.post).toHaveBeenCalledTimes(1);
   });
 
@@ -882,7 +970,7 @@ describe("administrator commerce and service editor improvements", () => {
     expect(h.messages.error).toHaveBeenLastCalledWith("聚水潭未找到 SKU：sd-watch-w8。请在聚水潭确认完整 SKU 编码后重试。");
     expect(h.sfc).toContain('v-if="erpLookupError"');
     expect(h.sfc).toContain(':title="erpLookupError"');
-    expect(h.sfc).toContain('@input="erpLookupError = \'\'"');
+    expect(h.sfc).toContain("@input=\"erpLookupError = ''\"");
   });
 
   it("confirms and deletes a product before refreshing the list", async () => {
@@ -892,11 +980,7 @@ describe("administrator commerce and service editor improvements", () => {
 
     await h.deleteCommerceProduct({ id: "product-1", displayName: "测试手表" });
 
-    expect(h.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("测试手表"),
-      "删除商品",
-      expect.objectContaining({ confirmButtonText: "确认删除" }),
-    );
+    expect(h.confirm).toHaveBeenCalledWith(expect.stringContaining("测试手表"), "删除商品", expect.objectContaining({ confirmButtonText: "确认删除" }));
     expect(h.api.delete).toHaveBeenCalledWith("/commerce-products/product-1");
     expect(h.messages.success).toHaveBeenCalledWith("商品已删除");
     expect(h.api.get).toHaveBeenCalledWith("/commerce-products", { params: { page: 1 } });
@@ -923,12 +1007,20 @@ describe("administrator commerce and service editor improvements", () => {
   it("opens member feedback, trims the reply and refreshes after saving", async () => {
     const h = harness(["CUSTOMER_SERVICE"]);
     h.route.params.resource = "feedback";
-    h.openFeedback({ id: "feedback-1", memberNo: "10008", content: "测试订单问题", status: "OPEN" });
+    h.openFeedback({
+      id: "feedback-1",
+      memberNo: "10008",
+      content: "测试订单问题",
+      status: "OPEN",
+    });
     expect(h.feedbackVisible.value).toBe(true);
     h.feedbackForm.value.replyContent = " 已为您核对订单，请重试 ";
     h.feedbackForm.value.status = "RESOLVED";
     await h.saveFeedback();
-    expect(h.api.patch).toHaveBeenCalledWith("/feedback/feedback-1", { status: "RESOLVED", replyContent: "已为您核对订单，请重试" });
+    expect(h.api.patch).toHaveBeenCalledWith("/feedback/feedback-1", {
+      status: "RESOLVED",
+      replyContent: "已为您核对订单，请重试",
+    });
     expect(h.api.get).toHaveBeenCalledWith("/feedback", { params: {} });
     expect(h.messages.success).toHaveBeenCalledWith("回复已保存，会员可在客服中心查看");
     expect(h.feedbackVisible.value).toBe(false);
