@@ -112,10 +112,16 @@ jobs:
             [[ "$EVENT_NAME" == workflow_dispatch ]]
             [[ "$PACKAGE_ONLY" != true ]]
           fi
-          # Reusable invocation follows CI verify. Manual runs need a successful CI for this SHA.
+          # Pending migrations can fail auto-deploy after CI verify succeeds.
+          # Manual releases require that exact main push to have a successful verify job.
           if [ '${{ github.event_name }}' = workflow_dispatch ]; then
-            result=$(gh run list --workflow ci.yml --commit "$REVISION" --event push --json conclusion --jq 'map(select(.conclusion == "success")) | length')
-            test "$result" -ge 1
+            verified=false
+            while read -r run_id; do
+              [[ "$run_id" =~ ^[0-9]+$ ]] || continue
+              result=$(gh run view "$run_id" --json jobs --jq '[.jobs[] | select(.name == "verify" and .conclusion == "success")] | length')
+              if [[ "$result" -ge 1 ]]; then verified=true; break; fi
+            done < <(gh run list --workflow ci.yml --commit "$REVISION" --event push --limit 20 --json databaseId --jq '.[].databaseId')
+            [[ "$verified" == true ]]
           fi
           echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
           if [[ -n "$GLOBAL_REVISION" ]]; then
