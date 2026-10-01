@@ -233,9 +233,13 @@ test("download page stays public, immutable and outside Git artifacts", () => {
   const compose = fs.readFileSync(path.join(root, "deploy/compose.production.yaml"), "utf8");
   const configure = fs.readFileSync(path.join(root, "deploy/scripts/configure-shared-gateway.sh"), "utf8");
   assert.match(adminNginx, /location = \/down/);
+  assert.match(adminNginx, /location = \/say-ring\/privacy/);
+  assert.match(adminNginx, /location = \/say-ring\/terms/);
   assert.match(adminNginx, /location \/down\/files\//);
   assert.match(adminNginx, /max-age=31536000, immutable/);
   assert.match(gateway, /location = \/down/);
+  assert.match(gateway, /location = \/say-ring\/privacy/);
+  assert.match(gateway, /location = \/say-ring\/terms/);
   assert.match(gateway, /__SAYDIAN_GLOBAL_ROUTES__/);
   assert.match(caddy, /handle \/down/);
   assert.match(compose, /\.\/downloads:\/usr\/share\/nginx\/html\/down\/files:ro/);
