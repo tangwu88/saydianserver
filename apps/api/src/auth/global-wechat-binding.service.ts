@@ -8,14 +8,14 @@ import { PrismaService } from "../common/prisma.service";
 import { env } from "../common/environment";
 import { isUuid, safeObject, secureEqual, sha256 } from "../common/crypto";
 import { globalError, globalIdentity, globalLocale, maskedIdentifier } from "./global-identity";
-import { globalLegalBundle } from "./global-legal";
+import { defaultGlobalLegalProduct, globalConsentSource, globalLegalBundle, recordSayRingMinimumAgeConsent, sayRingMinimumAgeConsent } from "./global-legal";
 import { globalWechatPhoneTestEnabled, requireGlobalWechatH5, requireGlobalWechatPhoneTest } from "./global-wechat-policy";
 import { verifiedWechatProfile, wechatProfileBackfill, type WechatH5Profile } from "./wechat-h5-profile";
 import { isOwnPromoter } from "../common/member-promoter-identity";
 
 const purpose = "wechat_bind";
 const phoneTestPurpose = "wechat_phone_test";
-type Ticket = { tokenHash: string; appId: string; openId: string; unionId: string | null; referralCode: string | null; expiresAt: Date; consumedAt: Date | null; returnTo: string };
+type Ticket = { tokenHash: string; appId: string; product: string; openId: string; unionId: string | null; referralCode: string | null; expiresAt: Date; consumedAt: Date | null; returnTo: string };
 
 @Injectable()
 export class GlobalWechatBindingService {
@@ -23,15 +23,15 @@ export class GlobalWechatBindingService {
 
   capabilities() { return this.delivery.capabilities(); }
 
-  async legal(version: unknown, locale: unknown, db: Prisma.TransactionClient = this.prisma) {
-    const document = await globalLegalBundle(db, locale);
+  async legal(version: unknown, locale: unknown, product?: unknown, db: Prisma.TransactionClient = this.prisma) {
+    const document = await globalLegalBundle(db, locale, product);
     if (!document) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet.");
     if (typeof version !== "string" || !version.trim()) throw globalError(400, "consent_required", "Read and agree to the terms and privacy policy.");
     if (document.consentVersion !== version) throw globalError(409, "consent_outdated", "The terms have changed. Read and agree to the latest version.");
     return document;
   }
 
-  async linkedUser(appId: string, openId: string, version: string, locale: unknown, profile: WechatH5Profile = { nickname: null, avatarUrl: null }, referralCode: string | null = null) {
+  async linkedUser(appId: string, openId: string, version: string, locale: unknown, profile: WechatH5Profile = { nickname: null, avatarUrl: null }, referralCode: string | null = null, product?: unknown) {
     requireGlobalWechatH5();
     const initial = await this.prisma.wechatOfficialIdentity.findUnique({ where: { appId_openId: { appId, openId } } });
     if (!initial) return null;
@@ -45,11 +45,11 @@ export class GlobalWechatBindingService {
       const user = await tx.user.findUnique({ where: { id: current.userId } });
       if (!user || user.status !== UserStatus.ACTIVE) throw inactive();
       if (!user.mobileVerifiedAt && !(globalWechatPhoneTestEnabled() && user.mobile)) return null;
-      const legal = await this.legal(version, locale, tx);
+      const legal = await this.legal(version, locale, product, tx);
       const profileData = wechatProfileBackfill(user, profile);
       if (Object.keys(profileData).length) await tx.user.update({ where: { id: user.id }, data: profileData });
       await this.bindReferral(tx, user.id, referralCode);
-      await recordConsent(tx, user.id, legal.consentVersion, legal.locale);
+      await recordConsent(tx, user.id, legal);
       return user.id;
     });
   }
@@ -74,14 +74,15 @@ export class GlobalWechatBindingService {
       if (!current || current.status !== UserStatus.ACTIVE || current.passwordHash !== candidate.passwordHash) throw inactive();
       if (!current.emailVerifiedAt && !current.mobileVerifiedAt) throw verificationRequired();
       await lockIdentity(tx, appId, ticket.openId);
-      const legal = await this.legal(body.consentVersion, body.locale, tx);
+      const legal = await this.legal(body.consentVersion, body.locale, body.product, tx);
+      assertTicketProduct(ticket, legal.product);
       await this.attach(tx, ticket, current.id);
       const profileData = wechatProfileBackfill(current, verifiedWechatProfile(body.wechatProfileProof, String(body.bindTicket ?? "")));
       if (Object.keys(profileData).length) await tx.user.update({ where: { id: current.id }, data: profileData });
-      await recordConsent(tx, current.id, legal.consentVersion, legal.locale);
+      await recordConsent(tx, current.id, legal);
       return current.id;
     }).catch(identityConflict);
-    return this.session(userId, ticket.returnTo, appId);
+    return this.session(userId, ticket.returnTo, appId, ticket.product);
   }
 
   async requestCode(appId: string, input: unknown) {
@@ -91,7 +92,9 @@ export class GlobalWechatBindingService {
     const ticket = await this.ticket(body.bindTicket, appId);
     const identity = globalIdentity(body.channel, body.identifier);
     const locale = globalLocale(body.locale);
-    if (!await globalLegalBundle(this.prisma, locale)) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet.");
+    const legal = await globalLegalBundle(this.prisma, locale, body.product);
+    if (!legal) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet.");
+    assertTicketProduct(ticket, legal.product);
     await this.delivery.assertAvailable(identity.channel, identity.country);
     const id = randomUUID(), code = String(randomInt(100_000, 1_000_000)), now = new Date();
     const expiresAt = new Date(Math.min(ticket.expiresAt.valueOf(), now.valueOf() + 300_000));
@@ -155,7 +158,9 @@ export class GlobalWechatBindingService {
         }
       }
       await lockIdentity(tx, appId, ticket.openId);
-      const legal = await this.legal(body.consentVersion, body.locale ?? challenge.locale, tx);
+      const legal = await this.legal(body.consentVersion, body.locale ?? challenge.locale, body.product, tx);
+      assertTicketProduct(ticket, legal.product);
+      const ageConsent = !user ? sayRingMinimumAgeConsent(legal.product, body.ageConfirmed) : null;
       // Check conflicts before touching verified flags or creating a User.
       const linked = await tx.wechatOfficialIdentity.findUnique({ where: { appId_openId: { appId, openId: ticket.openId } } });
       if (linked && linked.userId !== user?.id) throw conflict();
@@ -176,14 +181,15 @@ export class GlobalWechatBindingService {
       const saved = user ? await tx.user.update({ where: { id: user.id }, data: { ...verified, ...wechatProfileBackfill(user, profile) } })
         : await tx.user.create({ data: { ...where, ...verified, passwordHash, nickname: profile.nickname || nickname || "Saydian user", ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}), locale: globalLocale(body.locale ?? challenge.locale) } });
       await this.attach(tx, ticket, saved.id);
-      await recordConsent(tx, saved.id, legal.consentVersion, legal.locale);
+      await recordConsent(tx, saved.id, legal);
+      await recordSayRingMinimumAgeConsent(tx, saved.id, ageConsent, globalConsentSource("global_h5_wechat", legal));
       return { invalid: false as const, userId: saved.id };
     }, { maxWait: 10_000, timeout: 30_000 }).catch(identityConflict);
     if (result.invalid) {
       if ("credentials" in result) throw globalError(401, "invalid_credentials", "Use this account's existing password. Verification codes do not reset passwords.");
       throw invalidCode();
     }
-    return this.session(result.userId, ticket.returnTo, appId);
+    return this.session(result.userId, ticket.returnTo, appId, ticket.product);
   }
 
   async requestPhoneCode(appId: string, input: unknown) {
@@ -195,7 +201,9 @@ export class GlobalWechatBindingService {
     if (!temporary) return { ...await this.requestCode(appId, { ...body, channel: "sms", purpose }), mode: "sms", sent: true, verificationRequired: true };
     requireGlobalWechatPhoneTest();
     const ticket = await this.ticket(body.bindTicket, appId), identity = globalIdentity("sms", body.identifier), locale = globalLocale(body.locale);
-    if (!await globalLegalBundle(this.prisma, locale)) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet.");
+    const legal = await globalLegalBundle(this.prisma, locale, body.product);
+    if (!legal) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet.");
+    assertTicketProduct(ticket, legal.product);
     const id = randomUUID(), now = new Date(), expiresAt = new Date(Math.min(ticket.expiresAt.valueOf(), now.valueOf() + 300_000));
     await this.prisma.$transaction(async tx => {
       await this.currentConfiguration(tx); requireGlobalWechatPhoneTest();
@@ -251,7 +259,9 @@ export class GlobalWechatBindingService {
         const other = await tx.wechatOfficialIdentity.findUnique({ where: { userId_appId: { userId: user.id, appId } } });
         if (other && other.openId !== ticket.openId) throw conflict();
       }
-      const legal = await this.legal(body.consentVersion, body.locale ?? challenge.locale, tx);
+      const legal = await this.legal(body.consentVersion, body.locale ?? challenge.locale, body.product, tx);
+      assertTicketProduct(ticket, legal.product);
+      const ageConsent = !user ? sayRingMinimumAgeConsent(legal.product, body.ageConfirmed) : null;
       if ((await tx.globalVerificationChallenge.updateMany({ where: { id: challengeId, consumedAt: null, attempts: { lt: 5 }, expiresAt: { gt: new Date() } }, data: { consumedAt: new Date() } })).count !== 1) return { invalid: true as const };
       if (user && !temporary && !user.mobileVerifiedAt) await tx.userSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
       const profile = verifiedWechatProfile(body.wechatProfileProof, String(body.bindTicket ?? ""));
@@ -259,20 +269,21 @@ export class GlobalWechatBindingService {
       const saved = user ? await tx.user.update({ where: { id: user.id }, data: { ...data, ...wechatProfileBackfill(user, profile) } })
         : await tx.user.create({ data: { ...data, passwordHash: null, nickname: profile.nickname || "Saydian user", ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}), locale: globalLocale(body.locale ?? challenge.locale) } });
       await this.attach(tx, ticket, saved.id);
-      await recordConsent(tx, saved.id, legal.consentVersion, legal.locale);
+      await recordConsent(tx, saved.id, legal);
+      await recordSayRingMinimumAgeConsent(tx, saved.id, ageConsent, globalConsentSource("global_h5_wechat", legal));
       return { invalid: false as const, userId: saved.id };
     }, { maxWait: 10_000, timeout: 30_000 }).catch(identityConflict);
     if (result.invalid) {
       throw invalidCode();
     }
-    return this.session(result.userId, ticket.returnTo, appId);
+    return this.session(result.userId, ticket.returnTo, appId, ticket.product);
   }
 
   private async ticket(value: unknown, appId: string, db: Prisma.TransactionClient = this.prisma): Promise<Ticket> {
     if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) throw invalidTicket();
     const row = await db.commerceWechatBindTicket.findUnique({ where: { tokenHash: sha256(value) } });
     if (!row || row.appId !== appId || row.consumedAt || row.expiresAt <= new Date()) throw invalidTicket();
-    return row;
+    return { ...row, product: row.product || defaultGlobalLegalProduct };
   }
 
   private async currentConfiguration(tx: Prisma.TransactionClient) {
@@ -302,7 +313,7 @@ export class GlobalWechatBindingService {
     await tx.user.updateMany({ where: { id: userId, referralEmployeeId: null }, data: { referralEmployeeId: employee.id } });
   }
 
-  async session(userId: string, returnTo: string, appId: string) {
+  async session(userId: string, returnTo: string, appId: string, product = "saydian-global") {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.status !== UserStatus.ACTIVE) throw inactive();
     if (user.mobileVerifiedAt) {
@@ -313,18 +324,19 @@ export class GlobalWechatBindingService {
     const identity = await this.prisma.wechatOfficialIdentity.findUnique({ where: { userId_appId: { userId, appId } } });
     if (!identity) throw invalidTicket();
     const token = randomBytes(32).toString("hex");
-    await this.prisma.commerceWechatBindTicket.create({ data: { tokenHash: sha256(token), appId: identity.appId, openId: identity.openId, unionId: identity.unionId, returnTo, expiresAt: new Date(Date.now() + 300_000) } });
+    await this.prisma.commerceWechatBindTicket.create({ data: { tokenHash: sha256(token), appId: identity.appId, product, openId: identity.openId, unionId: identity.unionId, returnTo, expiresAt: new Date(Date.now() + 300_000) } });
     return { requiresMobileBinding: true as const, requiresAccountBinding: true as const, requiresPhoneBinding: true as const, bindTicket: token, expiresIn: 300, returnTo };
   }
 }
 
 async function lockUser(tx: Prisma.TransactionClient, userId: string) { await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId}::uuid FOR UPDATE`; }
 async function lockIdentity(tx: Prisma.TransactionClient, appId: string, openId: string) { await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`h5-openid:${appId}:${openId}`}, 0))`; }
-async function recordConsent(tx: Prisma.TransactionClient, userId: string, version: string, locale: string) {
-  for (const documentType of ["user_agreement", "privacy_policy"]) await tx.consentRecord.upsert({
-    where: { userId_documentType_version: { userId, documentType, version } },
-    create: { userId, documentType, version, source: `global_h5_wechat:${locale}` },
-    update: { withdrawnAt: null, source: `global_h5_wechat:${locale}` },
+async function recordConsent(tx: Prisma.TransactionClient, userId: string, legal: NonNullable<Awaited<ReturnType<typeof globalLegalBundle>>>) {
+  const source = globalConsentSource("global_h5_wechat", legal);
+  for (const documentType of Object.values(legal.documentTypes)) await tx.consentRecord.upsert({
+    where: { userId_documentType_version: { userId, documentType, version: legal.consentVersion } },
+    create: { userId, documentType, version: legal.consentVersion, source },
+    update: { withdrawnAt: null, source },
   });
 }
 function bindingHash(id: string, code: string, ticketHash: string) { return sha256(`global:${id}:${code}:${env("REFRESH_TOKEN_PEPPER")}:wechat-bind:${ticketHash}`); }
@@ -336,3 +348,4 @@ function inactive() { return globalError(409, "account_unavailable", "This accou
 function verificationRequired() { return globalError(403, "account_verification_required", "Verify your email address or international phone before using the H5 account. WeChat authorization does not verify either identifier."); }
 function conflict() { return globalError(409, "identity_conflict", "These identities belong to different accounts. They will not be merged automatically."); }
 function identityConflict(error: unknown): never { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw conflict(); throw error; }
+function assertTicketProduct(ticket: Ticket, product: string) { if (ticket.product !== product) throw globalError(409, "product_mismatch", "Continue with the same product."); }

@@ -9,7 +9,7 @@ import { env } from "../common/environment";
 import { markIntegrationVerified } from "../common/integration-health";
 import { isGlobalRealm } from "../common/deployment-realm";
 import { GlobalWechatBindingService } from "./global-wechat-binding.service";
-import { globalLegalBundle } from "./global-legal";
+import { globalLegalBundle, globalLegalProduct } from "./global-legal";
 import { globalError } from "./global-identity";
 import { GLOBAL_WECHAT_CALLBACK_PATH, globalWechatH5Reason, globalWechatPhoneTestEnabled, requireGlobalWechatH5 } from "./global-wechat-policy";
 import { safeWechatProfile, signWechatProfile, verifiedWechatProfile, wechatProfileBackfill, type WechatH5Profile } from "./wechat-h5-profile";
@@ -45,8 +45,9 @@ export class WechatH5AuthService {
     return { appId, appSecret, redirectUri };
   }
 
-  async globalCapabilities(locale?: string) {
-    const legal = await globalLegalBundle(this.prisma, locale);
+  async globalCapabilities(locale?: string, product?: unknown) {
+    const selectedProduct = globalLegalProduct(product);
+    const legal = await globalLegalBundle(this.prisma, locale, selectedProduct);
     let reason = globalWechatH5Reason();
     if (!reason && !legal) reason = "The terms and privacy policy are not available yet.";
     if (!reason) { try { await this.configured(); } catch { reason = "WeChat official-account sign-in is not configured."; } }
@@ -55,6 +56,7 @@ export class WechatH5AuthService {
     const phoneCodeMode = enabled && channels.sms ? "sms" : enabled && globalWechatPhoneTestEnabled() ? "test" : "unavailable";
     const capability = (ready: boolean, unavailable: string) => ready ? { enabled: true } : { enabled: false, reason: reason ?? unavailable };
     return {
+      product: selectedProduct,
       consentVersion: legal?.consentVersion ?? null, legal: legal?.documents ?? null,
       wechatH5: capability(enabled, "WeChat sign-in is unavailable."),
       wechatBinding: {
@@ -71,15 +73,16 @@ export class WechatH5AuthService {
     };
   }
 
-  async authorize(input: { returnTo: string; codeChallenge: string; referralCode?: string; consentVersion?: string; locale?: unknown }) {
+  async authorize(input: { returnTo: string; codeChallenge: string; referralCode?: string; consentVersion?: string; locale?: unknown; product?: unknown }) {
     if (isGlobalRealm()) requireGlobalWechatH5();
     const returnTo = safeH5ReturnTo(input.returnTo);
     if (!/^[a-f0-9]{64}$/.test(input.codeChallenge)) throw new BadRequestException("授权校验参数不正确");
-    if (isGlobalRealm()) await this.binding().legal(input.consentVersion, input.locale);
+    const legal = isGlobalRealm() ? await this.binding().legal(input.consentVersion, input.locale, input.product) : null;
     const config = await this.configured();
     const state = randomBytes(32).toString("hex");
     await this.prisma.commerceOAuthState.create({ data: {
       stateHash: sha256(state), codeChallenge: input.codeChallenge, appId: config.appId,
+      ...(legal ? { product: legal.product } : {}),
       returnTo, referralCode: boundedReferral(input.referralCode),
       expiresAt: new Date(Date.now() + lifetimeSeconds * 1000),
     } });
@@ -92,14 +95,16 @@ export class WechatH5AuthService {
     return { authorizeUrl: url.toString(), state, expiresIn: lifetimeSeconds };
   }
 
-  async login(input: { code: string; state: string; codeVerifier: string; consentVersion: string; locale?: unknown }) {
+  async login(input: { code: string; state: string; codeVerifier: string; consentVersion: string; locale?: unknown; product?: unknown }) {
     if (isGlobalRealm()) requireGlobalWechatH5(); else assertConsent(input.consentVersion);
     if (!/^[a-f0-9]{64}$/.test(input.state) || !/^[A-Za-z0-9._~-]{43,128}$/.test(input.codeVerifier) ||
         !input.code || input.code.length > 1024 || /\s/.test(input.code)) throw expired();
     const state = await this.prisma.commerceOAuthState.findUnique({ where: { stateHash: sha256(input.state) } });
     if (!state || state.consumedAt || state.expiresAt <= new Date() ||
         !secureEqual(state.codeChallenge, sha256(input.codeVerifier))) throw expired();
-    if (isGlobalRealm()) await this.binding().legal(input.consentVersion, input.locale);
+    const stateProduct = globalLegalProduct(state.product);
+    const legal = isGlobalRealm() ? await this.binding().legal(input.consentVersion, input.locale, input.product) : null;
+    if (legal && stateProduct !== legal.product) throw globalError(409, "product_mismatch", "Continue with the same product.");
     const config = await this.configured();
     if (state.appId !== config.appId) throw expired();
     // Claim before outbound: a network timeout requires a fresh authorization.
@@ -110,8 +115,8 @@ export class WechatH5AuthService {
     if (claimed.count !== 1) throw expired();
     const identity = await this.exchange(config, input.code);
     if (isGlobalRealm()) {
-      const userId = await this.binding().linkedUser(config.appId, identity.openId, input.consentVersion, input.locale, identity.profile, state.referralCode);
-      if (userId) return this.binding().session(userId, state.returnTo, config.appId);
+      const userId = await this.binding().linkedUser(config.appId, identity.openId, input.consentVersion, input.locale, identity.profile, state.referralCode, stateProduct);
+      if (userId) return this.binding().session(userId, state.returnTo, config.appId, stateProduct);
     }
     const linked = isGlobalRealm() ? null : await this.prisma.wechatOfficialIdentity.findUnique({
       where: { appId_openId: { appId: config.appId, openId: identity.openId } }, include: { user: true },
@@ -129,6 +134,7 @@ export class WechatH5AuthService {
     const bindTicket = randomBytes(32).toString("hex");
     await this.prisma.commerceWechatBindTicket.create({ data: {
       tokenHash: sha256(bindTicket), appId: config.appId, openId: identity.openId, unionId: identity.unionId,
+      product: stateProduct,
       returnTo: state.returnTo, referralCode: state.referralCode,
       expiresAt: new Date(Date.now() + lifetimeSeconds * 1000),
     } });

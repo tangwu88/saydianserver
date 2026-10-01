@@ -355,4 +355,19 @@ describe("global administrator legal-document data source", () => {
     expect(h.globalLegalDocument.create).toHaveBeenCalled();
     expect(h.globalLegalDocument.updateMany).not.toHaveBeenCalled();
   });
+
+  it("allows an inactive Say Ring draft without changing the global policy pair", async () => {
+    const h = harness();
+    await h.service.saveLegalDocument(undefined, {
+      ...input,
+      documentType: "say_ring_privacy_policy",
+      version: "say-ring-draft-v1",
+      active: false,
+      reviewed: false,
+    });
+    expect(h.globalLegalDocument.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ documentType: "say_ring_privacy_policy", active: false, reviewed: false }),
+    });
+    expect(h.globalLegalDocument.updateMany).not.toHaveBeenCalled();
+  });
 });

@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.883.0",
     "@prisma/client": "^6.15.0",
     "@saydian/app-contracts": "workspace:*",
     "@saydian/commerce-domain": "workspace:*",
