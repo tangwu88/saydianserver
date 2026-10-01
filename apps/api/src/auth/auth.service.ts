@@ -123,9 +123,14 @@ export class AuthService {
     return user;
   }
 
-  async login(mobileInput: string, password: string): Promise<SessionContract> {
+  async authenticatePassword(mobileInput: string, password: string) {
     const user = await this.passwordUser(mobileInput, password);
-    return this.issueSession(user.id);
+    return { id: user.id };
+  }
+
+  async login(mobileInput: string, password: string): Promise<SessionContract> {
+    const { id } = await this.authenticatePassword(mobileInput, password);
+    return this.issueSession(id);
   }
 
   async refresh(refreshToken: string, requireVerifiedMall = false): Promise<SessionContract> {

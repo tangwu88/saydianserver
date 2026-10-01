@@ -4751,9 +4751,9 @@
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "密码登录",
-      "request": "国内{mobile/username,password}；国际{channel:email|sms,identifier,password}",
-      "response": "Session；国际member含emailMasked/phoneMasked/locale可选字段",
-      "dependency": "核心服务",
+      "request": "国内{mobile/username,password}保持不变；国际主App{channel:email|sms,identifier,password}。Say Ring必须{channel,identifier,password,product:say-ring,locale,consentVersion,consentAccepted:true}；只对已有账号认证后写入say_ring_*同意，不建号、不改验证状态、不记录年龄确认",
+      "response": "Session；Say Ring缺少明确同意400 consent_required、专属已审协议不可用503 legal_unavailable、版本过期409 consent_outdated；凭据/账号状态仍为不枚举401",
+      "dependency": "Say Ring两份同版本已审协议；邮箱验证码另需login.email=true",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -4791,6 +4791,21 @@
                 },
                 "password": {
                   "type": "string"
+                },
+                "product": {
+                  "const": "saydian-global"
+                },
+                "locale": {
+                  "enum": [
+                    "en",
+                    "zh-Hans",
+                    "zh-Hant",
+                    "de",
+                    "fr",
+                    "es",
+                    "ja",
+                    "ko"
+                  ]
                 }
               },
               "required": [
@@ -4799,12 +4814,65 @@
                 "password"
               ],
               "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "enum": [
+                    "email",
+                    "sms"
+                  ]
+                },
+                "identifier": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                },
+                "product": {
+                  "const": "say-ring"
+                },
+                "locale": {
+                  "enum": [
+                    "en",
+                    "zh-Hans",
+                    "zh-Hant",
+                    "de",
+                    "fr",
+                    "es",
+                    "ja",
+                    "ko"
+                  ]
+                },
+                "consentVersion": {
+                  "type": "string"
+                },
+                "consentAccepted": {
+                  "const": true
+                }
+              },
+              "required": [
+                "channel",
+                "identifier",
+                "password",
+                "product",
+                "locale",
+                "consentVersion",
+                "consentAccepted"
+              ],
+              "additionalProperties": true
             }
           ]
         },
         "requestExample": {
-          "mobile": "<TEST_MOBILE>",
-          "password": "<TEST_PASSWORD>"
+          "channel": "email",
+          "identifier": "user@example.com",
+          "password": "<TEST_PASSWORD>",
+          "product": "say-ring",
+          "locale": "en",
+          "consentVersion": "<PUBLISHED_CONSENT_VERSION>",
+          "consentAccepted": true
         },
         "responseSchema": {
           "type": "object",
@@ -4868,7 +4936,11 @@
           "expiresAt": "2026-09-08T10:00:00.000Z",
           "member": {
             "id": "00000000-0000-4000-8000-000000000001",
-            "nickname": "契约测试会员"
+            "memberNo": "27",
+            "promo_code": "27",
+            "nickname": "Saydian user",
+            "emailMasked": "u***@example.com",
+            "locale": "en"
           }
         },
         "contentType": "application/json",
