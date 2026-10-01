@@ -72,7 +72,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     sayRingDownloadEditorToManifest,
     sayRingDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -116,10 +116,10 @@ describe("international member admin list", () => {
   it("keeps device columns readable when no connection has been reported yet", async () => {
     const h = harness();
     h.route.params.resource = "devices";
-    expect(h.columns.value).toEqual(["memberNo", "memberNickname", "bluetoothName", "model", "macAddress", "firmware", "lastSeenAt", "status"]);
+    expect(h.columns.value).toEqual(["memberNo", "memberNickname", "bluetoothName", "model", "deviceIdentifier", "macAddress", "firmware", "lastSeenAt", "status"]);
     await h.load();
     expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/devices", { params: {} });
-    expect(h.sfc).toContain("MAC 仅在设备提供真实地址时显示");
+    expect(h.sfc).toContain("设备标识由 App 上报标识单向生成");
     expect(h.sfc).toContain("查看详情");
     expect(h.sfc).toContain("resource === 'devices' && column === 'status'");
   });
@@ -133,6 +133,7 @@ describe("international member admin list", () => {
             id: "00000000-0000-4000-8000-000000000001",
             memberNo: "13",
             memberNickname: "Saydian user",
+            deviceIdentifier: "DEV-00112233-44556677",
             bluetoothName: "SD-Watch-W9S",
             model: "W9S",
             macAddress: "AA:BB:CC:DD:EE:FF",
@@ -141,9 +142,11 @@ describe("international member admin list", () => {
             {
               id: "00000000-0000-4000-8000-000000000002",
               connectedAt: "2026-10-01T03:00:00.000Z",
+              deviceIdentifier: "DEV-00112233-44556677",
               bluetoothName: "SD-Watch-W9S",
               model: "W9S",
               macAddress: "AA:BB:CC:DD:EE:FF",
+              rawPayload: "deviceId=veepoo:WATCH | model=W9S",
             },
           ],
         },
@@ -157,8 +160,47 @@ describe("international member admin list", () => {
     );
     expect(h.deviceDetailVisible.value).toBe(true);
     expect(h.deviceDetail.value.memberNo).toBe("13");
+    expect(h.deviceDetail.value.deviceIdentifier).toBe("DEV-00112233-44556677");
     expect(h.deviceConnections.value).toHaveLength(1);
+    expect(h.deviceConnections.value[0].rawPayload).toContain("deviceId=veepoo:WATCH");
+    expect(h.sfc).toContain("原始上报数据");
     expect(h.localDateTime("not-a-date")).toBe("—");
+  });
+
+  it("opens the selected member's device list from the member action", async () => {
+    const h = harness();
+    h.api.get.mockResolvedValueOnce({
+      data: {
+        data: {
+          member: { memberNo: "13", memberNickname: "Saydian user" },
+          devices: [
+            {
+              id: "00000000-0000-4000-8000-000000000001",
+              deviceIdentifier: "DEV-00112233-44556677",
+              bluetoothName: "SD-Watch-W9S",
+              model: "W9S",
+              macAddress: null,
+              status: "BOUND",
+            },
+          ],
+        },
+      },
+    });
+
+    await h.openMemberDevices({
+      id: "00000000-0000-4000-8000-000000000010",
+      memberNo: "13",
+      nickname: "Saydian user",
+    });
+
+    expect(h.api.get).toHaveBeenCalledWith(
+      "/members/00000000-0000-4000-8000-000000000010/devices",
+    );
+    expect(h.memberDevicesVisible.value).toBe(true);
+    expect(h.memberDeviceMember.value.memberNo).toBe("13");
+    expect(h.memberDevices.value).toHaveLength(1);
+    expect(h.sfc).toContain("查看设备");
+    expect(h.sfc).toContain("连接记录");
   });
 
   it("searches and pages on the server while preserving zero counts and missing values", async () => {

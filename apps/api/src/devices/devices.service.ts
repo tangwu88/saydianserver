@@ -17,6 +17,27 @@ function normalizedMacAddress(value: unknown): string | null {
   return normalized;
 }
 
+function escapedRawPayloadPart(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n");
+}
+
+function serializedRawPayload(body: Record<string, unknown>): string {
+  const rawPayload = Object.entries(body)
+    .map(([key, value]) => {
+      const rendered = typeof value === "string" ? value : JSON.stringify(value);
+      return `${escapedRawPayloadPart(key)}=${escapedRawPayloadPart(rendered ?? "")}`;
+    })
+    .join(" | ");
+  if (Buffer.byteLength(rawPayload, "utf8") > 65_535) {
+    throw new BadRequestException("设备上报原始数据过大");
+  }
+  return rawPayload;
+}
+
 @Injectable()
 export class DevicesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -38,6 +59,7 @@ export class DevicesService {
     const hardwareKey = sha256(`${userId}:${sourceId}`);
     const firmware = body.firmware ? String(body.firmware).trim() : null;
     const syncCursor = body.syncCursor ? String(body.syncCursor).trim() : null;
+    const rawPayload = serializedRawPayload(body);
     const connectedAt = new Date();
     const device = await this.prisma.$transaction(async (tx) => {
       const binding = await tx.deviceBinding.upsert({
@@ -76,6 +98,7 @@ export class DevicesService {
           displayName,
           macAddress,
           firmware,
+          rawPayload,
         },
       });
       return binding;

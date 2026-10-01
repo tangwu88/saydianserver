@@ -77,6 +77,52 @@ type MemberProfileRow = Prisma.UserGetPayload<{
   select: typeof memberProfileSelect;
 }>;
 
+const adminDeviceSelect = {
+  id: true,
+  hardwareKey: true,
+  vendor: true,
+  model: true,
+  displayName: true,
+  macAddress: true,
+  firmware: true,
+  capabilities: true,
+  boundAt: true,
+  lastSeenAt: true,
+  unboundAt: true,
+} satisfies Prisma.DeviceBindingSelect;
+
+type AdminDeviceRow = Prisma.DeviceBindingGetPayload<{
+  select: typeof adminDeviceSelect;
+}>;
+
+function adminDeviceIdentifier(hardwareKey: string) {
+  const shortKey = hardwareKey.slice(0, 16).toUpperCase();
+  return `DEV-${shortKey.slice(0, 8)}-${shortKey.slice(8)}`;
+}
+
+function adminDeviceSnapshot(
+  row: AdminDeviceRow,
+  member: { compatibilityId: number; nickname: string | null },
+) {
+  return {
+    id: row.id,
+    deviceIdentifier: adminDeviceIdentifier(row.hardwareKey),
+    memberNo: String(member.compatibilityId),
+    memberNickname: member.nickname ?? "未填写昵称",
+    bluetoothName: row.displayName,
+    vendor: row.vendor,
+    model: row.model,
+    macAddress: row.macAddress,
+    firmware: row.firmware,
+    capabilities: Array.isArray(row.capabilities)
+      ? row.capabilities.filter((capability): capability is string => typeof capability === "string")
+      : [],
+    boundAt: row.boundAt.toISOString(),
+    lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+    status: row.unboundAt ? "UNBOUND" : "BOUND",
+  };
+}
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -745,37 +791,37 @@ export class AdminService {
   async devices() {
     const rows = await this.prisma.deviceBinding.findMany({
       select: {
-        id: true,
-        vendor: true,
-        model: true,
-        displayName: true,
-        macAddress: true,
-        firmware: true,
-        capabilities: true,
-        boundAt: true,
-        lastSeenAt: true,
-        unboundAt: true,
+        ...adminDeviceSelect,
         user: { select: { compatibilityId: true, nickname: true } },
       },
       orderBy: { lastSeenAt: "desc" },
       take: 500,
     });
-    return rows.map((row) => ({
-      id: row.id,
-      memberNo: String(row.user.compatibilityId),
-      memberNickname: row.user.nickname ?? "未填写昵称",
-      bluetoothName: row.displayName,
-      vendor: row.vendor,
-      model: row.model,
-      macAddress: row.macAddress,
-      firmware: row.firmware,
-      capabilities: Array.isArray(row.capabilities)
-        ? row.capabilities.filter((capability): capability is string => typeof capability === "string")
-        : [],
-      boundAt: row.boundAt.toISOString(),
-      lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
-      status: row.unboundAt ? "UNBOUND" : "BOUND",
-    }));
+    return rows.map((row) => adminDeviceSnapshot(row, row.user));
+  }
+
+  async memberDevices(id: string) {
+    if (!isUuid(id)) throw new BadRequestException("会员编号无效");
+    const member = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        compatibilityId: true,
+        nickname: true,
+        devices: {
+          select: adminDeviceSelect,
+          orderBy: { lastSeenAt: "desc" },
+          take: 500,
+        },
+      },
+    });
+    if (!member) throw new NotFoundException("会员不存在");
+    return {
+      member: {
+        memberNo: String(member.compatibilityId),
+        memberNickname: member.nickname ?? "未填写昵称",
+      },
+      devices: member.devices.map((row) => adminDeviceSnapshot(row, member)),
+    };
   }
 
   async deviceConnections(id: string) {
@@ -784,6 +830,7 @@ export class AdminService {
       where: { id },
       select: {
         id: true,
+        hardwareKey: true,
         vendor: true,
         model: true,
         displayName: true,
@@ -802,6 +849,7 @@ export class AdminService {
             displayName: true,
             macAddress: true,
             firmware: true,
+            rawPayload: true,
           },
           orderBy: { connectedAt: "desc" },
           take: 200,
@@ -812,6 +860,7 @@ export class AdminService {
     return {
       device: {
         id: row.id,
+        deviceIdentifier: adminDeviceIdentifier(row.hardwareKey),
         memberNo: String(row.user.compatibilityId),
         memberNickname: row.user.nickname ?? "未填写昵称",
         bluetoothName: row.displayName,
@@ -825,12 +874,14 @@ export class AdminService {
       },
       connections: row.connectionEvents.map((event) => ({
         id: event.id,
+        deviceIdentifier: adminDeviceIdentifier(row.hardwareKey),
         connectedAt: event.connectedAt.toISOString(),
         bluetoothName: event.displayName,
         vendor: event.vendor,
         model: event.model,
         macAddress: event.macAddress,
         firmware: event.firmware,
+        rawPayload: event.rawPayload,
       })),
     };
   }

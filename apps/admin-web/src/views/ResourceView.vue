@@ -56,6 +56,10 @@ const deviceDetailVisible = ref(false);
 const deviceDetailLoading = ref(false);
 const deviceDetail = ref<Row>({});
 const deviceConnections = ref<Row[]>([]);
+const memberDevicesVisible = ref(false);
+const memberDevicesLoading = ref(false);
+const memberDeviceMember = ref<Row>({});
+const memberDevices = ref<Row[]>([]);
 const packageUploading = ref<Record<string, boolean>>({});
 const downloadPlatformOptions = [
   { key: "android", label: "Android", packageLabel: "APK" },
@@ -170,6 +174,7 @@ const fieldLabels: Record<string, string> = {
   username: "账号",
   displayName: "显示名称",
   bluetoothName: "蓝牙名称",
+  deviceIdentifier: "设备标识",
   macAddress: "MAC 地址",
   connectedAt: "连接时间",
   role: "角色",
@@ -247,7 +252,7 @@ const columns = computed(() => {
   if (resource.value === "feedback") return ["memberNo", "memberNickname", "category", "content", "status", "replyContent", "createdAt"];
   if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
   if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
-  if (resource.value === "devices") return ["memberNo", "memberNickname", "bluetoothName", "model", "macAddress", "firmware", "lastSeenAt", "status"];
+  if (resource.value === "devices") return ["memberNo", "memberNickname", "bluetoothName", "model", "deviceIdentifier", "macAddress", "firmware", "lastSeenAt", "status"];
   const first = rows.value[0];
   return first
     ? Object.keys(first)
@@ -371,6 +376,26 @@ function localDateTime(value: unknown): string {
 }
 
 let deviceDetailRequestId = 0;
+let memberDevicesRequestId = 0;
+
+async function openMemberDevices(row: Row): Promise<void> {
+  const requestId = ++memberDevicesRequestId;
+  memberDevicesVisible.value = true;
+  memberDevicesLoading.value = true;
+  memberDeviceMember.value = { memberNo: row.memberNo, memberNickname: row.nickname };
+  memberDevices.value = [];
+  try {
+    const data = responseData<Row>(await api.get(`/members/${encodeURIComponent(String(row.id))}/devices`));
+    if (requestId !== memberDevicesRequestId || !memberDevicesVisible.value) return;
+    memberDeviceMember.value = data.member ?? memberDeviceMember.value;
+    memberDevices.value = Array.isArray(data.devices) ? data.devices : [];
+  } catch (error) {
+    if (requestId === memberDevicesRequestId) ElMessage.error(readableError(error));
+  } finally {
+    if (requestId === memberDevicesRequestId) memberDevicesLoading.value = false;
+  }
+}
+
 async function openDeviceDetails(row: Row): Promise<void> {
   const requestId = ++deviceDetailRequestId;
   deviceDetailVisible.value = true;
@@ -1152,6 +1177,7 @@ function resetResourceView(): void {
   ++healthRequestId;
   ++editorRequestId;
   ++deviceDetailRequestId;
+  ++memberDevicesRequestId;
   articleCategoriesReady.value = false;
   articleCategoryEditorResource.value = "";
   articleCategoryOptions.value = [];
@@ -1168,6 +1194,10 @@ function resetResourceView(): void {
   deviceDetailLoading.value = false;
   deviceDetail.value = {};
   deviceConnections.value = [];
+  memberDevicesVisible.value = false;
+  memberDevicesLoading.value = false;
+  memberDeviceMember.value = {};
+  memberDevices.value = [];
   detailRows.value = [];
   healthMember.value = {};
   form.value = {};
@@ -1200,7 +1230,7 @@ onBeforeUnmount(() => {
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
           <el-button v-if="createable" @click="openCreate">新增</el-button>
-          <span class="muted">{{ resource === "devices" ? "连接时间由 App 成功上报；MAC 仅在设备提供真实地址时显示，iPhone 可能为空。" : "会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。" }}</span>
+          <span class="muted">{{ resource === "devices" ? "设备标识由 App 上报标识单向生成，用于蓝牙名或 MAC 缺失时区分设备。" : "会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。" }}</span>
         </div>
         <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
         <el-table v-if="!loadError" v-loading="loading" :data="rows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
@@ -1249,8 +1279,9 @@ onBeforeUnmount(() => {
               <el-button size="small" type="primary" plain @click="openDeviceDetails(scope.row)">查看详情</el-button>
             </template>
           </el-table-column>
-          <el-table-column v-if="editable || (canWrite && resource === 'health-reports')" label="操作" min-width="110" fixed="right">
+          <el-table-column v-if="resource === 'members' || editable || (canWrite && resource === 'health-reports')" label="操作" :min-width="resource === 'members' ? 180 : 110" fixed="right">
             <template #default="scope">
+              <el-button v-if="resource === 'members'" size="small" type="primary" plain @click="openMemberDevices(scope.row)">查看设备</el-button>
               <el-button v-if="editable" size="small" :disabled="resource === 'members' && ['DELETION_PENDING', 'DELETED'].includes(scope.row.status)" @click="openEdit(scope.row)">编辑</el-button>
               <el-button v-if="resource === 'health-reports' && canReadRawHealth" size="small" type="primary" plain @click="openHealthReport(scope.row)">查看</el-button>
               <el-button v-if="canWrite && resource === 'health-reports' && scope.row.status === 'FAILED'" size="small" type="warning" @click="runAction(`/health-reports/${scope.row.id}/retry`, '报告已重新排队')">重试</el-button>
@@ -1262,6 +1293,22 @@ onBeforeUnmount(() => {
       </template>
     </div>
 
+    <el-dialog v-model="memberDevicesVisible" title="会员设备" width="min(980px, 94vw)" destroy-on-close @closed="++memberDevicesRequestId">
+      <div v-loading="memberDevicesLoading">
+        <p>{{ memberDeviceMember.memberNo || "—" }} · {{ memberDeviceMember.memberNickname || "未填写昵称" }}</p>
+        <el-table :data="memberDevices" border stripe empty-text="暂无设备上报">
+          <el-table-column prop="deviceIdentifier" label="设备标识" min-width="190" />
+          <el-table-column prop="bluetoothName" label="蓝牙名称" min-width="150" />
+          <el-table-column prop="model" label="设备型号" min-width="120" />
+          <el-table-column prop="macAddress" label="MAC 地址" min-width="160"><template #default="scope">{{ scope.row.macAddress || "未上报" }}</template></el-table-column>
+          <el-table-column label="最近连接" min-width="190"><template #default="scope">{{ localDateTime(scope.row.lastSeenAt) }}</template></el-table-column>
+          <el-table-column label="状态" width="90"><template #default="scope">{{ scope.row.status === "BOUND" ? "已绑定" : "已解绑" }}</template></el-table-column>
+          <el-table-column label="操作" width="110"><template #default="scope"><el-button size="small" type="primary" plain @click="openDeviceDetails(scope.row)">连接记录</el-button></template></el-table-column>
+        </el-table>
+      </div>
+      <template #footer><el-button @click="memberDevicesVisible = false">关闭</el-button></template>
+    </el-dialog>
+
     <el-dialog v-model="deviceDetailVisible" title="设备连接详情" width="min(920px, 94vw)" destroy-on-close @closed="++deviceDetailRequestId">
       <div v-loading="deviceDetailLoading">
         <el-descriptions :column="2" border>
@@ -1269,6 +1316,7 @@ onBeforeUnmount(() => {
           <el-descriptions-item label="状态">{{ deviceDetail.status === "BOUND" ? "已绑定" : deviceDetail.status === "UNBOUND" ? "已解绑" : "—" }}</el-descriptions-item>
           <el-descriptions-item label="蓝牙名称">{{ deviceDetail.bluetoothName || "—" }}</el-descriptions-item>
           <el-descriptions-item label="设备型号">{{ deviceDetail.model || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="设备标识">{{ deviceDetail.deviceIdentifier || "—" }}</el-descriptions-item>
           <el-descriptions-item label="MAC 地址">{{ deviceDetail.macAddress || "未上报" }}</el-descriptions-item>
           <el-descriptions-item label="固件版本">{{ deviceDetail.firmware || "—" }}</el-descriptions-item>
           <el-descriptions-item label="绑定时间">{{ localDateTime(deviceDetail.boundAt) }}</el-descriptions-item>
@@ -1276,9 +1324,18 @@ onBeforeUnmount(() => {
         </el-descriptions>
         <h3>连接记录</h3>
         <el-table :data="deviceConnections" border stripe empty-text="暂无历史；记录从本功能上线后开始">
+          <el-table-column type="expand" width="48">
+            <template #default="scope">
+              <div class="device-raw-payload">
+                <b>原始上报数据</b>
+                <pre>{{ scope.row.rawPayload || "历史记录未保存原始数据" }}</pre>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="连接时间" min-width="190"><template #default="scope">{{ localDateTime(scope.row.connectedAt) }}</template></el-table-column>
           <el-table-column prop="bluetoothName" label="蓝牙名称" min-width="150" />
           <el-table-column prop="model" label="设备型号" min-width="120" />
+          <el-table-column prop="deviceIdentifier" label="设备标识" min-width="190" />
           <el-table-column prop="macAddress" label="MAC 地址" min-width="160"><template #default="scope">{{ scope.row.macAddress || "未上报" }}</template></el-table-column>
           <el-table-column prop="firmware" label="固件版本" min-width="110" />
         </el-table>
@@ -1779,5 +1836,16 @@ onBeforeUnmount(() => {
 .member-referrer span {
   color: #667085;
   font-size: 12px;
+}
+.device-raw-payload {
+  padding: 8px 24px;
+}
+.device-raw-payload pre {
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  background: #f5f7fa;
+  border-radius: 4px;
 }
 </style>

@@ -178,6 +178,11 @@ export class AdminController {
     return this.admin.healthSummary(id);
   }
 
+  @Get("members/:id/devices")
+  memberDevices(@Param("id") id: string) {
+    return this.admin.memberDevices(id);
+  }
+
   @Get("members/:id/health-records")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.HEALTH_AUDITOR)
   rawHealth(

@@ -18,7 +18,7 @@ const binding = {
 describe("DevicesService.bind", () => {
   it("normalizes a real MAC and records every successful ready connection", async () => {
     const upsert = vi.fn(async () => binding);
-    const create = vi.fn(async () => ({ id: "event-1" }));
+    const create = vi.fn(async (_input: any) => ({ id: "event-1" }));
     const transaction = vi.fn(async (callback: (tx: unknown) => unknown) =>
       callback({ deviceBinding: { upsert }, deviceConnectionEvent: { create } }),
     );
@@ -33,6 +33,7 @@ describe("DevicesService.bind", () => {
         macAddress: "aa-bb-cc-dd-ee-ff",
         firmware: "1.2.3",
         capabilities: ["metric:heart_rate", "metric:heart_rate"],
+        sdkData: "native|id\\value\nnext",
       }),
     ).resolves.toMatchObject({
       id: binding.id,
@@ -50,8 +51,13 @@ describe("DevicesService.bind", () => {
         deviceBindingId: binding.id,
         macAddress: "AA:BB:CC:DD:EE:FF",
         connectedAt: expect.any(Date),
+        rawPayload: expect.stringContaining("sdkData=native\\|id\\\\value\\nnext"),
       }),
     });
+    const rawPayload = create.mock.calls[0]?.[0]?.data.rawPayload as string;
+    expect(rawPayload).toContain("deviceId=veepoo:watch-1");
+    expect(rawPayload).toContain("macAddress=aa-bb-cc-dd-ee-ff");
+    expect(rawPayload).toContain('capabilities=["metric:heart_rate","metric:heart_rate"]');
   });
 
   it("rejects a non-MAC value instead of storing an iOS connection UUID", async () => {
@@ -88,5 +94,18 @@ describe("DevicesService.bind", () => {
     expect(create).toHaveBeenCalledWith({
       data: expect.objectContaining({ macAddress: null, firmware: null }),
     });
+  });
+
+  it("rejects an oversized raw payload instead of truncating connection evidence", async () => {
+    const service = new DevicesService({} as any);
+    await expect(
+      service.bind("00000000-0000-4000-8000-000000000002", {
+        deviceId: "veepoo:watch-1",
+        vendor: "Veepoo",
+        model: "W9S",
+        displayName: "SD-Watch-W9S",
+        sdkData: "x".repeat(65_536),
+      }),
+    ).rejects.toThrow("设备上报原始数据过大");
   });
 });

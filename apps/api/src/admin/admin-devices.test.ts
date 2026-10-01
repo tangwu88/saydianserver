@@ -6,6 +6,7 @@ describe("AdminService.devices", () => {
     const findMany = vi.fn(async () => [
       {
         id: "00000000-0000-4000-8000-000000000001",
+        hardwareKey: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
         vendor: "Veepoo",
         model: "W9S",
         displayName: "SD-Watch-W9S",
@@ -19,6 +20,7 @@ describe("AdminService.devices", () => {
       },
       {
         id: "00000000-0000-4000-8000-000000000002",
+        hardwareKey: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
         vendor: "Yucheng",
         model: "R7",
         displayName: "SD-Ring-R7",
@@ -39,6 +41,7 @@ describe("AdminService.devices", () => {
     await expect(service.devices()).resolves.toEqual([
       {
         id: "00000000-0000-4000-8000-000000000001",
+        deviceIdentifier: "DEV-00112233-44556677",
         memberNo: "13",
         memberNickname: "Saydian user",
         bluetoothName: "SD-Watch-W9S",
@@ -53,6 +56,7 @@ describe("AdminService.devices", () => {
       },
       {
         id: "00000000-0000-4000-8000-000000000002",
+        deviceIdentifier: "DEV-AABBCCDD-EEFF0011",
         memberNo: "14",
         memberNickname: "未填写昵称",
         bluetoothName: "SD-Ring-R7",
@@ -69,6 +73,7 @@ describe("AdminService.devices", () => {
     expect(findMany).toHaveBeenCalledWith({
       select: {
         id: true,
+        hardwareKey: true,
         vendor: true,
         model: true,
         displayName: true,
@@ -88,6 +93,7 @@ describe("AdminService.devices", () => {
   it("returns up to 200 newest connection snapshots for one device", async () => {
     const findUnique = vi.fn(async () => ({
       id: "00000000-0000-4000-8000-000000000001",
+      hardwareKey: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
       vendor: "Veepoo",
       model: "W9S",
       displayName: "SD-Watch-W9S",
@@ -106,6 +112,7 @@ describe("AdminService.devices", () => {
           displayName: "SD-Watch-W9S",
           macAddress: "AA:BB:CC:DD:EE:FF",
           firmware: "1.2.3",
+          rawPayload: "deviceId=veepoo:WATCH | model=W9S",
         },
       ],
     }));
@@ -120,14 +127,17 @@ describe("AdminService.devices", () => {
       device: {
         memberNo: "13",
         memberNickname: "Saydian user",
+        deviceIdentifier: "DEV-00112233-44556677",
         bluetoothName: "SD-Watch-W9S",
         macAddress: "AA:BB:CC:DD:EE:FF",
       },
       connections: [
         {
           connectedAt: "2026-10-01T03:00:00.000Z",
+          deviceIdentifier: "DEV-00112233-44556677",
           bluetoothName: "SD-Watch-W9S",
           macAddress: "AA:BB:CC:DD:EE:FF",
+          rawPayload: "deviceId=veepoo:WATCH | model=W9S",
         },
       ],
     });
@@ -136,11 +146,63 @@ describe("AdminService.devices", () => {
         where: { id: "00000000-0000-4000-8000-000000000001" },
         select: expect.objectContaining({
           connectionEvents: expect.objectContaining({
+            select: expect.objectContaining({ rawPayload: true }),
             orderBy: { connectedAt: "desc" },
             take: 200,
           }),
         }),
       }),
     );
+  });
+
+  it("returns only the selected member's devices for the member detail action", async () => {
+    const findUnique = vi.fn(async () => ({
+      compatibilityId: 13,
+      nickname: "Saydian user",
+      devices: [
+        {
+          id: "00000000-0000-4000-8000-000000000001",
+          hardwareKey: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+          vendor: "Veepoo",
+          model: "W9S",
+          displayName: "SD-Watch-W9S",
+          macAddress: null,
+          firmware: "1.2.3",
+          capabilities: [],
+          boundAt: new Date("2026-10-01T02:00:00.000Z"),
+          lastSeenAt: new Date("2026-10-01T03:00:00.000Z"),
+          unboundAt: null,
+        },
+      ],
+    }));
+    const service = new AdminService(
+      { user: { findUnique } } as any,
+      {} as any,
+    );
+
+    await expect(
+      service.memberDevices("00000000-0000-4000-8000-000000000010"),
+    ).resolves.toMatchObject({
+      member: { memberNo: "13", memberNickname: "Saydian user" },
+      devices: [
+        {
+          deviceIdentifier: "DEV-00112233-44556677",
+          memberNo: "13",
+          macAddress: null,
+          status: "BOUND",
+        },
+      ],
+    });
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: "00000000-0000-4000-8000-000000000010" },
+      select: expect.objectContaining({
+        compatibilityId: true,
+        nickname: true,
+        devices: expect.objectContaining({
+          orderBy: { lastSeenAt: "desc" },
+          take: 500,
+        }),
+      }),
+    });
   });
 });

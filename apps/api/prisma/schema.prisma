@@ -487,6 +487,7 @@ model DeviceConnectionEvent {
   displayName     String
   macAddress      String?       @db.VarChar(17)
   firmware        String?
+  rawPayload      String
   deviceBinding   DeviceBinding @relation(fields: [deviceBindingId], references: [id], onDelete: Cascade)
 
   @@index([deviceBindingId, connectedAt])
