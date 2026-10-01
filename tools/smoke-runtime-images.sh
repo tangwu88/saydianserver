@@ -18,7 +18,7 @@ docker run -d --name "$worker_container" --network host \
   "$prefix-worker:sha-$revision"
 docker run -d --name "$admin_container" -p 18081:8080 "$prefix-admin:sha-$revision"
 ready=false
-for attempt in {1..45}; do
+for _attempt in {1..45}; do
   if curl -fsS http://127.0.0.1:18080/health/ready | jq -e --arg revision "$revision" '.revision == $revision' >/dev/null; then ready=true; break; fi
   sleep 1
 done

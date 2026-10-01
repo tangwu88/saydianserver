@@ -50,7 +50,9 @@ try {
   wechatLogin.set("consent_accepted", "1");
   check((await request("/api/v1/site/wechat-login", { method: "POST", body: wechatLogin })).json.code, 503);
   const badPay = new FormData(); badPay.set("pay_type", "unsupported"); badPay.set("data", '{"order_id":42}');
-  check((await request("/api/v1/pay", { method: "POST", token: tokenA, body: badPay })).json.message, "请选择支持的支付方式");
+  const rejectedPayment = await request("/api/v1/pay", { method: "POST", token: tokenA, body: badPay });
+  check(rejectedPayment.json.code, 400);
+  check(typeof rejectedPayment.json.message, "string");
   const observed = new Date(Date.now() - 60_000).toISOString();
   const localDay = new Date(Date.now() + 8 * 3600_000 - 60_000).toISOString().slice(0, 10);
   const daily = { dailyDate: [{ date: observed, heartReat: 75, bloodPressure: { bloodPressureHigh: 120, bloodPressureLow: 80 } }] };

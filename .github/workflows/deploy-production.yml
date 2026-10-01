@@ -101,7 +101,7 @@ jobs:
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
           [[ "$DEPLOY_HOST" = 49.232.231.131 ]]
           [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
-          test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$REVISION"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$REVISION"
           key_dir=$(mktemp -d)
           bundle_dir=$(mktemp -d)
           trap 'rm -rf -- "$key_dir" "$bundle_dir" deploy-bundle.tgz' EXIT

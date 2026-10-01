@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]
 source_container=saydianapp-production-postgres-1
-! docker container inspect "$source_container" >/dev/null 2>&1
+if docker container inspect "$source_container" >/dev/null 2>&1; then echo 'Fixture container already exists; refusing to reuse it.' >&2; exit 1; fi
 created=false
 cleanup() { if [[ "$created" == true ]]; then docker rm -fv "$source_container" >/dev/null; fi; }
 trap cleanup EXIT
@@ -12,7 +12,7 @@ docker run -d --name "$source_container" --network none \
   postgres:16-alpine >/dev/null
 created=true
 ready=false
-for attempt in {1..30}; do
+for _attempt in {1..30}; do
   if docker exec "$source_container" pg_isready -U fixture -d fixture >/dev/null; then ready=true; break; fi
   sleep 1
 done

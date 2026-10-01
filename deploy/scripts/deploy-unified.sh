@@ -39,7 +39,7 @@ pin_images() {
 }
 wait_ready() {
   local expected=$1
-  for attempt in {1..60}; do
+  for _attempt in {1..60}; do
     if docker exec "$current_api" wget -qO- http://127.0.0.1:8080/health/ready | jq -e --arg revision "$expected" '.status == "ready" and .revision == $revision' > /dev/null; then return; fi
     sleep 2
   done
@@ -58,8 +58,9 @@ public_checks() {
 node_tool /release/scripts/release-manifest.mjs verify "$revision" /release/release-manifest.json
 base_compose="$state_dir/compose.json"
 if [[ "$first" == true ]]; then
-  ! systemctl is-active --quiet saydian-global-auto-deploy.timer
-  ! systemctl is-active --quiet saydian-global-auto-deploy.service
+  for unit in saydian-global-auto-deploy.timer saydian-global-auto-deploy.service; do
+    if systemctl is-active --quiet "$unit"; then echo "Legacy publisher is active: $unit" >&2; exit 1; fi
+  done
   # Resolve the actual running release and private override, never a new env template.
   files=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$current_api")
   IFS=, read -ra paths <<< "$files"
@@ -165,7 +166,7 @@ if [[ "$first" == true ]]; then
   for container in "$current_api" saydianapp-production-api-1; do
     docker inspect -f '{{json .Config.Env}}' "$container" | jq -e 'index("MAINTENANCE_READ_ONLY=true") != null and index("BUSINESS_WRITES_PAUSED=true") != null and index("CALLBACK_PROCESSING_PAUSED=true") != null' > /dev/null
     ready=false
-    for attempt in {1..60}; do
+    for _attempt in {1..60}; do
       if docker exec "$container" wget -qO- http://127.0.0.1:8080/health/ready | jq -e '.status == "ready"' > /dev/null; then ready=true; break; fi
       sleep 2
     done

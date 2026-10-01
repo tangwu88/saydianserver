@@ -38,7 +38,7 @@ docker run -d --name "$temporary" --network none --label saydian.restore-drill=t
   --memory 512m --cpus 1 "$image" > /dev/null
 created=true
 ready=false
-for attempt in {1..30}; do
+for _attempt in {1..30}; do
   if docker exec "$temporary" pg_isready -U restore -d restore > /dev/null; then ready=true; break; fi
   sleep 1
 done

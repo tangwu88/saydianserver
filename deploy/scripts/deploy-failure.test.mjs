@@ -13,7 +13,8 @@ function run(mode) {
   try {
     const source = join(root, "releases/ci-fixture"), state = join(root, "deploy/unified"), bin = join(root, "bin");
     for (const directory of [join(source, "deploy"), state, bin]) mkdirSync(directory, { recursive: true });
-    if (mode !== "not-initialized") writeFileSync(join(state, "accepted.json"), "{}");
+    if (!["not-initialized", "legacy-active"].includes(mode)) writeFileSync(join(state, "accepted.json"), "{}");
+    if (mode === "legacy-active") writeFileSync(join(source, "deploy/.first-unified-cutover"), "");
     writeFileSync(join(state, "compose.json"), '{"name":"saydian-global","services":{}}');
     const manifest = { schemaVersion: 1, revision, migrations: [{ name: "20261001190000_say_ring_legal_product", sha256: "c".repeat(64), automatic: true }], images: Object.fromEntries(["api", "worker", "admin"].map(name => [name, { ref: `ghcr.io/tangwu88/saydianserver-${name}@sha256:${"d".repeat(64)}`, imageId, sizeBytes: 10 }])) };
     writeFileSync(join(source, "deploy/release-manifest.json"), JSON.stringify(manifest));
@@ -48,7 +49,7 @@ if(tool==='docker') {
  }
 }
 `;
-    for (const name of ["docker", "curl", "timeout", "sleep", "readlink", "flock", "sha256sum"]) writeFileSync(join(bin, name), double, { mode: 0o755 });
+    for (const name of ["docker", "curl", "timeout", "sleep", "readlink", "flock", "sha256sum", "systemctl"]) writeFileSync(join(bin, name), double, { mode: 0o755 });
     const log = join(root, "calls.log");
     const result = spawnSync("bash", [script], { encoding: "utf8", timeout: 30_000, env: { ...process.env, PATH: bin + ":" + process.env.PATH, RELEASE_SHA: revision, RELEASE_SOURCE: source, GITHUB_TOKEN: "synthetic-job-token", FIXTURE_MODE: mode, FIXTURE_LOG: log, FIXTURE_ROOT: root } });
     return { status: result.status, output: result.stdout + result.stderr, calls: existsSync(log) ? readFileSync(log, "utf8") : "" };
@@ -56,6 +57,11 @@ if(tool==='docker') {
 }
 test("ordinary publication cannot perform an implicit first cutover", () => {
   const result = run("not-initialized"); assert.notEqual(result.status, 0); assert(!result.calls.includes("docker"));
+});
+test("first cutover refuses an active legacy publisher before reading or changing Compose", () => {
+  const result = run("legacy-active"); assert.notEqual(result.status, 0);
+  assert.match(result.output, /Legacy publisher is active/);
+  assert(!result.calls.includes("docker compose"));
 });
 test("pull failure or superseded SHA leaves the existing services and schema unchanged", () => {
   for (const mode of ["pull-failed", "stale"]) {
