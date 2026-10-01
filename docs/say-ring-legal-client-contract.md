@@ -30,7 +30,7 @@
 }
 ```
 
-实际接受同意的注册、验证码登录和 Android 微信登录/绑定请求，还必须传：
+实际接受同意的注册、验证码登录、密码登录和 Android 微信登录/绑定请求，还必须传：
 
 ```json
 {
@@ -51,6 +51,7 @@
 - `POST /auth/verification-code`（注册验证码申请；只传产品和语言，不提交同意版本）
 - `POST /auth/register-with-code`
 - `POST /auth/register`（仅临时免验证码开关开启时）
+- `POST /auth/login`（既有账号的密码登录；必须额外传 `consentAccepted:true`）
 - `POST /api/saidian-mall/v1/auth/code/request`（只传产品和语言，不提交同意版本）
 - `POST /api/saidian-mall/v1/auth/code/login`（仅在该次登录会创建新账号时传 `ageConfirmed:true`）
 - Android `POST /auth/wechat-login`
@@ -61,9 +62,29 @@ Android 微信首次绑定手机号而创建账号时，`POST /auth/wechat-bind-
 
 服务端把同意记录写入 `say_ring_user_agreement` 和 `say_ring_privacy_policy`，不会写入国际主 App 的 `user_agreement` 或 `privacy_policy`。产品对应文档不存在时返回 `legal_unavailable`；版本过期返回 `consent_outdated`。
 
+### iOS 邮箱密码登录
+
+既有国际账号与 Saydian Health App 共用 `POST /auth/login` 和同一套用户数据；从 Say Ring 登录时必须提交：
+
+```json
+{
+  "channel": "email",
+  "identifier": "user@example.com",
+  "password": "<PASSWORD>",
+  "product": "say-ring",
+  "locale": "en",
+  "consentVersion": "<capabilities 返回的当前版本>",
+  "consentAccepted": true
+}
+```
+
+服务端先确认两份当前已审专属文档，再验证已有 ACTIVE 账号的密码；验证成功后才写入两条专属同意记录并签发会话。该流程不创建账号、不写入 `say_ring_minimum_age`，也不改变 `emailVerifiedAt` 或 `mobileVerifiedAt`。
+
+`consentAccepted` 不是默认值：缺失或非 `true` 返回 HTTP 400、`errorKey=consent_required`；无专属文档返回 503、`legal_unavailable`；版本过期返回 409、`consent_outdated`。凭据错误、无密码哈希、非 ACTIVE 或未验证开关限制仍统一返回不可枚举的 401；客户端不得据此推断账号存在与否。
+
 ## 1014 平台边界
 
-- iOS 隐藏微信授权登录，不注册微信 SDK，并由原生方法通道拒绝微信授权和支付；天气和推送同样保持不可用；iOS 使用手机号验证码流程。
+- iOS 隐藏微信授权登录，不注册微信 SDK，并由原生方法通道拒绝微信授权和支付；iOS 使用上述邮箱密码登录。邮箱验证码只在 `capabilities.login.email=true` 时显示；天气和推送同样保持不可用。
 - Android 保留微信功能，因此 Android 的微信三步请求仍必须传 `product:"say-ring"`。
 - 首版 App Store 仅在中国大陆供应；其他地区在国际登录与隐私合规完成前保持关闭。
 - iOS 审核体验公开只读、不需要审核账号，并明确标注为演示数据；客户端不得把演示数据提交为真实账号、设备或健康记录。

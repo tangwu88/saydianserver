@@ -5,6 +5,7 @@ import { GlobalVerificationDeliveryService } from "./global-verification-deliver
 import { globalIdentity, globalLocale, globalLocales, internationalPhone, normalizedEmail } from "./global-identity";
 import { AuthService } from "./auth.service";
 import { hash } from "bcryptjs";
+import { UnauthorizedException } from "@nestjs/common";
 
 beforeEach(() => {
   vi.stubEnv("APP_REALM", "global");
@@ -36,7 +37,7 @@ function harness() {
     },
     user: {
       findUnique: async ({ where }: any) => [...users.values()].find(row => Object.entries(where).every(([key, value]) => row[key] === value)) ?? null,
-      create: async ({ data }: any) => { const user = { id: randomUUID(), status: "ACTIVE", ...data }; users.set(user.id, user); return user; },
+      create: vi.fn(async ({ data }: any) => { const user = { id: randomUUID(), status: "ACTIVE", ...data }; users.set(user.id, user); return user; }),
       update: async ({ where, data }: any) => Object.assign(users.get(where.id), data),
     },
     consentRecord: { create: vi.fn(async () => undefined), upsert: vi.fn(async () => undefined) },
@@ -45,7 +46,7 @@ function harness() {
   const prisma: any = { ...tx, $transaction: async (run: any) => { const snapshot = structuredClone({ records, users, throttles }); try { return await run(tx); } catch (error) { records = snapshot.records; users = snapshot.users; throttles = snapshot.throttles; throw error; } } };
   const issueSession = vi.fn(async (id: string) => { sessions.push(id); const user = users.get(id); return { accessToken: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + 900_000).toISOString(), member: { id, nickname: user.nickname ?? "Test", locale: user.locale ?? "en" } }; });
   const issueMallSession = vi.fn(async (id: string) => { sessions.push(id); const user = users.get(id); return { token: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + 900_000).toISOString(), user: { id, nickname: user.nickname ?? "Test", mobile: user.mobile ?? null, avatarUrl: null } }; });
-  const auth: any = { issueSession, issueMallSession, login: vi.fn(async () => ({ accessToken: "synthetic-access" })), bindReferral: vi.fn(async () => ({ bound: true })) };
+  const auth: any = { issueSession, issueMallSession, login: vi.fn(async () => ({ accessToken: "synthetic-access" })), authenticatePassword: vi.fn(async () => ({ id: "ring-password-user" })), bindReferral: vi.fn(async () => ({ bound: true })) };
   const service = new GlobalAuthService(prisma, delivery as any, auth);
   return { service, prisma, delivery, auth, tx, sessions, records: () => records, users: () => users };
 }
@@ -269,6 +270,57 @@ describe("global registration challenges", () => {
     expect(h.auth.login).toHaveBeenNthCalledWith(1, "test@example.com", "Synthetic-only-password!");
     expect(h.auth.login).toHaveBeenNthCalledWith(2, "+12025550123", "Synthetic-only-password!");
     vi.stubEnv("APP_REALM", "domestic"); await expect(h.service.capabilities()).rejects.toThrow("unavailable");
+  });
+  it("records Say Ring password consent only after the current legal contract and credentials pass", async () => {
+    const h = harness();
+    h.users().set("ring-password-user", { id: "ring-password-user", email: "ring@example.com", emailVerifiedAt: null, mobileVerifiedAt: null, nickname: "Ring", status: "ACTIVE" });
+    await h.service.login({
+      channel: "email",
+      identifier: "Ring@Example.com",
+      password: "Synthetic-only-password!",
+      product: "say-ring",
+      locale: "en",
+      consentVersion: "v1",
+      consentAccepted: true,
+      ageConfirmed: false,
+    });
+    expect(h.auth.authenticatePassword).toHaveBeenCalledWith("ring@example.com", "Synthetic-only-password!");
+    expect(h.tx.consentRecord.upsert.mock.calls.map(([call]: any[]) => call)).toEqual([
+      expect.objectContaining({ create: expect.objectContaining({ userId: "ring-password-user", documentType: "say_ring_user_agreement", version: "v1", source: "global_app_v2_password:say-ring:en" }) }),
+      expect.objectContaining({ create: expect.objectContaining({ userId: "ring-password-user", documentType: "say_ring_privacy_policy", version: "v1", source: "global_app_v2_password:say-ring:en" }) }),
+    ]);
+    expect(h.auth.issueSession).toHaveBeenCalledWith("ring-password-user");
+    expect(h.tx.user.create).not.toHaveBeenCalled();
+    expect(h.users().get("ring-password-user")).toMatchObject({ emailVerifiedAt: null, mobileVerifiedAt: null });
+    expect(h.tx.consentRecord.upsert.mock.calls.some(([call]: any[]) => call.create.documentType === "say_ring_minimum_age")).toBe(false);
+  });
+  it("does not authenticate or issue a session when Say Ring consent or legal checks fail", async () => {
+    const missingConsent = harness();
+    await expect(missingConsent.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "v1" })).rejects.toMatchObject({ status: 400, response: { errorKey: "consent_required" } });
+    expect(missingConsent.auth.authenticatePassword).not.toHaveBeenCalled();
+    expect(missingConsent.auth.issueSession).not.toHaveBeenCalled();
+
+    const unavailable = harness(); unavailable.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
+    await expect(unavailable.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "v1", consentAccepted: true })).rejects.toMatchObject({ status: 503, response: { errorKey: "legal_unavailable" } });
+    expect(unavailable.auth.authenticatePassword).not.toHaveBeenCalled();
+
+    const stale = harness();
+    await expect(stale.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "old", consentAccepted: true })).rejects.toMatchObject({ status: 409, response: { errorKey: "consent_outdated" } });
+    expect(stale.auth.authenticatePassword).not.toHaveBeenCalled();
+  });
+  it("does not record consent or issue a Say Ring session for invalid existing credentials", async () => {
+    const h = harness();
+    h.auth.authenticatePassword.mockRejectedValueOnce(new UnauthorizedException("账号或密码错误"));
+    await expect(h.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "v1", consentAccepted: true })).rejects.toMatchObject({ status: 401 });
+    expect(h.tx.consentRecord.upsert).not.toHaveBeenCalled();
+    expect(h.auth.issueSession).not.toHaveBeenCalled();
+  });
+  it("does not issue a Say Ring session when dedicated consent persistence fails", async () => {
+    const h = harness();
+    h.tx.consentRecord.upsert.mockRejectedValueOnce(new Error("synthetic persistence failure"));
+    await expect(h.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "v1", consentAccepted: true })).rejects.toThrow("synthetic persistence failure");
+    expect(h.auth.authenticatePassword).toHaveBeenCalledOnce();
+    expect(h.auth.issueSession).not.toHaveBeenCalled();
   });
   it("allows an unverified global password login only while the temporary switch is enabled", async () => {
     const password = "Synthetic-only-password!";

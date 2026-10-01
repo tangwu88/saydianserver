@@ -265,7 +265,33 @@ export class GlobalAuthService {
     const body = safeObject(input);
     const identifier = String(body.identifier ?? body.mobile ?? body.username ?? "");
     const identity = globalIdentity(body.channel ?? (identifier.includes("@") ? "email" : "sms"), identifier);
-    return this.auth.login(identity.identifier, this.password(body.password));
+    const product = globalLegalProduct(body.product);
+    if (product === "saydian-global") {
+      return this.auth.login(identity.identifier, this.password(body.password));
+    }
+    const consentVersion = String(body.consentVersion ?? "").trim();
+    if (body.consentAccepted !== true || !consentVersion || consentVersion.length > 80) {
+      throw globalError(400, "consent_required", "Read and agree to the terms and privacy policy.");
+    }
+    const legal = await globalLegalBundle(this.prisma, body.locale, product);
+    if (!legal) {
+      throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
+    }
+    if (legal.consentVersion !== consentVersion) {
+      throw globalError(409, "consent_outdated", "The terms have changed. Please read and agree to the latest version.");
+    }
+    const user = await this.auth.authenticatePassword(identity.identifier, this.password(body.password));
+    const source = globalConsentSource("global_app_v2_password", legal);
+    await this.prisma.$transaction(async tx => {
+      for (const documentType of Object.values(legal.documentTypes)) {
+        await tx.consentRecord.upsert({
+          where: { userId_documentType_version: { userId: user.id, documentType, version: consentVersion } },
+          create: { userId: user.id, documentType, version: consentVersion, source },
+          update: { withdrawnAt: null, source },
+        });
+      }
+    });
+    return this.auth.issueSession(user.id);
   }
 
   async resetPassword(input: unknown) {
