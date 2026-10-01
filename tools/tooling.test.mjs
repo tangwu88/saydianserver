@@ -181,6 +181,10 @@ test("automatic release preserves maintenance and only a reviewed manual release
   assert.match(productionWorkflow, /PUBLISH_APP_UPDATE/);
   assert.match(productionWorkflow, /apply_migrations:/);
   assert.match(productionWorkflow, /\[\[ "\$EVENT_NAME" == workflow_dispatch \]\]/);
+  assert.match(productionWorkflow, /gh run list --workflow ci\.yml --commit "\$REVISION" --event push/);
+  assert.match(productionWorkflow, /gh run view "\$run_id" --json jobs/);
+  assert.match(productionWorkflow, /select\(\.name == "verify" and \.conclusion == "success"\)/);
+  assert.doesNotMatch(productionWorkflow, /select\(\.conclusion == "success"\)/);
   assert.match(productionWorkflow, /\.apply-reviewed-migrations/);
   assert.match(productionWorkflow, /inputs\.package_only != true/);
   assert.match(productionWorkflow, /PACKAGE_ONLY/);
