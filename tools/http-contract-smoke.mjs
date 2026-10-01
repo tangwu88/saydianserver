@@ -103,8 +103,8 @@ try {
   check((await request(v1 + "/notify/" + notice.compatibilityId, { token: tokenB })).json.code, 404);
   check((await request(v1 + "/notify/" + notice.compatibilityId, { token: tokenA })).json.data.is_read, 1);
   check((await request(v1 + "/notify/statistics", { token: tokenA })).json.data.announce_count, 0);
-  const category = await prisma.articleCategory.create({ data: { legacyId: "81001", name: "fixture" } });
-  await prisma.article.create({ data: { legacyId: "81002", categoryId: category.id, title: "fixture", contentHtml: "<p>fixture</p>", status: "PUBLISHED", publishedAt: new Date() } });
+  const category = await prisma.articleCategory.create({ data: { legacyId: "81001", name: "fixture", locale: "en" } });
+  await prisma.article.create({ data: { legacyId: "81002", categoryId: category.id, title: "fixture", locale: "en", contentHtml: "<p>fixture</p>", status: "PUBLISHED", publishedAt: new Date() } });
   check((await request("/api/rf-article/article/view?id=81002")).json.data.title, "fixture");
   check((await request("/api/rf-article/article/index?cate_id=81001")).json.data.length, 1);
   check((await request(v1 + "/member/my")).json.code, 401);
