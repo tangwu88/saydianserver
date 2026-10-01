@@ -15,7 +15,7 @@ import {
   globalLocale,
   maskedIdentifier,
 } from "./global-identity";
-import { globalLegalBundle } from "./global-legal";
+import { defaultGlobalLegalProduct, globalConsentSource, globalLegalBundle } from "./global-legal";
 import { WechatAppAuthService } from "./wechat-app-auth.service";
 import {
   safeWechatProfile,
@@ -30,6 +30,7 @@ const ticketLifetimeMs = 5 * 60_000;
 type AppTicket = {
   tokenHash: string;
   appId: string;
+  product: string;
   openId: string;
   unionId: string | null;
   expiresAt: Date;
@@ -76,7 +77,7 @@ export class GlobalWechatAppService {
         "Read and agree to the terms and privacy policy.",
       );
     }
-    const legal = await this.legal(body.consentVersion, body.locale);
+    const legal = await this.legal(body.consentVersion, body.locale, body.product);
     const identity = await this.wechat.exchange({
       code: String(body.code ?? ""),
       state: String(body.state ?? ""),
@@ -126,12 +127,7 @@ export class GlobalWechatAppService {
               ...wechatProfileBackfill(current.user, profile),
             },
           });
-          await recordConsent(
-            tx,
-            current.userId,
-            legal.consentVersion,
-            legal.locale,
-          );
+          await recordConsent(tx, current.userId, legal);
           return current.userId;
         }).catch(identityConflict);
         return this.auth.issueSession(userId);
@@ -142,6 +138,7 @@ export class GlobalWechatAppService {
       data: {
         tokenHash: sha256(token),
         appId: identity.appId,
+        product: legal.product,
         openId: identity.openId,
         unionId: identity.unionId,
         returnTo: "/",
@@ -163,7 +160,8 @@ export class GlobalWechatAppService {
     const ticket = await this.ticket(body.bindTicket);
     const identity = globalIdentity("sms", body.identifier);
     const locale = globalLocale(body.locale);
-    await this.legal(body.consentVersion, locale);
+    const legal = await this.legal(body.consentVersion, locale, body.product);
+    assertTicketProduct(ticket, legal.product);
     await this.delivery.assertAvailable("sms", identity.country);
     const id = randomUUID();
     const code = String(randomInt(100_000, 1_000_000));
@@ -336,8 +334,10 @@ export class GlobalWechatAppService {
       const legal = await this.legal(
         body.consentVersion,
         body.locale ?? challenge.locale,
+        body.product,
         tx,
       );
+      assertTicketProduct(ticket, legal.product);
       const consumed = await tx.globalVerificationChallenge.updateMany({
         where: {
           id: challengeId,
@@ -402,12 +402,7 @@ export class GlobalWechatAppService {
       } else if (linked.userId !== saved.id) {
         throw conflict();
       }
-      await recordConsent(
-        tx,
-        saved.id,
-        legal.consentVersion,
-        legal.locale,
-      );
+      await recordConsent(tx, saved.id, legal);
       return { invalid: false as const, userId: saved.id };
     }, { maxWait: 10_000, timeout: 30_000 }).catch(identityConflict);
     if (result.invalid) throw invalidCode();
@@ -428,9 +423,10 @@ export class GlobalWechatAppService {
   private async legal(
     version: unknown,
     locale: unknown,
+    product: unknown,
     db: Prisma.TransactionClient = this.prisma,
   ) {
-    const document = await globalLegalBundle(db, locale);
+    const document = await globalLegalBundle(db, locale, product);
     if (!document) {
       throw globalError(
         503,
@@ -509,7 +505,7 @@ export class GlobalWechatAppService {
     }
     const configured = await this.configuredAppId();
     if (!configured || row.appId !== configured) throw invalidTicket();
-    return row;
+    return { ...row, product: row.product || defaultGlobalLegalProduct };
   }
 }
 
@@ -528,21 +524,21 @@ async function lockIdentity(
 async function recordConsent(
   tx: Prisma.TransactionClient,
   userId: string,
-  version: string,
-  locale: string,
+  legal: NonNullable<Awaited<ReturnType<typeof globalLegalBundle>>>,
 ) {
-  for (const documentType of ["user_agreement", "privacy_policy"]) {
+  const source = globalConsentSource("global_app_wechat", legal);
+  for (const documentType of Object.values(legal.documentTypes)) {
     await tx.consentRecord.upsert({
       where: {
-        userId_documentType_version: { userId, documentType, version },
+        userId_documentType_version: { userId, documentType, version: legal.consentVersion },
       },
       create: {
         userId,
         documentType,
-        version,
-        source: `global_app_wechat:${locale}`,
+        version: legal.consentVersion,
+        source,
       },
-      update: { withdrawnAt: null, source: `global_app_wechat:${locale}` },
+      update: { withdrawnAt: null, source },
     });
   }
 }
@@ -601,4 +597,10 @@ function identityConflict(error: unknown): never {
     throw conflict();
   }
   throw error;
+}
+
+function assertTicketProduct(ticket: AppTicket, product: string) {
+  if (ticket.product !== product) {
+    throw globalError(409, "product_mismatch", "Continue with the same product.");
+  }
 }

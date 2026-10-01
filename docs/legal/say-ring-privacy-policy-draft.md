@@ -2,7 +2,7 @@
 
 Draft version: `draft-2026-10-01`
 
-This document is an implementation draft for Say Ring (`cn.saydian.ring`) 1.0 (1013). It must not be linked from App Store Connect, served from a public URL, or activated in the legal-document API until every item under “Publication blockers” is closed.
+This document is an implementation draft for Say Ring (`cn.saydian.ring`). Build 1013 is the audited legacy package; build 1014 is the intended iOS publication baseline. It must not be linked from App Store Connect, served from a public URL, or activated in the legal-document API until every item under “Publication blockers” is closed.
 
 ## Confirmed owner and contact
 
@@ -14,10 +14,10 @@ This document is an implementation draft for Say Ring (`cn.saydian.ring`) 1.0 (1
 ## Publication blockers
 
 1. Confirm the legal names and privacy-policy URLs of every wearable SDK provider in build 1013, and whether any of those SDKs transmit device, health, diagnostic, or identifier data to vendor servers.
-2. Confirm the exact Tencent Cloud contracting entity, processing region, backup retention period, security-log retention period, and safeguards for users outside mainland China.
-3. Correct and re-test account deletion. The current worker schedules execution after seven days but does not clear the account email or native WeChat OpenID, and uploaded files are only marked for deletion.
+2. Confirm the exact Tencent Cloud contracting entity, processing region, backup retention period, and security-log retention period. The first App Store release is mainland-China-only; cross-border safeguards must be completed before any other region is opened.
+3. Deploy and production-test the account-deletion repair. The candidate code clears email and verification timestamps, all User WeChat identifiers and official identities, and physically deletes only the account's claimed storage objects before completion; production still runs the older behavior until deployment.
 4. Confirm the minimum user age and the intended treatment of minors' health data.
-5. Add a Say Ring product discriminator to the client legal-capabilities request and all consent-producing auth flows. Build 1013 currently requests the generic global policy and cannot select a Say Ring-only document without affecting other apps.
+5. Deploy the candidate Say Ring product-isolation migration and update build 1014 to send `product=say-ring` on legal capabilities and every consent-producing auth flow. Build 1013 continues to request the generic global policy; the dedicated Say Ring documents must remain inactive until the 1014 client and production API have both been verified.
 6. Complete legal review and set the effective date. A draft or placeholder page is not acceptable for App Store submission.
 
 ## Verified build-1013 boundaries
@@ -30,6 +30,15 @@ This document is an implementation draft for Say Ring (`cn.saydian.ring`) 1.0 (1
 - JPush has no App Key in build 1013 and is not initialized.
 - AI is hidden by the production Say Ring setting, and commerce is disabled in the App Store build. This draft therefore does not describe AI, shopping, or payment processing as active Say Ring features.
 
+## Verified target build-1014 iOS boundary
+
+- The iOS WeChat authorization UI is hidden and `SaidianWechatEnabled=false`.
+- The iOS native startup does not register the WeChat SDK; its method channel rejects WeChat authorization and payment.
+- iOS continues with phone verification. Weather and push remain unavailable in the target iOS build.
+- The first App Store release is available only in mainland China. Other regions remain closed until international sign-in and privacy compliance are completed.
+- The public App Review experience is read-only, requires no review account, and is clearly labelled as synthetic demonstration data. It does not load or upload a real account's ring or health data.
+- Android retains its existing optional WeChat feature and must send the explicit `say-ring` product identifier when recording consent.
+
 ---
 
 # Privacy Policy
@@ -40,13 +49,15 @@ This Privacy Policy explains how Xuewu Tang ("we", "us", or "our") handles perso
 
 Say Ring provides account, smart-ring connection, health-summary, profile, and device-management features. It is not a medical device and does not provide medical diagnosis or treatment.
 
+The first iOS release is offered only in mainland China. Its public review experience uses labelled synthetic demonstration data without requiring an account.
+
 ## 1. Data we process
 
 ### Account and authentication data
 
 We process the phone number or email address used for registration or sign-in, verification status, encrypted password credentials where applicable, session identifiers, language preference, and account status.
 
-If you choose WeChat sign-in, we process the identifiers and profile information returned through WeChat, such as OpenID, UnionID when available, nickname, and avatar.
+The target iOS build does not offer WeChat sign-in. On Android, if you choose the optional WeChat sign-in, we process the identifiers and profile information returned through WeChat, such as OpenID, UnionID when available, nickname, and avatar.
 
 ### Profile and avatar data
 
@@ -90,25 +101,25 @@ The current build does not enable the external weather service. If a future vers
 
 We disclose personal data only as needed to provide a feature you request, operate the service, protect users, or comply with law.
 
-- WeChat: if you choose WeChat sign-in, authentication data is exchanged with WeChat/Tencent under its applicable terms and privacy notice.
+- WeChat: the target iOS build does not enable this feature. On Android, if you choose WeChat sign-in, authentication data is exchanged with WeChat/Tencent under its applicable terms and privacy notice.
 - Cloud hosting: account, profile, device, and health-summary data are processed on infrastructure used by the Say Ring service in mainland China. **[Exact contracting entity and retention terms pending confirmation.]**
 - Wearable SDK providers: the App includes third-party libraries used to communicate with supported rings and perform firmware or device operations. **[Exact provider names, data categories, network behavior, and privacy links pending vendor confirmation.]**
 
 Before publication, we must confirm that every third party receiving personal data provides the same or equivalent protection described in this policy.
 
-## 5. International processing
+## 5. Regional availability and international processing
 
-If you use Say Ring outside mainland China, account, device, profile, and uploaded health-summary data are transmitted to and processed on the Say Ring service infrastructure in mainland China.
+The first App Store release is not offered outside mainland China. We do not describe international availability or cross-border safeguards as active for this release.
 
-**[Applicable transfer mechanism, contractual safeguards, local representative requirements, and country-specific disclosures pending legal review.]**
+Before Say Ring is opened in another country or region, we will assess the applicable transfer mechanism, contractual safeguards, local representative requirements, and country-specific disclosures, and update this policy before that availability begins.
 
 ## 6. Retention and account deletion
 
 We retain account and service data only while needed to provide Say Ring, protect the service, meet legal obligations, or resolve disputes. **[Fixed security-log and backup retention periods pending confirmation.]**
 
-You can initiate account deletion inside the App. The current service disables the account and revokes active sessions immediately, then schedules deletion or anonymization after a seven-day waiting period.
+You can initiate account deletion inside the App. The current production service disables the account and revokes active sessions immediately, then schedules deletion or anonymization after a seven-day waiting period.
 
-Some records may need to be retained when required by law or for the establishment, exercise, or defense of legal claims. They will be restricted to those purposes. **[Do not publish until the verified deletion gaps listed above are corrected.]**
+Some records may need to be retained when required by law or for the establishment, exercise, or defense of legal claims. They will be restricted to those purposes. **[Do not publish until the deletion repair is deployed and verified against production storage.]**
 
 ## 7. Your choices and rights
 

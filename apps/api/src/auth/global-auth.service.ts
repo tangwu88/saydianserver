@@ -9,7 +9,7 @@ import { isGlobalRealm } from "../common/deployment-realm";
 import { AuthService } from "./auth.service";
 import { GlobalVerificationDeliveryService } from "./global-verification-delivery.service";
 import { globalError, globalIdentity, globalLocale, globalLocales, maskedIdentifier, type VerificationPurpose } from "./global-identity";
-import { globalLegalBundle } from "./global-legal";
+import { globalConsentSource, globalLegalBundle, globalLegalProduct } from "./global-legal";
 import { businessWritesPaused } from "@saydian/app-contracts";
 import { GlobalWechatAppService } from "./global-wechat-app.service";
 
@@ -22,10 +22,11 @@ export class GlobalAuthService {
     private readonly wechatApp?: GlobalWechatAppService,
   ) {}
 
-  async capabilities(locale?: string) {
+  async capabilities(locale?: string, productInput?: unknown) {
     this.requireGlobal();
+    const product = globalLegalProduct(productInput);
     const ready = await this.delivery.capabilities();
-    const legal = await globalLegalBundle(this.prisma, locale);
+    const legal = await globalLegalBundle(this.prisma, locale, product);
     const deliveryOpen = !businessWritesPaused(process.env);
     const unverifiedRegistration = this.unverifiedRegistrationEnabled();
     const registrationOpen = Boolean(legal) && deliveryOpen;
@@ -42,6 +43,7 @@ export class GlobalAuthService {
         };
     return {
       realm: "global",
+      product,
       defaultLocale: "en",
       supportedLocales: [...globalLocales],
       registration: {
@@ -70,7 +72,7 @@ export class GlobalAuthService {
     const purpose = String(body.purpose ?? "register") as VerificationPurpose;
     if (!["register", "reset_password", "login"].includes(purpose)) throw globalError(400, "invalid_verification_purpose", "Choose a valid verification purpose.");
     const locale = globalLocale(body.locale);
-    if (["register", "login"].includes(purpose) && !(await globalLegalBundle(this.prisma, locale))) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
+    if (["register", "login"].includes(purpose) && !(await globalLegalBundle(this.prisma, locale, body.product))) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
     return this.requestChallenge(identity, purpose, locale);
   }
 
@@ -89,7 +91,7 @@ export class GlobalAuthService {
     const identity = globalIdentity(body.channel, body.identifier);
     const consentVersion = String(body.consentVersion ?? "").trim();
     if (!consentVersion || consentVersion.length > 80) throw globalError(400, "consent_required", "Read and agree to the terms and privacy policy.");
-    const legal = global ? await globalLegalBundle(this.prisma, body.locale) : null;
+    const legal = global ? await globalLegalBundle(this.prisma, body.locale, body.product) : null;
     if (global && !legal) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
     if (legal && legal.consentVersion !== consentVersion) throw globalError(409, "consent_outdated", "The terms have changed. Please read and agree to the latest version.");
     let userId: string;
@@ -112,8 +114,8 @@ export class GlobalAuthService {
               nickname: global ? "Saydian user" : "赛电用户",
               ...(global ? { locale: globalLocale(body.locale ?? challenge.locale) } : {}),
             } });
-        const source = global ? `global_h5_code:${legal!.locale}` : "commerce_code";
-        for (const documentType of ["user_agreement", "privacy_policy"]) {
+        const source = global ? globalConsentSource("global_h5_code", legal!) : "commerce_code";
+        for (const documentType of Object.values(legal?.documentTypes ?? { userAgreement: "user_agreement", privacyPolicy: "privacy_policy" })) {
           await tx.consentRecord.upsert({
             where: { userId_documentType_version: { userId: user.id, documentType, version: consentVersion } },
             create: { userId: user.id, documentType, version: consentVersion, source },
@@ -166,7 +168,7 @@ export class GlobalAuthService {
     const password = this.password(body.password);
     const consentVersion = String(body.consentVersion ?? "").trim();
     if (!consentVersion || consentVersion.length > 80) throw globalError(400, "consent_required", "Read and agree to the terms and privacy policy.");
-    const legal = await globalLegalBundle(this.prisma, body.locale);
+    const legal = await globalLegalBundle(this.prisma, body.locale, body.product);
     if (!legal) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
     if (legal.consentVersion !== consentVersion) throw globalError(409, "consent_outdated", "The terms have changed. Please read and agree to the latest version.");
     const nickname = String(body.nickname ?? "").trim();
@@ -181,8 +183,8 @@ export class GlobalAuthService {
           ...(challenge.channel === "email" ? { email: challenge.identifier, emailVerifiedAt: new Date() } : { mobile: challenge.identifier, mobileVerifiedAt: new Date() }),
           passwordHash, nickname: nickname || "Saydian user", locale: globalLocale(body.locale ?? challenge.locale),
         } });
-        for (const documentType of ["user_agreement", "privacy_policy"]) {
-          await tx.consentRecord.create({ data: { userId: user.id, documentType, version: consentVersion, source: `global_app_v2:${legal.locale}` } });
+        for (const documentType of Object.values(legal.documentTypes)) {
+          await tx.consentRecord.create({ data: { userId: user.id, documentType, version: consentVersion, source: globalConsentSource("global_app_v2", legal) } });
         }
         return user.id;
       });
@@ -206,7 +208,7 @@ export class GlobalAuthService {
     if (!consentVersion || consentVersion.length > 80) {
       throw globalError(400, "consent_required", "Read and agree to the terms and privacy policy.");
     }
-    const legal = await globalLegalBundle(this.prisma, body.locale);
+    const legal = await globalLegalBundle(this.prisma, body.locale, body.product);
     if (!legal) {
       throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
     }
@@ -231,13 +233,13 @@ export class GlobalAuthService {
           nickname: nickname || "Saydian user",
           locale: globalLocale(body.locale),
         } });
-        for (const documentType of ["user_agreement", "privacy_policy"]) {
+        for (const documentType of Object.values(legal.documentTypes)) {
           await tx.consentRecord.create({
             data: {
               userId: user.id,
               documentType,
               version: consentVersion,
-              source: `global_app_v2_unverified:${legal.locale}`,
+              source: globalConsentSource("global_app_v2_unverified", legal),
             },
           });
         }

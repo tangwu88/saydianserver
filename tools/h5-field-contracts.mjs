@@ -137,7 +137,7 @@ const capabilitiesSchema = obj({
 // Independent accounts may buy the supported CN/CNY offer. Other markets and
 // unconfigured payment rails remain unavailable; phone-test sessions cannot trade.
 const internationalCapabilitiesSchema = obj({
-  realm: { const: "global" }, consentVersion: nullable(consent), legal: nullable(obj({
+  realm: { const: "global" }, product: { enum: ["saydian-global", "say-ring"] }, consentVersion: nullable(consent), legal: nullable(obj({
     userAgreement: obj({ path: text, locale: globalLocale, version: text }),
     privacyPolicy: obj({ path: text, locale: globalLocale, version: text }),
   })),
@@ -156,7 +156,7 @@ const capabilitiesExample = {
   maintenance: { readOnly: false }, demo: true,
 };
 const globalCapabilitiesExample = {
-  realm: "global", consentVersion: null, legal: null,
+  realm: "global", product: "saydian-global", consentVersion: null, legal: null,
   login: { password: { enabled: true }, sms: { enabled: false }, wechatH5: { enabled: false },
     wechatBinding: { bindExistingAvailable: false, emailOtpAvailable: false, smsOtpAvailable: false,
       password: { enabled: false }, email: { enabled: false }, sms: { enabled: false }, smsCountries: [], verifiedAccountRequired: true,

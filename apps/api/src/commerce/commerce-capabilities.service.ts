@@ -38,7 +38,7 @@ export class CommerceCapabilitiesService {
 
   // Configuration readiness is not a provider verification or a payer identity
   // assertion. Creating a payment still validates the actual User.
-  async publicCapabilities(locale?: string, client: "h5" | "app" = "h5") {
+  async publicCapabilities(locale?: string, client: "h5" | "app" = "h5", product?: unknown) {
     const global = isGlobalRealm();
     const readOnly = businessWritesPaused(process.env);
     const outboundPaused = shouldPauseWorkers(process.env);
@@ -284,7 +284,7 @@ export class CommerceCapabilitiesService {
     ];
     if (global) {
       const [official, marketConfig] = await Promise.all([
-        this.official.globalCapabilities(locale),
+        this.official.globalCapabilities(locale, product),
         this.prisma.commerceBusinessConfig.findUnique({
           where: { key: "global.markets" },
         }),
@@ -295,6 +295,7 @@ export class CommerceCapabilitiesService {
       const checkoutAvailable = Boolean(checkoutMarket);
       return {
         realm: "global",
+        product: official.product,
         consentVersion: official.consentVersion,
         legal: official.legal,
         login: {

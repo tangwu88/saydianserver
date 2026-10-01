@@ -1,5 +1,26 @@
 import type { Prisma } from "@prisma/client";
-import { globalLocale } from "./global-identity";
+import { globalError, globalLocale } from "./global-identity";
+
+export const defaultGlobalLegalProduct = "saydian-global" as const;
+export type GlobalLegalProduct = typeof defaultGlobalLegalProduct | "say-ring";
+
+const documentTypesByProduct = {
+  "saydian-global": {
+    userAgreement: "user_agreement",
+    privacyPolicy: "privacy_policy",
+  },
+  "say-ring": {
+    userAgreement: "say_ring_user_agreement",
+    privacyPolicy: "say_ring_privacy_policy",
+  },
+} as const satisfies Record<GlobalLegalProduct, Record<string, string>>;
+
+export function globalLegalProduct(input: unknown): GlobalLegalProduct {
+  const product = String(input ?? "").trim();
+  if (!product || product === defaultGlobalLegalProduct) return defaultGlobalLegalProduct;
+  if (product === "say-ring") return product;
+  throw globalError(400, "invalid_product", "Choose a supported product.");
+}
 
 export async function globalLegalReference(prisma: Pick<Prisma.TransactionClient, "globalLegalDocument">, documentType: string, localeInput: unknown) {
   const preferred = globalLocale(localeInput);
@@ -10,17 +31,32 @@ export async function globalLegalReference(prisma: Pick<Prisma.TransactionClient
   return { version: document.version, locale: document.locale, path: `/api/saydian-app/v2/content/legal/${encodeURIComponent(documentType)}?version=${encodeURIComponent(document.version)}&locale=${encodeURIComponent(document.locale)}` };
 }
 
-export async function globalLegalBundle(prisma: Pick<Prisma.TransactionClient, "globalLegalDocument">, localeInput: unknown) {
+export async function globalLegalBundle(prisma: Pick<Prisma.TransactionClient, "globalLegalDocument">, localeInput: unknown, productInput?: unknown) {
+  const product = globalLegalProduct(productInput);
+  const documentTypes = documentTypesByProduct[product];
   const preferred = globalLocale(localeInput);
   const locales = preferred === "en" ? ["en"] : [preferred, "en"];
-  const rows = await prisma.globalLegalDocument.findMany({ where: { locale: { in: locales }, documentType: { in: ["user_agreement", "privacy_policy"] }, active: true, reviewed: true, publishedAt: { lte: new Date() } }, orderBy: { publishedAt: "desc" } });
+  const rows = await prisma.globalLegalDocument.findMany({ where: { locale: { in: locales }, documentType: { in: [documentTypes.userAgreement, documentTypes.privacyPolicy] }, active: true, reviewed: true, publishedAt: { lte: new Date() } }, orderBy: { publishedAt: "desc" } });
   for (const locale of locales) {
-    const terms = rows.find(row => row.locale === locale && row.documentType === "user_agreement");
-    const privacy = rows.find(row => row.locale === locale && row.documentType === "privacy_policy");
+    const terms = rows.find(row => row.locale === locale && row.documentType === documentTypes.userAgreement);
+    const privacy = rows.find(row => row.locale === locale && row.documentType === documentTypes.privacyPolicy);
     if (terms?.version && privacy?.version === terms.version && terms.contentHtml.trim() && privacy.contentHtml.trim()) {
       const path = (type: string) => `/api/saydian-app/v2/content/legal/${type}?version=${encodeURIComponent(terms.version)}&locale=${encodeURIComponent(locale)}`;
-      return { consentVersion: terms.version, locale, documents: { userAgreement: { path: path("user_agreement"), locale, version: terms.version }, privacyPolicy: { path: path("privacy_policy"), locale, version: terms.version } } };
+      return {
+        product,
+        consentVersion: terms.version,
+        locale,
+        documentTypes,
+        documents: {
+          userAgreement: { path: path(documentTypes.userAgreement), locale, version: terms.version },
+          privacyPolicy: { path: path(documentTypes.privacyPolicy), locale, version: terms.version },
+        },
+      };
     }
   }
   return null;
+}
+
+export function globalConsentSource(base: string, legal: { product: GlobalLegalProduct; locale: string }) {
+  return `${base}${legal.product === defaultGlobalLegalProduct ? "" : `:${legal.product}`}:${legal.locale}`;
 }

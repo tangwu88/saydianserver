@@ -20,7 +20,9 @@ function harness() {
   const sessions: string[] = [];
   const delivery = { capabilities: vi.fn(async () => ({ email: true, sms: true, smsCountries: ["US", "DE"] })), assertAvailable: vi.fn(async () => ({})), send: vi.fn(async (_input: any) => undefined) };
   const tx: any = {
-    globalLegalDocument: { findMany: vi.fn(async () => ["user_agreement", "privacy_policy"].map(documentType => ({ documentType, version: "v1", locale: "en", contentHtml: "Synthetic test legal text", reviewed: true, active: true }))) },
+    globalLegalDocument: { findMany: vi.fn(async ({ where }: any) => ["user_agreement", "privacy_policy", "say_ring_user_agreement", "say_ring_privacy_policy"]
+      .filter(documentType => where.documentType.in.includes(documentType))
+      .map(documentType => ({ documentType, version: "v1", locale: "en", contentHtml: "Synthetic test legal text", reviewed: true, active: true }))) },
     globalVerificationThrottle: {
       upsert: async ({ where, create }: any) => { if (!throttles.has(where.key)) throttles.set(where.key, create); },
       updateMany: async ({ where, data }: any) => { const row = throttles.get(where.key); if (!row || row.reservedAt > where.reservedAt.lte) return { count: 0 }; Object.assign(row, data); return { count: 1 }; },
@@ -81,6 +83,20 @@ describe("global registration challenges", () => {
     expect(h.delivery.send).not.toHaveBeenCalled();
     await expect(h.service.register({ challengeId: randomUUID(), code: "123456", password: "Synthetic-password", consentVersion: "old" })).rejects.toThrow("terms have changed");
     expect(h.users().size).toBe(0);
+  });
+  it("isolates Say Ring capabilities and consent records behind the explicit product", async () => {
+    const h = harness();
+    const capabilities = await h.service.capabilities("en", "say-ring");
+    expect(capabilities).toMatchObject({ product: "say-ring", consentVersion: "v1" });
+    expect(capabilities.legal?.userAgreement.path).toContain("/say_ring_user_agreement?");
+    expect(capabilities.legal?.privacyPolicy.path).toContain("/say_ring_privacy_policy?");
+    const challenge = await h.service.requestCode({ channel: "email", identifier: "ring@example.com", purpose: "register", locale: "en", product: "say-ring" });
+    await h.service.register({ challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-only-password!", consentVersion: "v1", locale: "en", product: "say-ring" });
+    expect(h.tx.consentRecord.create.mock.calls.map(([call]: any[]) => call.data)).toEqual([
+      expect.objectContaining({ documentType: "say_ring_user_agreement", version: "v1", source: "global_app_v2:say-ring:en" }),
+      expect.objectContaining({ documentType: "say_ring_privacy_policy", version: "v1", source: "global_app_v2:say-ring:en" }),
+    ]);
+    await expect(h.service.capabilities("en", "other-app")).rejects.toThrow("supported product");
   });
   it("allows reset delivery without registration legal documents, but never without a verified channel", async () => {
     const h = harness(); h.tx.globalLegalDocument.findMany.mockResolvedValue([]);

@@ -35,7 +35,7 @@ function harness() {
   const tickets = new Map<string, any>();
   const challenges = new Map<string, any>();
   const throttles = new Map<string, Date>();
-  const legalRows = ["user_agreement", "privacy_policy"].map(
+  const legalRows = ["user_agreement", "privacy_policy", "say_ring_user_agreement", "say_ring_privacy_policy"].map(
     (documentType) => ({
       documentType,
       version: "legal-v1",
@@ -68,7 +68,7 @@ function harness() {
         publicConfig: {},
       })),
     },
-    globalLegalDocument: { findMany: vi.fn(async () => legalRows) },
+    globalLegalDocument: { findMany: vi.fn(async ({ where }: any) => legalRows.filter(row => where.documentType.in.includes(row.documentType))) },
     globalVerificationThrottle: {
       upsert: vi.fn(async ({ where, create }: any) => {
         if (!throttles.has(where.key)) throttles.set(where.key, create.reservedAt);
@@ -245,6 +245,7 @@ describe("global native WeChat phone binding", () => {
       consentAccepted: true,
       consentVersion: "legal-v1",
       locale: "zh-Hans",
+      product: "say-ring",
     });
     expect(pending).toMatchObject({
       requiresPhoneBinding: true,
@@ -254,11 +255,20 @@ describe("global native WeChat phone binding", () => {
     expect(h.users).toHaveLength(0);
     expect(h.auth.issueSession).not.toHaveBeenCalled();
 
+    await expect(h.service.requestPhoneCode({
+      bindTicket: pending.bindTicket,
+      identifier: "+8613812345678",
+      consentVersion: "legal-v1",
+      locale: "zh-Hans",
+    })).rejects.toMatchObject({ status: 409 });
+    expect(h.delivery.send).not.toHaveBeenCalled();
+
     const challenge: any = await h.service.requestPhoneCode({
       bindTicket: pending.bindTicket,
       identifier: "+8613812345678",
       consentVersion: "legal-v1",
       locale: "zh-Hans",
+      product: "say-ring",
     });
     const delivered = h.delivery.send.mock.calls[0]![0];
     expect(challenge).not.toHaveProperty("code");
@@ -270,6 +280,7 @@ describe("global native WeChat phone binding", () => {
       code: delivered.code,
       consentVersion: "legal-v1",
       locale: "zh-Hans",
+      product: "say-ring",
       wechatProfileProof: pending.wechatProfileProof,
     });
     expect(session.member.id).toBe(h.users[0].id);
@@ -286,6 +297,10 @@ describe("global native WeChat phone binding", () => {
       openId: identity.openId,
     });
     expect(h.tickets.get(sha256(pending.bindTicket)).consumedAt).toBeInstanceOf(Date);
+    expect(h.prisma.consentRecord.upsert.mock.calls.map(([call]: any[]) => call.create)).toEqual([
+      expect.objectContaining({ documentType: "say_ring_user_agreement", source: "global_app_wechat:say-ring:zh-Hans" }),
+      expect.objectContaining({ documentType: "say_ring_privacy_policy", source: "global_app_wechat:say-ring:zh-Hans" }),
+    ]);
 
     const next: any = await h.service.login({
       code: "next-one-time-code",
@@ -294,6 +309,7 @@ describe("global native WeChat phone binding", () => {
       consentAccepted: true,
       consentVersion: "legal-v1",
       locale: "zh-Hans",
+      product: "say-ring",
     });
     expect(next.member.id).toBe(h.users[0].id);
     expect(next).not.toHaveProperty("requiresPhoneBinding");

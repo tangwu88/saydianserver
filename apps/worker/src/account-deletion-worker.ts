@@ -1,8 +1,14 @@
 import { AccountDeletionStatus, Prisma, PrismaClient, UserStatus } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { ObjectStorageDeletion } from "./object-storage-deletion";
+
+type FileDeletion = { delete(objectKeys: string[]): Promise<void> };
 
 export class AccountDeletionWorker {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly fileDeletion: FileDeletion = new ObjectStorageDeletion(prisma),
+  ) {}
 
   async runOnce(): Promise<boolean> {
     const request = await this.prisma.accountDeletionRequest.findFirst({
@@ -19,6 +25,8 @@ export class AccountDeletionWorker {
     });
     if (claimed.count !== 1) return true;
     try {
+      const files = await this.claimOwnedFiles(request.userId);
+      await this.fileDeletion.delete(files.map(file => file.objectKey));
       await this.prisma.$transaction(async (tx) => {
         const userId = request.userId;
         await tx.healthRecord.deleteMany({ where: { userId } });
@@ -69,10 +77,10 @@ export class AccountDeletionWorker {
           where: { userId },
           data: { userId: null, contact: null },
         });
-        await tx.fileObject.updateMany({
-          where: { ownerUserId: userId },
-          data: { ownerUserId: null, status: "DELETION_PENDING" },
+        await tx.fileObject.deleteMany({
+          where: { ownerUserId: userId, status: "DELETION_PENDING", id: { in: files.map(file => file.id) } },
         });
+        await tx.wechatOfficialIdentity.deleteMany({ where: { userId } });
         await tx.user.update({
           where: { id: userId },
           data: anonymizedUserData(userId),
@@ -97,14 +105,30 @@ export class AccountDeletionWorker {
     }
     return true;
   }
+
+  private async claimOwnedFiles(userId: string) {
+    await this.prisma.fileObject.updateMany({
+      where: { ownerUserId: userId },
+      data: { status: "DELETION_PENDING" },
+    });
+    return this.prisma.fileObject.findMany({
+      where: { ownerUserId: userId, status: "DELETION_PENDING" },
+      select: { id: true, objectKey: true },
+      orderBy: { id: "asc" },
+    });
+  }
 }
 
 export function anonymizedUserData(userId: string) {
   const suffix = createHash("sha256").update(userId).digest("hex").slice(0, 12);
   return {
     mobile: null,
+    mobileVerifiedAt: null,
+    email: null,
+    emailVerifiedAt: null,
     wechatUnionId: null,
     wechatOpenId: null,
+    wechatAppOpenId: null,
     passwordHash: null,
     status: UserStatus.DELETED,
     nickname: `已注销用户-${suffix}`,

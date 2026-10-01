@@ -4078,14 +4078,20 @@ export const apiCatalog = {
           "name": "locale",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "国际账号可用能力",
-      "request": "locale可选；仅APP_REALM=global",
-      "response": "{realm,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},login:{email,sms,wechatApp:{enabled,appId,phoneBindingAvailable}},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；微信仅返回公开AppID，不返回AppSecret；verificationRequired=false只表示当前注册暂免验证码",
-      "dependency": "国际独立数据库、已审协议、验证码渠道及微信移动应用配置",
+      "request": "Say Ring明确product=say-ring，省略时为saydian-global；仅APP_REALM=global",
+      "response": "{realm,product,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},login:{email,sms,wechatApp:{enabled,appId,phoneBindingAvailable}},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；Say Ring只返回say_ring_*文档；微信仅返回公开AppID",
+      "dependency": "国际独立数据库、对应产品已审协议、验证码渠道及微信移动应用配置",
       "successStatus": 200,
       "contract": {
         "status": "request-reviewed",
@@ -4096,6 +4102,12 @@ export const apiCatalog = {
           "properties": {
             "realm": {
               "const": "global"
+            },
+            "product": {
+              "enum": [
+                "saydian-global",
+                "say-ring"
+              ]
             },
             "defaultLocale": {
               "const": "en"
@@ -4255,11 +4267,15 @@ export const apiCatalog = {
               ]
             }
           },
-          "required": [],
+          "required": [
+            "realm",
+            "product"
+          ],
           "additionalProperties": true
         },
         "responseExample": {
           "realm": "global",
+          "product": "say-ring",
           "defaultLocale": "en",
           "supportedLocales": [
             "en",
@@ -4311,9 +4327,9 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "国际邮箱/手机号验证码",
-      "request": "{channel:email|sms,identifier,purpose:register|reset_password,locale?}；sms必须E.164",
+      "request": "{channel:email|sms,identifier,purpose:register|reset_password,locale?,product?}；Say Ring必须product=say-ring；sms必须E.164",
       "response": "{challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}；不返回验证码",
-      "dependency": "独立email_otp/sms_global webhook",
+      "dependency": "独立email_otp/sms_global webhook与对应产品已审协议",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -4346,6 +4362,12 @@ export const apiCatalog = {
                 "ja",
                 "ko"
               ]
+            },
+            "product": {
+              "enum": [
+                "saydian-global",
+                "say-ring"
+              ]
             }
           },
           "required": [
@@ -4359,7 +4381,8 @@ export const apiCatalog = {
           "channel": "email",
           "identifier": "user@example.com",
           "purpose": "register",
-          "locale": "en"
+          "locale": "en",
+          "product": "say-ring"
         },
         "responseSchema": {
           "type": "object",
@@ -4414,9 +4437,9 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "国际已验证账号注册",
-      "request": "{challengeId,code,password,nickname?,consentVersion,locale?}；consentVersion必须来自当前已审协议",
+      "request": "{challengeId,code,password,nickname?,consentVersion,locale?,product?}；Say Ring必须product=say-ring，consentVersion必须来自同产品当前已审协议",
       "response": "Session；国际UUID账号，与国内账号不互通",
-      "dependency": "已送达未消费的国际验证码与已发布协议",
+      "dependency": "已送达未消费的国际验证码与对应产品已发布协议",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -4451,6 +4474,12 @@ export const apiCatalog = {
                 "ja",
                 "ko"
               ]
+            },
+            "product": {
+              "enum": [
+                "saydian-global",
+                "say-ring"
+              ]
             }
           },
           "required": [
@@ -4466,7 +4495,8 @@ export const apiCatalog = {
           "code": "000000",
           "password": "<TEST_PASSWORD>",
           "consentVersion": "<PUBLISHED_CONSENT_VERSION>",
-          "locale": "en"
+          "locale": "en",
+          "product": "say-ring"
         },
         "responseSchema": {
           "type": "object",
@@ -4559,9 +4589,9 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "账号注册",
-      "request": "国内环境仍阻止裸密码注册；国际环境仅在GLOBAL_UNVERIFIED_REGISTRATION_ENABLED=true时接受{channel,identifier,password,nickname?,consentVersion,locale?}",
+      "request": "国内环境仍阻止裸密码注册；国际环境仅在GLOBAL_UNVERIFIED_REGISTRATION_ENABLED=true时接受{channel,identifier,password,nickname?,consentVersion,locale?,product?}；Say Ring必须product=say-ring",
       "response": "国际环境签发Session，但联系方式保持未验证；关闭临时开关后未验证会话不可续期",
-      "dependency": "国际独立数据库、已审协议与显式临时开关；需验证联系方式的商城能力仍阻断",
+      "dependency": "国际独立数据库、对应产品已审协议与显式临时开关；需验证联系方式的商城能力仍阻断",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -4597,6 +4627,12 @@ export const apiCatalog = {
                 "ja",
                 "ko"
               ]
+            },
+            "product": {
+              "enum": [
+                "saydian-global",
+                "say-ring"
+              ]
             }
           },
           "required": [
@@ -4612,7 +4648,8 @@ export const apiCatalog = {
           "identifier": "user@example.com",
           "password": "<TEST_PASSWORD>",
           "consentVersion": "<PUBLISHED_CONSENT_VERSION>",
-          "locale": "en"
+          "locale": "en",
+          "product": "say-ring"
         },
         "responseSchema": {
           "type": "object",
@@ -4847,9 +4884,9 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "原生微信授权登录",
-      "request": "{code,state,platform:android/ios/harmony,consentAccepted:true,consentVersion,locale?}；只提交一次性 code，密钥仅在服务端",
+      "request": "{code,state,platform:android/ios/harmony,consentAccepted:true,consentVersion,locale?,product?}；Say Ring必须product=say-ring；只提交一次性 code，密钥仅在服务端",
       "response": "已绑定且已验证手机号返回Session；首次授权返回{requiresPhoneBinding,bindTicket,expiresIn,wechatProfile,wechatProfileProof}，不创建未验证会员",
-      "dependency": "微信开放平台移动应用",
+      "dependency": "微信开放平台移动应用与对应产品已审协议",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -4874,6 +4911,24 @@ export const apiCatalog = {
             },
             "consentVersion": {
               "type": "string"
+            },
+            "locale": {
+              "enum": [
+                "en",
+                "zh-Hans",
+                "zh-Hant",
+                "de",
+                "fr",
+                "es",
+                "ja",
+                "ko"
+              ]
+            },
+            "product": {
+              "enum": [
+                "saydian-global",
+                "say-ring"
+              ]
             }
           },
           "required": [
@@ -4888,9 +4943,11 @@ export const apiCatalog = {
         "requestExample": {
           "code": "<ONE_TIME_WECHAT_CODE>",
           "state": "<OAUTH_STATE>",
-          "platform": "android",
+          "platform": "ios",
           "consentAccepted": true,
-          "consentVersion": "<PUBLISHED_CONSENT_VERSION>"
+          "consentVersion": "<PUBLISHED_CONSENT_VERSION>",
+          "locale": "en",
+          "product": "say-ring"
         },
         "responseSchema": {
           "type": "object",
@@ -4958,7 +5015,7 @@ export const apiCatalog = {
           }
         },
         "contentType": "application/json",
-        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts",
+        "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts; apps/api/src/auth/global-auth.service.ts; apps/api/src/auth/global-legal.ts",
         "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
       }
     },
@@ -4979,9 +5036,9 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "原生微信首次登录申请手机验证码",
-      "request": "{bindTicket,identifier:E.164手机号,consentVersion,locale?}",
+      "request": "{bindTicket,identifier:E.164手机号,consentVersion,locale?,product?}；Say Ring必须product=say-ring",
       "response": "{challengeId,expiresIn,retryAfter,maskedIdentifier}；验证码不回显，票据和手机号共同限频",
-      "dependency": "有效微信绑定票据、已审协议和真实短信渠道",
+      "dependency": "有效微信绑定票据、对应产品已审协议和真实短信渠道",
       "successStatus": 201,
       "contract": {
         "status": "unreviewed",
@@ -5011,8 +5068,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "原生微信首次登录绑定手机号",
-      "request": "{bindTicket,challengeId,code:6位数字,consentVersion,locale?,wechatProfileProof}",
-      "response": "Session；验证码、微信票据和配置均一次性校验；同手机号映射H5现有会员，OpenID/UnionID冲突409且不自动合并",
+      "request": "{bindTicket,challengeId,code:6位数字,consentVersion,locale?,product?,wechatProfileProof}；Say Ring必须product=say-ring",
+      "response": "Session；验证码、微信票据和配置均一次性校验；同手机号映射H5现有会员，OpenID/UnionID冲突409且不自动合并；同意记录写入对应产品文档类型",
       "dependency": "有效微信绑定票据和未消费短信验证码",
       "successStatus": 201,
       "contract": {
@@ -8049,6 +8106,12 @@ export const apiCatalog = {
           "name": "locale",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "raw-or-legacy",
@@ -8228,6 +8291,12 @@ export const apiCatalog = {
               "properties": {
                 "realm": {
                   "const": "global"
+                },
+                "product": {
+                  "enum": [
+                    "saydian-global",
+                    "say-ring"
+                  ]
                 },
                 "consentVersion": {
                   "oneOf": [
@@ -8572,6 +8641,7 @@ export const apiCatalog = {
               },
               "required": [
                 "realm",
+                "product",
                 "consentVersion",
                 "legal",
                 "login",
@@ -9882,6 +9952,12 @@ export const apiCatalog = {
                     "realm": {
                       "const": "global"
                     },
+                    "product": {
+                      "enum": [
+                        "saydian-global",
+                        "say-ring"
+                      ]
+                    },
                     "consentVersion": {
                       "oneOf": [
                         {
@@ -10225,6 +10301,7 @@ export const apiCatalog = {
                   },
                   "required": [
                     "realm",
+                    "product",
                     "consentVersion",
                     "legal",
                     "login",
