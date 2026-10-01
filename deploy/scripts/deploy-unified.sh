@@ -155,10 +155,16 @@ if [[ "$first" == true ]]; then
   cp -p "$gateway" "$backup/gateway.conf"
   cp "$gateway" "$source_dir/gateway.conf"
   node_tool /release/scripts/unify-gateway.mjs /work/gateway.conf /work/gateway-candidate.conf
+  node_tool /release/scripts/unify-gateway.mjs /work/gateway.conf /work/gateway-frozen.conf freeze
+  node_tool /release/scripts/unify-gateway.mjs /work/gateway-candidate.conf /work/gateway-candidate-frozen.conf freeze
   freeze='{"MAINTENANCE_READ_ONLY":"true","BUSINESS_WRITES_PAUSED":"true","MAINTENANCE_ALLOW_MEMBER_AUTH":"false","WORKER_OUTBOUND_PAUSED":"true","CALLBACK_PROCESSING_PAUSED":"true","HEALTH_REPORT_WORKER_ENABLED":"false","JUSHUITAN_OUTBOUND_ENABLED":"false"}'
   jq -n --argjson env "$freeze" '{services:{"global-api":{environment:$env},"global-worker":{environment:$env}}}' > "$source_dir/freeze.json"
   jq -n --argjson env "$freeze" '{services:{api:{environment:$env},worker:{environment:$env}}}' > "$source_dir/domestic-freeze.json"
   changed=true
+  gateway_changed=true
+  cp "$source_dir/gateway-frozen.conf" "$gateway"
+  docker exec saydian-gateway-1 nginx -t
+  docker exec saydian-gateway-1 nginx -s reload
   docker compose -f "$backup/global-live.json" -f "$backup/images.json" stop -t 180 global-worker
   docker compose -f "$backup/domestic-live.json" -f "$backup/domestic-images.json" stop -t 180 worker
   docker compose -f "$backup/global-live.json" -f "$backup/images.json" -f "$source_dir/freeze.json" up -d --no-build --pull never --no-deps global-api
@@ -210,7 +216,7 @@ fi
 wait_ready "$revision"
 if [[ "$first" == true ]]; then
   gateway_changed=true
-  cp "$source_dir/gateway-candidate.conf" "$gateway"
+  cp "$source_dir/gateway-candidate-frozen.conf" "$gateway"
 fi
 docker exec saydian-gateway-1 nginx -t
 docker exec saydian-gateway-1 nginx -s reload
@@ -230,6 +236,8 @@ if [[ "$first" == true ]]; then
   writes_opened=true
   compose up -d --no-build --pull never --no-deps global-api global-worker
   wait_ready "$revision"
+  cp "$source_dir/gateway-candidate.conf" "$gateway"
+  docker exec saydian-gateway-1 nginx -t
   docker exec saydian-gateway-1 nginx -s reload
   public_checks
   jq --arg revision "$revision" --arg evidence "$backup" '.cutoverCompleted=true | .revision=$revision | .evidence=$evidence' "$source_dir/preflight.json" > "$state_dir/accepted.json"

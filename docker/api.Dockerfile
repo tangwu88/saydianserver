@@ -13,7 +13,7 @@ RUN pnpm --filter @saydian/app-contracts build \
  && pnpm --filter @saydian/app-api prisma:generate \
  && pnpm --filter @saydian/commerce-domain build \
  && pnpm --filter @saydian/app-api build \
- && pnpm --filter @saydian/app-api deploy --prod --legacy /runtime/api \
+ && pnpm --filter @saydian/app-api deploy --prod /runtime/api \
  && cd /runtime/api && ./node_modules/.bin/prisma generate
 
 FROM node:24.8.0-alpine AS runtime

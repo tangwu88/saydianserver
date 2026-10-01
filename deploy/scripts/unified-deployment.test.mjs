@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { prepareUnifiedCompose } from "./prepare-unified-compose.mjs";
-import { unifyGateway } from "./unify-gateway.mjs";
+import { unifyGateway, freezeGateway, cutoverCallbackPattern } from "./unify-gateway.mjs";
 import { missingSettings } from "./import-missing-settings.mjs";
 import { verifyCutoverData } from "./verify-cutover-data.mjs";
 import { preflight } from "./unified-preflight.mjs";
@@ -51,6 +51,15 @@ test("gateway aliases preserve request URI/method and unrelated hosts byte for b
   assert(result.includes("location ^~ /global/wechat/sayring/"));
   assert.equal(unifyGateway(result), result);
   assert.throws(() => unifyGateway(before + template));
+  const frozen = freezeGateway(result);
+  assert(frozen.includes('if ($saydian_cutover_block = 1) { return 503; }'));
+  assert(frozen.startsWith("# untouched other host\n") && frozen.endsWith("\n# untouched suffix"));
+  assert.throws(() => freezeGateway(frozen));
+  const callbacks = [...readFileSync(new URL("../../packages/contracts/src/cutover.ts", import.meta.url), "utf8").matchAll(/"(\/api\/[^"\n]+)"/g)].map(match => match[1]);
+  assert.equal(callbacks.length, 7);
+  const allowed = new RegExp(cutoverCallbackPattern);
+  for (const path of callbacks) { assert(allowed.test(path)); assert(allowed.test('/global' + path)); }
+  for (const path of ['/api/v1/member/member/my', '/global/api/saydian-app/v2/devices', callbacks[0] + '/nested', '/untrusted' + callbacks[0]]) assert(!allowed.test(path));
 });
 test("settings import only fills missing download/support values; no permissions or provider enablement", () => {
   const source = [{ key: "app_update", value: { name: "a'b" }, public: true, updatedAt: "2026-10-01T00:00:00Z" }, { key: "support", value: {}, public: true, updatedAt: "2026-10-01T00:00:00Z" }];

@@ -86,10 +86,10 @@ describe("MaintenanceMiddleware", () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
-  it("allows verified callback receipt, but not similarly named callback paths", () => {
+  it.each(["wechat/notify", "wechat/app/notify", "wechat/app/refund-notify", "alipay/app/notify"])("allows verified callback receipt %s, but not similarly named callback paths", (callback) => {
     process.env.MAINTENANCE_READ_ONLY = "true";
     const next = vi.fn();
-    new MaintenanceMiddleware().use(request("/", "/api/saydian-app/v2/billing/payments/wechat/notify"), {} as Response, next);
+    new MaintenanceMiddleware().use(request("/", `/api/saydian-app/v2/billing/payments/${callback}`), {} as Response, next);
     expect(next).toHaveBeenCalledOnce();
     const status = vi.fn(() => ({ json: vi.fn() }));
     new MaintenanceMiddleware().use(request("/", "/unknown/payments/wechat/notify"), { status } as unknown as Response, next);

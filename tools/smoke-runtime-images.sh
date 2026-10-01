@@ -6,7 +6,9 @@ prefix=ghcr.io/tangwu88/saydianserver
 api_container=saydian-ci-api-$revision
 worker_container=saydian-ci-worker-$revision
 admin_container=saydian-ci-admin-$revision
-cleanup() { docker rm -f "$api_container" "$worker_container" "$admin_container" >/dev/null 2>&1 || true; }
+gateway_container=saydian-ci-gateway-$revision
+gateway_config=$(mktemp)
+cleanup() { docker rm -f "$api_container" "$worker_container" "$admin_container" "$gateway_container" >/dev/null 2>&1 || true; rm -f -- "$gateway_config"; }
 trap cleanup EXIT
 docker run -d --name "$api_container" --network host \
   -e NODE_ENV=production -e PORT=18080 -e PUBLIC_BASE_URL=https://app.saydian.cn \
@@ -52,6 +54,30 @@ console.log('Runtime image: canonical and legacy login/member/device/health/orde
 NODE
 for path in /admin/ /down /say-ring /saidian-mall/ /global/saidian-mall/; do
   curl -fsS "http://127.0.0.1:18081$path" | grep -qi '<html'
+done
+# Exercise the temporary gateway freeze in real Nginx, with a synthetic handler
+# instead of any business service or payment provider.
+node --input-type=module - "$gateway_config" <<'NODE'
+import {writeFileSync} from 'node:fs';
+import {freezeGateway} from './deploy/scripts/unify-gateway.mjs';
+const server = `# BEGIN SAYDIAN APP HTTPS app.saydian.cn
+server { listen 8080; server_name app.saydian.cn; location / { return 200 'synthetic'; } }
+# END SAYDIAN APP HTTPS app.saydian.cn`;
+writeFileSync(process.argv[2], 'pid /tmp/nginx.pid; error_log /dev/stderr; events {} http { access_log off; ' + freezeGateway(server) + '\n}');
+NODE
+chmod 644 "$gateway_config"
+docker run -d --name "$gateway_container" -p 18082:8080 -v "$gateway_config:/tmp/freeze.conf:ro" "$prefix-admin:sha-$revision" -c /tmp/freeze.conf -g 'daemon off;'
+for _attempt in {1..15}; do
+  if curl -fsS http://127.0.0.1:18082/health/ready >/dev/null; then break; fi
+  sleep 1
+done
+for path in /admin/ /down /health/ready /global/health/ready /api/saydian-app/v2/billing/payments/wechat/notify /global/api/saydian-app/v2/billing/payments/wechat/app/notify; do
+  [[ $(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:18082$path") == 200 ]]
+done
+for method in GET POST; do
+  for path in /api/v1/member/member/my /global/api/saydian-app/v2/devices /api/saydian-app/v2/billing/payments/wechat/notify/nested; do
+    [[ $(curl -sS -X "$method" -o /dev/null -w '%{http_code}' "http://127.0.0.1:18082$path") == 503 ]]
+  done
 done
 for container in "$api_container" "$worker_container" "$admin_container"; do
   [[ $(docker inspect -f '{{.State.Running}}' "$container") == true ]]
