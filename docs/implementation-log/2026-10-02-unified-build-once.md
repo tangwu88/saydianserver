@@ -88,3 +88,23 @@ main `ba85f5e` 的 CI `36906847125` 全部通过，三镜像 runtime ID 与 regi
 回退后的容器 Compose 标签指向本次私有备份，因此首次重试增加严格恢复来源校验：只接受同一备份目录的原 global-live/images 文件组合，必须有成功恢复证据且固定 image 与当前运行 image 相同。原生产配置的白名单不扩大，数据库/密钥/原开关仍从实际运行配置保留。
 
 实际回读确认原 API 的维护、业务写入暂停、Worker 暂停、回调暂停四项均恢复为原有 false，`writes-opened.json` 与 `accepted.json` 均不存在。更新旧工具断言以识别携带退出码/行号的 ERR trap 后，31 项工具/部署测试、H5 测试、类型、全量单测、构建、ShellCheck、actionlint 与 diff 全部通过；生产下一次切换仍待验收。
+
+## 首次切换验收完成
+
+提交 `ee2d7f860d602b717a4230453b6fc8a77abba1da` 的 CI `36909952400` 全部成功，生产任务 `36911336372` 于 2026-10-02 03:09（北京时间）成功。三个镜像从该 CI 原清单导入并核对 runtime ID，无服务器构建。
+
+预装约 4 分 36 秒；两库预演及最终停写后隔离恢复均约 5 秒。停写网关于 19:07:55 UTC 生效，19:09:01 恢复，窗口约 66 秒。容器重建期间探针曾短暂返回非 JSON；随后双地址均为 200/ready/`ee2d7f8`，未跳过失败检测。
+
+本次 21 份 migration 已全部完成，无新增待执行项。数据核验输出 `Unchanged member identities, credentials, business records, permissions and provider settings verified.`；切换快照 User=24、HealthRecord=3323、DeviceBinding=3、CommerceOrder=28、PaymentIntent=26、FileObject=1。订单数以本次快照 28 为准，不采用原计划的旧值 25。
+
+私有证据位于 `/opt/saydianapp-server/deploy/unified/backups/20261001T190742Z-ee2d7f860d60-14220`。服务器回读 `accepted.json` 为已验收；原四项暂停/维护值均恢复 false。旧国内三个应用正常停止，PostgreSQL/Redis/MinIO/原备份仍在，未执行数据库回灌或清理旧卷；切换后磁盘约剩 17 GB。
+
+公开 `/admin/`、`/down`、`/say-ring`、新旧商城页面均返回 200 HTML；后台登录页显示“赛电 App 管理后台”。下载清单保持已有版本及元数据。新旧接口对同一会员的登录/设备/健康/订单一致性已在真实 CI 运行镜像验证，但本次没有借用生产会员身份登录或执行真实支付。原已登录后台标签连接超时，保留其可能未保存的表单，未强制刷新或读取会话令牌。
+
+公网完整下载校验通过：Android 64,661,988 字节、SHA-256 `b419c738d219c940544392a0013aa8c3d703b075c2a12fce19b38386eaf025aa`；HarmonyOS 9,394,620 字节、SHA-256 `1efe85575a9f79ecebd373fd402704a212db3503d01bb606b6ced661c98d0795`。二者 Range `bytes=0-1023` 均为 206 且 Content-Range/长度正确。浏览器下载页三端正常，iPhone 待开放；Say Ring 新旧地址清单一致。临时核查脚本最初误读 `platforms`，按实际 `releases[].destination` 修正后完成校验，生产配置未改。
+
+已有 Say Ring Android 市场链接仍为 `https://www.baidu.com/`，本次仅保留原配置，不将它称为正式应用市场链接；真实商店地址仍需产品方确认后通过后台更新。未在此次服务合并中发布或激活未经审核的法律文档。
+
+首次验收后开启 `AUTO_DEPLOY_ENABLED=true`，保留 `PRODUCTION_IMAGE_TRANSPORT=ssh`。本次交接文档提交将用于验证日常自动入口；须以该提交的 CI 内自动部署 job 与最新双地址 revision 作为最终结果，不另造“已部署”的静态文档 SHA。
+
+交接更新提交前，重新串行通过 `pnpm api:docs:check`、`pnpm tools:test`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`actionlint`、`git diff --check`；仅改动上述交接、运维和实施日志文档。

@@ -61,4 +61,10 @@ receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`�
 
 本次实施从 main `61510db9d1ce4c4c2ff0dea5b909bf2c20c119a1` 合并国际分支 `6ea9dd9de91c3f27a452efc1a23ad2f77e88a1b5`，保留设备连接、原始上报、会员设备、健康日汇总和 Say Ring 法律/支付配置。
 
-本文件记录实现方式，不是上线证明。上线完成必须同时具备 Actions 成功、两条生产 health 的相同 revision、实际功能验收和服务器私有验收记录。实施进展见本轮日志；未满足前保持“待验收”。
+2026-10-02 03:09（北京时间）首次切换验收完成，提交 `ee2d7f860d602b717a4230453b6fc8a77abba1da`。[CI 36909952400](https://github.com/tangwu88/saydianserver/actions/runs/36909952400) 与[生产任务 36911336372](https://github.com/tangwu88/saydianserver/actions/runs/36911336372)均成功；双地址 health 返回同一 revision，服务器 `accepted.json` 为 `cutoverCompleted=true`。
+
+两库演练及停写后再次恢复各耗时约 5 秒；本次网关停写窗口约 66 秒（19:07:55–19:09:01 UTC）。全表摘要校验通过，原会员编号、凭据、业务记录、权限与供应商配置保持一致。原四项暂停/维护开关均恢复为 false；旧国内应用停止，旧数据基础设施不删除。该耗时只代表本次现场，不是未来发布时长保证。
+
+仓库已启用 `AUTO_DEPLOY_ENABLED=true`、`PRODUCTION_IMAGE_TRANSPORT=ssh`。日常修改仅推送 main；CI 成功后调用同一部署流程，不再勾选 `first_cutover`。每次发布必须同时核对 Actions、双地址线上 revision 和必要功能回归；首次切换 SHA 不代表永远最新版本。
+
+首次私有证据目录：`/opt/saydianapp-server/deploy/unified/backups/20261001T190742Z-ee2d7f860d60-14220`。详细验收与未验证项见本轮日志；真实 App 登录、支付及供应商联调需要对应客户端/渠道验收，不能由合成 CI 夹具替代。
