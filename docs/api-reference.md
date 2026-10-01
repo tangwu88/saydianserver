@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **352 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **353 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -230,7 +230,7 @@
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
 | `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503；语言指令不改变健康安全边界 |
 | `GET /api/saydian-app/v2/devices` | 已绑定设备 | member | 无请求体 | Device[]；只含未解绑设备 | 核心服务 |
-| `POST /api/saydian-app/v2/devices` | 绑定设备快照 | member | {deviceId/hardwareId,vendor,model,displayName/name,firmware?,capabilities?:string[],syncCursor?} | Device；不是服务端蓝牙连接 | 核心服务 |
+| `POST /api/saydian-app/v2/devices` | 上报设备连接 | member | {deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?}；macAddress仅接受标准 MAC，iOS UUID 不可冒充 | Device；更新最近连接并记录一条连接历史；不是服务端蓝牙连接 | 核心服务 |
 | `PATCH /api/saydian-app/v2/devices/:id/capabilities` | 更新设备能力及游标 | member | path:id；{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID | Device | 核心服务 |
 | `DELETE /api/saydian-app/v2/devices/:id` | 解绑设备 | member | path:id；id=绑定记录 UUID | {unbound:true}；保留历史健康数据 | 核心服务 |
 | `GET /api/saydian-app/v2/health/capabilities` | 健康同步能力 | member | 无请求体 | {dailySummaryVersions:true,dailySummaryVersion:1}；只表示服务端支持日汇总版本折叠，与普通设备能力无关 | 核心服务 |
@@ -271,7 +271,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
 
-## 管理后台接口（105）
+## 管理后台接口（106）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -293,7 +293,8 @@
 | `GET /api/saydian-app/admin/v1/members/:id/health-summary` | 会员健康数量摘要 | admin | path:id；id=会员 UUID | 按指标数量与首末采集时间 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/care` | 后台关爱关系 | admin | 无请求体 | 最多500条，双方昵称和指标权限；尚无分页 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/devices` | 后台设备快照 | admin | 无请求体 | 最多500条；尚无分页 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/devices` | 后台设备快照 | admin | 无请求体 | 最多500条；含会员编号、昵称、蓝牙名称、型号和客户端确认的 MAC；尚无分页 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/devices/:id/connections` | 设备连接详情 | admin | path:id；id=设备绑定 UUID | 当前设备快照与最新200条成功连接上报；历史从本功能上线后开始 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/feedback` | 反馈工单 | admin | query:status?；status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选 | 最多500条；含会员编号、昵称、问题内容、处理状态以及已发送给会员的客服回复 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/feedback/:id` | 更新反馈状态并回复会员 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；{status,assignedTo?,replyContent?:2–2000字}；回复内容非空时记录当前管理员和回复时间 | 反馈记录；会员端只可读取自己的反馈及回复，不返回后台管理员身份 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/articles` | 后台文章含草稿 | admin | 无请求体 | 最多500条，含分类 | 核心服务 |

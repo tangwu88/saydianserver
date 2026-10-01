@@ -72,7 +72,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     sayRingDownloadEditorToManifest,
     sayRingDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -116,12 +116,49 @@ describe("international member admin list", () => {
   it("keeps device columns readable when no connection has been reported yet", async () => {
     const h = harness();
     h.route.params.resource = "devices";
-    expect(h.columns.value).toEqual(["memberNo", "memberNickname", "displayName", "vendor", "model", "firmware", "capabilities", "boundAt", "lastSeenAt", "status"]);
+    expect(h.columns.value).toEqual(["memberNo", "memberNickname", "bluetoothName", "model", "macAddress", "firmware", "lastSeenAt", "status"]);
     await h.load();
     expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/devices", { params: {} });
-    expect(h.sfc).toContain("原始设备标识仅按会员作用域单向哈希保存");
-    expect(h.sfc).toContain("resource === 'devices' && column === 'capabilities'");
+    expect(h.sfc).toContain("MAC 仅在设备提供真实地址时显示");
+    expect(h.sfc).toContain("查看详情");
     expect(h.sfc).toContain("resource === 'devices' && column === 'status'");
+  });
+
+  it("loads one device's newest connection history into the detail dialog", async () => {
+    const h = harness();
+    h.api.get.mockResolvedValueOnce({
+      data: {
+        data: {
+          device: {
+            id: "00000000-0000-4000-8000-000000000001",
+            memberNo: "13",
+            memberNickname: "Saydian user",
+            bluetoothName: "SD-Watch-W9S",
+            model: "W9S",
+            macAddress: "AA:BB:CC:DD:EE:FF",
+          },
+          connections: [
+            {
+              id: "00000000-0000-4000-8000-000000000002",
+              connectedAt: "2026-10-01T03:00:00.000Z",
+              bluetoothName: "SD-Watch-W9S",
+              model: "W9S",
+              macAddress: "AA:BB:CC:DD:EE:FF",
+            },
+          ],
+        },
+      },
+    });
+
+    await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+
+    expect(h.api.get).toHaveBeenCalledWith(
+      "/devices/00000000-0000-4000-8000-000000000001/connections",
+    );
+    expect(h.deviceDetailVisible.value).toBe(true);
+    expect(h.deviceDetail.value.memberNo).toBe("13");
+    expect(h.deviceConnections.value).toHaveLength(1);
+    expect(h.localDateTime("not-a-date")).toBe("—");
   });
 
   it("searches and pages on the server while preserving zero counts and missing values", async () => {

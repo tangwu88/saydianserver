@@ -745,9 +745,11 @@ export class AdminService {
   async devices() {
     const rows = await this.prisma.deviceBinding.findMany({
       select: {
+        id: true,
         vendor: true,
         model: true,
         displayName: true,
+        macAddress: true,
         firmware: true,
         capabilities: true,
         boundAt: true,
@@ -759,11 +761,13 @@ export class AdminService {
       take: 500,
     });
     return rows.map((row) => ({
+      id: row.id,
       memberNo: String(row.user.compatibilityId),
       memberNickname: row.user.nickname ?? "未填写昵称",
-      displayName: row.displayName,
+      bluetoothName: row.displayName,
       vendor: row.vendor,
       model: row.model,
+      macAddress: row.macAddress,
       firmware: row.firmware,
       capabilities: Array.isArray(row.capabilities)
         ? row.capabilities.filter((capability): capability is string => typeof capability === "string")
@@ -772,6 +776,63 @@ export class AdminService {
       lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
       status: row.unboundAt ? "UNBOUND" : "BOUND",
     }));
+  }
+
+  async deviceConnections(id: string) {
+    if (!isUuid(id)) throw new BadRequestException("设备编号无效");
+    const row = await this.prisma.deviceBinding.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        vendor: true,
+        model: true,
+        displayName: true,
+        macAddress: true,
+        firmware: true,
+        boundAt: true,
+        lastSeenAt: true,
+        unboundAt: true,
+        user: { select: { compatibilityId: true, nickname: true } },
+        connectionEvents: {
+          select: {
+            id: true,
+            connectedAt: true,
+            vendor: true,
+            model: true,
+            displayName: true,
+            macAddress: true,
+            firmware: true,
+          },
+          orderBy: { connectedAt: "desc" },
+          take: 200,
+        },
+      },
+    });
+    if (!row) throw new NotFoundException("设备不存在");
+    return {
+      device: {
+        id: row.id,
+        memberNo: String(row.user.compatibilityId),
+        memberNickname: row.user.nickname ?? "未填写昵称",
+        bluetoothName: row.displayName,
+        vendor: row.vendor,
+        model: row.model,
+        macAddress: row.macAddress,
+        firmware: row.firmware,
+        boundAt: row.boundAt.toISOString(),
+        lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+        status: row.unboundAt ? "UNBOUND" : "BOUND",
+      },
+      connections: row.connectionEvents.map((event) => ({
+        id: event.id,
+        connectedAt: event.connectedAt.toISOString(),
+        bluetoothName: event.displayName,
+        vendor: event.vendor,
+        model: event.model,
+        macAddress: event.macAddress,
+        firmware: event.firmware,
+      })),
+    };
   }
 
   async feedback(status?: string) {

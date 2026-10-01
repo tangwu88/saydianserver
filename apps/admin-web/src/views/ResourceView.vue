@@ -52,6 +52,10 @@ const healthReportRow = ref<Row | null>(null);
 const feedbackVisible = ref(false);
 const feedbackSaving = ref(false);
 const feedbackForm = ref<Row>({});
+const deviceDetailVisible = ref(false);
+const deviceDetailLoading = ref(false);
+const deviceDetail = ref<Row>({});
+const deviceConnections = ref<Row[]>([]);
 const packageUploading = ref<Record<string, boolean>>({});
 const downloadPlatformOptions = [
   { key: "android", label: "Android", packageLabel: "APK" },
@@ -165,6 +169,9 @@ const fieldLabels: Record<string, string> = {
   state: "配置状态",
   username: "账号",
   displayName: "显示名称",
+  bluetoothName: "蓝牙名称",
+  macAddress: "MAC 地址",
+  connectedAt: "连接时间",
   role: "角色",
   eventId: "事件编号",
   name: "名称",
@@ -240,7 +247,7 @@ const columns = computed(() => {
   if (resource.value === "feedback") return ["memberNo", "memberNickname", "category", "content", "status", "replyContent", "createdAt"];
   if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
   if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
-  if (resource.value === "devices") return ["memberNo", "memberNickname", "displayName", "vendor", "model", "firmware", "capabilities", "boundAt", "lastSeenAt", "status"];
+  if (resource.value === "devices") return ["memberNo", "memberNickname", "bluetoothName", "model", "macAddress", "firmware", "lastSeenAt", "status"];
   const first = rows.value[0];
   return first
     ? Object.keys(first)
@@ -353,40 +360,33 @@ function render(value: unknown): string {
   return String(value);
 }
 
-function deviceCapabilities(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.map((capability) => String(capability ?? "").trim()).filter(Boolean)
-    : [];
-}
-
-function deviceCapabilityLabel(value: string): string {
-  const labels: Record<string, string> = {
-    "metric:heart_rate": "心率",
-    "metric:blood_oxygen": "血氧",
-    "metric:blood_pressure": "血压",
-    "metric:sleep": "睡眠",
-    "metric:steps": "步数",
-    "metric:calories": "卡路里",
-    "metric:distance": "距离",
-    "metric:temperature": "体温",
-    "metric:ecg": "心电",
-    "feature:watch_faces": "表盘中心",
-    "feature:photo_watch_face": "照片表盘",
-    "feature:find_watch": "查找设备",
-    "feature:camera": "相机遥控",
-    "feature:phone_calls": "电话",
-    "feature:notifications": "消息通知",
-    "feature:alarms": "闹钟",
-    "support:sport_pause": "运动暂停",
-    "support:background_sync": "后台同步",
-    "support:ota": "固件升级",
-  };
-  return labels[value] || value;
-}
-
 function pointMoney(value: unknown): string {
   const cents = Number(value);
   return Number.isSafeInteger(cents) ? `¥${(cents / 100).toFixed(2)}` : "未开通";
+}
+
+function localDateTime(value: unknown): string {
+  const date = new Date(String(value ?? ""));
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+let deviceDetailRequestId = 0;
+async function openDeviceDetails(row: Row): Promise<void> {
+  const requestId = ++deviceDetailRequestId;
+  deviceDetailVisible.value = true;
+  deviceDetailLoading.value = true;
+  deviceDetail.value = { ...row };
+  deviceConnections.value = [];
+  try {
+    const data = responseData<Row>(await api.get(`/devices/${encodeURIComponent(String(row.id))}/connections`));
+    if (requestId !== deviceDetailRequestId || !deviceDetailVisible.value) return;
+    deviceDetail.value = data.device ?? row;
+    deviceConnections.value = Array.isArray(data.connections) ? data.connections : [];
+  } catch (error) {
+    if (requestId === deviceDetailRequestId) ElMessage.error(readableError(error));
+  } finally {
+    if (requestId === deviceDetailRequestId) deviceDetailLoading.value = false;
+  }
 }
 
 function adjustmentKey(): string {
@@ -1151,6 +1151,7 @@ function resetResourceView(): void {
   ++loadRequestId;
   ++healthRequestId;
   ++editorRequestId;
+  ++deviceDetailRequestId;
   articleCategoriesReady.value = false;
   articleCategoryEditorResource.value = "";
   articleCategoryOptions.value = [];
@@ -1163,6 +1164,10 @@ function resetResourceView(): void {
   commerceStatus.value = "";
   currentPage.value = 1;
   dialogVisible.value = false;
+  deviceDetailVisible.value = false;
+  deviceDetailLoading.value = false;
+  deviceDetail.value = {};
+  deviceConnections.value = [];
   detailRows.value = [];
   healthMember.value = {};
   form.value = {};
@@ -1195,7 +1200,7 @@ onBeforeUnmount(() => {
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
           <el-button v-if="createable" @click="openCreate">新增</el-button>
-          <span class="muted">{{ resource === "devices" ? "设备由国际 App 在连接就绪时上报；“最近连接”表示最近一次客户端成功上报。原始设备标识仅按会员作用域单向哈希保存，后台不展示 MAC 或序列号。" : "会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。" }}</span>
+          <span class="muted">{{ resource === "devices" ? "连接时间由 App 成功上报；MAC 仅在设备提供真实地址时显示，iPhone 可能为空。" : "会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。" }}</span>
         </div>
         <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
         <el-table v-if="!loadError" v-loading="loading" :data="rows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
@@ -1224,10 +1229,6 @@ onBeforeUnmount(() => {
                   {{ contactVerificationLabel(scope.row, column === "mobile" ? "mobile" : "email") }}
                 </el-tag>
               </div>
-              <div v-else-if="resource === 'devices' && column === 'capabilities'" style="display: flex; gap: 6px; flex-wrap: wrap">
-                <el-tag v-for="capability in deviceCapabilities(scope.row[column])" :key="capability" size="small" effect="plain">{{ deviceCapabilityLabel(capability) }}</el-tag>
-                <span v-if="!deviceCapabilities(scope.row[column]).length" class="muted">未上报</span>
-              </div>
               <el-tag v-else-if="resource === 'devices' && column === 'status'" size="small" :type="scope.row.status === 'BOUND' ? 'success' : 'info'">{{ scope.row.status === "BOUND" ? "已绑定" : scope.row.status === "UNBOUND" ? "已解绑" : render(scope.row.status) }}</el-tag>
               <template v-else>{{ render(scope.row[column]) }}</template>
             </template>
@@ -1243,6 +1244,11 @@ onBeforeUnmount(() => {
               <el-button size="small" type="primary" plain @click="openFeedback(scope.row)">{{ scope.row.replyContent ? "查看 / 回复" : "处理 / 回复" }}</el-button>
             </template>
           </el-table-column>
+          <el-table-column v-if="resource === 'devices'" label="操作" width="100" fixed="right">
+            <template #default="scope">
+              <el-button size="small" type="primary" plain @click="openDeviceDetails(scope.row)">查看详情</el-button>
+            </template>
+          </el-table-column>
           <el-table-column v-if="editable || (canWrite && resource === 'health-reports')" label="操作" min-width="110" fixed="right">
             <template #default="scope">
               <el-button v-if="editable" size="small" :disabled="resource === 'members' && ['DELETION_PENDING', 'DELETED'].includes(scope.row.status)" @click="openEdit(scope.row)">编辑</el-button>
@@ -1255,6 +1261,30 @@ onBeforeUnmount(() => {
         <el-pagination v-if="resource === 'members' && !loadError" :current-page="currentPage" :page-size="memberPageSize" :total="Number(resourceMeta.total ?? 0)" :disabled="loading" layout="total, prev, pager, next" style="margin-top: 16px" @current-change="changeCommercePage" />
       </template>
     </div>
+
+    <el-dialog v-model="deviceDetailVisible" title="设备连接详情" width="min(920px, 94vw)" destroy-on-close @closed="++deviceDetailRequestId">
+      <div v-loading="deviceDetailLoading">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="会员">{{ deviceDetail.memberNo || "—" }} · {{ deviceDetail.memberNickname || "未填写昵称" }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ deviceDetail.status === "BOUND" ? "已绑定" : deviceDetail.status === "UNBOUND" ? "已解绑" : "—" }}</el-descriptions-item>
+          <el-descriptions-item label="蓝牙名称">{{ deviceDetail.bluetoothName || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="设备型号">{{ deviceDetail.model || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="MAC 地址">{{ deviceDetail.macAddress || "未上报" }}</el-descriptions-item>
+          <el-descriptions-item label="固件版本">{{ deviceDetail.firmware || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="绑定时间">{{ localDateTime(deviceDetail.boundAt) }}</el-descriptions-item>
+          <el-descriptions-item label="最近连接">{{ localDateTime(deviceDetail.lastSeenAt) }}</el-descriptions-item>
+        </el-descriptions>
+        <h3>连接记录</h3>
+        <el-table :data="deviceConnections" border stripe empty-text="暂无历史；记录从本功能上线后开始">
+          <el-table-column label="连接时间" min-width="190"><template #default="scope">{{ localDateTime(scope.row.connectedAt) }}</template></el-table-column>
+          <el-table-column prop="bluetoothName" label="蓝牙名称" min-width="150" />
+          <el-table-column prop="model" label="设备型号" min-width="120" />
+          <el-table-column prop="macAddress" label="MAC 地址" min-width="160"><template #default="scope">{{ scope.row.macAddress || "未上报" }}</template></el-table-column>
+          <el-table-column prop="firmware" label="固件版本" min-width="110" />
+        </el-table>
+      </div>
+      <template #footer><el-button @click="deviceDetailVisible = false">关闭</el-button></template>
+    </el-dialog>
 
     <el-dialog v-model="shipmentVisible" title="本地商品分包发货" width="min(860px, 94vw)" :close-on-click-modal="false" destroy-on-close>
       <el-alert v-if="shipmentPreview.unavailableReason" :title="shipmentPreview.unavailableReason" type="warning" :closable="false" />

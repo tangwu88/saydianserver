@@ -206,6 +206,11 @@ export class AdminController {
     return this.admin.devices();
   }
 
+  @Get("devices/:id/connections")
+  deviceConnections(@Param("id") id: string) {
+    return this.admin.deviceConnections(id);
+  }
+
   @Get("feedback")
   feedback(@Query("status") status?: string) {
     return this.admin.feedback(status);

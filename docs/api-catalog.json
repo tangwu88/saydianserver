@@ -642,7 +642,39 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "后台设备快照",
       "request": "无请求体",
-      "response": "最多500条；尚无分页",
+      "response": "最多500条；含会员编号、昵称、蓝牙名称、型号和客户端确认的 MAC；尚无分页",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.deviceConnections",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/devices/:id/connections",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "设备连接详情",
+      "request": "id=设备绑定 UUID",
+      "response": "当前设备快照与最新200条成功连接上报；历史从本功能上线后开始",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -19494,9 +19526,9 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/devices/devices.controller.ts",
-      "summary": "绑定设备快照",
-      "request": "{deviceId/hardwareId,vendor,model,displayName/name,firmware?,capabilities?:string[],syncCursor?}",
-      "response": "Device；不是服务端蓝牙连接",
+      "summary": "上报设备连接",
+      "request": "{deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?}；macAddress仅接受标准 MAC，iOS UUID 不可冒充",
+      "response": "Device；更新最近连接并记录一条连接历史；不是服务端蓝牙连接",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
