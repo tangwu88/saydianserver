@@ -340,6 +340,7 @@ model CommerceOAuthState {
   stateHash     String    @id
   codeChallenge String
   appId         String
+  product       String    @default("saydian-global")
   returnTo      String
   referralCode  String?
   expiresAt     DateTime
@@ -352,6 +353,7 @@ model CommerceOAuthState {
 model CommerceWechatBindTicket {
   tokenHash    String    @id
   appId        String
+  product      String    @default("saydian-global")
   openId       String
   unionId      String?
   returnTo     String

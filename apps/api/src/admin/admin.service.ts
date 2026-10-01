@@ -1025,7 +1025,7 @@ export class AdminService {
       const locale = globalLocale(body.locale);
       const reviewed = body.reviewed === true;
       if (data.active && !reviewed) throw new BadRequestException("Review the global document before publishing it.");
-      if (!["user_agreement", "privacy_policy", "health_ai_analysis"].includes(data.documentType)) throw new BadRequestException("Unsupported global legal document type.");
+      if (!["user_agreement", "privacy_policy", "say_ring_user_agreement", "say_ring_privacy_policy", "health_ai_analysis"].includes(data.documentType)) throw new BadRequestException("Unsupported global legal document type.");
       return this.prisma.$transaction(async (tx) => {
         if (data.active)
           await tx.globalLegalDocument.updateMany({
