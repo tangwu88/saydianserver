@@ -148,6 +148,11 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-saydian_app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-saydian_app}?schema=public
       REDIS_URL: redis://redis:6379
       INTEGRATION_MASTER_KEY: ${INTEGRATION_MASTER_KEY:-}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: saydian-app-private
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-saydian-local}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
       PUSH_PROVIDER: ${PUSH_PROVIDER:-mock}
       JPUSH_APP_KEY: ${JPUSH_APP_KEY:-}
       JPUSH_MASTER_SECRET: ${JPUSH_MASTER_SECRET:-}

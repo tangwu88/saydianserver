@@ -55,7 +55,7 @@ V1 成功 `{"code":200,"message":"OK","data":...}`。V1 控制器错误常为 **
 
 短信注册使用 `/auth/register-with-sms`。`/auth/register` 和 V1 无 code 注册保留了旧兼容行为，手机号所有权尚未验证，不能与自动按手机号关联商城身份一起直接开放生产，详见缺陷 P0-02。
 
-原生 App 微信授权使用 `POST /api/saydian-app/v2/auth/wechat-login`，JSON 传入 `{code,state,platform,consentAccepted:true,consentVersion,locale?}`。国际版已绑定且手机号已验证的微信直接返回 Session；首次授权只返回一次性 `bindTicket`，再调用 `/auth/wechat-phone-code` 发送手机验证码和 `/auth/wechat-bind-phone` 完成绑定。旧 App 兼容入口为 `POST /api/v1/site/wechat-login`，表单传入 `code`、`state`、`platform=android/ios/harmony`、`group=app`、`consent_accepted=1` 和 `consent_version`。
+原生 App 微信授权使用 `POST /api/saydian-app/v2/auth/wechat-login`，JSON 传入 `{code,state,platform,consentAccepted:true,consentVersion,locale?,product?}`。Say Ring 必须在能力查询及微信登录、手机验证码、绑定请求中持续传 `product:"say-ring"`；省略时仍为国际主 App。国际版已绑定且手机号已验证的微信直接返回 Session；首次授权只返回一次性 `bindTicket`，再调用 `/auth/wechat-phone-code` 发送手机验证码和 `/auth/wechat-bind-phone` 完成绑定。旧 App 兼容入口为 `POST /api/v1/site/wechat-login`，表单传入 `code`、`state`、`platform=android/ios/harmony`、`group=app`、`consent_accepted=1` 和 `consent_version`。
 
 - 客户端只能提交微信返回的一次性 code 和本次授权 state；AppSecret、供应商 Access Token 不得进入 App、Git、URL 或日志。
 - 服务端独立使用 `wechat_login` 集成配置完成 code 兑换；配置缺失、code 失效或微信不可用时返回真实错误，不创建会话。

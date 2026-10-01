@@ -26,7 +26,7 @@ export class AuthController {
   ) {}
 
   @Get("capabilities")
-  capabilities(@Query("locale") locale?: string) { return this.globalAuth.capabilities(locale); }
+  capabilities(@Query("locale") locale?: string, @Query("product") product?: string) { return this.globalAuth.capabilities(locale, product); }
 
   @Post("verification-code")
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
