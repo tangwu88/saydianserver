@@ -1,11 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { prepareUnifiedCompose } from "./prepare-unified-compose.mjs";
+import { prepareUnifiedCompose, validateComposeSources } from "./prepare-unified-compose.mjs";
 import { unifyGateway, freezeGateway, cutoverCallbackPattern } from "./unify-gateway.mjs";
 import { missingSettings } from "./import-missing-settings.mjs";
 import { verifyCutoverData } from "./verify-cutover-data.mjs";
 import { preflight } from "./unified-preflight.mjs";
+
+test("first-cutover retry only trusts the verified rollback snapshot of the running image", () => {
+  const original = `/opt/saydian-global/releases/${"a".repeat(40)}/deploy/global/compose.json`;
+  validateComposeSources(original, "image", () => { throw Error("unexpected read"); });
+  validateComposeSources(original + ",/opt/saydian-global/private/payment-live.override.json", "image");
+  assert.throws(() => validateComposeSources(original + ",/tmp/unreviewed.json", "image"));
+  const directory = `/opt/saydianapp-server/deploy/unified/backups/20261001T183956Z-${"a".repeat(12)}-123`;
+  const files = `${directory}/global-live.json,${directory}/images.json`;
+  const evidence = file => file.endsWith("/images.json") ? { services: { "global-api": { image: "image" } } } : { verified: true };
+  validateComposeSources(files, "image", evidence);
+  assert.throws(() => validateComposeSources(files, "different-image", evidence));
+  assert.throws(() => validateComposeSources(files, "image", () => ({ verified: false })));
+  assert.throws(() => validateComposeSources(files.replace("/images.json", "/../images.json"), "image", evidence));
+  assert.throws(() => validateComposeSources(files + ",/tmp/override.json", "image", evidence));
+});
 
 test("disk gate reserves image, restore, backup and 5 GiB; first cutover is never implicit", () => {
   const manifest = { images: { api: { sizeBytes: 100 }, worker: { sizeBytes: 200 }, admin: { sizeBytes: 300 } }, migrations: [] };

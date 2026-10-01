@@ -78,3 +78,13 @@ PR #8 的 CI `36902419859` 全部通过，包括真实 Docker 导入和大小写
 修正 CI/导出/自动预装为相同 containerd 后端，明确单平台且不添加独立 attestation；清单创建时验证 runtime ID 与 registry digest 相等。导出保留三个 SHA 标签并验 OCI index 数量，真实导入演练同步使用生产后端。依据 [Docker 存储说明](https://docs.docker.com/engine/storage/containerd/) 与 [官方 setup action](https://github.com/docker/setup-docker-action)。服务器 Docker 配置不改、不重启；新提交需要重新通过一次构建验收，后续重试继续复用该提交的原产物。
 
 存储兼容修正后的本地串行全量验证通过：接口目录、工具/部署与 H5 测试、类型检查、全量单测、构建、ShellCheck、actionlint、diff 检查均成功。线上两条 health 仍分别为 `97eed39` / `6ea9dd9` 且 ready，证明此次导入失败未切换生产。容器真实导入与最终切换仍待新 CI/生产验收，自动发布仍关闭。
+
+main `ba85f5e` 的 CI `36906847125` 全部通过，三镜像 runtime ID 与 registry digest 完全一致。首次生产任务 `36907842289` 在 4 分 42 秒内完成原镜像预装，44 块导入后按规则清理，仅保留校验记录；仓库 `PRODUCTION_IMAGE_TRANSPORT=ssh`，自动入口仍关闭。
+
+该次生产两库分别完成演练及停写后恢复验收（5/5/4/5 秒），文件 SHA 校验通过；两项兼容迁移已应用且 status 正常。证据目录 `/opt/saydianapp-server/deploy/unified/backups/20261001T183956Z-ba85f5e4c12b-30184`，不得上传其中生产内容。
+
+新镜像内部 ready 后，Nginx reload 后立即执行的公网健康检查未通过，尚未开始静态页检查或恢复写入。脚本恢复原镜像与路由；再次验证两条旧 revision 均 ready、公开 API 200。没有覆盖数据库，已应用的兼容列和导入配置保留。补充公网双地址收敛等待（最多 15 次/60 秒预算），并在失败时记录路径、观察到的 revision 和脚本行号；测试覆盖短暂旧路由恢复、持续错误 revision 拒绝和固定镜像回退，不能忽略永久失败。
+
+回退后的容器 Compose 标签指向本次私有备份，因此首次重试增加严格恢复来源校验：只接受同一备份目录的原 global-live/images 文件组合，必须有成功恢复证据且固定 image 与当前运行 image 相同。原生产配置的白名单不扩大，数据库/密钥/原开关仍从实际运行配置保留。
+
+实际回读确认原 API 的维护、业务写入暂停、Worker 暂停、回调暂停四项均恢复为原有 false，`writes-opened.json` 与 `accepted.json` 均不存在。更新旧工具断言以识别携带退出码/行号的 ERR trap 后，31 项工具/部署测试、H5 测试、类型、全量单测、构建、ShellCheck、actionlint 与 diff 全部通过；生产下一次切换仍待验收。

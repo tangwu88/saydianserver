@@ -209,7 +209,7 @@ test("one CI build supplies the deploy job and reviewed migration gate", () => {
   assert.match(script, /prisma migrate deploy/);
   assert.match(script, /unified-preflight.mjs/);
   assert.doesNotMatch(script, /MAINTENANCE_READ_ONLY=false|compose down|docker.*prune|docker build|prisma.*seed/);
-  assert.match(script, /trap rollback ERR/);
+  assert.match(script, /trap 'rollback "\$\?" "\$LINENO"' ERR/);
   assert.match(script, /SECONDS \+ 1200/);
   assert.match(script, /--pull never/);
   assert.match(script, /sha256sum/);

@@ -46,13 +46,26 @@ wait_ready() {
   return 1
 }
 public_checks() {
-  local path
-  for path in /health/ready /global/health/ready; do
-    curl --fail --silent --show-error --max-time 30 "https://app.saydian.cn$path" | jq -e --arg revision "$revision" '.status == "ready" and .revision == $revision' > /dev/null
+  local path attempt ready=false response='' deadline=$((SECONDS + 60))
+  # Nginx reload is asynchronous: old workers can briefly serve the previous
+  # routing table. Both aliases must converge before any write boundary opens.
+  for ((attempt=0; attempt<15 && SECONDS<deadline; attempt++)); do
+    ready=true
+    for path in /health/ready /global/health/ready; do
+      response=$(curl --fail --silent --max-time 5 "https://app.saydian.cn$path") || response='{}'
+      if ! jq -e --arg revision "$revision" '.status == "ready" and .revision == $revision' <<< "$response" > /dev/null 2>&1; then ready=false; break; fi
+    done
+    [[ "$ready" != true ]] || break
+    sleep 2
   done
+  if [[ "$ready" != true ]]; then
+    echo "Public readiness failed: $path; expected revision $revision" >&2
+    jq -c '{status,revision}' <<< "$response" >&2 2>/dev/null || true
+    return 1
+  fi
   for path in /admin/ /down /say-ring /saidian-mall/ /global/saidian-mall/; do
     curl --fail --silent --show-error --max-time 30 "https://app.saydian.cn$path" > "$source_dir/page.html"
-    grep -qi '<html' "$source_dir/page.html"
+    grep -qi '<html' "$source_dir/page.html" || { echo "Expected HTML: $path" >&2; return 1; }
   done
 }
 node_tool /release/scripts/release-manifest.mjs verify "$revision" /release/release-manifest.json
@@ -63,10 +76,10 @@ if [[ "$first" == true ]]; then
   done
   # Resolve the actual running release and private override, never a new env template.
   files=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$current_api")
+  node_tool /release/scripts/prepare-unified-compose.mjs validate-sources "$files" "$runtime"
   IFS=, read -ra paths <<< "$files"
   args=()
   for path in "${paths[@]}"; do
-    [[ "$path" == /opt/saydian-global/releases/*/deploy/global/compose.json || "$path" == /opt/saydian-global/private/payment-live.override.json ]]
     args+=(-f "$path")
   done
   docker compose --env-file /opt/saydian-global/private/global.env "${args[@]}" config --format json > "$source_dir/global-live.json"
@@ -124,7 +137,9 @@ changed=false
 gateway_changed=false
 writes_opened=false
 rollback() {
-  status=$?; trap - ERR INT TERM
+  local status=$1 failed_line=$2
+  trap - ERR INT TERM
+  echo "Release check failed at deploy-unified.sh:$failed_line (exit $status)." >&2
   if [[ "$first" == true && "$writes_opened" == true ]]; then
     echo 'Writes may have resumed: no legacy-route or database rollback. Forward repair required.' >&2
   elif [[ "$changed" == true ]]; then
@@ -141,7 +156,7 @@ rollback() {
   echo "Release failed. Private evidence retained: $backup. No database restore was attempted." >&2
   exit "$status"
 }
-trap rollback ERR
+trap 'rollback "$?" "$LINENO"' ERR
 trap 'false' INT TERM
 if [[ "$first" == true ]]; then
   # Drill before the write freeze; the measured duration is recorded for operators.

@@ -29,7 +29,13 @@ if(tool==='readlink') console.log(process.env.FIXTURE_ROOT+'/deploy/.ci-release.
 if(tool==='timeout') { const r=require('node:child_process').spawnSync(a[3],a.slice(4),{stdio:'inherit'});process.exit(r.status??1); }
 if(tool==='curl') {
  const url=a.at(-1);
- console.log(url.includes('api.github.com') ? JSON.stringify({object:{sha:mode==='stale'?'f'.repeat(40):revision}}) : /health/.test(url)?JSON.stringify({status:'ready',revision}):'<html>tested page</html>');
+ let publicRevision=revision;
+ if(/health/.test(url)) {
+  const marker=process.env.FIXTURE_ROOT+'/public-probe';
+  if(mode==='public-stale'||mode==='public-stale-once'&&!fs.existsSync(marker)) publicRevision='f'.repeat(40);
+  fs.writeFileSync(marker,'1');
+ }
+ console.log(url.includes('api.github.com') ? JSON.stringify({object:{sha:mode==='stale'?'f'.repeat(40):revision}}) : /health/.test(url)?JSON.stringify({status:'ready',revision:publicRevision}):'<html>tested page</html>');
 }
 if(tool==='docker') {
  if(a[0]==='pull') process.exit(mode==='pull-failed'?1:0);
@@ -81,4 +87,11 @@ test("successful routine publication verifies both health aliases without build,
   const result = run("success"); assert.equal(result.status, 0, result.output);
   assert(result.calls.includes("https://app.saydian.cn/global/health/ready"));
   assert(!/docker build|prisma db seed|compose down|docker prune/.test(result.calls));
+});
+test("public readiness tolerates a reloading gateway but rejects persistent old revisions", () => {
+  const recovered = run("public-stale-once"); assert.equal(recovered.status, 0, recovered.output);
+  const failed = run("public-stale"); assert.notEqual(failed.status, 0, failed.output);
+  assert.match(failed.output, /Public readiness failed: \/health\/ready/);
+  assert.match(failed.output, /Release check failed at deploy-unified.sh:\d+ \(exit 1\)/);
+  assert.match(failed.calls, /backups\/[^\n]+images.json up -d --no-build --pull never/);
 });
