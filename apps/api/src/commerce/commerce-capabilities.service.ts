@@ -24,7 +24,7 @@ export class CommerceCapabilitiesService {
 
   // Configuration readiness is not a provider verification or a payer identity
   // assertion. Creating a payment still validates the actual User.
-  async publicCapabilities(locale?: string) {
+  async publicCapabilities(locale?: string, client: "h5" | "app" = "h5", product?: unknown) {
     const global = isGlobalRealm();
     const readOnly = businessWritesPaused(process.env);
     const outboundPaused = shouldPauseWorkers(process.env);
@@ -91,12 +91,17 @@ export class CommerceCapabilitiesService {
     ];
     if (global) {
       const [official, marketConfig] = await Promise.all([
-        this.official.globalCapabilities(locale),
-        this.prisma.commerceBusinessConfig.findUnique({ where: { key: "global.markets" } }),
+        this.official.globalCapabilities(locale, product),
+        this.prisma.commerceBusinessConfig.findUnique({
+          where: { key: "global.markets" },
+        }),
       ]);
       const checkoutAvailable = configuredGlobalMarkets(marketConfig).some(market => market.commerceEnabled);
       return {
-        realm: "global", consentVersion: official.consentVersion, legal: official.legal,
+        realm: "global",
+        product: official.product,
+        consentVersion: official.consentVersion,
+        legal: official.legal,
         login: {
           password: { enabled: !readOnly },
           sms: capability(verificationReady.sms && !readOnly, readOnly ? "系统维护中" : "International SMS verification is not configured."),

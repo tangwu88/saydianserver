@@ -18,6 +18,7 @@
 - 生产 `MAINTENANCE_READ_ONLY=true`；旧 `app.saidian.cc` 未切换，旧数据未迁移。不要把自动部署成功、管理后台可打开或 API 探针正常表述成业务全量上线。
 - `/down` 已公开上线原 App 三端下载页；Say Ring 复用同一受审下载页实现并由独立入口 `/say-ring` 读取 `product=say-ring` 清单。生产发布状态仍必须以当次线上清单和页面为准。
 - `app_update` 已归一为 `DownloadManifest v1`。原 App 仍按既有方式填写文件元数据；Say Ring 的 Android/HarmonyOS 可在“客服与更新”选择上传 APK/HAP 或填写应用市场 HTTPS 链接，iOS 填写 TestFlight/App Store 链接。上传只写私有对象存储和文件记录，不自动把版本设为可用，也不绕过现有发布审核。
+- Say Ring 专属法律能力与注销清理候选实现见[客户端契约](say-ring-legal-client-contract.md)和[实施记录](implementation-log/2026-10-01-say-ring-legal-isolation-deletion.md)。该分支未部署，专属政策仍为不公开草稿；接手者不得在厂商、留存、跨境和未成年人事实未核实前激活文档。
 
 ## 2. 接手第一步
 

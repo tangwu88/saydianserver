@@ -16,10 +16,10 @@ Locales are `en`, `zh-Hans`, `zh-Hant`, `de`, `fr`, `es`, `ja`, `ko`; default is
 
 | Method / V2 path | Request | `data` |
 | --- | --- | --- |
-| GET `/auth/capabilities?locale=en` | Optional locale | `{realm:"global",defaultLocale:"en",supportedLocales,registration:{email,sms,verificationRequired},recovery:{email,sms},smsCountries:string[],verification:{codeLength:6,expiresIn:300,retryAfter:60},consentVersion:string|null,legal:LegalLinks|null}` |
-| POST `/auth/register` | `{channel:"email"\|"sms",identifier,password,nickname?,consentVersion,locale?}` | Temporary unverified `Session`; available only while `GLOBAL_UNVERIFIED_REGISTRATION_ENABLED=true` |
-| POST `/auth/verification-code` | `{channel:"email"\|"sms",identifier,purpose:"register"\|"reset_password",locale?}` | `{challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}`; never returns the code |
-| POST `/auth/register-with-code` | `{challengeId,code,password,nickname?,consentVersion,locale?}` | `Session` |
+| GET `/auth/capabilities?locale=en&product=say-ring` | Optional locale and product; omitted product is `saydian-global` | `{realm:"global",product,defaultLocale:"en",supportedLocales,registration:{email,sms,verificationRequired},recovery:{email,sms},smsCountries:string[],verification:{codeLength:6,expiresIn:300,retryAfter:60},consentVersion:string|null,legal:LegalLinks|null}` |
+| POST `/auth/register` | `{channel:"email"\|"sms",identifier,password,nickname?,consentVersion,locale?,product?}` | Temporary unverified `Session`; available only while `GLOBAL_UNVERIFIED_REGISTRATION_ENABLED=true` |
+| POST `/auth/verification-code` | `{channel:"email"\|"sms",identifier,purpose:"register"\|"reset_password",locale?,product?}` | `{challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}`; never returns the code |
+| POST `/auth/register-with-code` | `{challengeId,code,password,nickname?,consentVersion,locale?,product?}` | `Session` |
 | POST `/auth/login` | `{channel,identifier,password}` | `Session` |
 | POST `/auth/reset-password` | `{challengeId,code,password}` | Fresh `Session`; existing sessions revoked |
 | POST `/auth/refresh` | `{refreshToken}` | Rotated `Session`; serialize refresh calls |
@@ -33,7 +33,7 @@ Email is trimmed and normalized; the domain supports IDN, and canonical email is
 
 Passwords require at least 8 characters and at most 72 UTF-8 bytes (bcrypt limit). Nickname is at most 40 characters. Challenges expire after 5 minutes, allow at most 5 wrong attempts, are single-use and purpose-bound. Recipient cooldown is 60 seconds across purposes, with at most 10 requests per 24 hours; controller IP throttles also apply. Failed deliveries cannot be consumed. Tests use synthetic, mocked delivery only.
 
-`LegalLinks = {userAgreement:{path,locale,version},privacyPolicy:{path,locale,version}}`. Paths are API-relative, for example `/api/saydian-app/v2/content/legal/user_agreement?version=<published>&locale=en`; add the international gateway prefix exactly once. Public GET returns a reviewed document containing `contentHtml`. Only matching, published, reviewed terms/privacy versions enable registration, including the temporary unverified route; requested-language documents may explicitly fall back to English via their returned locale. With no documents, `consentVersion` and `legal` are null and registration stays false. Do not invent a version or skip displaying these documents. Paused business writes also keep registration false.
+`LegalLinks = {userAgreement:{path,locale,version},privacyPolicy:{path,locale,version}}`. Paths are API-relative; add the international gateway prefix exactly once. Omitted product uses `user_agreement` and `privacy_policy`; explicit `product=say-ring` uses only `say_ring_user_agreement` and `say_ring_privacy_policy`. Every consent-producing Say Ring JSON request must also include `"product":"say-ring"`, so its version cannot be accepted against the global main-App pair. Public GET returns a reviewed document containing `contentHtml`. Only matching, published, reviewed terms/privacy versions enable registration; with no product-matched pair, `consentVersion` and `legal` are null and registration stays false.
 
 ## Other client contracts
 
@@ -108,4 +108,4 @@ See [global-deployment.md](global-deployment.md). Configuration keys below exist
 
 ## Not yet accepted
 
-No production deployment, new database migration, live email/SMS request, cross-device account flow, real Apple signing/TestFlight, gateway runtime validation, global download publication or international payment occurred. Docker is unavailable on this machine; the deployment script's structural checks are not container/readiness acceptance. Database-backed tests need an isolated test database. Global health report generation/PDF and all stored notification/content translations still require localized templates/content and acceptance; this change does not claim full eight-language backend content or global commerce completion.
+No production deployment, applied database migration, live email/SMS request, cross-device account flow, real Apple signing/TestFlight, gateway runtime validation, global download publication or international payment occurred. A local API image build completed, but the Worker image hit host-capacity exhaustion and remains unverified; deployment-script structural checks are not container/readiness acceptance. Database-backed tests need an isolated test database. Global health report generation/PDF and all stored notification/content translations still require localized templates/content and acceptance; this change does not claim full eight-language backend content or global commerce completion.

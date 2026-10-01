@@ -66,7 +66,7 @@ export class CommerceCompatibilityController {
   authorizeWechatH5(@Body() input: unknown) {
     const body = safeObject(input);
     return this.wechatH5.authorize({ returnTo: String(body.returnTo ?? "/"), codeChallenge: String(body.codeChallenge ?? ""),
-      consentVersion: String(body.consentVersion ?? ""), locale: body.locale,
+      consentVersion: String(body.consentVersion ?? ""), locale: body.locale, product: body.product,
       ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}) });
   }
 
@@ -75,7 +75,7 @@ export class CommerceCompatibilityController {
   loginWechatH5(@Body() input: unknown) {
     const body = safeObject(input);
     return this.wechatH5.login({ code: String(body.code ?? ""), state: String(body.state ?? ""),
-      codeVerifier: String(body.codeVerifier ?? ""), consentVersion: String(body.consentVersion ?? ""), locale: body.locale });
+      codeVerifier: String(body.codeVerifier ?? ""), consentVersion: String(body.consentVersion ?? ""), locale: body.locale, product: body.product });
   }
 
   @Post("auth/wechat/h5/bind-mobile")
@@ -111,7 +111,7 @@ export class CommerceCompatibilityController {
   wechatH5Account(@CurrentUser() user: AuthenticatedUser) { return this.auth.mallAccount(user.id, user.sessionId); }
 
   @Get("storefront/capabilities")
-  storefrontCapabilities(@Query("locale") locale?: string) { return this.capabilities.publicCapabilities(locale); }
+  storefrontCapabilities(@Query("locale") locale?: string, @Query("product") product?: string) { return this.capabilities.publicCapabilities(locale, "h5", product); }
 
   @Get("payments/:id")
   @UseGuards(UserAuthGuard)
