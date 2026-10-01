@@ -1,6 +1,6 @@
 # Say Ring Privacy Policy — DRAFT, DO NOT PUBLISH
 
-Draft version: `draft-2026-10-01`
+Draft version: `draft-2026-10-01-14-plus`
 
 This document is an implementation draft for Say Ring (`cn.saydian.ring`). Build 1013 is the audited legacy package; build 1014 is the intended iOS publication baseline. It must not be linked from App Store Connect, served from a public URL, or activated in the legal-document API until every item under “Publication blockers” is closed.
 
@@ -14,9 +14,9 @@ This document is an implementation draft for Say Ring (`cn.saydian.ring`). Build
 ## Publication blockers
 
 1. Confirm the legal names and privacy-policy URLs of every wearable SDK provider in build 1013, and whether any of those SDKs transmit device, health, diagnostic, or identifier data to vendor servers.
-2. Confirm the exact Tencent Cloud contracting entity, processing region, backup retention period, and security-log retention period. The first App Store release is mainland-China-only; cross-border safeguards must be completed before any other region is opened.
+2. The Tencent Cloud console has the Party-A profile `微销通(北京)科技有限公司`, but zero contract records. The active service instance is in Beijing. Production backup and security-log retention must still be verified at runtime; a console profile is not a signed contract and must not be described as one.
 3. Deploy and production-test the account-deletion repair. The candidate code clears email and verification timestamps, all User WeChat identifiers and official identities, and physically deletes only the account's claimed storage objects before completion; production still runs the older behavior until deployment.
-4. Confirm the minimum user age and the intended treatment of minors' health data.
+4. The first release is 14+. A Say Ring account-creation request must confirm this without collecting a date of birth for age verification. Support for 13-year-olds remains unavailable until a separate, verifiable guardian-consent workflow is completed. Because App Store offers the next available rating as 16+, App Store Connect must be verified as 16+ before activation.
 5. Deploy the candidate Say Ring product-isolation migration and update build 1014 to send `product=say-ring` on legal capabilities and every consent-producing auth flow. Build 1013 continues to request the generic global policy; the dedicated Say Ring documents must remain inactive until the 1014 client and production API have both been verified.
 6. Complete legal review and set the effective date. A draft or placeholder page is not acceptable for App Store submission.
 
@@ -102,8 +102,8 @@ The current build does not enable the external weather service. If a future vers
 We disclose personal data only as needed to provide a feature you request, operate the service, protect users, or comply with law.
 
 - WeChat: the target iOS build does not enable this feature. On Android, if you choose WeChat sign-in, authentication data is exchanged with WeChat/Tencent under its applicable terms and privacy notice.
-- Cloud hosting: account, profile, device, and health-summary data are processed on infrastructure used by the Say Ring service in mainland China. **[Exact contracting entity and retention terms pending confirmation.]**
-- Wearable SDK providers: the App includes third-party libraries used to communicate with supported rings and perform firmware or device operations. **[Exact provider names, data categories, network behavior, and privacy links pending vendor confirmation.]**
+- Cloud hosting: account, profile, device, and health-summary data are processed on infrastructure used by the Say Ring service in Beijing, mainland China. The Tencent Cloud console has a Party-A profile, but no signed Tencent Cloud contract record. This policy must not identify that profile as a contract until a signed contract exists.
+- Wearable SDK providers: the App includes third-party libraries used to communicate with supported rings and perform firmware or device operations. The Android watch-face catalogue makes HTTPS requests to `www.vphband.com:9001` with ring compatibility fields, App version, and paging values; its request does not include the app's device ID. **[The providers' legal names, SDK network behavior, data categories, and privacy links remain pending vendor confirmation.]**
 
 Before publication, we must confirm that every third party receiving personal data provides the same or equivalent protection described in this policy.
 
@@ -115,7 +115,7 @@ Before Say Ring is opened in another country or region, we will assess the appli
 
 ## 6. Retention and account deletion
 
-We retain account and service data only while needed to provide Say Ring, protect the service, meet legal obligations, or resolve disputes. **[Fixed security-log and backup retention periods pending confirmation.]**
+We retain account and service data only while needed to provide Say Ring, protect the service, meet legal obligations, or resolve disputes. The candidate deployment configuration keeps database backup files for 30 days and Restic snapshots as 14 daily, 8 weekly, and 12 monthly copies. **[These are source configuration values, not verified production retention; security-log retention remains pending confirmation.]**
 
 You can initiate account deletion inside the App. The current production service disables the account and revokes active sessions immediately, then schedules deletion or anonymization after a seven-day waiting period.
 
@@ -131,7 +131,9 @@ We may need to verify that a request relates to your account before acting on it
 
 ## 8. Children
 
-**[Minimum age, parental-consent flow, and treatment of minors' health data pending product and legal confirmation.]**
+Say Ring is currently for people aged 14 or older. At account creation, we ask you to confirm that you meet this minimum age and record only that confirmation, its version, and its time; we do not require your full date of birth for this check.
+
+Say Ring does not currently offer accounts to people under 14. Support for 13-year-olds is deferred until a separate guardian-consent flow can verify the guardian's authority, record consent, and provide the required health-data safeguards.
 
 ## 9. Security
 

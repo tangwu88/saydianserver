@@ -281,6 +281,7 @@ describe("global native WeChat phone binding", () => {
       consentVersion: "legal-v1",
       locale: "zh-Hans",
       product: "say-ring",
+      ageConfirmed: true,
       wechatProfileProof: pending.wechatProfileProof,
     });
     expect(session.member.id).toBe(h.users[0].id);
@@ -300,6 +301,7 @@ describe("global native WeChat phone binding", () => {
     expect(h.prisma.consentRecord.upsert.mock.calls.map(([call]: any[]) => call.create)).toEqual([
       expect.objectContaining({ documentType: "say_ring_user_agreement", source: "global_app_wechat:say-ring:zh-Hans" }),
       expect.objectContaining({ documentType: "say_ring_privacy_policy", source: "global_app_wechat:say-ring:zh-Hans" }),
+      expect.objectContaining({ documentType: "say_ring_minimum_age", source: "global_app_wechat:say-ring:zh-Hans" }),
     ]);
 
     const next: any = await h.service.login({

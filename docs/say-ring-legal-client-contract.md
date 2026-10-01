@@ -38,16 +38,26 @@
 }
 ```
 
+创建 Say Ring 新账号时还必须传：
+
+```json
+{ "ageConfirmed": true }
+```
+
+这只表示用户确认已满 14 周岁；客户端不得以出生日期、设备推断或其他年龄信息代替。服务端只记录最小年龄确认，不为该检查收集出生日期。缺少该字段返回 HTTP 400，`errorKey=minimum_age_confirmation_required`。13 岁支持在独立的可核验监护人同意流程完成前保持关闭。由于 App Store 的可选等级为 13+/16+/18+，上架前必须确认 App Store Connect 为 16+，不得用 13+ 上架本协议。
+
 适用入口：
 
 - `POST /auth/verification-code`（注册验证码申请；只传产品和语言，不提交同意版本）
 - `POST /auth/register-with-code`
 - `POST /auth/register`（仅临时免验证码开关开启时）
 - `POST /api/saidian-mall/v1/auth/code/request`（只传产品和语言，不提交同意版本）
-- `POST /api/saidian-mall/v1/auth/code/login`
+- `POST /api/saidian-mall/v1/auth/code/login`（仅在该次登录会创建新账号时传 `ageConfirmed:true`）
 - Android `POST /auth/wechat-login`
 - Android `POST /auth/wechat-phone-code`
 - Android `POST /auth/wechat-bind-phone`
+
+Android 微信首次绑定手机号而创建账号时，`POST /auth/wechat-bind-phone` 也必须传 `ageConfirmed:true`。已有账号登录或绑定不会重新收集该确认。
 
 服务端把同意记录写入 `say_ring_user_agreement` 和 `say_ring_privacy_policy`，不会写入国际主 App 的 `user_agreement` 或 `privacy_policy`。产品对应文档不存在时返回 `legal_unavailable`；版本过期返回 `consent_outdated`。
 

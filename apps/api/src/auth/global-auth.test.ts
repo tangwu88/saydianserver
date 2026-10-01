@@ -91,11 +91,16 @@ describe("global registration challenges", () => {
     expect(capabilities.legal?.userAgreement.path).toContain("/say_ring_user_agreement?");
     expect(capabilities.legal?.privacyPolicy.path).toContain("/say_ring_privacy_policy?");
     const challenge = await h.service.requestCode({ channel: "email", identifier: "ring@example.com", purpose: "register", locale: "en", product: "say-ring" });
-    await h.service.register({ challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-only-password!", consentVersion: "v1", locale: "en", product: "say-ring" });
+    await expect(h.service.register({ challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-only-password!", consentVersion: "v1", locale: "en", product: "say-ring" })).rejects.toThrow("14 or older");
+    expect(h.users().size).toBe(0);
+    await h.service.register({ challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-only-password!", consentVersion: "v1", locale: "en", product: "say-ring", ageConfirmed: true });
     expect(h.tx.consentRecord.create.mock.calls.map(([call]: any[]) => call.data)).toEqual([
       expect.objectContaining({ documentType: "say_ring_user_agreement", version: "v1", source: "global_app_v2:say-ring:en" }),
       expect.objectContaining({ documentType: "say_ring_privacy_policy", version: "v1", source: "global_app_v2:say-ring:en" }),
     ]);
+    expect(h.tx.consentRecord.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ documentType: "say_ring_minimum_age", version: "14-plus-v1" }),
+    }));
     await expect(h.service.capabilities("en", "other-app")).rejects.toThrow("supported product");
   });
   it("allows reset delivery without registration legal documents, but never without a verified channel", async () => {

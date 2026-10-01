@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { globalLegalBundle, globalLegalProduct } from "./global-legal";
+import { globalLegalBundle, globalLegalProduct, sayRingMinimumAgeConsent } from "./global-legal";
 
 function document(type: string, locale = "en", version = "global-2026-09") { return { documentType: type, locale, version, contentHtml: "Synthetic reviewed document" }; }
 describe("published global legal consent bundle", () => {
@@ -37,5 +37,10 @@ describe("published global legal consent bundle", () => {
     expect(globalLegalProduct(undefined)).toBe("saydian-global");
     expect(globalLegalProduct("say-ring")).toBe("say-ring");
     expect(() => globalLegalProduct("other-app")).toThrow("supported product");
+  });
+  it("requires only a minimal age confirmation for new Say Ring accounts", () => {
+    expect(sayRingMinimumAgeConsent("saydian-global", undefined)).toBeNull();
+    expect(() => sayRingMinimumAgeConsent("say-ring", false)).toThrow("14 or older");
+    expect(sayRingMinimumAgeConsent("say-ring", true)).toEqual({ documentType: "say_ring_minimum_age", version: "14-plus-v1" });
   });
 });

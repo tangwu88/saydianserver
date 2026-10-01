@@ -9,7 +9,7 @@ import { isGlobalRealm } from "../common/deployment-realm";
 import { AuthService } from "./auth.service";
 import { GlobalVerificationDeliveryService } from "./global-verification-delivery.service";
 import { globalError, globalIdentity, globalLocale, globalLocales, maskedIdentifier, type VerificationPurpose } from "./global-identity";
-import { globalConsentSource, globalLegalBundle, globalLegalProduct } from "./global-legal";
+import { globalConsentSource, globalLegalBundle, globalLegalProduct, recordSayRingMinimumAgeConsent, sayRingMinimumAgeConsent } from "./global-legal";
 import { businessWritesPaused } from "@saydian/app-contracts";
 import { GlobalWechatAppService } from "./global-wechat-app.service";
 
@@ -105,6 +105,7 @@ export class GlobalAuthService {
         if (existing && (challenge.channel === "email" ? !existing.emailVerifiedAt : !existing.mobileVerifiedAt)) {
           await tx.userSession.updateMany({ where: { userId: existing.id, revokedAt: null }, data: { revokedAt: new Date() } });
         }
+        const ageConsent = !existing && legal ? sayRingMinimumAgeConsent(legal.product, body.ageConfirmed) : null;
         const user = existing
           ? await tx.user.update({ where: { id: existing.id }, data: verified })
           : await tx.user.create({ data: {
@@ -122,6 +123,7 @@ export class GlobalAuthService {
             update: { withdrawnAt: null, source },
           });
         }
+        if (global) await recordSayRingMinimumAgeConsent(tx, user.id, ageConsent, source);
         return user.id;
       });
     } catch (error) {
@@ -171,6 +173,7 @@ export class GlobalAuthService {
     const legal = await globalLegalBundle(this.prisma, body.locale, body.product);
     if (!legal) throw globalError(503, "legal_unavailable", "The terms and privacy policy are not available yet. Please try again later.");
     if (legal.consentVersion !== consentVersion) throw globalError(409, "consent_outdated", "The terms have changed. Please read and agree to the latest version.");
+    const ageConsent = sayRingMinimumAgeConsent(legal.product, body.ageConfirmed);
     const nickname = String(body.nickname ?? "").trim();
     if (nickname.length > 40) throw globalError(400, "invalid_nickname", "Your name must be no longer than 40 characters.");
     const passwordHash = await hash(password, 12);
@@ -186,6 +189,7 @@ export class GlobalAuthService {
         for (const documentType of Object.values(legal.documentTypes)) {
           await tx.consentRecord.create({ data: { userId: user.id, documentType, version: consentVersion, source: globalConsentSource("global_app_v2", legal) } });
         }
+        await recordSayRingMinimumAgeConsent(tx, user.id, ageConsent, globalConsentSource("global_app_v2", legal));
         return user.id;
       });
     } catch (error) {
@@ -215,6 +219,7 @@ export class GlobalAuthService {
     if (legal.consentVersion !== consentVersion) {
       throw globalError(409, "consent_outdated", "The terms have changed. Please read and agree to the latest version.");
     }
+    const ageConsent = sayRingMinimumAgeConsent(legal.product, body.ageConfirmed);
     const nickname = String(body.nickname ?? "").trim();
     if (nickname.length > 40) {
       throw globalError(400, "invalid_nickname", "Your name must be no longer than 40 characters.");
@@ -243,6 +248,7 @@ export class GlobalAuthService {
             },
           });
         }
+        await recordSayRingMinimumAgeConsent(tx, user.id, ageConsent, globalConsentSource("global_app_v2_unverified", legal));
         return user.id;
       });
     } catch (error) {

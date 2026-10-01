@@ -15,7 +15,7 @@ import {
   globalLocale,
   maskedIdentifier,
 } from "./global-identity";
-import { defaultGlobalLegalProduct, globalConsentSource, globalLegalBundle } from "./global-legal";
+import { defaultGlobalLegalProduct, globalConsentSource, globalLegalBundle, recordSayRingMinimumAgeConsent, sayRingMinimumAgeConsent } from "./global-legal";
 import { WechatAppAuthService } from "./wechat-app-auth.service";
 import {
   safeWechatProfile,
@@ -338,6 +338,7 @@ export class GlobalWechatAppService {
         tx,
       );
       assertTicketProduct(ticket, legal.product);
+      const ageConsent = !user ? sayRingMinimumAgeConsent(legal.product, body.ageConfirmed) : null;
       const consumed = await tx.globalVerificationChallenge.updateMany({
         where: {
           id: challengeId,
@@ -403,6 +404,7 @@ export class GlobalWechatAppService {
         throw conflict();
       }
       await recordConsent(tx, saved.id, legal);
+      await recordSayRingMinimumAgeConsent(tx, saved.id, ageConsent, globalConsentSource("global_app_wechat", legal));
       return { invalid: false as const, userId: saved.id };
     }, { maxWait: 10_000, timeout: 30_000 }).catch(identityConflict);
     if (result.invalid) throw invalidCode();

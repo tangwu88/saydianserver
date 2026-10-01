@@ -16,8 +16,10 @@ const otp = { type: "string", pattern: "^[0-9]{6}$", description: "一次性验�
 const hex = { type: "string", pattern: "^[a-f0-9]{64}$" };
 const consent = { type: "string", minLength: 1, maxLength: 80, description: "客户端展示并获同意的协议版本。国内保留 commerce-legal-v1；国际版必须读取能力接口当前已审核发布版本，不能写死。" };
 const globalLocale = { enum: ["en", "zh-Hans", "zh-Hant", "de", "fr", "es", "ja", "ko"] };
+const globalProduct = { enum: ["saydian-global", "say-ring"] };
 const globalIdentifier = { type: "string", description: "国际账号邮箱或带+国家码的E.164手机号；不会自动合并账号。" };
 const globalPassword = { type: "string", minLength: 8, description: "至少8字符、最多72 UTF-8字节；已有账号输入原密码，新账号用于设置密码。" };
+const sayRingAgeConfirmed = { type: "boolean", description: "仅 Say Ring 新账号：必须为 true，确认年满14周岁；不收集出生日期。" };
 const quantity = { type: "integer", minimum: 1, maximum: 999 };
 const sid = number => `00000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 const at = "2026-09-08T01:00:00.000Z";
@@ -102,10 +104,10 @@ h5FieldContracts["CommerceCompatibilityController.requestWechatH5BindingCode"] =
   { challengeId: sid(80), expiresIn: 300, retryAfter: 60, maskedIdentifier: "h***@example.invalid" }, source.auth,
   "仅global且必须已有有效公众号绑定票据；用途固定wechat_bind，OTP散列绑定ticket。与注册/重置共享联系人限频另加票据限频，60秒/日10次，供应商缺失503，无devCode。仅真实发送成功才可消费。");
 h5FieldContracts["CommerceCompatibilityController.bindWechatH5Code"] = record(
-  obj({ bindTicket: hex, challengeId: id, code: otp, password: globalPassword, consentVersion: consent, locale: globalLocale, nickname: { ...text, maxLength: 40 } }, ["bindTicket", "challengeId", "code", "password", "consentVersion"]),
-  { bindTicket, challengeId: sid(80), code: "000000", password: "H5-CONTRACT-Test-Password-Only", consentVersion: "global-contract-reviewed-v1", locale: "en", nickname: "H5合成会员" },
+  obj({ bindTicket: hex, challengeId: id, code: otp, password: globalPassword, consentVersion: consent, locale: globalLocale, product: globalProduct, nickname: { ...text, maxLength: 40 }, ageConfirmed: sayRingAgeConfirmed }, ["bindTicket", "challengeId", "code", "password", "consentVersion"]),
+  { bindTicket, challengeId: sid(80), code: "000000", password: "H5-CONTRACT-Test-Password-Only", consentVersion: "global-contract-reviewed-v1", locale: "en", product: "say-ring", nickname: "H5合成会员", ageConfirmed: true },
   { oneOf: [boundSession, bindingPending] }, globalBoundExample, source.auth,
-  "仅global。新账号设置密码；已有账号需原密码+OTP双证明，不重设密码。首次核验会撤销旧会话防预占账号提权；只标记本次真实验证的联系方式。仅验证邮箱时返回新手机登记票据而非会话。票据与OTP/用户/身份/同意同事务消费，错误码最多5次；过期/重放400或401、冲突409、服务关闭503。");
+  "仅global。新账号设置密码；已有账号需原密码+OTP双证明，不重设密码。product=say-ring 且会创建账号时，ageConfirmed必须为true；不收集出生日期。首次核验会撤销旧会话防预占账号提权；只标记本次真实验证的联系方式。仅验证邮箱时返回新手机登记票据而非会话。票据与OTP/用户/身份/同意同事务消费，错误码最多5次；过期/重放400或401、冲突409、服务关闭503。");
 
 const availability = obj({ enabled: bool, reason: text }, ["enabled"]);
 const phoneMember = obj({ id, nickname: text, memberNo: { anyOf: [positive, { type: "string", pattern: "^[0-9]+$" }] },
@@ -119,11 +121,11 @@ h5FieldContracts["CommerceCompatibilityController.requestWechatH5PhoneCode"] = r
   { challengeId: sid(82), expiresIn: 300, retryAfter: 60, maskedIdentifier: "+16***0101", mode: "test", sent: false, verificationRequired: false }, source.auth,
   "仅global。先真实微信授权取得一次性bindTicket；test需GLOBAL_WECHAT_PHONE_TEST_ENABLED=true且不发送短信，不写真实送达/验证标记。界面默认+86并提交规范E.164号码；临时模式可填写6位码后自动申请票据，自动申请须带expectedMode=test，模式不符在发送前拒绝。test用途与真实OTP隔离，不能在App注册/重置/原bind-code接口消费。能力关闭拒绝；限频及票据有效期照常执行。" );
 h5FieldContracts["CommerceCompatibilityController.bindWechatH5Phone"] = record(
-  obj({ bindTicket: hex, challengeId: id, code: otp, consentVersion: consent, locale: globalLocale, password: globalPassword }, ["bindTicket", "challengeId", "code", "consentVersion"]),
-  { bindTicket, challengeId: sid(82), code: "654321", consentVersion: "global-contract-reviewed-v1", locale: "en" },
+  obj({ bindTicket: hex, challengeId: id, code: otp, consentVersion: consent, locale: globalLocale, product: globalProduct, password: globalPassword, ageConfirmed: sayRingAgeConfirmed }, ["bindTicket", "challengeId", "code", "consentVersion"]),
+  { bindTicket, challengeId: sid(82), code: "654321", consentVersion: "global-contract-reviewed-v1", locale: "en", product: "say-ring", ageConfirmed: true },
   obj({ ...boundSession.properties, user: phoneMember }, [...boundSession.required, "requiresAccountBinding"]),
   { ...globalBoundExample, user: phoneMemberExample }, source.auth,
-  "临时mode=test接受任意6位数字，但只登记真实微信当前主体的未验证手机号，或以尚未占用手机号新建无密码账号；任何其他账号号码冲突409，不合并、不改密码、不设mobileVerifiedAt。test会话的来源持久保存，不能用于App/交易/健康/后台；只允许本H5账号读取、退出与受控刷新，关闭开关后access和refresh立即被拒绝。正式sms模式须真实OTP；已有未验证账号须额外原密码证明，不擅自继承资产。" );
+  "临时mode=test接受任意6位数字，但只登记真实微信当前主体的未验证手机号，或以尚未占用手机号新建无密码账号；product=say-ring 且会创建账号时，ageConfirmed必须为true，不收集出生日期。任何其他账号号码冲突409，不合并、不改密码、不设mobileVerifiedAt。test会话的来源持久保存，不能用于App/交易/健康/后台；只允许本H5账号读取、退出与受控刷新，关闭开关后access和refresh立即被拒绝。正式sms模式须真实OTP；已有未验证账号须额外原密码证明，不擅自继承资产。" );
 h5FieldContracts["CommerceCompatibilityController.wechatH5Account"] = record(null, null, phoneMember, phoneMemberExample, source.auth,
   "仅global且需当前会员令牌。返回安全会员字段及真实手机核验状态，前端不能将phoneTestMode或填过手机号当成已验证；数据版本来自服务端，过期/撤销/临时开关关闭返回401。" );
 const paymentChannels = ["wechat_jsapi", "wechat_mini", "wechat_h5", "wechat_native", "alipay_wap", "alipay_page"];

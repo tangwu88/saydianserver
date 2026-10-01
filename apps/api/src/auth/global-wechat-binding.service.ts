@@ -8,7 +8,7 @@ import { PrismaService } from "../common/prisma.service";
 import { env } from "../common/environment";
 import { isUuid, safeObject, secureEqual, sha256 } from "../common/crypto";
 import { globalError, globalIdentity, globalLocale, maskedIdentifier } from "./global-identity";
-import { defaultGlobalLegalProduct, globalConsentSource, globalLegalBundle } from "./global-legal";
+import { defaultGlobalLegalProduct, globalConsentSource, globalLegalBundle, recordSayRingMinimumAgeConsent, sayRingMinimumAgeConsent } from "./global-legal";
 import { globalWechatPhoneTestEnabled, requireGlobalWechatH5, requireGlobalWechatPhoneTest } from "./global-wechat-policy";
 import { verifiedWechatProfile, wechatProfileBackfill, type WechatH5Profile } from "./wechat-h5-profile";
 import { isOwnPromoter } from "../common/member-promoter-identity";
@@ -160,6 +160,7 @@ export class GlobalWechatBindingService {
       await lockIdentity(tx, appId, ticket.openId);
       const legal = await this.legal(body.consentVersion, body.locale ?? challenge.locale, body.product, tx);
       assertTicketProduct(ticket, legal.product);
+      const ageConsent = !user ? sayRingMinimumAgeConsent(legal.product, body.ageConfirmed) : null;
       // Check conflicts before touching verified flags or creating a User.
       const linked = await tx.wechatOfficialIdentity.findUnique({ where: { appId_openId: { appId, openId: ticket.openId } } });
       if (linked && linked.userId !== user?.id) throw conflict();
@@ -181,6 +182,7 @@ export class GlobalWechatBindingService {
         : await tx.user.create({ data: { ...where, ...verified, passwordHash, nickname: profile.nickname || nickname || "Saydian user", ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}), locale: globalLocale(body.locale ?? challenge.locale) } });
       await this.attach(tx, ticket, saved.id);
       await recordConsent(tx, saved.id, legal);
+      await recordSayRingMinimumAgeConsent(tx, saved.id, ageConsent, globalConsentSource("global_h5_wechat", legal));
       return { invalid: false as const, userId: saved.id };
     }, { maxWait: 10_000, timeout: 30_000 }).catch(identityConflict);
     if (result.invalid) {
@@ -259,6 +261,7 @@ export class GlobalWechatBindingService {
       }
       const legal = await this.legal(body.consentVersion, body.locale ?? challenge.locale, body.product, tx);
       assertTicketProduct(ticket, legal.product);
+      const ageConsent = !user ? sayRingMinimumAgeConsent(legal.product, body.ageConfirmed) : null;
       if ((await tx.globalVerificationChallenge.updateMany({ where: { id: challengeId, consumedAt: null, attempts: { lt: 5 }, expiresAt: { gt: new Date() } }, data: { consumedAt: new Date() } })).count !== 1) return { invalid: true as const };
       if (user && !temporary && !user.mobileVerifiedAt) await tx.userSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
       const profile = verifiedWechatProfile(body.wechatProfileProof, String(body.bindTicket ?? ""));
@@ -267,6 +270,7 @@ export class GlobalWechatBindingService {
         : await tx.user.create({ data: { ...data, passwordHash: null, nickname: profile.nickname || "Saydian user", ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}), locale: globalLocale(body.locale ?? challenge.locale) } });
       await this.attach(tx, ticket, saved.id);
       await recordConsent(tx, saved.id, legal);
+      await recordSayRingMinimumAgeConsent(tx, saved.id, ageConsent, globalConsentSource("global_h5_wechat", legal));
       return { invalid: false as const, userId: saved.id };
     }, { maxWait: 10_000, timeout: 30_000 }).catch(identityConflict);
     if (result.invalid) {

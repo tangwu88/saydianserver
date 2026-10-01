@@ -3,6 +3,7 @@ import { globalError, globalLocale } from "./global-identity";
 
 export const defaultGlobalLegalProduct = "saydian-global" as const;
 export type GlobalLegalProduct = typeof defaultGlobalLegalProduct | "say-ring";
+export const sayRingMinimumAge = 14;
 
 const documentTypesByProduct = {
   "saydian-global": {
@@ -59,4 +60,26 @@ export async function globalLegalBundle(prisma: Pick<Prisma.TransactionClient, "
 
 export function globalConsentSource(base: string, legal: { product: GlobalLegalProduct; locale: string }) {
   return `${base}${legal.product === defaultGlobalLegalProduct ? "" : `:${legal.product}`}:${legal.locale}`;
+}
+
+export function sayRingMinimumAgeConsent(product: GlobalLegalProduct, ageConfirmed: unknown) {
+  if (product !== "say-ring") return null;
+  if (ageConfirmed !== true) {
+    throw globalError(400, "minimum_age_confirmation_required", `Say Ring is available only to people aged ${sayRingMinimumAge} or older.`);
+  }
+  return { documentType: "say_ring_minimum_age", version: "14-plus-v1" };
+}
+
+export async function recordSayRingMinimumAgeConsent(
+  db: Pick<Prisma.TransactionClient, "consentRecord">,
+  userId: string,
+  consent: ReturnType<typeof sayRingMinimumAgeConsent>,
+  source: string,
+) {
+  if (!consent) return;
+  await db.consentRecord.upsert({
+    where: { userId_documentType_version: { userId, ...consent } },
+    create: { userId, ...consent, source },
+    update: { withdrawnAt: null, source },
+  });
 }
