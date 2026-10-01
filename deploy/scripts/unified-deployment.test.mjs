@@ -77,6 +77,18 @@ test("gateway aliases preserve request URI/method and unrelated hosts byte for b
   for (const path of callbacks) { assert(allowed.test(path)); assert(allowed.test('/global' + path)); }
   for (const path of ['/api/v1/member/member/my', '/global/api/saydian-app/v2/devices', callbacks[0] + '/nested', '/untrusted' + callbacks[0]]) assert(!allowed.test(path));
 });
+
+test("gateway routine reconciliation restores Say Ring legal routes without duplication", () => {
+  const template = readFileSync(new URL("../nginx/app-https.conf.template", import.meta.url), "utf8").replaceAll("__APP_DOMAIN__", "app.saydian.cn");
+  const routes = readFileSync(new URL("../global/nginx.locations.conf", import.meta.url), "utf8");
+  const legacy = ("# prefix\n" + template.replace("__SAYDIAN_GLOBAL_ROUTES__", routes) + "\n# suffix")
+    .replace(/  location = \/say-ring\/privacy \{[\s\S]*?\n  \}\n\n  location = \/say-ring\/terms \{[\s\S]*?\n  \}\n\n/, "");
+  const result = unifyGateway(legacy);
+  assert.equal((result.match(/location = \/say-ring\/privacy/g) ?? []).length, 1);
+  assert.equal((result.match(/location = \/say-ring\/terms/g) ?? []).length, 1);
+  assert(result.includes("proxy_pass http://global-admin:8080;"));
+  assert.equal(unifyGateway(result), result);
+});
 test("settings import only fills missing download/support values; no permissions or provider enablement", () => {
   const source = [{ key: "app_update", value: { name: "a'b" }, public: true, updatedAt: "2026-10-01T00:00:00Z" }, { key: "support", value: {}, public: true, updatedAt: "2026-10-01T00:00:00Z" }];
   const retained = { ...source[0], value: { version: "current" } };

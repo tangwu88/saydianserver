@@ -11,11 +11,12 @@ const revision = "a".repeat(40), imageId = "sha256:" + "b".repeat(64);
 function run(mode) {
   const root = mkdtempSync(join(tmpdir(), "saydian-deploy-test-"));
   try {
-    const source = join(root, "releases/ci-fixture"), state = join(root, "deploy/unified"), bin = join(root, "bin");
+    const source = join(root, "releases/ci-fixture"), state = join(root, "deploy/unified"), bin = join(root, "bin"), gateway = join(root, "gateway-nginx.conf");
     for (const directory of [join(source, "deploy"), state, bin]) mkdirSync(directory, { recursive: true });
     if (!["not-initialized", "legacy-active"].includes(mode)) writeFileSync(join(state, "accepted.json"), "{}");
     if (mode === "legacy-active") writeFileSync(join(source, "deploy/.first-unified-cutover"), "");
     writeFileSync(join(state, "compose.json"), '{"name":"saydian-global","services":{}}');
+    writeFileSync(gateway, "# synthetic shared gateway\n");
     const manifest = { schemaVersion: 1, revision, migrations: [{ name: "20261001190000_say_ring_legal_product", sha256: "c".repeat(64), automatic: true }], images: Object.fromEntries(["api", "worker", "admin"].map(name => [name, { ref: `ghcr.io/tangwu88/saydianserver-${name}@sha256:${"d".repeat(64)}`, imageId, sizeBytes: 10 }])) };
     writeFileSync(join(source, "deploy/release-manifest.json"), JSON.stringify(manifest));
     const publisher = readFileSync(new URL("./deploy-unified.sh", import.meta.url), "utf8").replaceAll("/opt/saydianapp-server", root);
@@ -35,7 +36,8 @@ if(tool==='curl') {
   if(mode==='public-stale'||mode==='public-stale-once'&&!fs.existsSync(marker)) publicRevision='f'.repeat(40);
   fs.writeFileSync(marker,'1');
  }
- console.log(url.includes('api.github.com') ? JSON.stringify({object:{sha:mode==='stale'?'f'.repeat(40):revision}}) : /health/.test(url)?JSON.stringify({status:'ready',revision:publicRevision}):'<html>tested page</html>');
+ const page=url.includes('/say-ring/privacy')?'<html>Say Ring 隐私政策</html>':url.includes('/say-ring/terms')?'<html>Say Ring 用户协议</html>':'<html>tested page</html>';
+ console.log(url.includes('api.github.com') ? JSON.stringify({object:{sha:mode==='stale'?'f'.repeat(40):revision}}) : /health/.test(url)?JSON.stringify({status:'ready',revision:publicRevision}):page);
 }
 if(tool==='docker') {
  if(a[0]==='pull') process.exit(mode==='pull-failed'?1:0);
@@ -43,6 +45,7 @@ if(tool==='docker') {
  else if(a[0]==='inspect') console.log(a.join(' ').includes('.Config.Env')?'["POSTGRES_USER=global_owner","POSTGRES_DB=saydian_global","POSTGRES_PASSWORD=synthetic-test-only"]':a.join(' ').includes('.Image')?(fs.existsSync(process.env.FIXTURE_ROOT+'/changed')?imageId:'sha256:'+'e'.repeat(64)):imageId);
  else if(a[0]==='run') {
   const helper=a.find(v=>v.startsWith('/release/scripts/'));
+  if(helper?.endsWith('unify-gateway.mjs')) fs.copyFileSync(process.env.RELEASE_SOURCE+'/gateway.conf',process.env.RELEASE_SOURCE+'/gateway-candidate.conf');
   if(helper?.endsWith('release-manifest.mjs') && a.includes('compose')) console.log(JSON.stringify({services:{'global-api':{image:imageId}}}));
  } else if(a[0]==='exec') {
   const input=fs.readFileSync(0,'utf8');
@@ -57,7 +60,7 @@ if(tool==='docker') {
 `;
     for (const name of ["docker", "curl", "timeout", "sleep", "readlink", "flock", "sha256sum", "systemctl"]) writeFileSync(join(bin, name), double, { mode: 0o755 });
     const log = join(root, "calls.log");
-    const result = spawnSync("bash", [script], { encoding: "utf8", timeout: 30_000, env: { ...process.env, PATH: bin + ":" + process.env.PATH, RELEASE_SHA: revision, RELEASE_SOURCE: source, GITHUB_TOKEN: "synthetic-job-token", FIXTURE_MODE: mode, FIXTURE_LOG: log, FIXTURE_ROOT: root } });
+    const result = spawnSync("bash", [script], { encoding: "utf8", timeout: 30_000, env: { ...process.env, PATH: bin + ":" + process.env.PATH, RELEASE_SHA: revision, RELEASE_SOURCE: source, GATEWAY_CONFIG_PATH: gateway, GITHUB_TOKEN: "synthetic-job-token", FIXTURE_MODE: mode, FIXTURE_LOG: log, FIXTURE_ROOT: root } });
     return { status: result.status, output: result.stdout + result.stderr, calls: existsSync(log) ? readFileSync(log, "utf8") : "" };
   } finally { rmSync(root, { recursive: true, force: true }); }
 }

@@ -63,9 +63,13 @@ public_checks() {
     jq -c '{status,revision}' <<< "$response" >&2 2>/dev/null || true
     return 1
   fi
-  for path in /admin/ /down /say-ring /saidian-mall/ /global/saidian-mall/; do
+  for path in /admin/ /down /say-ring /say-ring/privacy /say-ring/terms /saidian-mall/ /global/saidian-mall/; do
     curl --fail --silent --show-error --max-time 30 "https://app.saydian.cn$path" > "$source_dir/page.html"
     grep -qi '<html' "$source_dir/page.html" || { echo "Expected HTML: $path" >&2; return 1; }
+    case "$path" in
+      /say-ring/privacy) grep -q 'Say Ring 隐私政策' "$source_dir/page.html" || return 1 ;;
+      /say-ring/terms) grep -q 'Say Ring 用户协议' "$source_dir/page.html" || return 1 ;;
+    esac
   done
 }
 node_tool /release/scripts/release-manifest.mjs verify "$revision" /release/release-manifest.json
@@ -132,7 +136,7 @@ backup="$state_dir/backups/$stamp"
 install -d -m 700 "$backup"
 cp -p "$base_compose" "$backup/compose.json"
 pin_images global- saydian-global > "$backup/images.json"
-gateway=/opt/saydian/config/gateway-nginx.conf
+gateway=${GATEWAY_CONFIG_PATH:-/opt/saydian/config/gateway-nginx.conf}
 changed=false
 gateway_changed=false
 writes_opened=false
@@ -158,6 +162,20 @@ rollback() {
 }
 trap 'rollback "$?" "$LINENO"' ERR
 trap 'false' INT TERM
+if [[ "$first" != true ]]; then
+  # The shared gateway keeps its managed TLS block across routine releases.
+  # Reconcile newly introduced public static routes before replacing services.
+  cp -p "$gateway" "$backup/gateway.conf"
+  cp "$gateway" "$source_dir/gateway.conf"
+  node_tool /release/scripts/unify-gateway.mjs /work/gateway.conf /work/gateway-candidate.conf
+  if ! cmp -s "$source_dir/gateway.conf" "$source_dir/gateway-candidate.conf"; then
+    changed=true
+    gateway_changed=true
+    cp "$source_dir/gateway-candidate.conf" "$gateway"
+    docker exec saydian-gateway-1 nginx -t
+    docker exec saydian-gateway-1 nginx -s reload
+  fi
+fi
 if [[ "$first" == true ]]; then
   # Drill before the write freeze; the measured duration is recorded for operators.
   bash "$source_dir/deploy/scripts/backup-restore.sh" "$domestic_database" "$backup/rehearsal-domestic"

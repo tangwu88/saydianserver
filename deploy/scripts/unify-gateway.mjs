@@ -33,6 +33,29 @@ export function unifyGateway(source) {
 
   location /admin/ {`);
   }
+  // Routine releases retain the existing shared-gateway file. Reconcile the
+  // public legal routes too, so older managed blocks cannot fall through to
+  // the API when the iOS consent links are opened.
+  if (!block.includes("location = /say-ring/privacy")) {
+    const marker = "  location /saidian-mall/ {";
+    assert(
+      block.split(marker).length === 2,
+      "Expected exactly one mall route for Say Ring legal-route insertion"
+    );
+    block = block.replace(marker, `  location = /say-ring/privacy {
+    proxy_pass http://global-admin:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+  }
+
+  location = /say-ring/terms {
+    proxy_pass http://global-admin:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+  }
+
+${marker}`);
+  }
   return block;
   });
 }
