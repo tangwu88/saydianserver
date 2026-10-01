@@ -49,7 +49,7 @@ V1 成功 `{"code":200,"message":"OK","data":...}`。V1 控制器错误常为 **
 
 旧 `LegacySession={access_token,refresh_token,expiration_time:900,member}`。V1 member.id 为数字，V2 member.id 为 UUID，不能交叉作为路由 ID。
 
-`Profile` 输入：nickname 1–40 字符；gender 为 male/female/unspecified（兼容 sex=1/2）；birthday 为过去的日期；heightCm 50–250；weightKg 10–500；avatarUrl 为 HTTP(S) 地址。头像流程：上传 `purpose=avatar` → 保存返回 url → 重新读取资料。
+`Profile` 输入：nickname 1–40 字符；gender 为 male/female/unspecified（兼容 sex=1/2）；birthday 为过去的日期；heightCm 50–250；weightKg 10–500；avatarUrl 为 HTTP(S) 地址。原 App 头像流程仍是上传 `purpose=avatar` → 保存返回 url → 重新读取资料。Say Ring 的国际 API 使用独立的 `POST /api/saydian-app/v2/files/say-ring-avatar`（multipart `file`），返回结构及保存资料的 URL 契约不变；只有此入口在专用开关开启后写入服务器本地头像卷。
 
 `Goals={steps,distanceMeters,caloriesKcal}`。步数 100–100000、距离 100–200000 米、热量 10–20000 kcal，或 null。保存是完整目标，不是部分 PATCH。V1 字段为 steps/juli/reliang。
 

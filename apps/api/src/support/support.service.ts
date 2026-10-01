@@ -1,11 +1,12 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException, type OnModuleInit } from "@nestjs/common";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { IntegrationState, Prisma } from "@prisma/client";
 import { parseDownloadManifest } from "@saydian/app-contracts";
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
 import { PrismaService } from "../common/prisma.service";
-import { env } from "../common/environment";
+import { env, envBoolean } from "../common/environment";
 import { safeObject, sha256 } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
@@ -15,15 +16,20 @@ import { normalizePublishedGlobalSupport } from "./global-support-config";
 import { canAdminResource } from "@saydian/app-contracts";
 import { parseSportRoute, renderAmapSportRoute } from "./sport-route-map";
 import { evidenceId, evidenceLimits, evidencePurpose, validateEvidenceImage } from "../commerce/commerce-evidence";
+import { assertSayRingAvatarDirectory, isSayRingLocalAvatarKey, normalizeSayRingAvatar, readSayRingAvatar, removeSayRingAvatar, writeSayRingAvatar } from "./say-ring-avatar-store";
 
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 @Injectable()
-export class SupportService {
+export class SupportService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    if (isGlobalRealm() && envBoolean("SAY_RING_LOCAL_AVATAR_WRITE_ENABLED")) await assertSayRingAvatarDirectory();
+  }
 
   async createFeedback(userId: string, input: unknown) {
     const body = safeObject(input);
@@ -208,6 +214,43 @@ export class SupportService {
       url: `${publicBase}/api/saydian-app/v2/files/${stored.id}`,
       sha256: digest,
       byteSize: file.size,
+    };
+  }
+
+  async uploadSayRingAvatar(userId: string, file: Express.Multer.File) {
+    if (!isGlobalRealm()) throw new NotFoundException("文件接口不存在");
+    if (!envBoolean("SAY_RING_LOCAL_AVATAR_WRITE_ENABLED")) return this.uploadImage(userId, file, "avatar");
+    const avatar = await normalizeSayRingAvatar(file);
+    const written = await writeSayRingAvatar(avatar.bytes, avatar.extension);
+    let stored;
+    try {
+      stored = await this.prisma.fileObject.create({
+        data: {
+          ownerUserId: userId,
+          objectKey: written.objectKey,
+          originalName: String(file.originalname || "avatar").slice(0, 255),
+          contentType: avatar.contentType,
+          byteSize: avatar.bytes.length,
+          sha256: avatar.sha256,
+          purpose: "avatar",
+        },
+      });
+    } catch (error) {
+      // A connection can fail after the insert commits. Keep the bytes if the
+      // row exists or its outcome cannot be checked; an orphan is recoverable.
+      let definitelyNotStored = false;
+      try {
+        definitelyNotStored = !(await this.prisma.fileObject.findUnique({ where: { objectKey: written.objectKey }, select: { id: true } }));
+      } catch { /* Unknown commit outcome: never delete a possibly referenced file. */ }
+      if (definitelyNotStored) await removeSayRingAvatar(written.objectKey);
+      throw error;
+    }
+    const publicBase = env("PUBLIC_BASE_URL", "http://localhost:8080").replace(/\/$/, "");
+    return {
+      id: stored.id,
+      url: `${publicBase}/api/saydian-app/v2/files/${stored.id}`,
+      sha256: stored.sha256,
+      byteSize: stored.byteSize,
     };
   }
 
@@ -557,6 +600,11 @@ export class SupportService {
     const file = await this.prisma.fileObject.findUnique({ where: { id } });
     if (!file || file.status !== "ACTIVE" || !["avatar", "admin-content"].includes(file.purpose)) {
       throw new NotFoundException("文件不存在");
+    }
+    if (isSayRingLocalAvatarKey(file.objectKey)) {
+      if (!isGlobalRealm() || file.purpose !== "avatar") throw new NotFoundException("文件不存在");
+      const bytes = await readSayRingAvatar(file.objectKey, file.byteSize, file.sha256);
+      return { body: Readable.from([bytes]), contentType: file.contentType, byteSize: bytes.length, sha256: file.sha256 };
     }
     const storage = await this.storage();
     const result = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }));

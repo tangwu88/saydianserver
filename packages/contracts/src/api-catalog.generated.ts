@@ -23729,6 +23729,38 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "FilesController.uploadSayRingAvatar",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/files/say-ring-avatar",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "Say Ring 上传头像",
+      "request": "会员令牌；multipart file，JPEG/PNG/WebP，最大 10 MiB；仅国际环境",
+      "response": "{id,url,sha256,byteSize}；URL 与现有头像接口一致",
+      "dependency": "Say Ring 专用服务器持久目录；开关关闭时沿用原头像存储",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "FilesController.upload",
       "method": "POST",
       "path": "/api/saydian-app/v2/files",
@@ -23821,9 +23853,9 @@ export const apiCatalog = {
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "获取公开头像",
-      "request": "id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件",
+      "request": "id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件",
       "response": "原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载",
-      "dependency": "对象存储",
+      "dependency": "原有对象存储或 Say Ring 专用服务器持久目录",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

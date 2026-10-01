@@ -20,13 +20,13 @@ const check = (value, message) => { assert(value, message); checks += 1; };
 
 check(compose.name === "saydian-global", "Independent Compose project name is required");
 const names = Object.keys(compose.services).sort();
-check(JSON.stringify(names) === JSON.stringify(["global-admin", "global-api", "global-minio", "global-postgres", "global-redis", "global-worker"]), "Only the six global services are permitted");
+check(JSON.stringify(names) === JSON.stringify(["global-admin", "global-api", "global-avatar-backup", "global-minio", "global-postgres", "global-redis", "global-worker"]), "Only the seven scoped global services are permitted");
 for (const name of names) {
   const service = compose.services[name];
   check(!service.ports && !service.network_mode && !service.container_name, `${name}: no host port/network or cross-project container name`);
   check(!service.env_file, `${name}: runtime values must be explicitly mapped, not imported from domestic env`);
   for (const mount of service.volumes ?? []) {
-    check(/^global_(postgres|redis|minio)_data:/.test(mount), `${name}: only project-scoped global data volumes`);
+    check(/^global_(postgres|redis|minio|say_ring_avatar|say_ring_avatar_backup)_data:/.test(mount), `${name}: only project-scoped global data volumes`);
   }
 }
 for (const name of ["global-postgres", "global-redis", "global-minio"]) {
@@ -54,6 +54,11 @@ check(admin.read_only === true && JSON.stringify(admin.tmpfs) === '["/tmp"]', "S
 check(admin.security_opt?.includes("no-new-privileges:true"), "Static admin must forbid privilege escalation");
 check(JSON.stringify(admin.healthcheck?.test) === '["CMD","wget","-qO-","http://127.0.0.1:8080/admin/index.html"]', "Admin health check must verify the built frontend is present");
 check(Object.values(compose.volumes).every((volume) => !volume.external && !volume.name), "Volumes must remain scoped to the global Compose project");
+const avatarBackup = compose.services["global-avatar-backup"];
+check(avatarBackup.image === "alpine:3.21" && JSON.stringify(avatarBackup.networks) === '["global_private"]', "Avatar backups must remain local and private");
+check(JSON.stringify(avatarBackup.volumes) === '["global_say_ring_avatar_data:/avatars:ro","global_say_ring_avatar_backup_data:/backup"]', "Avatar backup may only read source and write a separate local volume");
+check(avatarBackup.read_only === true && avatarBackup.security_opt?.includes("no-new-privileges:true"), "Avatar backup container must remain restricted");
+check(avatarBackup.command?.join(" ").includes("-mtime +7") && avatarBackup.command?.join(" ").includes("sha256sum"), "Avatar backup must retain seven days and checksum archives");
 
 const fixed = {
   NODE_ENV: "production", APP_REALM: "global", AUTH_ISSUER: "saydian-global-server",
@@ -72,6 +77,7 @@ const controlledQaSwitches = {
 const resourceLimits = {
   "global-postgres": { mem_limit: "384m", cpus: 0.5, pids_limit: 150 },
   "global-redis": { mem_limit: "96m", cpus: 0.25, pids_limit: 100 },
+  "global-avatar-backup": { mem_limit: "64m", cpus: 0.1, pids_limit: 50 },
   "global-minio": { mem_limit: "256m", cpus: 0.5, pids_limit: 150 },
   "global-api": { mem_limit: "384m", cpus: 0.75, pids_limit: 200 },
   "global-admin": { mem_limit: "64m", cpus: 0.25, pids_limit: 50 },
@@ -102,6 +108,10 @@ for (const [name, expected] of Object.entries(resourceLimits)) {
   }
   check(service.logging?.driver === "json-file" && service.logging?.options?.["max-size"] === "10m" && service.logging?.options?.["max-file"] === "3", `${name}: bounded container logs are required`);
 }
+check(compose.services["global-api"].environment.SAY_RING_LOCAL_AVATAR_WRITE_ENABLED === "${GLOBAL_SAY_RING_LOCAL_AVATAR_WRITE_ENABLED:-false}", "Say Ring local avatar writes must default off");
+check(compose.services["global-api"].environment.SAY_RING_AVATAR_DIR === "/var/lib/saydian/say-ring-avatars", "Say Ring avatar root must be fixed");
+check(JSON.stringify(compose.services["global-api"].volumes) === '["global_say_ring_avatar_data:/var/lib/saydian/say-ring-avatars"]', "Only global API may write Say Ring avatars");
+check(!compose.services["global-worker"].volumes, "Worker must not mount Say Ring avatars");
 for (const [, key] of composeText.matchAll(/(?<!\$)\$\{(GLOBAL_[A-Z0-9_]+)/g)) {
   check(keys.has(key), `env.example must document ${key}`);
 }

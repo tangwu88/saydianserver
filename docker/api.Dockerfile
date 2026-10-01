@@ -18,6 +18,9 @@ FROM node:24.8.0-alpine AS runtime
 WORKDIR /workspace
 ENV NODE_ENV=production
 RUN apk add --no-cache font-noto-cjk
+RUN mkdir -p /var/lib/saydian/say-ring-avatars \
+ && chown node:node /var/lib/saydian/say-ring-avatars \
+ && chmod 0700 /var/lib/saydian/say-ring-avatars
 COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
 COPY --from=build --chown=node:node /workspace/packages/contracts ./packages/contracts
 COPY --from=build --chown=node:node /workspace/packages/commerce-domain ./packages/commerce-domain

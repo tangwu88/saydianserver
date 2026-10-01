@@ -1,6 +1,16 @@
 # 国际服务隔离部署骨架
 
-本次交付仅提供可审阅配置和只读校验脚本，没有部署、启动容器、创建数据库角色、执行迁移或发送验证码。国际 App 根域为 `https://app.saydian.cn`，API 前缀为 `/global/api/saydian-app/v2`；国内部署不受本模板修改。
+## 2026-10-01 Say Ring 头像本地存储增量
+
+本次仅 Say Ring 客户端改用专用头像上传入口。原国内版与国际版 App 的上传入口、其他附件和安装包仍按原对象存储配置运行。新头像键为 `say-ring-avatar/v1/`，读接口兼容此键和旧对象存储键；不迁移或删除旧头像。
+
+发布时先保持 `GLOBAL_SAY_RING_LOCAL_AVATAR_WRITE_ENABLED=false`。先核验目标主机剩余容量、数据库备份、`global_say_ring_avatar_data` 与 `global_say_ring_avatar_backup_data` 两个项目私有卷；启动 `global-avatar-backup` 容器并观察首份归档、SHA-256 校验及解包到隔离临时目录的恢复结果。API 根文件系统仍只读，只有 Say Ring 头像卷可写；卷不可写时启动或上传必须明确失败，不可改写 `/tmp` 或对象存储。
+
+当前国际自动部署只更新 API、Worker、Admin，不保证自动启动新备份容器；必须在目标主机使用私有 env 显式执行限定服务的 `docker compose ... up -d --no-deps global-avatar-backup` 并检查状态，不得执行 `down` 或修改国内服务。完成真实恢复演练后，才可在工作区外的私有 env 中将头像写入开关设为 `true` 并仅重建 `global-api`。切换后用 Say Ring 专用测试账号上传、重读资料及首页头像，重启 API 后再读取同一头像，同时抽查旧头像、原国际版 App 上传接口及国内探针。回滚可以关闭新写入，须保留双读取代码与两个卷；删除新卷会破坏已经保存的头像。
+
+备份容器每天产生一个压缩归档并保留至少七天，归档与源卷同在一台主机，**不构成异地容灾**。任何主机操作和用户真实头像测试，都要在实施记录中单独留下结果；源代码测试、容器配置解析和公网健康探针不能替代这些验收。
+
+以下是最初国际服务隔离部署骨架的说明；其中“尚未部署”是当时的历史状态，当前线上版本必须以 `/global/health/ready` 实时核对。国际 App 根域为 `https://app.saydian.cn`，API 前缀为 `/global/api/saydian-app/v2`；国内部署不受本模板修改。
 
 ## 固定隔离边界
 
