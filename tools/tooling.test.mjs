@@ -10,6 +10,7 @@ import { fieldContracts } from "./api-field-contracts.mjs";
 import "../deploy/scripts/release-manifest.test.mjs";
 import "../deploy/scripts/unified-deployment.test.mjs";
 import "../deploy/scripts/deploy-failure.test.mjs";
+import "../deploy/scripts/offline-image-transfer.test.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bash = process.env.SAYDIAN_BASH || (process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash");

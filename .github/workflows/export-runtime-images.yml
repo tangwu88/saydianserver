@@ -11,6 +11,10 @@ on:
         description: Original successful CI verify run containing release manifest
         required: true
         type: string
+      upload_to_server:
+        description: Transfer and import these exact images through the existing receiver, without restarting applications
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -20,6 +24,11 @@ permissions:
 jobs:
   export:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production
+    concurrency:
+      group: ${{ inputs.upload_to_server && 'saydianapp-production' || format('saydian-export-{0}', github.run_id) }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -61,3 +70,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
+      - name: Transfer verified images without rebuilding or switching services
+        if: inputs.upload_to_server
+        env:
+          REVISION: ${{ inputs.revision }}
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: bash deploy/scripts/send-offline-images.sh "$REVISION" export
