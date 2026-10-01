@@ -1,4 +1,5 @@
 \set ON_ERROR_STOP on
+SET TIME ZONE 'UTC';
 -- Run in the same exported snapshot as pg_dump. Rows never leave PostgreSQL;
 -- only deterministic table counts and row-content digests enter the private log.
 SELECT format(

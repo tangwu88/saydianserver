@@ -13,7 +13,7 @@ docker run -d --name "$source_container" --network none \
 created=true
 ready=false
 for _attempt in {1..30}; do
-  if docker exec "$source_container" pg_isready -U fixture -d fixture >/dev/null; then ready=true; break; fi
+  if docker exec "$source_container" psql -X -qAt -h 127.0.0.1 -U fixture -d fixture -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null 2>&1; then ready=true; break; fi
   sleep 1
 done
 [[ "$ready" == true ]]

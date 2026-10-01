@@ -39,7 +39,10 @@ docker run -d --name "$temporary" --network none --label saydian.restore-drill=t
 created=true
 ready=false
 for _attempt in {1..30}; do
-  if docker exec "$temporary" pg_isready -U restore -d restore > /dev/null; then ready=true; break; fi
+  # The image briefly runs a socket-only init server before creating POSTGRES_DB.
+  # pg_isready alone can succeed during that phase; require the final TCP server
+  # and an actual query against the requested database.
+  if docker exec "$temporary" psql -X -qAt -h 127.0.0.1 -U restore -d restore -v ON_ERROR_STOP=1 -c 'SELECT 1' > /dev/null 2>&1; then ready=true; break; fi
   sleep 1
 done
 [[ "$ready" == true ]]
