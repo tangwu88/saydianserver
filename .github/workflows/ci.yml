@@ -128,6 +128,8 @@ jobs:
           labels: org.opencontainers.image.revision=${{ github.sha }}
       - name: Smoke test the actual runtime images
         run: bash tools/smoke-runtime-images.sh "$GITHUB_SHA"
+      - name: Rehearse original-image offline transfer with real Docker
+        run: bash tools/smoke-offline-image-transfer.sh "$GITHUB_SHA"
       - name: Publish tested images and immutable release manifest
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:

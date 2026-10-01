@@ -47,7 +47,7 @@ export function freezeGateway(source) {
     // that lazily create compatibility IDs. Static pages and health stay readable.
     return block.replace(host, `${host}
   set $saydian_cutover_block 0;
-  if ($uri ~ "^/(global/)?api(/|$)") { set $saydian_cutover_block 1; }
+  if ($uri ~* "^/(global/)?api(/|$)") { set $saydian_cutover_block 1; }
   if ($uri ~ "${cutoverCallbackPattern}") { set $saydian_cutover_block 0; }
   if ($saydian_cutover_block = 1) { return 503; }`);
   });

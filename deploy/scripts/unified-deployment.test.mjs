@@ -52,6 +52,7 @@ test("gateway aliases preserve request URI/method and unrelated hosts byte for b
   assert.equal(unifyGateway(result), result);
   assert.throws(() => unifyGateway(before + template));
   const frozen = freezeGateway(result);
+  assert(frozen.includes('if ($uri ~* "^/(global/)?api(/|$)")'));
   assert(frozen.includes('if ($saydian_cutover_block = 1) { return 503; }'));
   assert(frozen.startsWith("# untouched other host\n") && frozen.endsWith("\n# untouched suffix"));
   assert.throws(() => freezeGateway(frozen));

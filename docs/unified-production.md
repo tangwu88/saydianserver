@@ -22,7 +22,9 @@ receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`�
 
 只允许 `deploy/compatible-migrations.json` 中逐份 SQL 校验值已审阅的新增迁移自动执行。任何历史 SQL 校验值变化、未完成迁移或未审核待执行迁移均阻止发布。Prisma 单独以已有数据库 owner 执行；应用始终用原 app 用户启动，不运行 seed。
 
-若 GHCR 网络失败，可使用 `Export runtime images` 导出同一 CI 清单的镜像。服务器先校验压缩包 SHA-256，再 `docker load`；随后同 SHA 手动部署勾选 `offline_images`。部署仍核对 config image ID 与 revision，不能用重新构建的同名 tag 代替。
+若 GHCR 网络失败，可使用 `Export runtime images` 导出同一 CI 清单的镜像，勾选 `upload_to_server` 后通过既有受限 receiver 分块传输。传输与发布共用锁；每块、完整压缩包、原清单及导入后的 image ID/revision 均验证，不重启应用。随后同 SHA 手动部署勾选 `offline_images`（首次切换仍需 `first_cutover`）。不能用重新构建的同名 tag 代替。
+
+离线传输单块不超过 8 MiB，保留 receiver 的 10 MiB 上限；服务器需满足暂存包、镜像及额外 5 GiB 的容量门槛。校验完成的分块与归档留在 root-only `deploy/unified/offline/<SHA>/<archive hash>`，原业务文件和旧镜像不自动清理。
 
 安装包与链接通过后台编辑和上传；旧 `package_only` 源码发布入口已删除，已有只读版本化安装包继续保留。
 
