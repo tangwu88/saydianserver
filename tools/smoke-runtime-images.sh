@@ -75,7 +75,7 @@ for path in /admin/ /down /health/ready /global/health/ready /api/saydian-app/v2
   [[ $(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:18082$path") == 200 ]]
 done
 for method in GET POST; do
-  for path in /api/v1/member/member/my /global/api/saydian-app/v2/devices /api/saydian-app/v2/billing/payments/wechat/notify/nested; do
+  for path in /api/v1/member/member/my /API/v1/member/member/my /global/api/saydian-app/v2/devices /global/API/saydian-app/v2/devices /api/saydian-app/v2/billing/payments/wechat/notify/nested; do
     [[ $(curl -sS -X "$method" -o /dev/null -w '%{http_code}' "http://127.0.0.1:18082$path") == 503 ]]
   done
 done
