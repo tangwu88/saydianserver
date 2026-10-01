@@ -103,6 +103,8 @@ main `ba85f5e` 的 CI `36906847125` 全部通过，三镜像 runtime ID 与 regi
 
 公网完整下载校验通过：Android 64,661,988 字节、SHA-256 `b419c738d219c940544392a0013aa8c3d703b075c2a12fce19b38386eaf025aa`；HarmonyOS 9,394,620 字节、SHA-256 `1efe85575a9f79ecebd373fd402704a212db3503d01bb606b6ced661c98d0795`。二者 Range `bytes=0-1023` 均为 206 且 Content-Range/长度正确。浏览器下载页三端正常，iPhone 待开放；Say Ring 新旧地址清单一致。临时核查脚本最初误读 `platforms`，按实际 `releases[].destination` 修正后完成校验，生产配置未改。
 
+最终文档提交后追加探针先错误地要求无参数 `/global/api/.../support/app-update` 返回 200；回查合并前国际服务，该请求默认选择 `global_app_update`，且生产原本未配置该值，因此 404 与既有行为一致，并非路径转发错误。修正验收预期后，显式 `product=say-ring` 的新旧下载 API 均返回 200；未登录设备 API 新旧地址均返回 401，说明均进入同一鉴权路由。canonical app_update、两个 health 地址与五个页面都按预期返回；没有修改线上配置。
+
 已有 Say Ring Android 市场链接仍为 `https://www.baidu.com/`，本次仅保留原配置，不将它称为正式应用市场链接；真实商店地址仍需产品方确认后通过后台更新。未在此次服务合并中发布或激活未经审核的法律文档。
 
 首次验收后开启 `AUTO_DEPLOY_ENABLED=true`，保留 `PRODUCTION_IMAGE_TRANSPORT=ssh`。本次交接文档提交将用于验证日常自动入口；须以该提交的 CI 内自动部署 job 与最新双地址 revision 作为最终结果，不另造“已部署”的静态文档 SHA。
