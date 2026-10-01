@@ -68,7 +68,7 @@ test("deployment shell syntax and receiver rejection", () => {
   assert.match(denied.output, /Only release SHA or status/);
 });
 
-test("shared gateway rebuild preserves only an explicitly marked global route block", () => {
+test("shared gateway rebuild preserves the marked global routes and selected admin upstream", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "saydian-gateway-test-"));
   const bin = path.join(temporary, "bin");
   const deployRoot = path.join(temporary, "deploy-root");
@@ -87,6 +87,9 @@ old http block
 # END SAYDIAN APP HTTP app.saydian.cn
 # BEGIN SAYDIAN APP HTTPS app.saydian.cn
 server {
+  location /admin/ {
+    proxy_pass http://global-admin:8080;
+  }
   # BEGIN SAYDIAN GLOBAL ROUTES
   location = /global/health { proxy_pass http://global-api:8080/health/ready; }
   location = /global/saidian-mall { return 308 /global/saidian-mall/; }
@@ -119,11 +122,58 @@ server {
   assert.equal(configured.match(/# BEGIN SAYDIAN GLOBAL ROUTES/g)?.length, 1);
   assert.equal(configured.match(/location = \/global\/health/g)?.length, 1);
   assert.equal(configured.match(/location = \/global\/saidian-mall/g)?.length, 1);
+  assert.match(configured, /location \/admin\/ \{\s+proxy_pass http:\/\/global-admin:8080;/);
   assert.doesNotMatch(configured, /__SAYDIAN_GLOBAL_ROUTES__/);
   assert.match(configured, /proxy_pass http:\/\/saydianapp-api:8080/);
   const dockerCalls = fs.readFileSync(dockerLog, "utf8");
   assert.match(dockerCalls, /exec saydian-gateway-1 nginx -t/);
   assert.match(dockerCalls, /exec saydian-gateway-1 nginx -s reload/);
+  fs.rmSync(temporary, { recursive: true, force: true });
+});
+
+test("admin upstream switch changes only the unique managed block and validates before reload", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "saydian-admin-upstream-test-"));
+  const bin = path.join(temporary, "bin");
+  const gatewayConfig = path.join(temporary, "gateway-nginx.conf");
+  const backupDir = path.join(temporary, "backups");
+  const dockerLog = path.join(temporary, "docker.log");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, "docker"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$DOCKER_LOG\"\n");
+  fs.chmodSync(path.join(bin, "docker"), 0o755);
+  fs.writeFileSync(gatewayConfig, `server {
+  location /admin/ {
+    proxy_pass http://saydianapp-admin:8080;
+  }
+  location /down/ {
+    proxy_pass http://saydianapp-admin:8080;
+  }
+}\n`);
+  const shellBin = process.platform === "win32"
+    ? `/${bin[0].toLowerCase()}${bin.slice(2).replaceAll("\\", "/")}`
+    : bin;
+  const result = spawnSync(bash, ["-c", `PATH='${shellBin}':\"$PATH\"; export PATH; exec sh deploy/scripts/switch-admin-upstream.sh`], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 60_000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      ADMIN_UPSTREAM: "global-admin",
+      GATEWAY_CONTAINER: "saydian-gateway-1",
+      GATEWAY_CONFIG_PATH: gatewayConfig,
+      GATEWAY_BACKUP_DIR: backupDir,
+      DOCKER_LOG: dockerLog,
+    },
+  });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  assert.equal(result.status, 0, output);
+  const configured = fs.readFileSync(gatewayConfig, "utf8");
+  assert.match(configured, /location \/admin\/ \{\s+proxy_pass http:\/\/global-admin:8080;/);
+  assert.match(configured, /location \/down\/ \{\s+proxy_pass http:\/\/saydianapp-admin:8080;/);
+  const dockerCalls = fs.readFileSync(dockerLog, "utf8");
+  assert.match(dockerCalls, /exec saydian-gateway-1 nginx -t/);
+  assert.match(dockerCalls, /exec saydian-gateway-1 nginx -s reload/);
+  assert.equal(fs.readdirSync(backupDir).length, 1);
   fs.rmSync(temporary, { recursive: true, force: true });
 });
 test("production Redis expands the configured password in its container shell", () => {
