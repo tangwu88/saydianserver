@@ -17,7 +17,8 @@ for name in api worker admin; do
   id=$(tar -c -C "$scratch/empty" . | docker import --change "LABEL org.opencontainers.image.revision=$revision" --change "LABEL fixture.component=$name" - "saydian-offline-fixture-$name:$revision")
   fixture_images+=("$id")
 done
-docker save "${fixture_images[@]}" | gzip -1 > "$scratch/images.tar.gz"
+docker save "saydian-offline-fixture-api:$revision" "saydian-offline-fixture-worker:$revision" "saydian-offline-fixture-admin:$revision" | gzip -1 > "$scratch/images.tar.gz"
+tar -xOzf "$scratch/images.tar.gz" index.json | jq -e '.manifests | length == 3' > /dev/null
 node --input-type=module - "$revision" "$payload/release-manifest.json" "${fixture_images[@]}" <<'NODE'
 import {writeFileSync} from 'node:fs';
 const [revision, output, ...ids] = process.argv.slice(2);

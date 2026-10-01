@@ -1,0 +1,9 @@
+name: Production image store
+description: Match the production containerd image identity and archive format
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-docker-action@v5
+      with:
+        version: v29.8.2
+        daemon-config: '{"features":{"containerd-snapshotter":true}}'

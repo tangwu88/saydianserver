@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,7 @@ function fixture(mode, callback) {
     mkdirSync(payload, { recursive: true }); mkdirSync(bin);
     writeFileSync(join(payload, "release-manifest.json"), manifestText);
     writeFileSync(join(payload, "offline-transfer.json"), JSON.stringify(descriptor()));
+    writeFileSync(join(payload, "unrelated-file"), "preserve");
     const script = join(root, "receiver.sh");
     writeFileSync(script, readFileSync(new URL("./receive-offline-images.sh", import.meta.url), "utf8").replaceAll("/opt/saydianapp-server", root));
     const double = `#!${process.execPath}
@@ -51,18 +52,24 @@ if(tool==='docker') {
     const receive = (index, corrupt = false) => {
       writeFileSync(join(payload, "chunk-name"), `chunk-00${index}\n`);
       writeFileSync(join(payload, "image-chunk"), corrupt ? Buffer.from("corrupt") : chunks[index]);
+      writeFileSync(join(source, "bundle.tgz"), "owned receiver fixture");
       const result = spawnSync("bash", [script], { encoding: "utf8", timeout: 15000, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RELEASE_SOURCE: source, RELEASE_SHA: revision, FIXTURE_ROOT: root, FIXTURE_MODE: mode, FIXTURE_HELPER: fileURLToPath(new URL("./offline-image-transfer.mjs", import.meta.url)) } });
       return { ...result, output: result.stdout + result.stderr };
     };
-    callback({ receive, loaded: () => existsSync(join(root, "loaded")), calls: () => existsSync(join(root, "calls.log")) ? readFileSync(join(root, "calls.log"), "utf8") : "" });
+    callback({ receive, loaded: () => existsSync(join(root, "loaded")), calls: () => existsSync(join(root, "calls.log")) ? readFileSync(join(root, "calls.log"), "utf8") : "",
+      retained: () => readdirSync(join(root, "deploy/unified/offline", revision, descriptor().archive.sha256)).sort(),
+      incoming: () => existsSync(join(payload, "image-chunk")) || existsSync(join(source, "bundle.tgz")),
+      unrelated: () => readFileSync(join(payload, "unrelated-file"), "utf8") });
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
-test("imports only after every chunk verifies; resumes out of order without restarting apps", () => fixture("success", ({ receive, loaded, calls }) => {
+test("imports only after every chunk verifies; resumes out of order without restarting apps", () => fixture("success", ({ receive, loaded, calls, retained, incoming, unrelated }) => {
   let result = receive(1); assert.equal(result.status, 0, result.output); assert(!loaded());
   result = receive(0); assert.equal(result.status, 0, result.output); assert(loaded());
   result = receive(1); assert.equal(result.status, 0, result.output);
   assert.equal(calls().split("\n").filter(line => line.startsWith("load ")).length, 1);
   assert(!/compose|migrate|prune|build|restart/.test(calls()));
+  assert.deepEqual(retained(), ["imported", "offline-transfer.json", "release-manifest.json"]);
+  assert(!incoming()); assert.equal(unrelated(), "preserve");
 }));
 test("rejects corrupt chunks and insufficient space before loading", () => {
   fixture("success", ({ receive, loaded }) => { assert.notEqual(receive(0, true).status, 0); assert(!loaded()); });

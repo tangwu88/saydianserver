@@ -11,7 +11,11 @@ archive="$export_dir/saydianapp-runtime-images-$revision.tar.gz"
 sha256sum --check "$archive.sha256"
 node deploy/scripts/release-manifest.mjs verify "$revision" "$export_dir/release-manifest.json"
 scratch=$(mktemp -d)
-trap 'rm -rf -- "$scratch"' EXIT
+cleanup() {
+  ssh -S "$scratch/control" -O exit "$DEPLOY_USER@$DEPLOY_HOST" >/dev/null 2>&1 || true
+  rm -rf -- "$scratch"
+}
+trap cleanup EXIT
 mkdir "$scratch/chunks" "$scratch/payload" "$scratch/payload/deploy" "$scratch/payload/deploy/scripts"
 printf '%s\n' "$DEPLOY_SSH_KEY" > "$scratch/key"
 printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$scratch/known_hosts"
@@ -30,6 +34,7 @@ for chunk in "$scratch"/chunks/chunk-*; do
   { printf '%s\n' "$GH_TOKEN"; cat "$scratch/bundle.tgz"; } | \
     ssh -i "$scratch/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
       -o UserKnownHostsFile="$scratch/known_hosts" -o ConnectTimeout=15 \
+      -o ControlMaster=auto -o ControlPath="$scratch/control" -o ControlPersist=30 \
       -o ServerAliveInterval=20 -o ServerAliveCountMax=15 \
       "$DEPLOY_USER@$DEPLOY_HOST" "release $revision"
 done

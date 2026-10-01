@@ -17,6 +17,15 @@ docker run --rm --user 0:0 --network none --read-only --entrypoint node -v "$pay
 archive_hash=$(jq -r .archive.sha256 "$payload/offline-transfer.json")
 destination="$root_dir/deploy/unified/offline/$revision/$archive_hash"
 install -d -m 700 "$destination"
+images_ready() {
+  local name id
+  for name in api worker admin; do
+    id=$(jq -r --arg name "$name" '.images[$name].imageId' "$payload/release-manifest.json")
+    [[ $(docker image inspect -f '{{.Id}} {{index .Config.Labels "org.opencontainers.image.revision"}}' "$id" 2>/dev/null) == "$id $revision" ]] || return 1
+  done
+}
+# These two files are created by this receiver invocation, not business files.
+cleanup_incoming() { rm -f -- "$payload/image-chunk" "$source_dir/bundle.tgz"; }
 archive_bytes=$(jq -r .archive.sizeBytes "$payload/offline-transfer.json")
 image_bytes=$(jq '[.images[].sizeBytes] | add' "$payload/release-manifest.json")
 require_space() {
@@ -34,12 +43,18 @@ else
   cmp "$payload/offline-transfer.json" "$destination/offline-transfer.json"
   cmp "$payload/release-manifest.json" "$destination/release-manifest.json"
 fi
+if images_ready; then
+  cleanup_incoming
+  printf '%s\n' "$revision" > "$destination/imported"
+  echo "Original images already verified: $revision."; exit 0
+fi
 if [[ -f "$destination/$chunk_name" ]]; then
   cmp "$payload/image-chunk" "$destination/$chunk_name"
 else
   require_space 8388608
   cp "$payload/image-chunk" "$destination/$chunk_name"
 fi
+cleanup_incoming
 while read -r name; do
   if [[ ! -f "$destination/$name" ]]; then echo "Verified $chunk_name; waiting for remaining chunks."; exit 0; fi
 done < <(jq -r '.chunks[].name' "$destination/offline-transfer.json")
@@ -50,14 +65,9 @@ if [[ ! -f "$destination/images.tar.gz" ]]; then
   mv "$destination/images.tar.gz.partial" "$destination/images.tar.gz"
 fi
 [[ $(sha256sum "$destination/images.tar.gz" | cut -d' ' -f1) == "$archive_hash" ]]
-images_ready() {
-  local name id
-  for name in api worker admin; do
-    id=$(jq -r --arg name "$name" '.images[$name].imageId' "$destination/release-manifest.json")
-    [[ $(docker image inspect -f '{{.Id}} {{index .Config.Labels "org.opencontainers.image.revision"}}' "$id" 2>/dev/null) == "$id $revision" ]] || return 1
-  done
-}
 if ! images_ready; then require_space "$image_bytes"; docker load --input "$destination/images.tar.gz"; fi
 images_ready
 printf '%s\n' "$revision" > "$destination/imported"
+while read -r name; do rm -f -- "$destination/$name"; done < <(jq -r '.chunks[].name' "$destination/offline-transfer.json")
+rm -f -- "$destination/images.tar.gz"
 echo "Original images imported and verified: $revision. No applications restarted."

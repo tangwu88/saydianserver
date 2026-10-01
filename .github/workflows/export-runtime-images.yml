@@ -31,6 +31,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-runtime-docker
       - uses: actions/download-artifact@v4
         with:
           name: release-${{ inputs.revision }}
@@ -51,18 +52,7 @@ jobs:
           set -Eeuo pipefail
           [[ "$REVISION" =~ ^[a-f0-9]{40}$ && "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
           gh run view "$BUILD_RUN_ID" --json headSha,event,jobs | jq -e --arg revision "$REVISION" '.headSha == $revision and .event == "push" and any(.jobs[]; .name == "verify" and .conclusion == "success")'
-          node deploy/scripts/release-manifest.mjs verify "$REVISION" export/release-manifest.json
-          images=()
-          for component in api worker admin; do
-            image=$(jq -r --arg component "$component" '.images[$component].ref' export/release-manifest.json)
-            expected=$(jq -r --arg component "$component" '.images[$component].imageId' export/release-manifest.json)
-            docker pull "$image"
-            test "$(docker inspect -f '{{.Id}}' "$image")" = "$expected"
-            images+=("$expected")
-          done
-          archive="export/saydianapp-runtime-images-$REVISION.tar.gz"
-          docker save "${images[@]}" | gzip -1 > "$archive"
-          sha256sum "$archive" > "$archive.sha256"
+          bash deploy/scripts/export-runtime-images.sh "$REVISION" export
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-images-${{ inputs.revision }}

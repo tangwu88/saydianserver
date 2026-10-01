@@ -19,7 +19,7 @@ export function validateManifest(input, revision) {
     const prefix = `${repository}-${name}@sha256:`;
     assert(typeof image?.ref === "string" && image.ref.startsWith(prefix) && digest.test(image.ref.slice(prefix.length)), "Invalid immutable image reference");
     assert(Number.isSafeInteger(image.sizeBytes) && image.sizeBytes > 0, "Invalid image size");
-    assert(/^sha256:[a-f0-9]{64}$/.test(image.imageId), "Invalid image config identity");
+    assert(/^sha256:[a-f0-9]{64}$/.test(image.imageId), "Invalid runtime image identity");
   }
   assert(Array.isArray(input.migrations) && input.migrations.length, "Migration inventory missing");
   const names = new Set();
@@ -65,6 +65,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       const [image] = JSON.parse(execFileSync("docker", ["image", "inspect", `${repository}-${name}:sha-${revision}`], { encoding: "utf8" }));
       assert(image.Config.Labels["org.opencontainers.image.revision"] === revision);
       const ref = image.RepoDigests.find(ref => ref.startsWith(`${repository}-${name}@sha256:`));
+      assert(ref?.endsWith(`@${image.Id}`), "Build and production must use the same containerd manifest identity");
+      assert(image.Descriptor?.mediaType === "application/vnd.oci.image.manifest.v1+json" || image.Descriptor?.mediaType === "application/vnd.docker.distribution.manifest.v2+json", "Expected a single-platform runtime manifest");
       return [name, { ref, imageId: image.Id, sizeBytes: image.Size }];
     }));
     writeFileSync(file, JSON.stringify(validateManifest({ schemaVersion: 1, revision, images, migrations }, revision), null, 2) + "\n");

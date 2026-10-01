@@ -66,3 +66,15 @@ PR #7 已合入 main `dab83c66a978739ee1bdcd308abbc61d9cb2e479`；CI `3689751427
 追加只读线上探针发现 `/API/saydian-app/v2/support/app-update` 也返回 200，原大小写敏感的停写匹配不足。冻结 API 前缀改为不区分大小写，并加入真实 Nginx 的大写 GET/POST 503 验收；精确支付回调白名单不扩大。该门禁修正合入后需验收新 main 提交，不能继续切换此前 `dab83c6`。每个新提交仍只构建一次；网络重试继续复用其原始镜像。
 
 大小写门禁修正后重新串行运行接口目录、工具、类型、全量测试和构建，全部通过；ShellCheck、actionlint 与 diff 检查通过。旧 PR CI `36901785934` 已取消，避免继续验证已被替代的门禁版本。
+
+PR #8 的 CI `36902419859` 全部通过，包括真实 Docker 导入和大小写 Nginx 停写验收，已合入 main `d889cca8305070d89429d26cd68f5d92bb59b136`。首次部署仍待正式产物、服务器演练和数据验收。
+
+后续自动路径在独立分支补充：复用同一个原镜像导出脚本，支持 `PRODUCTION_IMAGE_TRANSPORT=ssh`，完整预装限定 20 分钟。仅清理本次已验证导入的临时分块/归档，保留校验清单和导入证据，不删除业务数据、数据库备份或旧镜像；此补充未启用或部署，需在首次切换后单独验收。
+
+自动传输补充的本地完整验证已通过，新增清理断言确认只保留传输校验记录且不删除无关文件。分块 SSH 复用本任务的连接，减少每块重复握手；退出时关闭本任务连接并清理本任务临时目录，不改变服务器 SSH 权限。
+
+`36904738831` 完成 49 块传输和归档 SHA 校验，但 Docker 导入身份检查安全失败，未停写、备份或迁移。只读诊断确认服务器 Docker 29.1.3 使用 containerd，CI 原 classic store 的 `.Id` 是 config digest；无标签多镜像导出的 OCI index 也只含最后一个 manifest。不能忽略此差异继续部署。
+
+修正 CI/导出/自动预装为相同 containerd 后端，明确单平台且不添加独立 attestation；清单创建时验证 runtime ID 与 registry digest 相等。导出保留三个 SHA 标签并验 OCI index 数量，真实导入演练同步使用生产后端。依据 [Docker 存储说明](https://docs.docker.com/engine/storage/containerd/) 与 [官方 setup action](https://github.com/docker/setup-docker-action)。服务器 Docker 配置不改、不重启；新提交需要重新通过一次构建验收，后续重试继续复用该提交的原产物。
+
+存储兼容修正后的本地串行全量验证通过：接口目录、工具/部署与 H5 测试、类型检查、全量单测、构建、ShellCheck、actionlint、diff 检查均成功。线上两条 health 仍分别为 `97eed39` / `6ea9dd9` 且 ready，证明此次导入失败未切换生产。容器真实导入与最终切换仍待新 CI/生产验收，自动发布仍关闭。

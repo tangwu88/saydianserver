@@ -14,7 +14,7 @@
 
 ## 日常发布与失败重试
 
-CI 验收成功后上传 `release-<完整 SHA>`，包含三个镜像的 registry digest、config image ID、大小和全部迁移 SQL 的 SHA-256。部署任务只下载该清单，不编译源码。
+CI 验收成功后上传 `release-<完整 SHA>`，包含三个镜像的 registry digest、runtime image ID、大小和全部迁移 SQL 的 SHA-256。CI、导出和生产统一使用 containerd image store；单平台 manifest ID 必须等于 registry digest，禁止把 classic store 的 config ID 当作生产 ID。部署任务只下载该清单，不编译源码。
 
 重试使用 `Deploy production`，填写同一最新 main SHA。它查找该提交成功的 CI `verify` job 并复用原 artifact。不要为了重试部署而重跑镜像构建任务。
 
@@ -24,7 +24,9 @@ receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`�
 
 若 GHCR 网络失败，可使用 `Export runtime images` 导出同一 CI 清单的镜像，勾选 `upload_to_server` 后通过既有受限 receiver 分块传输。传输与发布共用锁；每块、完整压缩包、原清单及导入后的 image ID/revision 均验证，不重启应用。随后同 SHA 手动部署勾选 `offline_images`（首次切换仍需 `first_cutover`）。不能用重新构建的同名 tag 代替。
 
-离线传输单块不超过 8 MiB，保留 receiver 的 10 MiB 上限；服务器需满足暂存包、镜像及额外 5 GiB 的容量门槛。校验完成的分块与归档留在 root-only `deploy/unified/offline/<SHA>/<archive hash>`，原业务文件和旧镜像不自动清理。
+离线传输单块不超过 8 MiB，保留 receiver 的 10 MiB 上限；服务器需满足暂存包、镜像及额外 5 GiB 的容量门槛。成功导入后仅清理本次传输产生的包和分块，在 root-only `deploy/unified/offline/<SHA>/<archive hash>` 保留清单、校验值和导入记录。可从 GHCR 或原导出 artifact 重新取得镜像；原业务文件、数据库备份和旧镜像不自动清理。
+
+仓库变量 `PRODUCTION_IMAGE_TRANSPORT=ssh` 可让日常自动发布在 Actions 中拉取原 digest，经受限 receiver 预装后再执行同一部署脚本，预装总超时 20 分钟。缺省 `ghcr` 则由服务器直接拉取；非法取值停止发布。两种传输不改变构建产物、迁移/最新提交检查或首次切换门禁。尚未完成首次验收时保持 `AUTO_DEPLOY_ENABLED=false`。
 
 安装包与链接通过后台编辑和上传；旧 `package_only` 源码发布入口已删除，已有只读版本化安装包继续保留。
 
