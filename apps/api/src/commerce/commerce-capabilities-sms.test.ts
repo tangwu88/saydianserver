@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommerceCapabilitiesService } from "./commerce-capabilities.service";
+import { GlobalVerificationDeliveryService } from "../auth/global-verification-delivery.service";
+import { SmsAdapterService } from "../auth/sms-adapter.service";
 
 function fixture(
   publicConfig: Record<string, unknown>,
@@ -7,15 +9,18 @@ function fixture(
 ) {
   const db = {
     integrationConfig: {
+      findUnique: vi.fn(async ({ where }: any) => where.key === "sms" ? { key: "sms", state: "CONFIGURED", publicConfig } : null),
       findMany: vi.fn().mockResolvedValue([
         { key: "sms", state: "CONFIGURED", publicConfig },
       ]),
     },
+    commerceBusinessConfig: { findUnique: vi.fn().mockResolvedValue(null) },
   };
   const secrets = { resolve: vi.fn().mockResolvedValue(secretsValue) };
-  const official = { configured: vi.fn().mockRejectedValue(new Error("not configured")) };
+  const official = { configured: vi.fn().mockRejectedValue(new Error("not configured")), globalCapabilities: vi.fn().mockResolvedValue({ wechatH5: { enabled: false } }) };
+  const delivery = new GlobalVerificationDeliveryService(db as any, secrets as any, new SmsAdapterService(db as any, secrets as any));
   return {
-    service: new CommerceCapabilitiesService(db as never, secrets as never, official as never, { capabilities: vi.fn().mockResolvedValue({ email: false, sms: false, smsCountries: [] }) } as never),
+    service: new CommerceCapabilitiesService(db as never, secrets as never, official as never, delivery),
     secrets,
   };
 }

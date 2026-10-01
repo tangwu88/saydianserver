@@ -61,12 +61,12 @@ describe("international category display numbers", () => {
     await expect(withCategoryNumbers(h.prisma as any, [category])).rejects.toThrow("分类编号暂时无法读取");
   });
 
-  it("adds the number to international lists only, without changing domestic responses", async () => {
+  it("returns the same category numbers independent of former realm", async () => {
     const h = harness(); vi.stubEnv("APP_REALM", "global");
     expect(await h.service.articleCategories()).toEqual([{ ...category, categoryNo: "12" }]);
     vi.stubEnv("APP_REALM", "domestic"); h.compatibilityId.findMany.mockClear();
-    expect(await h.service.articleCategories()).toEqual([category]);
-    expect(h.compatibilityId.findMany).not.toHaveBeenCalled();
+    expect(await h.service.articleCategories()).toEqual([{ ...category, categoryNo: "12" }]);
+    expect(h.compatibilityId.findMany).toHaveBeenCalledOnce();
   });
 
   it.each([undefined, category.id])("saves category %s with its number in one transaction and ignores a forged display ID", async id => {

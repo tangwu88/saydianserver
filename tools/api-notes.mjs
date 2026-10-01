@@ -10,7 +10,7 @@ const mall = "主库商城；支付操作还依赖已验收的支付渠道配置
 const category = "{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID";
 const article = "{title,contentHtml,summary?,coverUrl?,categoryId?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID";
 const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；同类型仅一个激活版本";
-const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册";
+const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
   "SupportController.appDisplay": entry("读取 Say Ring AI 内容显示开关", "query product=say-ring；公开接口，禁止其他产品标识", "{product:'say-ring',hideAi:boolean}；true隐藏AI入口与内容；未配置默认false；仅读取已公开的say_ring_app_display并返回白名单字段；Cache-Control:no-store", "当前部署独立AppSetting；不读取AI密钥，不调用AI供应商"),
@@ -59,8 +59,9 @@ export const notes = {
   "MembersController.saveProfile": entry("修改本人资料", formProfile, "Profile"),
   "MembersController.goals": entry("活动目标", undefined, "{steps,distanceMeters,caloriesKcal}；未知为 null"),
   "MembersController.saveGoals": entry("保存活动目标", "{steps,distanceMeters,caloriesKcal}；缺省字段置 null，客户端应提交完整目标", "活动目标"),
+  "HealthController.capabilities": entry("健康同步能力", undefined, "{dailySummaryVersions:true,dailySummaryVersion:1}；只表示服务端支持日汇总版本折叠，与普通设备能力无关"),
   "HealthController.ingestBatch": entry("健康批量同步", healthBatch, batchResult),
-  "HealthController.list": entry("本人健康历史", "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间", "{items,nextCursor}；按采集时间和UUID稳定分页，相同采集时间记录不丢页"),
+  "HealthController.list": entry("本人健康历史", "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间", "{items,nextCursor}；逐条记录保持原样；同会员/指标/设备/本地日期的日汇总只返回最新版本并回显aggregation"),
   "HealthController.warningRules": entry("读取阈值提醒", undefined, "规则数组；未获取阈值为 null"),
   "HealthController.warnings": entry("读取提醒事件", "limit 默认 50", "提醒数组；仅阈值提醒，不是诊断"),
   "HealthController.saveWarningRules": entry("保存阈值提醒", "{rules:[{metric,enabled,lowThreshold?,highThreshold?,secondaryHighThreshold?,shareWithCare?}]}；目前仅本人的提醒闭环", "保存后的规则数组"),
@@ -74,7 +75,7 @@ export const notes = {
   "HealthReportsController.export": entry("按需导出详细健康报告", "id=已解锁且生成完成的报告UUID", "application/pdf文件流；不长期重复保存PDF", "报告字体服务"),
   "HealthReportsController.retry": entry("重试失败的报告", "id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本", "重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还", "AI供应商"),
   "DevicesController.list": entry("已绑定设备", undefined, "Device[]；只含未解绑设备"),
-  "DevicesController.bind": entry("绑定设备快照", "{deviceId/hardwareId,vendor,model,displayName/name,firmware?,capabilities?:string[],syncCursor?}", "Device；不是服务端蓝牙连接"),
+  "DevicesController.bind": entry("上报设备连接", "{deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?}；macAddress仅接受标准 MAC，iOS UUID 不可冒充", "Device；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 | 字段=值` 字符串；不是服务端蓝牙连接"),
   "DevicesController.updateCapabilities": entry("更新设备能力及游标", "{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID", "Device"),
   "DevicesController.unbind": entry("解绑设备", "id=绑定记录 UUID", "{unbound:true}；保留历史健康数据"),
   "CareController.relationships": entry("关爱关系列表", undefined, "CareRelationship[]，含 direction、双方昵称、授权指标"),
@@ -104,8 +105,9 @@ export const notes = {
   "SupportController.appPackage": entry("Say Ring 公开安装包", "fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名", "安装包原始文件流，含 Content-Length、ETag 和 nosniff", "已配置对象存储"),
   "SupportController.feedback": entry("提交反馈", "{content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项}", "{id,status}"),
   "FilesController.upload": entry("上传图片", "multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP", "{id,url,...}", "私有对象存储"),
+  "FilesController.uploadSayRingAvatar": entry("Say Ring 上传头像", "会员令牌；multipart file，JPEG/PNG/WebP，最大 10 MiB；仅国际环境", "{id,url,sha256,byteSize}；URL 与现有头像接口一致", "Say Ring 专用服务器持久目录；开关关闭时沿用原头像存储"),
   "FilesController.uploadEcg": entry("上传 ECG 压缩文件", "multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用", "ECG 对象键和摘要；原始波形非公开", "私有对象存储"),
-  "FilesController.download": entry("获取公开头像", "id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件", "原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载", "对象存储"),
+  "FilesController.download": entry("获取公开头像", "id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件", "原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载", "原有对象存储或 Say Ring 专用服务器持久目录"),
   "CommerceController.home": entry("商城首页", undefined, "主库商城首页数据", mall),
   "CommerceController.capabilitiesForApp": entry("App商城可用能力", "locale可选；国际App V2公开读取", "当前真实开放市场、币种小数位、维护状态及可用于android/ios的支付方式；能力缺失不推测可下单", "global.markets与已核验支付配置；不返回密钥"),
   "CommerceController.markets": entry("国际市场可用状态", undefined, "{markets:[{countryCode,currency,currencyExponent,commerceEnabled,paymentChannels:[]}]}；未配置默认为CN/CNY且commerceEnabled=true；显式停用保留", "global.markets；仅CN收货/CNY整数分价目可结算；其他币种只读元数据；支付可用性另查capabilities"),
@@ -225,9 +227,11 @@ export const notes = {
   "AdminController.adjustMemberPoints": entry("超级管理员调整会员积分", "id=会员UUID；{deltaCents:非零整数分,reason:2至200字,idempotencyKey:UUID}；单次绝对值不超过100万元", "返回{userId,deltaCents,balanceCents,idempotent}；余额不可为负，生成会员积分流水与后台审计，同一请求编号安全重试；国内与国际版SUPER_ADMIN可用"),
   "AdminController.updateMemberVerification": entry("超级管理员人工确认联系方式", "id=会员UUID；{channel:mobile|email,verified:boolean,expectedUpdatedAt}；只调整已有联系方式的验证状态，不修改号码或邮箱", "返回脱敏联系方式与手机/邮箱独立验证状态；并发变化409；写入专门审计。人工确认后会员需重新登录，临时测试会话不会原地提权"),
   "AdminController.healthSummary": entry("会员健康数量摘要", "id=会员 UUID", "按指标数量与首末采集时间"),
+  "AdminController.memberDevices": entry("会员设备列表", "id=会员 UUID", "返回指定会员最多500台设备，含稳定脱敏标识、蓝牙名称、型号、MAC、固件、最近连接和绑定状态"),
   "AdminController.rawHealth": entry("授权查看原始健康记录", "id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500", "HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计"),
   "AdminController.care": entry("后台关爱关系", undefined, "最多500条，双方昵称和指标权限；尚无分页"),
-  "AdminController.devices": entry("后台设备快照", undefined, "最多500条；尚无分页"),
+  "AdminController.devices": entry("后台设备快照", undefined, "最多500条；含会员编号、昵称、蓝牙名称、型号、稳定脱敏设备标识和客户端确认的 MAC；尚无分页"),
+  "AdminController.deviceConnections": entry("设备连接详情", "id=设备绑定 UUID", "当前设备快照与最新200条成功连接上报；设备标识由会员范围的单向哈希生成；每条新记录含以 ` | ` 分隔的完整请求体字符串，不含请求头或登录令牌；历史从本功能上线后开始"),
   "AdminController.uploadContentImage": entry("上传后台文章或协议图片", "multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR", "{id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥", "已配置对象存储"),
   "AdminController.uploadAppPackage": entry("上传 Say Ring 安装包", "platform=android/harmonyos；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS", "{fileName,url,sizeBytes,sha256}；上传成功后仍需保存版本配置才发布", "已配置对象存储"),
   "AdminController.feedback": entry("反馈工单", "status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选", "最多500条；含会员编号、昵称、问题内容、处理状态以及已发送给会员的客服回复"),
@@ -254,9 +258,10 @@ export const notes = {
   "AdminController.updateSetting": entry("保存客服、更新或 Say Ring 显示设置", "{value:非空JSON对象,public?:boolean}；更新配置必须通过 DownloadManifest v1 校验；say_ring_app_display仅接受{hideAi:boolean}且必须公开，true隐藏AI相关内容", "设置对象；结构约定见调用手册"),
   "AdminController.commerceProducts": entry("总后台商品列表", "search可查商品名或ERP编号；page默认1", "主库商品、SKU及ERP库存快照；不直接改权威库存", "主库商城/聚水潭"),
   "AdminController.createCommerceProduct": entry("拒绝手工新增ERP商品", "请先通过聚水潭商品同步建立商品和SKU", "HTTP 400；不会创建第二套库存", "聚水潭"),
-  "AdminController.importCommerceProductBySku": entry("按SKU实时获取并导入ERP商品", "{sku:单个ERP SKU，最多100字符}；不读取本地同步列表作为资料来源", "聚水潭商品与库存均成功后新增或刷新草稿商品，并返回完整已知ERP字段；未配置、无权限、未找到或库存缺失时不导入", "聚水潭商品查询与库存查询"),
+  "AdminController.importCommerceProductBySku": entry("按SKU定位SPU并实时导入ERP商品", "{sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存", "聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入", "聚水潭商品查询与库存查询"),
   "AdminController.quickUpdateCommerceProductSkus": entry("快速修改商品SKU售价与库存", "id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数}]}；每次1至100条", "原子更新并返回商品；版本过期409且不部分保存；ERP商品后续同步可能覆盖手工值", "主库商城/聚水潭"),
   "AdminController.updateCommerceProduct": entry("编辑商品展示资料", "id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?}", "展示资料；ERP编号、内部名称、SKU和库存不会被覆盖", "主库商城/聚水潭"),
+  "AdminController.deleteCommerceProduct": entry("永久删除未产生业务历史的商品", "id=商品UUID；删除前需由后台二次确认", "无订单或评价时清理购物车、收藏及商品SKU后返回{deleted:true}；已有订单或评价返回409并要求归档", "主库商城"),
   "AdminController.commerceCategories": entry("商城分类", "无请求体", "分类树平铺数据"),
   "AdminController.createCommerceCategory": entry("新增商城分类", "{name,parentId?,iconUrl?,sort?,enabled?}", "分类"),
   "AdminController.updateCommerceCategory": entry("编辑商城分类", "id=分类UUID；字段同新增", "分类"),

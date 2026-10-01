@@ -12,6 +12,7 @@ import {
   envBoolean,
 } from "./common/environment";
 import { SafeHttpExceptionFilter } from "./common/http-exception.filter";
+import { apiAlias } from "./common/api-alias.middleware";
 
 async function bootstrap(): Promise<void> {
   assertProductionEnvironment();
@@ -19,6 +20,7 @@ async function bootstrap(): Promise<void> {
     bodyParser: false,
     bufferLogs: true,
   });
+  app.use(apiAlias);
   app.use(
     json({
       limit: "30mb",

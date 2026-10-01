@@ -34,6 +34,9 @@ export function shouldDeferCallbacks(environment: Environment): boolean {
 export const verifiedCallbackPaths = new Set([
   "/api/saydian-app/v2/billing/payments/wechat/notify",
   "/api/saydian-app/v2/billing/payments/wechat/refund-notify",
+  "/api/saydian-app/v2/billing/payments/wechat/app/notify",
+  "/api/saydian-app/v2/billing/payments/wechat/app/refund-notify",
   "/api/saydian-app/v2/billing/payments/alipay/notify",
+  "/api/saydian-app/v2/billing/payments/alipay/app/notify",
   "/api/saydian-app/v2/billing/apple/notifications",
 ]);

@@ -44,7 +44,10 @@ function sayRingManifest() {
   const value = manifest();
   value.releases = value.releases.map((release) => ({
     ...release,
-    packageId: release.platform === "harmonyos" ? "cn.saydian.ring.hm" : "cn.saydian.ring",
+    packageId:
+      release.platform === "harmonyos"
+        ? "cn.saydian.ring.hm"
+        : "cn.saydian.ring",
   }));
   return value;
 }
@@ -93,7 +96,14 @@ describe("global admin support and download configuration", () => {
     expect(h.appSetting.findMany).toHaveBeenCalledWith({
       where: {
         key: {
-          in: ["global_support", "global_app_update", "say_ring_app_update", "say_ring_app_display", "say_ring_map"],
+          in: [
+            "global_support",
+            "app_update",
+            "global_app_update",
+            "say_ring_app_update",
+            "say_ring_app_display",
+            "say_ring_map",
+          ],
         },
       },
       orderBy: { key: "asc" },
@@ -115,7 +125,9 @@ describe("global admin support and download configuration", () => {
       enabled: true,
       configured: true,
     });
-    expect(JSON.stringify(h.appSetting.upsert.mock.calls[0]?.[0])).not.toContain("a".repeat(32));
+    expect(
+      JSON.stringify(h.appSetting.upsert.mock.calls[0]?.[0]),
+    ).not.toContain("a".repeat(32));
   });
 
   it("saves global support publication without aliasing it to domestic support", async () => {
@@ -152,11 +164,16 @@ describe("global admin support and download configuration", () => {
     expect(h.appSetting.upsert).not.toHaveBeenCalled();
   });
 
-  it.each(["support", "app_update", "legacy_app_update", "arbitrary_setting"])("refuses the unrelated key %s without any write", (key) => {
-    const h = harness();
-    expect(() => h.service.updateSetting(key, { value: { configured: true } })).toThrow("设置项不存在");
-    expect(h.appSetting.upsert).not.toHaveBeenCalled();
-  });
+  it.each(["support", "legacy_app_update", "arbitrary_setting"])(
+    "refuses the unrelated key %s without any write",
+    (key) => {
+      const h = harness();
+      expect(() =>
+        h.service.updateSetting(key, { value: { configured: true } }),
+      ).toThrow("设置项不存在");
+      expect(h.appSetting.upsert).not.toHaveBeenCalled();
+    },
+  );
 
   it("preserves global package identities and the global download path on save", async () => {
     const h = harness();
@@ -232,60 +249,81 @@ describe("global admin support and download configuration", () => {
     expect(h.appSetting.upsert).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["realm", "package", "path"])("rejects a manifest with the wrong %s before persistence", (field) => {
-    const h = harness();
-    const value = manifest();
-    if (field === "realm") value.realm = "domestic";
-    if (field === "package") value.releases[0]!.packageId = "cn.saydian.app";
-    if (field === "path") value.releases[0]!.destination!.url = "/down/files/domestic.apk";
-    expect(() => h.service.updateSetting("global_app_update", { value })).toThrow();
-    expect(h.appSetting.upsert).not.toHaveBeenCalled();
-  });
+  it.each(["realm", "package", "path"])(
+    "rejects a manifest with the wrong %s before persistence",
+    (field) => {
+      const h = harness();
+      const value = manifest();
+      if (field === "realm") value.realm = "domestic";
+      if (field === "package") value.releases[0]!.packageId = "cn.saydian.app";
+      if (field === "path")
+        value.releases[0]!.destination!.url = "/down/files/domestic.apk";
+      expect(() =>
+        h.service.updateSetting("global_app_update", { value }),
+      ).toThrow();
+      expect(h.appSetting.upsert).not.toHaveBeenCalled();
+    },
+  );
 
-  it("preserves the existing domestic settings contract", async () => {
+  it("uses the same editable settings independent of former realm", async () => {
     vi.stubEnv("APP_REALM", "domestic");
     const h = harness();
     await h.service.settings();
     expect(h.appSetting.findMany).toHaveBeenCalledWith({
       where: {
         key: {
-          in: ["support", "app_update", "legacy_app_update", "say_ring_app_display"],
+          in: [
+            "global_support",
+            "app_update",
+            "global_app_update",
+            "say_ring_app_update",
+            "say_ring_app_display",
+            "say_ring_map",
+          ],
         },
       },
       orderBy: { key: "asc" },
     });
-    await h.service.updateSetting("support", { value: { configured: false } });
+    await h.service.updateSetting("global_support", { value: { configured: false } });
     expect(h.appSetting.upsert.mock.calls[0]?.[0].where).toEqual({
-      key: "support",
+      key: "global_support",
     });
-    expect(() => h.service.updateSetting("global_app_update", { value: manifest() })).toThrow("设置项不存在");
-    expect(h.appSetting.upsert).toHaveBeenCalledTimes(1);
+    await h.service.updateSetting("global_app_update", { value: manifest() });
+    expect(h.appSetting.upsert).toHaveBeenCalledTimes(2);
   });
 });
 
 describe("Say Ring AI visibility administration", () => {
-  it.each(["global", "domestic"])("publishes the explicit flag in the %s realm", async (realm) => {
-    vi.stubEnv("APP_REALM", realm);
-    const h = harness();
-    for (const hideAi of [true, false]) {
-      const result = await h.service.updateSetting("say_ring_app_display", {
-        value: { hideAi, privateNote: "must-not-persist" },
-        public: true,
-      });
-      expect(result).toEqual({
-        key: "say_ring_app_display",
-        value: { hideAi },
-        public: true,
-      });
-    }
-    expect(h.appSetting.upsert).toHaveBeenCalledTimes(2);
-  });
+  it.each(["global", "domestic"])(
+    "publishes the explicit flag in the %s realm",
+    async (realm) => {
+      vi.stubEnv("APP_REALM", realm);
+      const h = harness();
+      for (const hideAi of [true, false]) {
+        const result = await h.service.updateSetting("say_ring_app_display", {
+          value: { hideAi, privateNote: "must-not-persist" },
+          public: true,
+        });
+        expect(result).toEqual({
+          key: "say_ring_app_display",
+          value: { hideAi },
+          public: true,
+        });
+      }
+      expect(h.appSetting.upsert).toHaveBeenCalledTimes(2);
+    },
+  );
 
-  it.each(["false", 0, null, undefined])("rejects an ambiguous flag %s without changing the setting", (hideAi) => {
-    const h = harness();
-    expect(() => h.service.updateSetting("say_ring_app_display", { value: { hideAi } })).toThrow("隐藏 AI 内容必须为开启或关闭");
-    expect(h.appSetting.upsert).not.toHaveBeenCalled();
-  });
+  it.each(["false", 0, null, undefined])(
+    "rejects an ambiguous flag %s without changing the setting",
+    (hideAi) => {
+      const h = harness();
+      expect(() =>
+        h.service.updateSetting("say_ring_app_display", { value: { hideAi } }),
+      ).toThrow("隐藏 AI 内容必须为开启或关闭");
+      expect(h.appSetting.upsert).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not save a hidden draft that an operator might mistake for an active switch", () => {
     const h = harness();
@@ -316,14 +354,21 @@ describe("global administrator legal-document data source", () => {
     h.globalLegalDocument.findMany.mockResolvedValue([input]);
     expect(await h.service.legalDocuments()).toEqual([input]);
     expect(h.globalLegalDocument.findMany).toHaveBeenCalledWith({
-      orderBy: [{ locale: "asc" }, { documentType: "asc" }, { publishedAt: "desc" }],
+      orderBy: [
+        { locale: "asc" },
+        { documentType: "asc" },
+        { publishedAt: "desc" },
+      ],
     });
     expect(h.legalDocument.findMany).not.toHaveBeenCalled();
   });
 
   it("saves a reviewed global revision and only deactivates documents of the same locale and type", async () => {
     const h = harness();
-    const saved = await h.service.saveLegalDocument("existing-global-document", input);
+    const saved = await h.service.saveLegalDocument(
+      "existing-global-document",
+      input,
+    );
     expect(saved).toMatchObject({
       id: "existing-global-document",
       locale: "en",
@@ -345,7 +390,9 @@ describe("global administrator legal-document data source", () => {
 
   it("keeps the existing review gate before publication", async () => {
     const h = harness();
-    await expect(h.service.saveLegalDocument(undefined, { ...input, reviewed: false })).rejects.toThrow("Review the global document");
+    await expect(
+      h.service.saveLegalDocument(undefined, { ...input, reviewed: false }),
+    ).rejects.toThrow("Review the global document");
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
     expect(h.globalLegalDocument.create).not.toHaveBeenCalled();
   });
@@ -373,7 +420,11 @@ describe("global administrator legal-document data source", () => {
       reviewed: false,
     });
     expect(h.globalLegalDocument.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ documentType: "say_ring_privacy_policy", active: false, reviewed: false }),
+      data: expect.objectContaining({
+        documentType: "say_ring_privacy_policy",
+        active: false,
+        reviewed: false,
+      }),
     });
     expect(h.globalLegalDocument.updateMany).not.toHaveBeenCalled();
   });

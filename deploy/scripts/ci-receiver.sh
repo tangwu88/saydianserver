@@ -37,5 +37,5 @@ tar --no-same-owner --no-same-permissions -xzf "$stage/bundle.tgz" -C "$stage"
 export DOCKER_CONFIG="$stage/docker"
 mkdir -m 700 "$DOCKER_CONFIG"
 printf '%s' "$registry_token" | docker login ghcr.io -u tangwu88 --password-stdin >/dev/null
+GITHUB_TOKEN="$registry_token" DEPLOY_ROOT="$root_dir" RELEASE_SHA="$revision" RELEASE_SOURCE="$stage" bash "$stage/deploy/scripts/deploy-ci.sh"
 unset registry_token
-DEPLOY_ROOT="$root_dir" RELEASE_SHA="$revision" RELEASE_SOURCE="$stage" bash "$stage/deploy/scripts/deploy-ci.sh"

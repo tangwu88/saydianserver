@@ -73,12 +73,12 @@ describe("global failed-report retry consent", () => {
     expect(h.prisma.outboxEvent.upsert).toHaveBeenCalledOnce();
     expect(h.prisma.globalLegalDocument.findMany.mock.invocationCallOrder[0]).toBeLessThan(h.prisma.healthReport.update.mock.invocationCallOrder[0]!);
   });
-  it("does not change domestic retry behavior or require global documents", async () => {
+  it("cannot bypass analysis consent through a former deployment selector", async () => {
     vi.stubEnv("APP_REALM", "domestic");
     const h = retryHarness(null, []);
-    await h.service.retry("user", "report");
+    await expect(h.service.retry("user", "report")).rejects.toThrow("Agree to health analysis");
     expect(h.prisma.globalLegalDocument.findMany).not.toHaveBeenCalled();
-    expect(h.prisma.healthProfile.findUnique).not.toHaveBeenCalled();
-    expect(h.prisma.outboxEvent.upsert).toHaveBeenCalledOnce();
+    expect(h.prisma.healthProfile.findUnique).toHaveBeenCalledOnce();
+    expect(h.prisma.outboxEvent.upsert).not.toHaveBeenCalled();
   });
 });

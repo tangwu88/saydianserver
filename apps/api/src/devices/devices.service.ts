@@ -3,6 +3,41 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
 import { safeObject, sha256 } from "../common/crypto";
 
+function normalizedMacAddress(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (!/^[0-9a-f]{12}$/i.test(raw) && !/^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(raw)) {
+    throw new BadRequestException("MAC 地址格式不正确");
+  }
+  const compact = raw.replace(/[:-]/g, "");
+  const normalized = compact.match(/.{2}/g)?.join(":").toUpperCase() ?? "";
+  if (!/^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(normalized)) {
+    throw new BadRequestException("MAC 地址格式不正确");
+  }
+  return normalized;
+}
+
+function escapedRawPayloadPart(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n");
+}
+
+function serializedRawPayload(body: Record<string, unknown>): string {
+  const rawPayload = Object.entries(body)
+    .map(([key, value]) => {
+      const rendered = typeof value === "string" ? value : JSON.stringify(value);
+      return `${escapedRawPayloadPart(key)}=${escapedRawPayloadPart(rendered ?? "")}`;
+    })
+    .join(" | ");
+  if (Buffer.byteLength(rawPayload, "utf8") > 65_535) {
+    throw new BadRequestException("设备上报原始数据过大");
+  }
+  return rawPayload;
+}
+
 @Injectable()
 export class DevicesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -13,6 +48,7 @@ export class DevicesService {
     const vendor = String(body.vendor ?? "").trim();
     const model = String(body.model ?? "").trim();
     const displayName = String(body.displayName ?? body.name ?? model).trim();
+    const macAddress = normalizedMacAddress(body.macAddress);
     if (!sourceId || !vendor || !model || !displayName) {
       throw new BadRequestException("设备信息不完整");
     }
@@ -21,30 +57,51 @@ export class DevicesService {
       : [];
     if (capabilities.length > 200) throw new BadRequestException("设备能力数量异常");
     const hardwareKey = sha256(`${userId}:${sourceId}`);
-    const device = await this.prisma.deviceBinding.upsert({
-      where: { hardwareKey },
-      create: {
-        userId,
-        hardwareKey,
-        vendor,
-        model,
-        displayName,
-        firmware: body.firmware ? String(body.firmware) : null,
-        capabilities: capabilities as Prisma.InputJsonValue,
-        syncCursor: body.syncCursor ? String(body.syncCursor) : null,
-        lastSeenAt: new Date(),
-      },
-      update: {
-        userId,
-        vendor,
-        model,
-        displayName,
-        firmware: body.firmware ? String(body.firmware) : null,
-        capabilities: capabilities as Prisma.InputJsonValue,
-        syncCursor: body.syncCursor ? String(body.syncCursor) : null,
-        unboundAt: null,
-        lastSeenAt: new Date(),
-      },
+    const firmware = body.firmware ? String(body.firmware).trim() : null;
+    const syncCursor = body.syncCursor ? String(body.syncCursor).trim() : null;
+    const rawPayload = serializedRawPayload(body);
+    const connectedAt = new Date();
+    const device = await this.prisma.$transaction(async (tx) => {
+      const binding = await tx.deviceBinding.upsert({
+        where: { hardwareKey },
+        create: {
+          userId,
+          hardwareKey,
+          vendor,
+          model,
+          displayName,
+          macAddress,
+          firmware,
+          capabilities: capabilities as Prisma.InputJsonValue,
+          syncCursor,
+          lastSeenAt: connectedAt,
+        },
+        update: {
+          userId,
+          vendor,
+          model,
+          displayName,
+          ...(macAddress ? { macAddress } : {}),
+          ...(firmware ? { firmware } : {}),
+          capabilities: capabilities as Prisma.InputJsonValue,
+          syncCursor,
+          unboundAt: null,
+          lastSeenAt: connectedAt,
+        },
+      });
+      await tx.deviceConnectionEvent.create({
+        data: {
+          deviceBindingId: binding.id,
+          connectedAt,
+          vendor,
+          model,
+          displayName,
+          macAddress,
+          firmware,
+          rawPayload,
+        },
+      });
+      return binding;
     });
     return this.contract(device);
   }
@@ -92,6 +149,7 @@ export class DevicesService {
     vendor: string;
     model: string;
     displayName: string;
+    macAddress: string | null;
     firmware: string | null;
     capabilities: Prisma.JsonValue;
     syncCursor: string | null;
@@ -103,6 +161,7 @@ export class DevicesService {
       vendor: device.vendor,
       model: device.model,
       displayName: device.displayName,
+      macAddress: device.macAddress,
       firmware: device.firmware,
       capabilities: Array.isArray(device.capabilities) ? device.capabilities : [],
       syncCursor: device.syncCursor,

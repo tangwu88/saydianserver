@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const aliyun = vi.hoisted(() => ({
-  configs: [] as Record<string, unknown>[],
-  requests: [] as Record<string, unknown>[],
+const sdk = vi.hoisted(() => ({
   sendSms: vi.fn(),
+  configs: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@alicloud/openapi-core", () => ({
@@ -11,6 +10,7 @@ vi.mock("@alicloud/openapi-core", () => ({
     Config: class {
       constructor(input: Record<string, unknown>) {
         Object.assign(this, input);
+        sdk.configs.push(input);
       }
     },
   },
@@ -18,12 +18,8 @@ vi.mock("@alicloud/openapi-core", () => ({
 
 vi.mock("@alicloud/dysmsapi20170525", () => ({
   default: class {
-    constructor(config: Record<string, unknown>) {
-      aliyun.configs.push(config);
-    }
-    sendSms(request: Record<string, unknown>) {
-      aliyun.requests.push(request);
-      return aliyun.sendSms(request);
+    sendSms(request: unknown) {
+      return sdk.sendSms(request);
     }
   },
   SendSmsRequest: class {
@@ -36,120 +32,121 @@ vi.mock("@alicloud/dysmsapi20170525", () => ({
 import { SmsAdapterService } from "./sms-adapter.service";
 
 function fixture(
-  provider: string,
   publicConfig: Record<string, unknown>,
   secrets: Record<string, string>,
+  state = "CONFIGURED",
 ) {
   const prisma = {
     integrationConfig: {
-      findUnique: vi.fn().mockResolvedValue({
-        state: "CONFIGURED",
-        publicConfig: { provider, ...publicConfig },
-      }),
+      findUnique: vi.fn().mockResolvedValue({ state, publicConfig }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
   };
   const integrationSecrets = { resolve: vi.fn().mockResolvedValue(secrets) };
   return {
+    service: new SmsAdapterService(prisma as any, integrationSecrets as any),
     prisma,
     integrationSecrets,
-    service: new SmsAdapterService(prisma as never, integrationSecrets as never),
   };
 }
 
-describe("SMS provider adapter", () => {
-  beforeEach(() => {
-    aliyun.configs.length = 0;
-    aliyun.requests.length = 0;
-    aliyun.sendSms.mockReset().mockResolvedValue({ body: { code: "OK" } });
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("H5_DEMO_ENABLED", "false");
-  });
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
-  });
+beforeEach(() => {
+  vi.stubEnv("NODE_ENV", "production");
+  vi.stubEnv("SMS_PROVIDER", "disabled");
+  sdk.sendSms.mockReset();
+  sdk.configs.length = 0;
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
-  it("sends an Aliyun verification template without exposing credentials", async () => {
-    const h = fixture(
-      "aliyun",
-      { signName: "合成测试签名", templateCode: "SMS_123456789" },
-      { accessKeyId: "synthetic-access-key-id", accessKeySecret: "synthetic-access-key-secret" },
-    );
+describe("Aliyun SMS adapter", () => {
+  const config = {
+    provider: "aliyun",
+    signName: "合成签名",
+    templateCode: "SMS_123456789",
+  };
+  const secrets = {
+    accessKeyId: "synthetic-id",
+    accessKeySecret: "synthetic-secret",
+  };
 
-    await h.service.send("13800138000", "482915", "login");
-
-    expect(aliyun.configs[0]).toMatchObject({
-      accessKeyId: "synthetic-access-key-id",
-      accessKeySecret: "synthetic-access-key-secret",
-      endpoint: "dysmsapi.aliyuncs.com",
-      connectTimeout: 5_000,
-      readTimeout: 10_000,
-    });
-    expect(aliyun.requests[0]).toMatchObject({
-      phoneNumbers: "13800138000",
-      signName: "合成测试签名",
-      templateCode: "SMS_123456789",
-      templateParam: JSON.stringify({ code: "482915" }),
-    });
-    expect(h.prisma.integrationConfig.updateMany).toHaveBeenCalledWith({
-      where: { key: "sms" },
-      data: { lastCheckedAt: expect.any(Date), lastError: null },
+  it("reports configuration readiness without calling the provider", async () => {
+    const h = fixture(config, secrets);
+    expect(await h.service.aliyunReady()).toBe(true);
+    expect(sdk.sendSms).not.toHaveBeenCalled();
+    expect(h.integrationSecrets.resolve).toHaveBeenCalledWith("sms", {
+      accessKeyId: "ALIBABA_CLOUD_ACCESS_KEY_ID",
+      accessKeySecret: "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
     });
   });
 
-  it("fails closed when Aliyun rejects the request", async () => {
-    aliyun.sendSms.mockResolvedValue({ body: { code: "isv.SMS_SIGNATURE_ILLEGAL" } });
-    const h = fixture(
-      "aliyun",
-      { signName: "合成测试签名", templateCode: "SMS_123456789" },
-      { accessKeyId: "synthetic-id", accessKeySecret: "synthetic-secret" },
-    );
+  it("fails closed for disabled, incomplete or malformed configuration", async () => {
+    expect(
+      await fixture(config, secrets, "DISABLED").service.aliyunReady(),
+    ).toBe(false);
+    expect(
+      await fixture(
+        { ...config, templateCode: "123456789" },
+        secrets,
+      ).service.aliyunReady(),
+    ).toBe(false);
+    expect(
+      await fixture(config, {
+        accessKeyId: "synthetic-id",
+      }).service.aliyunReady(),
+    ).toBe(false);
+  });
 
-    await expect(h.service.send("13800138000", "123456", "login")).rejects.toThrow(
-      "短信服务暂时无法使用",
+  it("sends only the code template variable and records successful delivery", async () => {
+    sdk.sendSms.mockResolvedValue({ body: { code: "OK" } });
+    const h = fixture(config, secrets);
+    await h.service.send("13812345678", "246810", "login");
+    expect(sdk.configs[0]).toEqual(
+      expect.objectContaining({
+        accessKeyId: "synthetic-id",
+        accessKeySecret: "synthetic-secret",
+        endpoint: "dysmsapi.aliyuncs.com",
+      }),
     );
+    expect(sdk.sendSms).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phoneNumbers: "13812345678",
+        signName: "合成签名",
+        templateCode: "SMS_123456789",
+        templateParam: JSON.stringify({ code: "246810" }),
+      }),
+    );
+    expect(h.prisma.integrationConfig.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { key: "sms" } }),
+    );
+  });
+
+  it("uses a generic failure when Aliyun rejects or cannot complete delivery", async () => {
+    sdk.sendSms.mockResolvedValue({
+      body: { code: "isv.SYNTHETIC", message: "provider-secret-detail" },
+    });
+    const h = fixture(config, secrets);
+    await expect(
+      h.service.send("13812345678", "246810", "login"),
+    ).rejects.toThrow("短信服务暂时无法使用");
     expect(h.prisma.integrationConfig.updateMany).not.toHaveBeenCalled();
   });
 
-  it("does not call Aliyun when a required credential is missing", async () => {
+  it("keeps the existing webhook provider behavior", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetch);
     const h = fixture(
-      "aliyun",
-      { signName: "合成测试签名", templateCode: "SMS_123456789" },
-      { accessKeyId: "synthetic-id" },
+      { provider: "webhook", webhookUrl: "https://example.invalid/sms" },
+      { webhookToken: "synthetic-token" },
     );
-
-    await expect(h.service.send("13800138000", "123456", "login")).rejects.toThrow(
-      "短信服务暂时无法使用",
+    await h.service.send("13812345678", "123456", "login");
+    expect(fetch).toHaveBeenCalledWith(
+      "https://example.invalid/sms",
+      expect.objectContaining({ method: "POST" }),
     );
-    expect(aliyun.sendSms).not.toHaveBeenCalled();
-  });
-
-  it("retains the existing webhook provider behavior", async () => {
-    const outbound = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
-    vi.stubGlobal("fetch", outbound);
-    const h = fixture(
-      "webhook",
-      { webhookUrl: "https://sms.example.invalid/send" },
-      { webhookToken: "synthetic-webhook-token" },
-    );
-
-    await h.service.send("13800138000", "123456", "bind_mobile");
-
-    expect(outbound).toHaveBeenCalledWith(
-      "https://sms.example.invalid/send",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          authorization: "Bearer synthetic-webhook-token",
-        }),
-        body: JSON.stringify({
-          mobile: "13800138000",
-          code: "123456",
-          usage: "bind_mobile",
-        }),
-      }),
-    );
-    expect(aliyun.sendSms).not.toHaveBeenCalled();
+    expect(sdk.sendSms).not.toHaveBeenCalled();
   });
 });

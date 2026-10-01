@@ -18,8 +18,8 @@ describe("admin API envelope", () => {
     ).toEqual({ members: 12 });
   });
 
-  it("uses the international API for all admin resources", () => {
-    expect(api.defaults.baseURL).toBe("/global/api/saydian-app/admin/v1");
+  it("uses the canonical API for all admin resources", () => {
+    expect(api.defaults.baseURL).toBe("/api/saydian-app/admin/v1");
   });
 
   it("keeps international tokens and roles separate from previous admin sessions", async () => {

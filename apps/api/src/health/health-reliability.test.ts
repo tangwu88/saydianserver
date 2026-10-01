@@ -16,8 +16,27 @@ function harness() {
     $executeRaw: vi.fn(async () => 1),
     healthRecord: {
       findUnique: vi.fn(async ({ where }: any) => rows.find(r => r.userId === where.userId_clientRecordId.userId && r.clientRecordId === where.userId_clientRecordId.clientRecordId) ?? null),
-      create: vi.fn(async ({ data }: any) => { const row = { id: rowId, ...data, ecgArtifact: null }; rows.push(row); return row; }),
-      findMany: vi.fn(async () => rows),
+      findFirst: vi.fn(async ({ where }: any) => rows.find(r =>
+        r.userId === where.userId
+        && (where.metric == null || r.metric === where.metric)
+        && (where.sourceDeviceKey == null || r.sourceDeviceKey === where.sourceDeviceKey)
+        && (where.aggregationKind == null || r.aggregationKind === where.aggregationKind)
+        && (where.aggregationLocalDate == null || r.aggregationLocalDate === where.aggregationLocalDate)
+        && (where.aggregationActive == null || r.aggregationActive === where.aggregationActive)) ?? null),
+      updateMany: vi.fn(async ({ where, data }: any) => {
+        let count = 0;
+        rows = rows.map((row) => {
+          if (row.id !== where.id || (where.aggregationActive != null && row.aggregationActive !== where.aggregationActive)) return row;
+          count += 1;
+          return { ...row, ...data };
+        });
+        return { count };
+      }),
+      create: vi.fn(async ({ data }: any) => { const row = { id: `db-row-${rows.length + 1}`, ...data, ecgArtifact: null }; rows.push(row); return row; }),
+      findMany: vi.fn(async ({ where }: any = {}) => rows.filter(row =>
+        where?.aggregationKind === null
+          ? row.aggregationKind == null
+          : row.aggregationKind == null || row.aggregationActive)),
     },
     idempotencyRecord: {
       findUnique: vi.fn(async ({ where }: any) => idempotency.find(r => r.key === where.userId_scope_key.key) ?? null),
@@ -134,6 +153,66 @@ describe("health ingestion durable idempotency", () => {
     expect(source).not.toHaveProperty("origin");
     expect(source).not.toHaveProperty("measurementSource");
     expect(source).not.toHaveProperty("rawVersion");
+  });
+
+  it("retains daily summary versions but exposes only the newest fold", async () => {
+    const h = harness();
+    const daily = (id: string, value: number, observedAt: string) => ({
+      ...inputRecord(id),
+      metric: "steps",
+      observedAt,
+      values: { value },
+      unit: "步",
+      aggregation: { kind: "daily_summary", localDate: "2026-09-28" },
+      source: {
+        platform: "android",
+        deviceId: "urion:U19-EB1",
+        origin: "watch_history",
+        measurementSource: "wearable",
+        rawVersion: 1,
+      },
+    });
+    expect((await h.service.ingestBatch(userId, "daily-first-key", {
+      records: [daily("summary-v1", 1_000, "2026-09-28T01:00:00.000Z")],
+    })).acceptedIds).toEqual(["summary-v1"]);
+    expect((await h.service.ingestBatch(userId, "daily-second-key", {
+      records: [daily("summary-v2", 1_200, "2026-09-28T02:00:00.000Z")],
+    })).acceptedIds).toEqual(["summary-v2"]);
+
+    expect(h.rows()).toHaveLength(2);
+    expect(h.rows().filter((row) => row.aggregationActive)).toHaveLength(1);
+    expect(h.rows().find((row) => row.aggregationActive)?.clientRecordId).toBe("summary-v2");
+    expect(h.tx.healthWarningRule.findUnique).not.toHaveBeenCalled();
+    expect((await h.service.list(userId)).items).toEqual([
+      expect.objectContaining({
+        id: "summary-v2",
+        values: { value: 1_200 },
+        unit: "步",
+        aggregation: { kind: "daily_summary", localDate: "2026-09-28" },
+      }),
+    ]);
+    expect(await h.service.legacyRecords(userId, ["steps"])).toEqual([]);
+
+    await h.service.ingestBatch(userId, "daily-stale-key", {
+      records: [daily("summary-stale", 900, "2026-09-28T00:30:00.000Z")],
+    });
+    expect(h.rows()).toHaveLength(3);
+    expect(h.rows().find((row) => row.aggregationActive)?.clientRecordId).toBe("summary-v2");
+  });
+
+  it("keeps daily summary folds separate by source device", async () => {
+    const h = harness();
+    const record = (id: string, deviceId: string) => ({
+      ...inputRecord(id),
+      metric: "sleep",
+      values: { hours: 7.5 },
+      unit: "h",
+      aggregation: { kind: "daily_summary", localDate: "2026-09-28" },
+      source: { platform: "android", deviceId },
+    });
+    await h.service.ingestBatch(userId, "device-summary-a", { records: [record("summary-a", "urion:A")] });
+    await h.service.ingestBatch(userId, "device-summary-b", { records: [record("summary-b", "urion:B")] });
+    expect(h.rows().filter((row) => row.aggregationActive)).toHaveLength(2);
   });
 });
 describe("health stable timestamp/id pagination", () => {

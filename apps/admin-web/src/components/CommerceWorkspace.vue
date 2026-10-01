@@ -30,6 +30,7 @@ const emit = defineEmits<{
   "status-change": [status: string];
   "run-action": [path: string, success: string];
   "batch-products": [ids: string[], action: string];
+  "delete-product": [row: Row];
 }>();
 
 const statusFilter = ref("");
@@ -457,7 +458,7 @@ function changeStatus(value: unknown): void {
       <el-table-column label="库存 / SKU" width="130"><template #default="scope"><strong :class="{ 'danger-text': stockTotal(scope.row) <= 0 }">{{ stockTotal(scope.row) }}</strong><small>{{ skuCount(scope.row) }} 个 SKU</small></template></el-table-column>
       <el-table-column label="状态" width="105"><template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ scope.row.localArchived ? "已归档" : statusLabel(scope.row.status) }}</el-tag></template></el-table-column>
       <el-table-column prop="sort" label="排序" width="80" />
-      <el-table-column label="操作" width="150" fixed="right"><template #default="scope"><el-button size="small" @click="openDetail(scope.row)">查看</el-button><el-button v-if="canEdit" size="small" type="primary" plain @click="emit('edit', scope.row)">编辑</el-button></template></el-table-column>
+      <el-table-column label="操作" width="215" fixed="right"><template #default="scope"><el-button size="small" @click="openDetail(scope.row)">查看</el-button><el-button v-if="canEdit" size="small" type="primary" plain @click="emit('edit', scope.row)">编辑</el-button><el-button v-if="canEdit" size="small" type="danger" plain @click="emit('delete-product', scope.row)">删除</el-button></template></el-table-column>
     </el-table>
 
     <el-table v-else-if="resource === 'commerce-categories'" v-loading="loading" :data="visibleRows" border stripe empty-text="暂无分类">

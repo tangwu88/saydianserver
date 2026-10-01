@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -177,6 +178,11 @@ export class AdminController {
     return this.admin.healthSummary(id);
   }
 
+  @Get("members/:id/devices")
+  memberDevices(@Param("id") id: string) {
+    return this.admin.memberDevices(id);
+  }
+
   @Get("members/:id/health-records")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.HEALTH_AUDITOR)
   rawHealth(
@@ -203,6 +209,11 @@ export class AdminController {
   @Get("devices")
   devices() {
     return this.admin.devices();
+  }
+
+  @Get("devices/:id/connections")
+  deviceConnections(@Param("id") id: string) {
+    return this.admin.deviceConnections(id);
   }
 
   @Get("feedback")
@@ -388,6 +399,12 @@ export class AdminController {
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
   updateCommerceProduct(@Param("id") id: string, @Body() input: unknown) {
     return this.admin.saveCommerceProduct(id, input);
+  }
+
+  @Delete("commerce-products/:id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  deleteCommerceProduct(@Param("id") id: string) {
+    return this.admin.deleteCommerceProduct(id);
   }
 
   @Get("commerce-categories")

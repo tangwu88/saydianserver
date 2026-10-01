@@ -155,13 +155,14 @@ function oauthContext(h, changes = {}) {
   };
 }
 
-test("global defaults and every mismatched base / mini build fail closed", () => {
+test("all clients default to the unified API; legacy paths work and foreign bases fail closed", () => {
   const { resolveMallConfig } = harness().load("realm-config");
-  assert.equal(resolveMallConfig({ VITE_APP_REALM: "global" }).apiBase, "/global/api/saidian-mall/v1");
+  assert.equal(resolveMallConfig({ VITE_APP_REALM: "global" }).apiBase, "/api/saidian-mall/v1");
   assert.equal(resolveMallConfig({}).apiBase, "/api/saidian-mall/v1");
-  assert.equal(resolveMallConfig({}, true).apiBase, "https://stest.saydian.cn/api/saidian-mall/v1");
-  for (const env of [{ VITE_API_BASE: "/api/saidian-mall/v1" }, { VITE_API_BASE: "https://foreign.invalid/api" }, { VITE_PUBLIC_BASE: "/saidian-mall/" }]) assert.throws(() => resolveMallConfig({ VITE_APP_REALM: "global", ...env }), /国际商城/);
-  assert.throws(() => resolveMallConfig({ VITE_APP_REALM: "global" }, true), /小程序/);
+  assert.equal(resolveMallConfig({}, true).apiBase, "https://app.saydian.cn/api/saidian-mall/v1");
+  assert.equal(resolveMallConfig({ VITE_API_BASE: "/global/api/saidian-mall/v1", VITE_PUBLIC_BASE: "/global/saidian-mall/" }).apiBase, "/global/api/saidian-mall/v1");
+  for (const env of [{ VITE_API_BASE: "https://foreign.invalid/api" }, { VITE_API_BASE: "//app.saydian.cn/api/saidian-mall/v1" }, { VITE_PUBLIC_BASE: "//foreign.invalid/" }]) assert.throws(() => resolveMallConfig(env), /不受信任/);
+  assert.equal(resolveMallConfig({ VITE_APP_REALM: "global" }, true).apiBase, "https://app.saydian.cn/api/saidian-mall/v1");
 });
 test("all customer, checkout, employee, OAuth and lock keys are isolated; domestic keys unchanged", () => {
   const { realmKey } = harness().load("realm-config");
@@ -310,7 +311,7 @@ test("allowed global shopping requests retain same-realm credentials and propaga
   assert.equal(h.requests.length, 0);
   assert.equal(h.storage.get("saydian-global-mall:saidian-token"), "global-temporary-token");
   await assert.rejects(api.api("/auth/wechat/h5/account", { auth: true }));
-  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/auth/wechat/h5/account");
+  assert.equal(h.requests[0].url, "/api/saidian-mall/v1/auth/wechat/h5/account");
   assert.equal(h.storage.get("saydian-global-mall:saidian-token"), "global-temporary-token");
   h.requests.length = 0;
   await api.saveMallSession({
@@ -326,13 +327,13 @@ test("allowed global shopping requests retain same-realm credentials and propaga
     (error) => error.status === 403 && error.errorKey === "phone_verification_required",
   );
   assert.equal(h.requests.length, 1);
-  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/storefront/orders");
+  assert.equal(h.requests[0].url, "/api/saidian-mall/v1/storefront/orders");
   assert.equal(h.requests[0].header.authorization, "Bearer global-verified-token");
   assert.equal(h.storage.get("saidian-token"), "domestic-token");
   await assert.rejects(api.api("/payments/wechat/notify", { method: "POST" }));
   await assert.rejects(api.api("/wecom/oauth", { method: "POST" }));
   assert.equal(h.requests.length, 2);
-  assert.equal(h.requests[1].url, "/global/api/saidian-mall/v1/wecom/oauth");
+  assert.equal(h.requests[1].url, "/api/saidian-mall/v1/wecom/oauth");
 });
 test("identifier contracts still require email/E164 and validate passwords", () => {
   const { validGlobalIdentifier, validNewPassword } = harness().load("global-auth-model");
@@ -391,7 +392,7 @@ test("callback URL is scrubbed before any request and delivered only once in mem
     bridge = h.load("global-oauth");
   h.sessionStorage.setItem(model.OAUTH_CONTEXT_KEY, JSON.stringify(oauthContext(h)));
   assert.equal(bridge.bridgeGlobalOAuth(), true);
-  assert.equal(h.location.href, "https://app.saydian.cn/global/saidian-mall/#/pages/login/index");
+  assert.equal(h.location.href, "https://app.saydian.cn/saidian-mall/#/pages/login/index");
   assert.equal(h.requests.length, 0);
   assert.equal(h.session.size, 0);
   assert.equal(bridge.takeGlobalOAuthCallback().code, "synthetic-code");
@@ -465,13 +466,13 @@ test("global client refuses disabled routes without network and targets its own 
   await assert.rejects(h.load("api").api("/auth/sms-login", { method: "POST" }), /暂未开放/);
   assert.equal(h.requests.length, 0);
   await h.load("api").api("/storefront/coupon-gifts/token", { method: "GET" });
-  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/storefront/coupon-gifts/token");
+  assert.equal(h.requests[0].url, "/api/saidian-mall/v1/storefront/coupon-gifts/token");
   h.requests.length = 0;
   await h.load("api").api("/wecom/oauth", { method: "POST" });
-  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/wecom/oauth");
+  assert.equal(h.requests[0].url, "/api/saidian-mall/v1/wecom/oauth");
   h.requests.length = 0;
   await h.load("api").api("/storefront/capabilities?locale=en");
-  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/storefront/capabilities?locale=en");
+  assert.equal(h.requests[0].url, "/api/saidian-mall/v1/storefront/capabilities?locale=en");
 });
 test("global logout revokes server session; network failure reports local-only logout", async () => {
   for (const success of [true, false]) {
@@ -784,8 +785,8 @@ test("OAuth phone binding finishes with a clean full-page storefront navigation 
   h.ui.identifier.value = "13812345678";
   h.ui.code.value = "123456";
   await h.ui.login();
-  assert.equal(h.location.replacedWith, "https://app.saydian.cn/global/saidian-mall/#/pages/profile/index");
-  assert.equal(new URL(h.location.href).pathname, "/global/saidian-mall/");
+  assert.equal(h.location.replacedWith, "https://app.saydian.cn/saidian-mall/#/pages/profile/index");
+  assert.equal(new URL(h.location.href).pathname, "/saidian-mall/");
   assert.equal(new URL(h.location.href).search, "");
 });
 
@@ -1098,7 +1099,7 @@ test("account refresh updates safe verification status without touching domestic
   const result = await api.refreshGlobalMallAccount();
   assert.equal(result.phoneVerified, false);
   assert.equal(h.storage.get("saidian-user").id, "domestic");
-  assert.equal(h.requests[0].url, "/global/api/saidian-mall/v1/auth/wechat/h5/account");
+  assert.equal(h.requests[0].url, "/api/saidian-mall/v1/auth/wechat/h5/account");
 });
 test("login/account/help visible UI removes edition notices and uses App brand/theme", () => {
   for (const file of ["GlobalLogin.vue", "GlobalAccount.vue", "GlobalHelp.vue", "DesktopHeader.vue"]) {
@@ -1325,8 +1326,8 @@ test("global H5 manifest retains all four customer tabs and its independent rout
     ["pages/home/index", "pages/category/index", "pages/cart/index", "pages/profile/index"],
   );
   assert.equal(pages.tabBar.selectedColor, "#D20B27");
-  assert.equal(config.base, "/global/saidian-mall/");
+  assert.equal(config.base, "/saidian-mall/");
   const manifest = JSON.parse(transform('{"h5":{"router":{"mode":"hash"}}}', "uni:manifest-json-js").code);
-  assert.equal(manifest.h5.router.base, "/global/saidian-mall/");
+  assert.equal(manifest.h5.router.base, "/saidian-mall/");
   assert.equal(manifest.h5.router.mode, "hash");
 });

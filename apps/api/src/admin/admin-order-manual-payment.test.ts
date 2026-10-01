@@ -130,14 +130,14 @@ describe("super-admin pending-order manual payment", () => {
     expect(h.state.order.adminRemark).toContain("银行转账已到账");
   });
 
-  it("rejects non-super-admin, domestic, stale, unsupported, and unnoted operations", async () => {
+  it("rejects non-super-admin, stale, unsupported and unnoted operations", async () => {
     const h = harness();
     await expect(h.service.manuallySettleCommerceOrder(orderId, input(), { ...current, roles: ["FINANCE"] })).rejects.toMatchObject({ status: 403 });
     await expect(h.service.manuallySettleCommerceOrder(orderId, input({ orderVersion: 1 }), current)).rejects.toMatchObject({ status: 409 });
     await expect(h.service.manuallySettleCommerceOrder(orderId, input({ note: "x" }), current)).rejects.toMatchObject({ status: 400 });
     await expect(h.service.manuallySettleCommerceOrder(orderId, input({ action: "PAID" }), current)).rejects.toMatchObject({ status: 400 });
     vi.stubEnv("APP_REALM", "domestic");
-    await expect(h.service.manuallySettleCommerceOrder(orderId, input(), current)).rejects.toMatchObject({ status: 404 });
+    await expect(h.service.manuallySettleCommerceOrder(orderId, input(), { ...current, roles: ["FINANCE"] })).rejects.toMatchObject({ status: 403 });
     expect(h.tx.commerceOrder.updateMany).not.toHaveBeenCalled();
   });
 

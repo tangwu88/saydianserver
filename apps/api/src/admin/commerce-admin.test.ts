@@ -66,6 +66,30 @@ describe("commerce administration", () => {
     expect(tx.commerceProduct.update).not.toHaveBeenCalled();
     expect(tx.commerceProduct.findUniqueOrThrow).not.toHaveBeenCalled();
   });
+  it("deletes an unused product and clears temporary cart and favorite references", async () => {
+    const product = { id: "p", name: "误导入商品", skus: [{ id: "s1" }, { id: "s2" }], _count: { orderItems: 0, reviews: 0 } };
+    const tx = {
+      commerceProduct: { findUnique: vi.fn().mockResolvedValue(product), delete: vi.fn().mockResolvedValue(product) },
+      commerceCartItem: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      commerceFavorite: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const prisma = { $transaction: vi.fn().mockImplementation(async (run) => run(tx)) };
+    await expect(new AdminService(prisma as any, {} as any).deleteCommerceProduct("p")).resolves.toEqual({ id: "p", name: "误导入商品", deleted: true });
+    expect(tx.commerceCartItem.deleteMany).toHaveBeenCalledWith({ where: { skuId: { in: ["s1", "s2"] } } });
+    expect(tx.commerceFavorite.deleteMany).toHaveBeenCalledWith({ where: { productId: "p" } });
+    expect(tx.commerceProduct.delete).toHaveBeenCalledWith({ where: { id: "p" } });
+  });
+  it("keeps products referenced by order history and asks administrators to archive them", async () => {
+    const tx = {
+      commerceProduct: { findUnique: vi.fn().mockResolvedValue({ id: "p", name: "历史商品", skus: [{ id: "s" }], _count: { orderItems: 1, reviews: 0 } }), delete: vi.fn() },
+      commerceCartItem: { deleteMany: vi.fn() },
+      commerceFavorite: { deleteMany: vi.fn() },
+    };
+    const prisma = { $transaction: vi.fn().mockImplementation(async (run) => run(tx)) };
+    await expect(new AdminService(prisma as any, {} as any).deleteCommerceProduct("p")).rejects.toThrow("请改为归档");
+    expect(tx.commerceProduct.delete).not.toHaveBeenCalled();
+    expect(tx.commerceCartItem.deleteMany).not.toHaveBeenCalled();
+  });
   it("rejects stale order edits instead of silently overwriting a newer remark", async () => {
     const prisma = { commerceOrder: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) } };
     const service = new AdminService(prisma as any, {} as any);

@@ -3,46 +3,61 @@ name: Export runtime images
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: Immutable image version to export
+      revision:
+        description: Exact SHA of a previously verified main release
+        required: true
+        type: string
+      build_run_id:
+        description: Original successful CI verify run containing release manifest
         required: true
         type: string
 
 permissions:
   contents: read
   packages: read
+  actions: read
 
 jobs:
   export:
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ inputs.revision }}
+          path: export
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Export runtime images
-        shell: bash
+          password: ${{ github.token }}
+      - name: Export the original accepted artifacts without rebuilding
+        env:
+          REVISION: ${{ inputs.revision }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          version="${{ inputs.version }}"
-          if [[ ! "$version" =~ ^[A-Za-z0-9._-]+$ ]]; then exit 1; fi
-
-          images=(
-            "ghcr.io/tangwu88/saydianserver-api:$version"
-            "ghcr.io/tangwu88/saydianserver-worker:$version"
-            "ghcr.io/tangwu88/saydianserver-admin:$version"
-          )
-          for image in "${images[@]}"; do
+          set -Eeuo pipefail
+          [[ "$REVISION" =~ ^[a-f0-9]{40}$ && "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          gh run view "$BUILD_RUN_ID" --json headSha,event,jobs | jq -e --arg revision "$REVISION" '.headSha == $revision and .event == "push" and any(.jobs[]; .name == "verify" and .conclusion == "success")'
+          node deploy/scripts/release-manifest.mjs verify "$REVISION" export/release-manifest.json
+          images=()
+          for component in api worker admin; do
+            image=$(jq -r --arg component "$component" '.images[$component].ref' export/release-manifest.json)
+            expected=$(jq -r --arg component "$component" '.images[$component].imageId' export/release-manifest.json)
             docker pull "$image"
+            test "$(docker inspect -f '{{.Id}}' "$image")" = "$expected"
+            images+=("$expected")
           done
-          mkdir -p export
-          archive="export/saydianapp-runtime-images-$version.tar.gz"
-          docker save "${images[@]}" | gzip -9 > "$archive"
+          archive="export/saydianapp-runtime-images-$REVISION.tar.gz"
+          docker save "${images[@]}" | gzip -1 > "$archive"
           sha256sum "$archive" > "$archive.sha256"
       - uses: actions/upload-artifact@v4
         with:
-          name: runtime-images-${{ inputs.version }}
+          name: runtime-images-${{ inputs.revision }}
           path: export/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
           compression-level: 0

@@ -345,12 +345,12 @@ async function addressPage(realmName, existing) {
   return { state, requests, notices };
 }
 const delivery = { name: "测试收货人", mobile: "13800138000", province: "测试省", city: "测试市", district: "测试区", detail: "测试地址，不真实发货" };
-test("global address submits CN and +86 while domestic address keeps its original contract", async () => {
+test("both legacy H5 configurations submit normalized phone and country", async () => {
   for (const realm of ["global", "domestic"]) {
     const h = await addressPage(realm); Object.assign(h.state.form, delivery); await h.state.save();
     assert.equal(h.requests.length, 1); assert.equal(h.requests[0].input.method, "POST");
-    assert.equal(h.requests[0].input.data.mobile, realm === "global" ? "+8613800138000" : "13800138000");
-    assert.equal(h.requests[0].input.data.countryCode, realm === "global" ? "CN" : undefined);
+    assert.equal(h.requests[0].input.data.mobile, "+8613800138000");
+    assert.equal(h.requests[0].input.data.countryCode, "CN");
   }
 });
 test("address region selector links province, city and district and submits their codes", async () => {

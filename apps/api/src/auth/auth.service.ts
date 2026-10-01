@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { IntegrationState, Prisma, UserStatus } from "@prisma/client";
 import { compare, hash } from "bcryptjs";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { sign } from "jsonwebtoken";
 import type {
   MemberProfileContract,
@@ -29,9 +29,19 @@ import {
   WechatAppAuthService,
   type WechatAppIdentity,
 } from "./wechat-app-auth.service";
-import { authAudience, authIssuer, isGlobalRealm } from "../common/deployment-realm";
-import { globalError, globalLocale, internationalPhone, maskedIdentifier, normalizedEmail } from "./global-identity";
-import { GLOBAL_WECHAT_CALLBACK_PATH, H5_PHONE_TEST_SESSION_PREFIX, isH5PhoneTestSession, requireGlobalWechatPhoneTest } from "./global-wechat-policy";
+import { authAudience, authIssuer } from "../common/deployment-realm";
+import {
+  globalError,
+  globalLocale,
+  maskedIdentifier,
+  normalizedEmail,
+} from "./global-identity";
+import {
+  GLOBAL_WECHAT_CALLBACK_PATH,
+  H5_PHONE_TEST_SESSION_PREFIX,
+  isH5PhoneTestSession,
+  requireGlobalWechatPhoneTest,
+} from "./global-wechat-policy";
 import { isOwnPromoter } from "../common/member-promoter-identity";
 
 const accessLifetimeSeconds = 15 * 60;
@@ -54,9 +64,12 @@ export class AuthService {
     private readonly wechatApp: WechatAppAuthService,
   ) {}
 
-  async register(input: RegisterInput, mobileVerified = false): Promise<SessionContract> {
-    if (isGlobalRealm()) throw globalError(400, "verification_required", "Use verified email or international phone registration.");
-    if (!mobileVerified) throw new BadRequestException("请使用手机验证码完成注册");
+  async register(
+    input: RegisterInput,
+    mobileVerified = false,
+  ): Promise<SessionContract> {
+    if (!mobileVerified)
+      throw new BadRequestException("请使用手机验证码完成注册");
     const mobile = normalizedMobile(input.mobile);
     this.assertPassword(input.password);
     if (!mobile) throw new BadRequestException("手机号格式不正确");
@@ -70,13 +83,13 @@ export class AuthService {
     const passwordHash = await hash(input.password, 12);
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
-            data: {
-              mobile,
-              passwordHash,
-              mobileVerifiedAt: new Date(),
-              nickname: input.nickname?.trim() || `用户${mobile.slice(-4)}`,
-            },
-          });
+        data: {
+          mobile,
+          passwordHash,
+          mobileVerifiedAt: new Date(),
+          nickname: input.nickname?.trim() || `用户${mobile.slice(-4)}`,
+        },
+      });
       for (const documentType of ["user_agreement", "privacy_policy"]) {
         await tx.consentRecord.upsert({
           where: {
@@ -101,12 +114,13 @@ export class AuthService {
   }
 
   private async passwordUser(mobileInput: string, password: string) {
-    const mobile = isGlobalRealm()
-      ? internationalPhone(mobileInput)?.identifier ?? ""
-      : normalizedMobile(mobileInput);
-    const email = isGlobalRealm() ? normalizedEmail(mobileInput) : "";
-    if ((!mobile && !email) || !password) throw new UnauthorizedException("账号或密码错误");
-    const user = await this.prisma.user.findUnique({ where: email ? { email } : { mobile } });
+    const mobile = normalizedMobile(mobileInput);
+    const email = normalizedEmail(mobileInput);
+    if ((!mobile && !email) || !password)
+      throw new UnauthorizedException("账号或密码错误");
+    const user = await this.prisma.user.findUnique({
+      where: email ? { email } : { mobile },
+    });
     if (
       !user?.passwordHash ||
       user.status !== UserStatus.ACTIVE ||
@@ -133,7 +147,10 @@ export class AuthService {
     return this.issueSession(id);
   }
 
-  async refresh(refreshToken: string, requireVerifiedMall = false): Promise<SessionContract> {
+  async refresh(
+    refreshToken: string,
+    requireVerifiedMall = false,
+  ): Promise<SessionContract> {
     const normalized = refreshToken.trim();
     if (!normalized) throw new UnauthorizedException("登录已失效，请重新登录");
     const tokenHash = this.refreshHash(normalized);
@@ -142,18 +159,58 @@ export class AuthService {
       include: { user: true },
     });
     if (session && isH5PhoneTestSession(session.accessJti)) {
-      if (!requireVerifiedMall) throw globalError(401, "phone_test_scope", "This temporary session is only valid in the H5 account.");
+      if (!requireVerifiedMall)
+        throw globalError(
+          401,
+          "phone_test_scope",
+          "This temporary session is only valid in the H5 account.",
+        );
       const appId = await this.phoneTestAppId();
-      if (session.revokedAt || session.expiresAt <= new Date() || session.user.status !== UserStatus.ACTIVE ||
-          !await this.prisma.wechatOfficialIdentity.findUnique({ where: { userId_appId: { userId: session.userId, appId } } })) throw new UnauthorizedException("登录已失效，请重新登录");
-      const replacement = randomToken(), accessJti = H5_PHONE_TEST_SESSION_PREFIX + randomUUID();
-      const rotated = await this.prisma.userSession.updateMany({ where: { id: session.id, accessJti: session.accessJti, refreshTokenHash: tokenHash, revokedAt: null, expiresAt: { gt: new Date() }, user: { status: UserStatus.ACTIVE, wechatOfficialIdentities: { some: { appId } } } }, data: { accessJti, refreshTokenHash: this.refreshHash(replacement), lastUsedAt: new Date() } });
-      if (rotated.count !== 1) throw new UnauthorizedException("登录已失效，请重新登录");
-      return this.sessionContract(session.userId, session.id, accessJti, replacement);
+      if (
+        session.revokedAt ||
+        session.expiresAt <= new Date() ||
+        session.user.status !== UserStatus.ACTIVE ||
+        !(await this.prisma.wechatOfficialIdentity.findUnique({
+          where: { userId_appId: { userId: session.userId, appId } },
+        }))
+      )
+        throw new UnauthorizedException("登录已失效，请重新登录");
+      const replacement = randomToken(),
+        accessJti = H5_PHONE_TEST_SESSION_PREFIX + randomUUID();
+      const rotated = await this.prisma.userSession.updateMany({
+        where: {
+          id: session.id,
+          accessJti: session.accessJti,
+          refreshTokenHash: tokenHash,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+          user: {
+            status: UserStatus.ACTIVE,
+            wechatOfficialIdentities: { some: { appId } },
+          },
+        },
+        data: {
+          accessJti,
+          refreshTokenHash: this.refreshHash(replacement),
+          lastUsedAt: new Date(),
+        },
+      });
+      if (rotated.count !== 1)
+        throw new UnauthorizedException("登录已失效，请重新登录");
+      return this.sessionContract(
+        session.userId,
+        session.id,
+        accessJti,
+        replacement,
+      );
     }
-    const verifiedMallRequired = requireVerifiedMall && !isGlobalRealm();
+    const verifiedMallRequired = requireVerifiedMall;
     if (verifiedMallRequired && session && !session.user.mobileVerifiedAt) {
-      throw globalError(403, "account_verification_required", "Verify your email address or international phone before using the H5 account.");
+      throw globalError(
+        403,
+        "account_verification_required",
+        "Verify your email address or international phone before using the H5 account.",
+      );
     }
     if (
       !session ||
@@ -197,61 +254,138 @@ export class AuthService {
   }
 
   async refreshForMall(refreshToken: string) {
-    const session = await this.refresh(refreshToken, isGlobalRealm());
-    const result = this.mallSession(session, session.member.mobileMasked ?? null);
-    return (session as SessionContract & { phoneTestMode?: boolean }).phoneTestMode
-      ? { ...result, user: { ...result.user, phoneTestMode: true, phoneVerified: false, phoneVerificationStatus: "pending" } } : result;
+    const session = await this.refresh(refreshToken, true);
+    const result = this.mallSession(session);
+    return (session as SessionContract & { phoneTestMode?: boolean })
+      .phoneTestMode
+      ? {
+          ...result,
+          user: {
+            ...result.user,
+            phoneTestMode: true,
+            phoneVerified: false,
+            phoneVerificationStatus: "pending",
+          },
+        }
+      : result;
   }
 
   async phoneTestAppId() {
     requireGlobalWechatPhoneTest();
-    const config = await this.prisma.integrationConfig.findUnique({ where: { key: "wechat_official" } });
-    const secret = await this.integrationSecrets.resolve("wechat_official", { appId: "WECHAT_OFFICIAL_APP_ID", appSecret: "WECHAT_OFFICIAL_APP_SECRET" });
-    const publicConfig = safeJsonObject(config?.publicConfig), appId = (secret.appId ?? String(publicConfig.appId ?? "")).trim();
+    const config = await this.prisma.integrationConfig.findUnique({
+      where: { key: "wechat_official" },
+    });
+    const secret = await this.integrationSecrets.resolve("wechat_official", {
+      appId: "WECHAT_OFFICIAL_APP_ID",
+      appSecret: "WECHAT_OFFICIAL_APP_SECRET",
+    });
+    const publicConfig = safeJsonObject(config?.publicConfig),
+      appId = (secret.appId ?? String(publicConfig.appId ?? "")).trim();
     try {
-      const callback = new URL(String(publicConfig.redirectUri ?? env("WECHAT_OFFICIAL_REDIRECT_URI", "")));
-      if (config?.state !== IntegrationState.CONFIGURED || !/^wx[A-Za-z0-9]{8,64}$/.test(appId) || (secret.appSecret ?? "").length < 16 ||
-          callback.origin !== new URL(env("COMMERCE_STOREFRONT_URL", "")).origin || callback.protocol !== "https:" || callback.pathname !== GLOBAL_WECHAT_CALLBACK_PATH || callback.username || callback.password || callback.hash || callback.search) throw new Error("configuration");
-    } catch { throw globalError(503, "wechat_h5_unavailable", "WeChat official-account sign-in is unavailable."); }
+      const callback = new URL(
+        String(
+          publicConfig.redirectUri ?? env("WECHAT_OFFICIAL_REDIRECT_URI", ""),
+        ),
+      );
+      if (
+        config?.state !== IntegrationState.CONFIGURED ||
+        !/^wx[A-Za-z0-9]{8,64}$/.test(appId) ||
+        (secret.appSecret ?? "").length < 16 ||
+        callback.origin !==
+          new URL(env("COMMERCE_STOREFRONT_URL", "")).origin ||
+        callback.protocol !== "https:" ||
+        callback.pathname !== GLOBAL_WECHAT_CALLBACK_PATH ||
+        callback.username ||
+        callback.password ||
+        callback.hash ||
+        callback.search
+      )
+        throw new Error("configuration");
+    } catch {
+      throw globalError(
+        503,
+        "wechat_h5_unavailable",
+        "WeChat official-account sign-in is unavailable.",
+      );
+    }
     return appId;
   }
 
   async issuePhoneTestMallSession(userId: string) {
     const appId = await this.phoneTestAppId();
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (user.status !== UserStatus.ACTIVE || !await this.prisma.wechatOfficialIdentity.findUnique({ where: { userId_appId: { userId, appId } } })) throw new UnauthorizedException("登录已失效，请重新登录");
-    const id = randomUUID(), accessJti = H5_PHONE_TEST_SESSION_PREFIX + randomUUID(), refreshToken = randomToken();
-    await this.prisma.userSession.create({ data: { id, userId, accessJti, refreshTokenHash: this.refreshHash(refreshToken), expiresAt: new Date(Date.now() + 86_400_000) } });
-    const result = this.mallSession(await this.sessionContract(userId, id, accessJti, refreshToken), user.mobile);
-    return { ...result, user: { ...result.user, phoneTestMode: true, phoneVerified: false, phoneVerificationStatus: "pending" } };
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+    });
+    if (
+      user.status !== UserStatus.ACTIVE ||
+      !(await this.prisma.wechatOfficialIdentity.findUnique({
+        where: { userId_appId: { userId, appId } },
+      }))
+    )
+      throw new UnauthorizedException("登录已失效，请重新登录");
+    const id = randomUUID(),
+      accessJti = H5_PHONE_TEST_SESSION_PREFIX + randomUUID(),
+      refreshToken = randomToken();
+    await this.prisma.userSession.create({
+      data: {
+        id,
+        userId,
+        accessJti,
+        refreshTokenHash: this.refreshHash(refreshToken),
+        expiresAt: new Date(Date.now() + 86_400_000),
+      },
+    });
+    const result = this.mallSession(
+      await this.sessionContract(userId, id, accessJti, refreshToken),
+    );
+    return {
+      ...result,
+      user: {
+        ...result.user,
+        phoneTestMode: true,
+        phoneVerified: false,
+        phoneVerificationStatus: "pending",
+      },
+    };
   }
 
   async mallAccount(userId: string, sessionId: string) {
-    if (!isGlobalRealm()) throw globalError(404, "not_found", "This feature is unavailable.");
-    const [user, session] = await Promise.all([this.prisma.user.findUniqueOrThrow({ where: { id: userId } }), this.prisma.userSession.findUniqueOrThrow({ where: { id: sessionId } })]);
-    const result = this.mallSession({ member: this.toProfile(user) } as SessionContract, user.mobile).user;
-    return { ...result, phoneTestMode: isH5PhoneTestSession(session.accessJti), phoneVerified: Boolean(user.mobileVerifiedAt), phoneVerificationStatus: user.mobileVerifiedAt ? "verified" : "pending" };
+    const [user, session] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+      this.prisma.userSession.findUniqueOrThrow({ where: { id: sessionId } }),
+    ]);
+    const result = this.mallSession(
+      { member: this.toProfile(user) } as SessionContract,
+    ).user;
+    return {
+      ...result,
+      phoneTestMode: isH5PhoneTestSession(session.accessJti),
+      phoneVerified: Boolean(user.mobileVerifiedAt),
+      phoneVerificationStatus: user.mobileVerifiedAt ? "verified" : "pending",
+    };
   }
 
   async loginForMall(mobile: string, password: string, referralCode?: string) {
     const user = await this.passwordUser(mobile, password);
-    if (!isGlobalRealm() && !user.mobileVerifiedAt) {
+    if (!user.mobileVerifiedAt && !user.emailVerifiedAt) {
       throw new UnauthorizedException("请先使用手机验证码验证后登录商城");
     }
     const session = await this.issueSession(user.id);
     if (referralCode) await this.bindReferral(user.id, referralCode);
-    return this.mallSession(session, user.mobile);
+    return this.mallSession(session);
   }
 
   async issueMallSession(userId: string) {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+    });
     if (
       user.status !== UserStatus.ACTIVE ||
-      (!isGlobalRealm() && !user.mobileVerifiedAt && !user.emailVerifiedAt)
+      (!user.mobileVerifiedAt && !user.emailVerifiedAt)
     ) {
       throw new UnauthorizedException("请先完成手机号或邮箱验证");
     }
-    return this.mallSession(await this.issueSession(userId), user.mobile);
+    return this.mallSession(await this.issueSession(userId));
   }
 
   consumeMobileBindingCode(mobile: string, code: string) {
@@ -269,11 +403,12 @@ export class AuthService {
     mobileInput: string,
     usageInput: string,
   ): Promise<{ expiresIn: number; devCode?: string }> {
-    if (isGlobalRealm()) throw globalError(400, "verification_required", "Use the verification-code endpoint to verify your account.");
     const mobile = normalizedMobile(mobileInput);
     const usage = usageInput.trim() || "register";
     if (!mobile) throw new BadRequestException("手机号格式不正确");
-    if (!["register", "reset_password", "login", "bind_mobile"].includes(usage)) {
+    if (
+      !["register", "reset_password", "login", "bind_mobile"].includes(usage)
+    ) {
       throw new BadRequestException("验证码用途不正确");
     }
     const recent = await this.prisma.smsCode.count({
@@ -283,7 +418,7 @@ export class AuthService {
     const testMode = envBoolean("ALLOW_TEST_OTP");
     const code = testMode
       ? "123456"
-      : String(Math.floor(100000 + Math.random() * 900000));
+      : String(randomInt(100000, 1000000));
     const stored = await this.prisma.smsCode.create({
       data: {
         mobile,
@@ -331,6 +466,12 @@ export class AuthService {
       if (existing && existing.status !== UserStatus.ACTIVE) {
         throw new UnauthorizedException("账号不可用，请联系客服核验状态");
       }
+      if (existing && !existing.mobileVerifiedAt) {
+        await tx.userSession.updateMany({
+          where: { userId: existing.id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
       const saved = existing
         ? await tx.user.update({
             where: { id: existing.id },
@@ -357,7 +498,7 @@ export class AuthService {
       );
       return saved;
     });
-    return this.mallSession(await this.issueSession(user.id), mobile);
+    return this.mallSession(await this.issueSession(user.id));
   }
 
   async loginWechatMini(input: {
@@ -366,7 +507,9 @@ export class AuthService {
     consentSource: string;
     referralCode?: string;
   }) {
-    if (isGlobalRealm()) throw globalError(503, "social_login_unavailable", "Use email or international phone to sign in.");
+    if (process.env.WECHAT_MINI_LOGIN_ENABLED !== "true") {
+      throw new ServiceUnavailableException("微信小程序登录尚未启用");
+    }
     const code = input.code.trim();
     if (!code) throw new BadRequestException("微信登录凭证缺失");
     this.assertConsentVersion(input.consentVersion);
@@ -405,7 +548,9 @@ export class AuthService {
     const user = await this.prisma.$transaction(async (tx) => {
       const [byOpenId, byUnionId] = await Promise.all([
         tx.user.findUnique({ where: { wechatOpenId: openId } }),
-        unionId ? tx.user.findUnique({ where: { wechatUnionId: unionId } }) : null,
+        unionId
+          ? tx.user.findUnique({ where: { wechatUnionId: unionId } })
+          : null,
       ]);
       if (byOpenId && byUnionId && byOpenId.id !== byUnionId.id) {
         throw new ConflictException("微信账号关联存在冲突，请联系客服处理");
@@ -441,7 +586,7 @@ export class AuthService {
       );
       return saved;
     });
-    return this.mallSession(await this.issueSession(user.id), user.mobile);
+    return this.mallSession(await this.issueSession(user.id));
   }
 
   async loginWechatApp(input: {
@@ -452,7 +597,9 @@ export class AuthService {
     consentVersion: string;
     consentSource: string;
   }): Promise<SessionContract> {
-    if (isGlobalRealm()) throw globalError(503, "social_login_unavailable", "Use email or international phone to sign in.");
+    if (process.env.LEGACY_WECHAT_APP_LOGIN_ENABLED !== "true") {
+      throw new ServiceUnavailableException("旧版微信登录尚未启用，请使用统一登录接口");
+    }
     if (!input.consentAccepted) {
       throw new BadRequestException("请先阅读并同意用户协议与隐私政策");
     }
@@ -536,7 +683,7 @@ export class AuthService {
     this.assertPassword(password);
     await this.consumeSms(mobile, code, "reset_password");
     const user = await this.prisma.user.findUnique({ where: { mobile } });
-    if (!user || user.status !== UserStatus.ACTIVE) {
+    if (!user || user.status !== UserStatus.ACTIVE || !user.mobileVerifiedAt) {
       throw new BadRequestException("未找到可重置的账号");
     }
     await this.prisma.$transaction([
@@ -552,7 +699,9 @@ export class AuthService {
     return this.issueSession(user.id);
   }
 
-  async requestAccountDeletion(userId: string): Promise<{ executeAfter: string }> {
+  async requestAccountDeletion(
+    userId: string,
+  ): Promise<{ executeAfter: string }> {
     const executeAfter = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -575,7 +724,9 @@ export class AuthService {
   }
 
   async profile(userId: string): Promise<MemberProfileContract> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+    });
     return this.toProfile(user);
   }
 
@@ -601,7 +752,9 @@ export class AuthService {
     accessJti: string,
     refreshToken: string,
   ): Promise<SessionContract> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+    });
     const expiresAt = new Date(Date.now() + accessLifetimeSeconds * 1000);
     const accessToken = sign(
       { sub: user.id, sid: sessionId, typ: "access" },
@@ -642,14 +795,18 @@ export class AuthService {
       id: user.id,
       ...(user.legacyMemberId ? { legacyMemberId: user.legacyMemberId } : {}),
       ...(mobileMasked ? { mobileMasked } : {}),
-      ...(isGlobalRealm() ? {
+      ...{
         memberNo: String(user.compatibilityId),
         // Existing international App releases read this display-only field on “My”.
         promo_code: String(user.compatibilityId),
-        ...(user.mobile ? { phoneMasked: maskedIdentifier("sms", user.mobile) } : {}),
-        ...(user.email ? { emailMasked: maskedIdentifier("email", user.email) } : {}),
+        ...(user.mobile
+          ? { phoneMasked: maskedIdentifier("sms", user.mobile) }
+          : {}),
+        ...(user.email
+          ? { emailMasked: maskedIdentifier("email", user.email) }
+          : {}),
         locale: globalLocale(user.locale),
-      } : {}),
+      },
       nickname: user.nickname,
       ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
       gender:
@@ -699,7 +856,7 @@ export class AuthService {
     }
   }
 
-  private mallSession(session: SessionContract, mobile: string | null) {
+  private mallSession(session: SessionContract) {
     return {
       token: session.accessToken,
       refreshToken: session.refreshToken,
@@ -707,13 +864,14 @@ export class AuthService {
       user: {
         id: session.member.id,
         nickname: session.member.nickname,
-        mobile: isGlobalRealm() ? session.member.phoneMasked ?? session.member.mobileMasked ?? null : mobile,
-        ...(isGlobalRealm() ? {
+        mobile:
+          session.member.phoneMasked ?? session.member.mobileMasked ?? null,
+        ...{
           memberNo: session.member.memberNo ?? null,
           promo_code: session.member.promo_code ?? null,
           emailMasked: session.member.emailMasked ?? null,
           phoneMasked: session.member.phoneMasked ?? null,
-        } : {}),
+        },
         avatarUrl: session.member.avatarUrl ?? null,
       },
     };
@@ -724,7 +882,6 @@ export class AuthService {
     code: string,
     usage: string,
   ): Promise<void> {
-    if (isGlobalRealm()) throw globalError(400, "verification_required", "Use the verification-code endpoint to verify your account.");
     const mobile = normalizedMobile(mobileInput);
     if (!mobile || !/^\d{6}$/.test(code)) {
       throw new BadRequestException("验证码不正确");

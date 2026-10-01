@@ -28,10 +28,10 @@ describe("member display numbers", () => {
     expect(profile).not.toHaveProperty("passwordHash");
   });
 
-  it("does not change the domestic App profile contract", async () => {
+  it("does not change member numbers with a former deployment selector", async () => {
     vi.stubEnv("APP_REALM", "domestic");
     const auth = new AuthService({ user: { findUniqueOrThrow: async () => user } } as any, {} as any, {} as any, {} as any);
-    expect(await auth.profile(user.id)).not.toHaveProperty("promo_code");
+    expect(await auth.profile(user.id)).toHaveProperty("promo_code", "27");
   });
 
   it("lists existing international registrations, masks email and searches their numeric number", async () => {

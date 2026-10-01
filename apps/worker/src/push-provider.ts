@@ -1,4 +1,8 @@
-import { IntegrationState, type PrismaClient, type PushInstallation } from "@prisma/client";
+import {
+  IntegrationState,
+  type PrismaClient,
+  type PushInstallation,
+} from "@prisma/client";
 import type { SafePushPayloadContract } from "@saydian/app-contracts";
 import {
   markWorkerIntegrationVerified,
@@ -44,8 +48,10 @@ export class JPushProvider implements PushProvider {
     payload: SafePushPayloadContract,
   ): Promise<void> {
     const groups = new Map<string, string[]>();
-    for (const item of installations.filter(item => item.provider === this.registrationProvider)) {
-      const alert = process.env.APP_REALM === "global" ? globalPushAlert(item.locale) : "Saydian赛电有一条新消息";
+    for (const item of installations.filter(
+      (item) => item.provider === this.registrationProvider,
+    )) {
+      const alert = globalPushAlert(item.locale);
       groups.set(alert, [...(groups.get(alert) ?? []), item.registrationId]);
     }
     if (groups.size === 0) return;
@@ -53,33 +59,34 @@ export class JPushProvider implements PushProvider {
       `${this.appKey}:${this.masterSecret}`,
     ).toString("base64");
     for (const [alert, registrationIds] of groups) {
-    const response = await fetch("https://api.jpush.cn/v3/push", {
-      method: "POST",
-      headers: {
-        authorization: `Basic ${authorization}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        platform: "all",
-        audience: { registration_id: registrationIds },
-        notification: {
-          alert,
-          android: { extras: payload },
-          ios: { extras: payload, sound: "default" },
+      const response = await fetch("https://api.jpush.cn/v3/push", {
+        method: "POST",
+        headers: {
+          authorization: `Basic ${authorization}`,
+          "content-type": "application/json",
         },
-        message: {
-          msg_content: JSON.stringify(payload),
-          extras: payload,
-        },
-        options: { apns_production: process.env.NODE_ENV === "production" },
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok) {
-      throw new Error(`JPush delivery failed with HTTP ${response.status}`);
+        body: JSON.stringify({
+          platform: "all",
+          audience: { registration_id: registrationIds },
+          notification: {
+            alert,
+            android: { extras: payload },
+            ios: { extras: payload, sound: "default" },
+          },
+          message: {
+            msg_content: JSON.stringify(payload),
+            extras: payload,
+          },
+          options: { apns_production: process.env.NODE_ENV === "production" },
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!response.ok) {
+        throw new Error(`JPush delivery failed with HTTP ${response.status}`);
+      }
     }
-    }
-    if (this.prisma) await markWorkerIntegrationVerified(this.prisma, this.integrationKey);
+    if (this.prisma)
+      await markWorkerIntegrationVerified(this.prisma, this.integrationKey);
   }
 }
 
@@ -96,13 +103,14 @@ export class RoutedPushProvider implements PushProvider {
     payload: SafePushPayloadContract,
   ): Promise<void> {
     const deliveries = this.targets
-      .map(target => ({
+      .map((target) => ({
         target,
         installations: installations.filter(
-          installation => installation.provider === target.registrationProvider,
+          (installation) =>
+            installation.provider === target.registrationProvider,
         ),
       }))
-      .filter(delivery => delivery.installations.length > 0);
+      .filter((delivery) => delivery.installations.length > 0);
     if (deliveries.length === 0 && installations.length > 0) {
       throw new Error("Push provider is unconfigured for this application");
     }
@@ -144,7 +152,7 @@ export async function pushProviderFromConfiguration(
   );
   if (legacyTarget) targets.push(legacyTarget);
 
-  if (process.env.APP_REALM === "global") {
+  {
     const sayRingIntegration = await prisma.integrationConfig.findUnique({
       where: { key: "say_ring_push" },
     });
@@ -175,10 +183,15 @@ async function configuredJPushTarget(
     publicConfig: unknown;
   } | null,
 ): Promise<RoutedPushTarget | null> {
-  const provider = String(asObject(integration?.publicConfig).provider ?? "disabled")
+  const provider = String(
+    asObject(integration?.publicConfig).provider ?? "disabled",
+  )
     .trim()
     .toLowerCase();
-  if (integration?.state !== IntegrationState.CONFIGURED || provider !== "jpush") {
+  if (
+    integration?.state !== IntegrationState.CONFIGURED ||
+    provider !== "jpush"
+  ) {
     return null;
   }
   const secrets = await resolveWorkerSecrets(prisma, integrationKey, {

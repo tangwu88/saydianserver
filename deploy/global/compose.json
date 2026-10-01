@@ -58,6 +58,20 @@
       "security_opt": ["no-new-privileges:true"],
       "networks": ["global_private"]
     },
+    "global-avatar-backup": {
+      "image": "alpine:3.21",
+      "command": ["sh", "-ec", "umask 077; while true; do stamp=$$(date -u +%Y%m%dT%H%M%SZ); archive=/backup/say-ring-avatars-$${stamp}.tar.gz; tar -C /avatars -czf \"$${archive}.pending\" .; mv \"$${archive}.pending\" \"$${archive}\"; sha256sum \"$${archive}\" > \"$${archive}.sha256\"; tar -tzf \"$${archive}\" >/dev/null; find /backup -maxdepth 1 -type f -name 'say-ring-avatars-*.tar.gz*' -mtime +7 -delete; sleep 86400; done"],
+      "volumes": ["global_say_ring_avatar_data:/avatars:ro", "global_say_ring_avatar_backup_data:/backup"],
+      "mem_limit": "64m",
+      "cpus": 0.1,
+      "pids_limit": 50,
+      "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}},
+      "restart": "unless-stopped",
+      "read_only": true,
+      "tmpfs": ["/tmp"],
+      "security_opt": ["no-new-privileges:true"],
+      "networks": ["global_private"]
+    },
     "global-api": {
       "image": "ghcr.io/tangwu88/saydianserver-api:${GLOBAL_IMAGE_TAG:?Set a verified full commit SHA}",
       "command": ["node", "dist/main.js"],
@@ -82,6 +96,8 @@
         "OBJECT_STORAGE_ACCESS_KEY": "${GLOBAL_OBJECT_STORAGE_ACCESS_KEY:?Set a dedicated global bucket user}",
         "OBJECT_STORAGE_SECRET_KEY": "${GLOBAL_OBJECT_STORAGE_SECRET_KEY:?Set an independent global bucket secret}",
         "OBJECT_STORAGE_FORCE_PATH_STYLE": "true",
+        "SAY_RING_LOCAL_AVATAR_WRITE_ENABLED": "${GLOBAL_SAY_RING_LOCAL_AVATAR_WRITE_ENABLED:-false}",
+        "SAY_RING_AVATAR_DIR": "/var/lib/saydian/say-ring-avatars",
         "CORS_ORIGINS": "https://app.saydian.cn",
         "COMMERCE_MODE": "integrated",
         "COMMERCE_STOREFRONT_URL": "${GLOBAL_STOREFRONT_URL:-https://app.saydian.cn/global/saidian-mall/}",
@@ -121,6 +137,7 @@
       "restart": "unless-stopped",
       "read_only": true,
       "tmpfs": ["/tmp"],
+      "volumes": ["global_say_ring_avatar_data:/var/lib/saydian/say-ring-avatars"],
       "security_opt": ["no-new-privileges:true"],
       "networks": {
         "global_private": {},
@@ -204,6 +221,8 @@
   "volumes": {
     "global_postgres_data": {},
     "global_redis_data": {},
-    "global_minio_data": {}
+    "global_minio_data": {},
+    "global_say_ring_avatar_data": {},
+    "global_say_ring_avatar_backup_data": {}
   }
 }

@@ -10,7 +10,7 @@ import { env } from "../common/environment";
 import { isUuid, safeObject } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
-import { isGlobalRealm } from "../common/deployment-realm";
+
 import { globalLocale } from "../auth/global-identity";
 import { globalAiSystemPrompt } from "./global-content";
 
@@ -23,14 +23,27 @@ export class ContentService {
 
   async categories(parentId?: string, locale?: string) {
     return this.prisma.articleCategory.findMany({
-      where: { enabled: true, parentId: parentId || null, ...(isGlobalRealm() ? { locale: globalLocale(locale) } : {}) },
+      where: {
+        enabled: true,
+        parentId: parentId || null,
+        ...{ locale: globalLocale(locale) },
+      },
       orderBy: [{ sort: "desc" }, { name: "asc" }],
     });
   }
 
-  async articles(categoryId?: string, pageInput = 1, pageSizeInput = 20, locale?: string) {
-    if (!Number.isSafeInteger(Number(pageInput)) || Number(pageInput) < 1
-      || !Number.isSafeInteger(Number(pageSizeInput)) || Number(pageSizeInput) < 1) {
+  async articles(
+    categoryId?: string,
+    pageInput = 1,
+    pageSizeInput = 20,
+    locale?: string,
+  ) {
+    if (
+      !Number.isSafeInteger(Number(pageInput)) ||
+      Number(pageInput) < 1 ||
+      !Number.isSafeInteger(Number(pageSizeInput)) ||
+      Number(pageSizeInput) < 1
+    ) {
       throw new BadRequestException("分页参数必须为正整数");
     }
     const page = Number(pageInput);
@@ -42,7 +55,7 @@ export class ContentService {
       status: "PUBLISHED",
       publishedAt: { lte: new Date() },
       ...(categoryId ? { categoryId } : {}),
-      ...(isGlobalRealm() ? { locale: globalLocale(locale) } : {}),
+      ...{ locale: globalLocale(locale) },
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.article.findMany({
@@ -71,7 +84,7 @@ export class ContentService {
       where: {
         OR: [...(isUuid(id) ? [{ id }] : []), { legacyId: id }],
         status: "PUBLISHED",
-        ...(isGlobalRealm() ? { locale: globalLocale(locale) } : {}),
+        ...{ locale: globalLocale(locale) },
         publishedAt: { lte: new Date() },
       },
     });
@@ -80,21 +93,21 @@ export class ContentService {
   }
 
   async legalDocument(documentType: string, version?: string, locale?: string) {
-    if (isGlobalRealm()) {
-      const document = await this.prisma.globalLegalDocument.findFirst({ where: { documentType, locale: globalLocale(locale), reviewed: true, ...(version ? { version } : { active: true }), publishedAt: { lte: new Date() } }, orderBy: { publishedAt: "desc" } });
-      if (!document) throw new NotFoundException("The requested document is not available.");
+    {
+      const document = await this.prisma.globalLegalDocument.findFirst({
+        where: {
+          documentType,
+          locale: globalLocale(locale),
+          reviewed: true,
+          ...(version ? { version } : { active: true }),
+          publishedAt: { lte: new Date() },
+        },
+        orderBy: { publishedAt: "desc" },
+      });
+      if (!document)
+        throw new NotFoundException("The requested document is not available.");
       return document;
     }
-    const document = await this.prisma.legalDocument.findFirst({
-      where: {
-        documentType,
-        ...(version ? { version } : { active: true }),
-        publishedAt: { lte: new Date() },
-      },
-      orderBy: { publishedAt: "desc" },
-    });
-    if (!document) throw new NotFoundException("相关协议暂时无法查看");
-    return document;
   }
 
   async aiHistory(userId: string, clientSessionId?: string) {
@@ -110,15 +123,27 @@ export class ContentService {
   async sendAiMessage(userId: string, input: unknown) {
     const body = safeObject(input);
     const content = String(body.content ?? body.message ?? "").trim();
-    if (!content || content.length > 4000) throw new BadRequestException("请输入健康问题");
+    if (!content || content.length > 4000)
+      throw new BadRequestException("请输入健康问题");
     const aiSettings = await this.aiSettings();
-    const clientSessionId = String(body.sessionId ?? body.session_id ?? "").trim();
+    const clientSessionId = String(
+      body.sessionId ?? body.session_id ?? "",
+    ).trim();
     const conversation = clientSessionId
       ? await this.prisma.aiConversation.findFirst({
           where: { userId, clientSessionId },
         })
       : null;
-    const locale = isGlobalRealm() ? globalLocale(body.locale ?? conversation?.locale ?? (await this.prisma.user.findUnique({ where: { id: userId }, select: { locale: true } }))?.locale) : undefined;
+    const locale = globalLocale(
+      body.locale ??
+        conversation?.locale ??
+        (
+          await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { locale: true },
+          })
+        )?.locale,
+    );
     const active =
       conversation ??
       (await this.prisma.aiConversation.create({
@@ -129,7 +154,11 @@ export class ContentService {
           ...(locale ? { locale } : {}),
         },
       }));
-    if (conversation && locale && conversation.locale !== locale) await this.prisma.aiConversation.update({ where: { id: conversation.id }, data: { locale } });
+    if (conversation && locale && conversation.locale !== locale)
+      await this.prisma.aiConversation.update({
+        where: { id: conversation.id },
+        data: { locale },
+      });
     await this.prisma.aiMessage.create({
       data: { conversationId: active.id, role: "user", content },
     });
@@ -154,7 +183,12 @@ export class ContentService {
 
   private async callAiProvider(
     content: string,
-    settings: { provider: string; baseUrl: string; apiKey: string; model: string },
+    settings: {
+      provider: string;
+      baseUrl: string;
+      apiKey: string;
+      model: string;
+    },
     locale?: string,
   ): Promise<string> {
     const response = await fetch(`${settings.baseUrl}/chat/completions`, {
@@ -168,8 +202,7 @@ export class ContentService {
         messages: [
           {
             role: "system",
-            content: isGlobalRealm() ? globalAiSystemPrompt(locale)
-              : "你是赛电健康管家。只提供一般健康信息和生活方式建议，不作诊断，不承诺治疗效果；遇到急症或明显不适应建议及时就医。",
+            content: globalAiSystemPrompt(locale),
           },
           { role: "user", content },
         ],
@@ -177,14 +210,19 @@ export class ContentService {
       signal: AbortSignal.timeout(60_000),
     });
     if (!response.ok) {
-      throw new ServiceUnavailableException("AI健康管家暂时无法使用，请稍后再试");
+      throw new ServiceUnavailableException(
+        "AI健康管家暂时无法使用，请稍后再试",
+      );
     }
     const payload = safeObject(await response.json());
     const choices = Array.isArray(payload.choices) ? payload.choices : [];
     const first = safeObject(choices[0]);
     const message = safeObject(first.message);
     const reply = String(message.content ?? "").trim();
-    if (!reply) throw new ServiceUnavailableException("AI健康管家暂时无法使用，请稍后再试");
+    if (!reply)
+      throw new ServiceUnavailableException(
+        "AI健康管家暂时无法使用，请稍后再试",
+      );
     return reply;
   }
 
@@ -196,19 +234,30 @@ export class ContentService {
     const provider = String(
       publicConfig.provider ?? env("AI_PROVIDER", "disabled"),
     ).trim();
-    if (integration?.state !== IntegrationState.CONFIGURED || provider === "disabled") {
-      throw new ServiceUnavailableException("AI健康管家暂时无法使用，请稍后再试");
+    if (
+      integration?.state !== IntegrationState.CONFIGURED ||
+      provider === "disabled"
+    ) {
+      throw new ServiceUnavailableException(
+        "AI健康管家暂时无法使用，请稍后再试",
+      );
     }
     const secrets = await this.integrationSecrets.resolve("ai", {
       apiKey: "AI_API_KEY",
       baseUrl: "AI_BASE_URL",
       model: "AI_MODEL",
     });
-    const baseUrl = String(publicConfig.baseUrl ?? secrets.baseUrl ?? "").replace(/\/$/, "");
+    const baseUrl = String(
+      publicConfig.baseUrl ?? secrets.baseUrl ?? "",
+    ).replace(/\/$/, "");
     const apiKey = secrets.apiKey ?? "";
-    const model = String(publicConfig.model ?? secrets.model ?? "configured-model");
+    const model = String(
+      publicConfig.model ?? secrets.model ?? "configured-model",
+    );
     if (!baseUrl || !apiKey) {
-      throw new ServiceUnavailableException("AI健康管家暂时无法使用，请稍后再试");
+      throw new ServiceUnavailableException(
+        "AI健康管家暂时无法使用，请稍后再试",
+      );
     }
     return { provider, baseUrl, apiKey, model };
   }

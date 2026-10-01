@@ -6,73 +6,21 @@ on:
       revision:
         required: true
         type: string
-      download_url:
-        required: false
+      build_run_id:
+        required: true
         type: string
-        default: ""
-      download_name:
-        required: false
-        type: string
-        default: ""
-      download_size:
-        required: false
-        type: string
-        default: ""
-      download_sha256:
-        required: false
-        type: string
-        default: ""
-      publish_app_update:
-        required: false
-        type: boolean
-        default: false
-      apply_migrations:
-        required: false
-        type: boolean
-        default: false
-      package_only:
-        required: false
-        type: boolean
-        default: false
   workflow_dispatch:
     inputs:
       revision:
-        description: Full main commit SHA that has passed CI
+        description: Exact latest main SHA with a successful CI verify job
         required: true
         type: string
-      global_revision:
-        description: Optional verified latest global branch SHA; explicitly trigger the installed global deploy service
-        required: false
-        type: string
-      download_url:
-        description: Temporary GitHub release-assets HTTPS URL
-        required: false
-        type: string
-      download_name:
-        description: Immutable APK or HAP filename
-        required: false
-        type: string
-      download_size:
-        description: Exact file size in bytes
-        required: false
-        type: string
-      download_sha256:
-        description: Exact lowercase SHA-256
-        required: false
-        type: string
-      publish_app_update:
-        description: Publish deploy/app-update.internal-test.json after the package is verified
-        required: false
+      first_cutover:
+        description: Run the reviewed first unified cutover and both restore rehearsals
         type: boolean
         default: false
-      apply_migrations:
-        description: Apply reviewed pending Prisma migrations after the production backup
-        required: false
-        type: boolean
-        default: false
-      package_only:
-        description: Install the package and manifest without changing application images
-        required: false
+      offline_images:
+        description: Retry the same manifest using original verified images already loaded on the server
         type: boolean
         default: false
 
@@ -91,7 +39,7 @@ jobs:
       actions: read
     outputs:
       revision: ${{ steps.target.outputs.revision }}
-      global_revision: ${{ steps.target.outputs.global_revision }}
+      build_run_id: ${{ steps.target.outputs.build_run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,157 +47,45 @@ jobs:
       - id: target
         env:
           REVISION: ${{ inputs.revision }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
           GH_TOKEN: ${{ github.token }}
-          EVENT_NAME: ${{ github.event_name }}
-          APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
-          PACKAGE_ONLY: ${{ inputs.package_only }}
-          GLOBAL_REVISION: ${{ inputs.global_revision }}
         run: |
           set -Eeuo pipefail
           [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$REVISION"
-          if [[ "$APPLY_MIGRATIONS" == true ]]; then
-            [[ "$EVENT_NAME" == workflow_dispatch ]]
-            [[ "$PACKAGE_ONLY" != true ]]
-          fi
-          # Pending migrations can fail auto-deploy after CI verify succeeds.
-          # Manual releases require that exact main push to have a successful verify job.
           if [ '${{ github.event_name }}' = workflow_dispatch ]; then
-            verified=false
+            BUILD_RUN_ID=
             while read -r run_id; do
               [[ "$run_id" =~ ^[0-9]+$ ]] || continue
               result=$(gh run view "$run_id" --json jobs --jq '[.jobs[] | select(.name == "verify" and .conclusion == "success")] | length')
-              if [[ "$result" -ge 1 ]]; then verified=true; break; fi
+              if [[ "$result" -ge 1 ]]; then BUILD_RUN_ID=$run_id; break; fi
             done < <(gh run list --workflow ci.yml --commit "$REVISION" --event push --limit 20 --json databaseId --jq '.[].databaseId')
-            [[ "$verified" == true ]]
           fi
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
           echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
-          if [[ -n "$GLOBAL_REVISION" ]]; then
-            [[ "$EVENT_NAME" == workflow_dispatch && "$PACKAGE_ONLY" != true && "$APPLY_MIGRATIONS" != true ]]
-            [[ "$GLOBAL_REVISION" =~ ^[0-9a-f]{40}$ ]]
-            test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/codex/global-api-foundation --jq .object.sha)" = "$GLOBAL_REVISION"
-            echo "global_revision=$GLOBAL_REVISION" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Fetch and verify optional release package
-        if: inputs.download_url != ''
-        env:
-          DOWNLOAD_URL: ${{ inputs.download_url }}
-          DOWNLOAD_NAME: ${{ inputs.download_name }}
-          DOWNLOAD_SIZE: ${{ inputs.download_size }}
-          DOWNLOAD_SHA256: ${{ inputs.download_sha256 }}
-        run: |
-          set -Eeuo pipefail
-          [[ "$DOWNLOAD_URL" == https://release-assets.githubusercontent.com/* ]]
-          [[ "$DOWNLOAD_NAME" =~ ^Saydian-[A-Za-z0-9._-]+\.(apk|hap)$ ]]
-          [[ "$DOWNLOAD_SIZE" =~ ^[1-9][0-9]*$ ]]
-          [[ "$DOWNLOAD_SHA256" =~ ^[0-9a-f]{64}$ ]]
-          mkdir download-package
-          curl --fail --silent --show-error --location --max-redirs 3 \
-            --proto '=https' --proto-redir '=https' \
-            --output "download-package/$DOWNLOAD_NAME" "$DOWNLOAD_URL"
-          test "$(stat -c %s "download-package/$DOWNLOAD_NAME")" = "$DOWNLOAD_SIZE"
-          printf '%s  %s\n' "$DOWNLOAD_SHA256" "$DOWNLOAD_NAME" > download-package/SHA256SUMS
-          (cd download-package && sha256sum --strict --check SHA256SUMS)
-      - uses: actions/upload-artifact@v4
-        if: inputs.download_url != ''
-        with:
-          name: verified-download-package
-          path: download-package
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 1
-  verify-global:
-    needs: resolve
-    if: github.event_name == 'workflow_dispatch' && needs.resolve.outputs.global_revision != ''
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.resolve.outputs.global_revision }}
-          fetch-depth: 0
-      - name: Verify global ancestry and unchanged database schema
-        env:
-          GLOBAL_REVISION: ${{ needs.resolve.outputs.global_revision }}
-        run: |
-          set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = "$GLOBAL_REVISION"
-          current=$(curl --fail --silent --max-time 15 https://app.saydian.cn/global/health/ready | jq -er 'select(.status == "ready" and .database == "ok") | .revision')
-          [[ "$current" =~ ^[0-9a-f]{40}$ ]]
-          git merge-base --is-ancestor "$current" "$GLOBAL_REVISION"
-          git diff --exit-code "$current" "$GLOBAL_REVISION" -- apps/api/prisma/schema.prisma apps/api/prisma/migrations
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.19.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - name: Verify exact global source before invoking its installed deployer
-        run: |
-          set -Eeuo pipefail
-          pnpm install --frozen-lockfile
-          pnpm db:generate
-          pnpm api:docs:check
-          pnpm tools:test
-          pnpm typecheck
-          pnpm test
-          pnpm build
-          node deploy/global/check.mjs
-          docker compose -f deploy/global/compose.json config --no-interpolate --quiet
-  images:
-    needs: resolve
-    if: inputs.package_only != true
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [api, worker, admin]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.resolve.outputs.revision }}
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/${{ matrix.service }}.Dockerfile
-          push: true
-          tags: ghcr.io/tangwu88/saydianserver-${{ matrix.service }}:sha-${{ needs.resolve.outputs.revision }}
-          labels: org.opencontainers.image.revision=${{ needs.resolve.outputs.revision }}
+          echo "build_run_id=$BUILD_RUN_ID" >> "$GITHUB_OUTPUT"
   deploy:
-    needs: [resolve, images, verify-global]
-    if: >-
-      always() &&
-      needs.resolve.result == 'success' &&
-      (needs.images.result == 'success' || inputs.package_only == true) &&
-      (needs.resolve.outputs.global_revision == '' || needs.verify-global.result == 'success')
+    needs: resolve
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     environment: production
     permissions:
       contents: read
       packages: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.resolve.outputs.revision }}
       - uses: actions/download-artifact@v4
-        if: inputs.download_url != ''
         with:
-          name: verified-download-package
-          path: download-package
+          name: release-${{ needs.resolve.outputs.revision }}
+          path: verified-release
+          run-id: ${{ needs.resolve.outputs.build_run_id }}
+          github-token: ${{ github.token }}
+      - name: Validate immutable release manifest
+        run: node deploy/scripts/release-manifest.mjs verify '${{ needs.resolve.outputs.revision }}' verified-release/release-manifest.json
       - name: Deploy through constrained SSH receiver
-        shell: bash
         env:
           REVISION: ${{ needs.resolve.outputs.revision }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -257,18 +93,15 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           GH_TOKEN: ${{ github.token }}
-          DOWNLOAD_URL: ${{ inputs.download_url }}
-          PUBLISH_APP_UPDATE: ${{ inputs.publish_app_update }}
-          APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
-          PACKAGE_ONLY: ${{ inputs.package_only }}
+          FIRST_CUTOVER: ${{ inputs.first_cutover }}
+          OFFLINE_IMAGES: ${{ inputs.offline_images }}
           EVENT_NAME: ${{ github.event_name }}
-          GLOBAL_REVISION: ${{ needs.resolve.outputs.global_revision }}
         run: |
           set -Eeuo pipefail
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
           [[ "$DEPLOY_HOST" = 49.232.231.131 ]]
           [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
-          test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$REVISION"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$REVISION"
           key_dir=$(mktemp -d)
           bundle_dir=$(mktemp -d)
           trap 'rm -rf -- "$key_dir" "$bundle_dir" deploy-bundle.tgz' EXIT
@@ -276,49 +109,23 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$key_dir/known_hosts"
           chmod 600 "$key_dir/key" "$key_dir/known_hosts"
           git archive --format=tar HEAD deploy | tar -x -C "$bundle_dir"
-          if [[ -n "$GLOBAL_REVISION" ]]; then
-            [[ "$EVENT_NAME" == workflow_dispatch && "$PACKAGE_ONLY" != true && "$APPLY_MIGRATIONS" != true ]]
-            [[ "$GLOBAL_REVISION" =~ ^[0-9a-f]{40}$ ]]
-            test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/codex/global-api-foundation --jq .object.sha)" = "$GLOBAL_REVISION"
-            printf '%s\n' "$GLOBAL_REVISION" > "$bundle_dir/deploy/.global-revision"
-          fi
-          if [[ -n "$DOWNLOAD_URL" ]]; then
-            test -f download-package/SHA256SUMS
-            mkdir -p "$bundle_dir/deploy/downloads"
-            cp -p download-package/SHA256SUMS "$bundle_dir/deploy/downloads/"
-            find download-package -maxdepth 1 -type f \( -name '*.apk' -o -name '*.hap' \) \
-              -exec cp -p {} "$bundle_dir/deploy/downloads/" \;
-          fi
-          if [[ "$PUBLISH_APP_UPDATE" == true ]]; then
-            test -n "$DOWNLOAD_URL"
-            : > "$bundle_dir/deploy/.publish-app-update"
-          fi
-          if [[ "$APPLY_MIGRATIONS" == true ]]; then
+          cp verified-release/release-manifest.json "$bundle_dir/deploy/release-manifest.json"
+          if [[ "$OFFLINE_IMAGES" == true ]]; then
             [[ "$EVENT_NAME" == workflow_dispatch ]]
-            [[ "$PACKAGE_ONLY" != true ]]
-            : > "$bundle_dir/deploy/.apply-reviewed-migrations"
+            : > "$bundle_dir/deploy/.offline-images"
           fi
-          if [[ "$PACKAGE_ONLY" == true ]]; then
-            [[ "$PUBLISH_APP_UPDATE" == true && -n "$DOWNLOAD_URL" ]]
-            : > "$bundle_dir/deploy/.package-only"
+          if [[ "$FIRST_CUTOVER" == true ]]; then
+            [[ "$EVENT_NAME" == workflow_dispatch ]]
+            : > "$bundle_dir/deploy/.first-unified-cutover"
           fi
           tar -C "$bundle_dir" -czf deploy-bundle.tgz deploy
           test "$(stat -c %s deploy-bundle.tgz)" -le 10485760
-          expected_revision=$REVISION
-          if [[ "$PACKAGE_ONLY" == true ]]; then
-            expected_revision=$(curl --fail --silent --max-time 15 https://app.saydian.cn/health/ready | jq -r .revision)
-            [[ "$expected_revision" =~ ^[0-9a-f]{40}$ ]]
-          fi
           { printf '%s\n' "$GH_TOKEN"; cat deploy-bundle.tgz; } | \
             ssh -i "$key_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile="$key_dir/known_hosts" -o ConnectTimeout=15 \
               -o ServerAliveInterval=20 -o ServerAliveCountMax=15 -o TCPKeepAlive=yes \
               "$DEPLOY_USER@$DEPLOY_HOST" "release $REVISION"
-          actual=$(curl --fail --silent --max-time 15 https://app.saydian.cn/health/ready | jq -r .revision)
-          test "$actual" = "$expected_revision"
-          echo "### Verified production revision: $actual" >> "$GITHUB_STEP_SUMMARY"
-          if [[ -n "$GLOBAL_REVISION" ]]; then
-            global_actual=$(curl --fail --silent --max-time 15 https://app.saydian.cn/global/health/ready | jq -er 'select(.status == "ready" and .database == "ok") | .revision')
-            test "$global_actual" = "$GLOBAL_REVISION"
-            echo "### Verified international revision: $global_actual" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          for path in /health/ready /global/health/ready; do
+            test "$(curl --fail --silent --max-time 15 https://app.saydian.cn$path | jq -r .revision)" = "$REVISION"
+          done
+          echo "### Verified unified production revision: $REVISION" >> "$GITHUB_STEP_SUMMARY"

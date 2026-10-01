@@ -11,6 +11,7 @@ import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
 import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
 import ContentImageField from "../components/ContentImageField.vue";
 import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor, type DownloadManifestEditor } from "../global-download-setting";
+import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "../download-setting";
 
 type Row = Record<string, any>;
 const memberColumns = ["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "referrerProfile", "pointBalanceCents", "status", "createdAt"];
@@ -20,6 +21,7 @@ const loading = ref(false);
 const loadError = ref("");
 const saving = ref(false);
 const erpLookupBusy = ref(false);
+const erpLookupError = ref("");
 const rows = ref<Row[]>([]);
 const resourceMeta = ref<Row>({});
 const categoryOptions = ref<Row[]>([]);
@@ -51,6 +53,14 @@ const healthReportRow = ref<Row | null>(null);
 const feedbackVisible = ref(false);
 const feedbackSaving = ref(false);
 const feedbackForm = ref<Row>({});
+const deviceDetailVisible = ref(false);
+const deviceDetailLoading = ref(false);
+const deviceDetail = ref<Row>({});
+const deviceConnections = ref<Row[]>([]);
+const memberDevicesVisible = ref(false);
+const memberDevicesLoading = ref(false);
+const memberDeviceMember = ref<Row>({});
+const memberDevices = ref<Row[]>([]);
 const packageUploading = ref<Record<string, boolean>>({});
 const downloadPlatformOptions = [
   { key: "android", label: "Android", packageLabel: "APK" },
@@ -58,7 +68,7 @@ const downloadPlatformOptions = [
   { key: "harmonyos", label: "HarmonyOS", packageLabel: "HAP" },
 ] as const;
 const visibleDownloadPlatformOptions = computed(() => downloadPlatformOptions);
-const appUpdateSettingKeys = new Set(["global_app_update", "say_ring_app_update"]);
+const appUpdateSettingKeys = new Set(["app_update", "global_app_update", "say_ring_app_update"]);
 const isAppUpdateSetting = (key: unknown): boolean => appUpdateSettingKeys.has(String(key ?? ""));
 const isAppDisplaySetting = (key: unknown): boolean => key === "say_ring_app_display";
 const isGlobalSupportSetting = (key: unknown): boolean => key === "global_support";
@@ -93,8 +103,8 @@ const supportEditorToValue = (editor: Row): Row => {
   };
 };
 const createDownloadDraft = (key: unknown): DownloadManifestEditor => (String(key) === "say_ring_app_update" ? createSayRingDownloadDraft() : createGlobalDownloadDraft());
-const downloadManifestToEditor = (key: unknown, value: unknown): DownloadManifestEditor => (String(key) === "say_ring_app_update" ? sayRingDownloadManifestToEditor(value) : globalDownloadManifestToEditor(value));
-const downloadEditorToManifest = (key: unknown, editor: DownloadManifestEditor) => (String(key) === "say_ring_app_update" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor));
+const downloadManifestToEditor = (key: unknown, value: unknown): DownloadManifestEditor => key === "app_update" ? originalManifestToEditor(value) : key === "say_ring_app_update" ? sayRingDownloadManifestToEditor(value) : globalDownloadManifestToEditor(value);
+const downloadEditorToManifest = (key: unknown, editor: DownloadManifestEditor) => key === "app_update" ? originalEditorToManifest(editor) : key === "say_ring_app_update" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor);
 const titles: Record<string, string> = {
   members: "会员",
   care: "远程关爱",
@@ -164,6 +174,10 @@ const fieldLabels: Record<string, string> = {
   state: "配置状态",
   username: "账号",
   displayName: "显示名称",
+  bluetoothName: "蓝牙名称",
+  deviceIdentifier: "设备标识",
+  macAddress: "MAC 地址",
+  connectedAt: "连接时间",
   role: "角色",
   eventId: "事件编号",
   name: "名称",
@@ -239,7 +253,7 @@ const columns = computed(() => {
   if (resource.value === "feedback") return ["memberNo", "memberNickname", "category", "content", "status", "replyContent", "createdAt"];
   if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
   if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
-  if (resource.value === "devices") return ["memberNo", "memberNickname", "displayName", "vendor", "model", "firmware", "capabilities", "boundAt", "lastSeenAt", "status"];
+  if (resource.value === "devices") return ["memberNo", "memberNickname", "bluetoothName", "model", "deviceIdentifier", "macAddress", "firmware", "lastSeenAt", "status"];
   const first = rows.value[0];
   return first
     ? Object.keys(first)
@@ -317,8 +331,9 @@ async function changeCommerceStatus(status: string): Promise<void> {
 
 async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
   const definitions = [
-    { key: "global_support", name: "国际版客服" },
-    { key: "global_app_update", name: "国际版 App 更新" },
+    { key: "global_support", name: "客服设置" },
+    { key: "app_update", name: "赛电 App 更新" },
+    { key: "global_app_update", name: "旧客户端更新（兼容）" },
     { key: "say_ring_app_update", name: "Say Ring App 更新" },
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
     { key: "say_ring_map", name: "Say Ring 运动地图" },
@@ -386,6 +401,50 @@ function pointMoney(value: unknown): string {
   return Number.isSafeInteger(cents) ? `¥${(cents / 100).toFixed(2)}` : "未开通";
 }
 
+function localDateTime(value: unknown): string {
+  const date = new Date(String(value ?? ""));
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+let deviceDetailRequestId = 0;
+let memberDevicesRequestId = 0;
+
+async function openMemberDevices(row: Row): Promise<void> {
+  const requestId = ++memberDevicesRequestId;
+  memberDevicesVisible.value = true;
+  memberDevicesLoading.value = true;
+  memberDeviceMember.value = { memberNo: row.memberNo, memberNickname: row.nickname };
+  memberDevices.value = [];
+  try {
+    const data = responseData<Row>(await api.get(`/members/${encodeURIComponent(String(row.id))}/devices`));
+    if (requestId !== memberDevicesRequestId || !memberDevicesVisible.value) return;
+    memberDeviceMember.value = data.member ?? memberDeviceMember.value;
+    memberDevices.value = Array.isArray(data.devices) ? data.devices : [];
+  } catch (error) {
+    if (requestId === memberDevicesRequestId) ElMessage.error(readableError(error));
+  } finally {
+    if (requestId === memberDevicesRequestId) memberDevicesLoading.value = false;
+  }
+}
+
+async function openDeviceDetails(row: Row): Promise<void> {
+  const requestId = ++deviceDetailRequestId;
+  deviceDetailVisible.value = true;
+  deviceDetailLoading.value = true;
+  deviceDetail.value = { ...row };
+  deviceConnections.value = [];
+  try {
+    const data = responseData<Row>(await api.get(`/devices/${encodeURIComponent(String(row.id))}/connections`));
+    if (requestId !== deviceDetailRequestId || !deviceDetailVisible.value) return;
+    deviceDetail.value = data.device ?? row;
+    deviceConnections.value = Array.isArray(data.connections) ? data.connections : [];
+  } catch (error) {
+    if (requestId === deviceDetailRequestId) ElMessage.error(readableError(error));
+  } finally {
+    if (requestId === deviceDetailRequestId) deviceDetailLoading.value = false;
+  }
+}
+
 function adjustmentKey(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const bytes = new Uint8Array(16);
@@ -438,6 +497,7 @@ async function openCreate(): Promise<void> {
   if (["commerce-products", "commerce-categories"].includes(resource.value)) await ensureCommerceCategories();
   if (requestId !== editorRequestId || requestedResource !== resource.value) return;
   originalArticleCategoryId.value = null;
+  erpLookupError.value = "";
   dialogMode.value = "edit";
   dialogTitle.value = `新增${title.value}`;
   const defaults: Record<string, Row> = {
@@ -636,9 +696,11 @@ async function loadCommerceProductBySku(): Promise<void> {
   if (erpLookupBusy.value) return;
   const sku = String(form.value._erpLookupSku ?? "").trim();
   if (!sku) {
-    ElMessage.error("请填写 ERP SKU");
+    erpLookupError.value = "请填写 ERP SKU";
+    ElMessage.error(erpLookupError.value);
     return;
   }
+  erpLookupError.value = "";
   erpLookupBusy.value = true;
   try {
     const product = responseData<Row>(await api.post("/commerce-products/erp-import", { sku }));
@@ -656,9 +718,36 @@ async function loadCommerceProductBySku(): Promise<void> {
     ElMessage.success("已从 ERP 实时获取并导入商品资料");
   } catch (error) {
     form.value._erpLookupPending = true;
-    ElMessage.error(readableError(error));
+    const message = readableError(error);
+    erpLookupError.value = message.includes("聚水潭未找到 SKU") ? `${message}。请在聚水潭确认完整 SKU 编码后重试。` : message;
+    ElMessage.error(erpLookupError.value);
   } finally {
     erpLookupBusy.value = false;
+  }
+}
+
+async function deleteCommerceProduct(row: Row): Promise<void> {
+  const id = String(row.id ?? "").trim();
+  if (!id) {
+    ElMessage.error("商品编号无效，请刷新后重试");
+    return;
+  }
+  const name = String(row.displayName || row.name || row.erpItemId || "该商品");
+  try {
+    await ElMessageBox.confirm(`确认永久删除“${name}”？删除后无法恢复；已有订单或评价的商品将被系统拦截，请改用归档。`, "删除商品", {
+      confirmButtonText: "确认删除",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+  } catch {
+    return;
+  }
+  try {
+    await api.delete(`/commerce-products/${encodeURIComponent(id)}`);
+    ElMessage.success("商品已删除");
+    await load();
+  } catch (error) {
+    ElMessage.error(readableError(error));
   }
 }
 
@@ -1118,6 +1207,8 @@ function resetResourceView(): void {
   ++loadRequestId;
   ++healthRequestId;
   ++editorRequestId;
+  ++deviceDetailRequestId;
+  ++memberDevicesRequestId;
   articleCategoriesReady.value = false;
   articleCategoryEditorResource.value = "";
   articleCategoryOptions.value = [];
@@ -1130,6 +1221,14 @@ function resetResourceView(): void {
   commerceStatus.value = "";
   currentPage.value = 1;
   dialogVisible.value = false;
+  deviceDetailVisible.value = false;
+  deviceDetailLoading.value = false;
+  deviceDetail.value = {};
+  deviceConnections.value = [];
+  memberDevicesVisible.value = false;
+  memberDevicesLoading.value = false;
+  memberDeviceMember.value = {};
+  memberDevices.value = [];
   detailRows.value = [];
   healthMember.value = {};
   form.value = {};
@@ -1155,14 +1254,14 @@ onBeforeUnmount(() => {
   <section class="page">
     <h1 class="page-title">{{ title }}</h1>
     <div class="resource-content">
-      <CommerceWorkspace v-if="isCommerceResource" v-model:search="search" :resource="resource" :rows="rows" :meta="resourceMeta" :loading="loading" :createable="createable" @refresh="refreshCommerce" @page-change="changeCommercePage" @status-change="changeCommerceStatus" @create="openCreate" @edit="openEdit" @refund="refundAfterSale" @ship="openShipment" @shipping-refund="requestShippingRefund" @run-action="runAction" @batch-products="batchProducts" />
+      <CommerceWorkspace v-if="isCommerceResource" v-model:search="search" :resource="resource" :rows="rows" :meta="resourceMeta" :loading="loading" :createable="createable" @refresh="refreshCommerce" @page-change="changeCommercePage" @status-change="changeCommerceStatus" @create="openCreate" @edit="openEdit" @delete-product="deleteCommerceProduct" @refund="refundAfterSale" @ship="openShipment" @shipping-refund="requestShippingRefund" @run-action="runAction" @batch-products="batchProducts" />
       <template v-else>
         <div class="toolbar">
           <el-input v-if="searchable" v-model="search" placeholder="邮箱、会员编号、手机号、昵称或推广码" clearable style="width: 340px" @keyup.enter="searchMembers" @clear="searchMembers" />
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
           <el-button v-if="createable" @click="openCreate">新增</el-button>
-          <span class="muted">{{ resource === "devices" ? "设备由国际 App 在连接就绪时上报；“最近连接”表示最近一次客户端成功上报。原始设备标识仅按会员作用域单向哈希保存，后台不展示 MAC 或序列号。" : "会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。" }}</span>
+          <span class="muted">{{ resource === "devices" ? "设备标识由 App 上报标识单向生成，用于蓝牙名或 MAC 缺失时区分设备。" : "会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。" }}</span>
         </div>
         <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
         <el-table v-if="!loadError" v-loading="loading" :data="rows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
@@ -1210,8 +1309,14 @@ onBeforeUnmount(() => {
               <el-button size="small" type="primary" plain @click="openFeedback(scope.row)">{{ scope.row.replyContent ? "查看 / 回复" : "处理 / 回复" }}</el-button>
             </template>
           </el-table-column>
-          <el-table-column v-if="editable || (canWrite && resource === 'health-reports')" label="操作" min-width="110" fixed="right">
+          <el-table-column v-if="resource === 'devices'" label="操作" width="100" fixed="right">
             <template #default="scope">
+              <el-button size="small" type="primary" plain @click="openDeviceDetails(scope.row)">查看详情</el-button>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="resource === 'members' || editable || (canWrite && resource === 'health-reports')" label="操作" :min-width="resource === 'members' ? 180 : 110" fixed="right">
+            <template #default="scope">
+              <el-button v-if="resource === 'members'" size="small" type="primary" plain @click="openMemberDevices(scope.row)">查看设备</el-button>
               <el-button v-if="editable" size="small" :disabled="resource === 'members' && ['DELETION_PENDING', 'DELETED'].includes(scope.row.status)" @click="openEdit(scope.row)">编辑</el-button>
               <el-button v-if="resource === 'health-reports' && canReadRawHealth" size="small" type="primary" plain @click="openHealthReport(scope.row)">查看</el-button>
               <el-button v-if="canWrite && resource === 'health-reports' && scope.row.status === 'FAILED'" size="small" type="warning" @click="runAction(`/health-reports/${scope.row.id}/retry`, '报告已重新排队')">重试</el-button>
@@ -1222,6 +1327,56 @@ onBeforeUnmount(() => {
         <el-pagination v-if="resource === 'members' && !loadError" :current-page="currentPage" :page-size="memberPageSize" :total="Number(resourceMeta.total ?? 0)" :disabled="loading" layout="total, prev, pager, next" style="margin-top: 16px" @current-change="changeCommercePage" />
       </template>
     </div>
+
+    <el-dialog v-model="memberDevicesVisible" title="会员设备" width="min(980px, 94vw)" destroy-on-close @closed="++memberDevicesRequestId">
+      <div v-loading="memberDevicesLoading">
+        <p>{{ memberDeviceMember.memberNo || "—" }} · {{ memberDeviceMember.memberNickname || "未填写昵称" }}</p>
+        <el-table :data="memberDevices" border stripe empty-text="暂无设备上报">
+          <el-table-column prop="deviceIdentifier" label="设备标识" min-width="190" />
+          <el-table-column prop="bluetoothName" label="蓝牙名称" min-width="150" />
+          <el-table-column prop="model" label="设备型号" min-width="120" />
+          <el-table-column prop="macAddress" label="MAC 地址" min-width="160"><template #default="scope">{{ scope.row.macAddress || "未上报" }}</template></el-table-column>
+          <el-table-column label="最近连接" min-width="190"><template #default="scope">{{ localDateTime(scope.row.lastSeenAt) }}</template></el-table-column>
+          <el-table-column label="状态" width="90"><template #default="scope">{{ scope.row.status === "BOUND" ? "已绑定" : "已解绑" }}</template></el-table-column>
+          <el-table-column label="操作" width="110"><template #default="scope"><el-button size="small" type="primary" plain @click="openDeviceDetails(scope.row)">连接记录</el-button></template></el-table-column>
+        </el-table>
+      </div>
+      <template #footer><el-button @click="memberDevicesVisible = false">关闭</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="deviceDetailVisible" title="设备连接详情" width="min(920px, 94vw)" destroy-on-close @closed="++deviceDetailRequestId">
+      <div v-loading="deviceDetailLoading">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="会员">{{ deviceDetail.memberNo || "—" }} · {{ deviceDetail.memberNickname || "未填写昵称" }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ deviceDetail.status === "BOUND" ? "已绑定" : deviceDetail.status === "UNBOUND" ? "已解绑" : "—" }}</el-descriptions-item>
+          <el-descriptions-item label="蓝牙名称">{{ deviceDetail.bluetoothName || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="设备型号">{{ deviceDetail.model || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="设备标识">{{ deviceDetail.deviceIdentifier || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="MAC 地址">{{ deviceDetail.macAddress || "未上报" }}</el-descriptions-item>
+          <el-descriptions-item label="固件版本">{{ deviceDetail.firmware || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="绑定时间">{{ localDateTime(deviceDetail.boundAt) }}</el-descriptions-item>
+          <el-descriptions-item label="最近连接">{{ localDateTime(deviceDetail.lastSeenAt) }}</el-descriptions-item>
+        </el-descriptions>
+        <h3>连接记录</h3>
+        <el-table :data="deviceConnections" border stripe empty-text="暂无历史；记录从本功能上线后开始">
+          <el-table-column type="expand" width="48">
+            <template #default="scope">
+              <div class="device-raw-payload">
+                <b>原始上报数据</b>
+                <pre>{{ scope.row.rawPayload || "历史记录未保存原始数据" }}</pre>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="连接时间" min-width="190"><template #default="scope">{{ localDateTime(scope.row.connectedAt) }}</template></el-table-column>
+          <el-table-column prop="bluetoothName" label="蓝牙名称" min-width="150" />
+          <el-table-column prop="model" label="设备型号" min-width="120" />
+          <el-table-column prop="deviceIdentifier" label="设备标识" min-width="190" />
+          <el-table-column prop="macAddress" label="MAC 地址" min-width="160"><template #default="scope">{{ scope.row.macAddress || "未上报" }}</template></el-table-column>
+          <el-table-column prop="firmware" label="固件版本" min-width="110" />
+        </el-table>
+      </div>
+      <template #footer><el-button @click="deviceDetailVisible = false">关闭</el-button></template>
+    </el-dialog>
 
     <el-dialog v-model="shipmentVisible" title="本地商品分包发货" width="min(860px, 94vw)" :close-on-click-modal="false" destroy-on-close>
       <el-alert v-if="shipmentPreview.unavailableReason" :title="shipmentPreview.unavailableReason" type="warning" :closable="false" />
@@ -1379,9 +1534,10 @@ onBeforeUnmount(() => {
         <template v-else-if="resource === 'commerce-products'">
           <template v-if="form._erpLookupPending">
             <el-alert title="填写 ERP SKU 后，系统会实时调用聚水潭商品与库存接口；两项都成功才会按草稿导入，不依赖同步任务。" type="info" :closable="false" show-icon />
+            <el-alert v-if="erpLookupError" :title="erpLookupError" type="error" :closable="false" show-icon style="margin-top: 12px" />
             <el-form-item label="ERP SKU（必填）">
               <div style="display: flex; width: 100%; gap: 12px">
-                <el-input v-model="form._erpLookupSku" placeholder="填写 ERP 系统中的 SKU" clearable @keyup.enter="loadCommerceProductBySku" />
+                <el-input v-model="form._erpLookupSku" placeholder="填写 ERP 系统中的 SKU" clearable @input="erpLookupError = ''" @keyup.enter="loadCommerceProductBySku" />
                 <el-button type="primary" :loading="erpLookupBusy" @click="loadCommerceProductBySku">获取 ERP 资料</el-button>
               </div>
             </el-form-item>
@@ -1714,5 +1870,16 @@ onBeforeUnmount(() => {
 .member-referrer span {
   color: #667085;
   font-size: 12px;
+}
+.device-raw-payload {
+  padding: 8px 24px;
+}
+.device-raw-payload pre {
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  background: #f5f7fa;
+  border-radius: 4px;
 }
 </style>

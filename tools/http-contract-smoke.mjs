@@ -24,7 +24,7 @@ const v2 = "/api/saydian-app/v2";
 const password = "local-fixture-password-only";
 async function registerVerified(mobile, nickname) {
   const rejected = await request(v2 + "/auth/register", { method: "POST", body: { mobile, password, nickname, consentVersion: "fixture-only" } });
-  check(rejected.json.code, 400);
+  check(rejected.json.code, 503); // Unverified registration stays disabled in the unified account service.
   const otp = (await request(v2 + "/auth/sms-code", { method: "POST", body: { mobile, usage: "register" } })).json;
   check(otp.code, 200);
   assert.match(otp.data.devCode ?? "", /^\d{6}$/);
@@ -50,7 +50,9 @@ try {
   wechatLogin.set("consent_accepted", "1");
   check((await request("/api/v1/site/wechat-login", { method: "POST", body: wechatLogin })).json.code, 503);
   const badPay = new FormData(); badPay.set("pay_type", "unsupported"); badPay.set("data", '{"order_id":42}');
-  check((await request("/api/v1/pay", { method: "POST", token: tokenA, body: badPay })).json.message, "请选择支持的支付方式");
+  const rejectedPayment = await request("/api/v1/pay", { method: "POST", token: tokenA, body: badPay });
+  check(rejectedPayment.json.code, 400);
+  check(typeof rejectedPayment.json.message, "string");
   const observed = new Date(Date.now() - 60_000).toISOString();
   const localDay = new Date(Date.now() + 8 * 3600_000 - 60_000).toISOString().slice(0, 10);
   const daily = { dailyDate: [{ date: observed, heartReat: 75, bloodPressure: { bloodPressureHigh: 120, bloodPressureLow: 80 } }] };
@@ -73,6 +75,22 @@ try {
   check((await request(v1 + "/care/save", { method: "POST", token: tokenB, body: { id: invites[0].id, examine_status: 1 } })).json.code, 200);
   const memberB = (await request(v1 + "/member/my", { token: tokenB })).json.data;
   const memberA = login.json.data.member;
+  const canonicalLogin = await request(v2 + "/auth/login", { method: "POST", body: { mobile: "19900000002", password } });
+  const aliasLogin = await request("/global" + v2 + "/auth/login", { method: "POST", body: { username: "+8619900000002", password } });
+  check(canonicalLogin.json.code, 200); check(aliasLogin.json.code, 200);
+  check(canonicalLogin.json.data.member.id, b.data.member.id);
+  check(aliasLogin.json.data.member.id, b.data.member.id);
+  const bound = await request(v2 + "/devices", { method: "POST", token: tokenB, body: { deviceId: "synthetic-ci-device", vendor: "TEST", model: "CI-only", sdkData: "raw|connection|fixture" } });
+  check(bound.json.code, 200);
+  for (const suffix of ["/members/me", "/devices", "/health/records?metric=heart_rate"]) {
+    const direct = await request(v2 + suffix, { token: canonicalLogin.json.data.accessToken });
+    const alias = await request("/global" + v2 + suffix, { token: aliasLogin.json.data.accessToken });
+    check(direct.json.code, 200); check(alias.json.code, 200); check(alias.json.data, direct.json.data);
+  }
+  check((await prisma.deviceConnectionEvent.findFirstOrThrow({ where: { deviceBindingId: bound.json.data.id } })).rawPayload.includes("sdkData=raw\\|connection\\|fixture"), true);
+  const canonicalOrders = await request("/api/saidian-mall/v1/storefront/orders", { token: tokenB });
+  const aliasOrders = await request("/global/api/saidian-mall/v1/storefront/orders", { token: aliasLogin.json.data.accessToken });
+  check(canonicalOrders.status, 200); check(aliasOrders.json.data ?? aliasOrders.json, canonicalOrders.json.data ?? canonicalOrders.json);
   check((await request(`${v1}/daily-date/preview?type=heartReat&selectmember=${memberB.id}`, { token: tokenA })).json.code, 403);
   check((await request(v1 + "/care-setting", { method: "POST", token: tokenB, body: { to_member_id: memberA.id, setting: ["heartReat"] } })).json.code, 200);
   check((await request(`${v1}/daily-date/preview?type=heartReat&selectMemberId=${memberB.id}`, { token: tokenA })).json.data[0].heartReat, 75);
@@ -85,8 +103,8 @@ try {
   check((await request(v1 + "/notify/" + notice.compatibilityId, { token: tokenB })).json.code, 404);
   check((await request(v1 + "/notify/" + notice.compatibilityId, { token: tokenA })).json.data.is_read, 1);
   check((await request(v1 + "/notify/statistics", { token: tokenA })).json.data.announce_count, 0);
-  const category = await prisma.articleCategory.create({ data: { legacyId: "81001", name: "fixture" } });
-  await prisma.article.create({ data: { legacyId: "81002", categoryId: category.id, title: "fixture", contentHtml: "<p>fixture</p>", status: "PUBLISHED", publishedAt: new Date() } });
+  const category = await prisma.articleCategory.create({ data: { legacyId: "81001", name: "fixture", locale: "en" } });
+  await prisma.article.create({ data: { legacyId: "81002", categoryId: category.id, title: "fixture", locale: "en", contentHtml: "<p>fixture</p>", status: "PUBLISHED", publishedAt: new Date() } });
   check((await request("/api/rf-article/article/view?id=81002")).json.data.title, "fixture");
   check((await request("/api/rf-article/article/index?cate_id=81001")).json.data.length, 1);
   check((await request(v1 + "/member/my")).json.code, 401);

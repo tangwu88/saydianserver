@@ -14,15 +14,13 @@ COPY apps/worker apps/worker
 RUN pnpm --filter @saydian/app-contracts build \
  && pnpm --filter @saydian/app-api prisma:generate \
  && pnpm --filter @saydian/commerce-domain build \
- && pnpm --filter @saydian/app-worker build
+ && pnpm --filter @saydian/app-worker build \
+ && pnpm --filter @saydian/app-worker deploy --prod /runtime/worker \
+ && node -e 'const {createRequire}=require("node:module"),{dirname,resolve}=require("node:path"),{cpSync}=require("node:fs"); const clientRoot=base=>dirname(createRequire(base).resolve("@prisma/client/package.json")); cpSync(resolve(clientRoot("/workspace/apps/api/package.json"),"../../.prisma"),resolve(clientRoot("/runtime/worker/package.json"),"../../.prisma"),{recursive:true});'
 
 FROM node:24.8.0-alpine AS runtime
-WORKDIR /workspace
-ENV NODE_ENV=production
-COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
-COPY --from=build --chown=node:node /workspace/packages/contracts ./packages/contracts
-COPY --from=build --chown=node:node /workspace/packages/commerce-domain ./packages/commerce-domain
-COPY --from=build --chown=node:node /workspace/apps/worker ./apps/worker
-USER node
 WORKDIR /workspace/apps/worker
+ENV NODE_ENV=production
+COPY --from=build --chown=node:node /runtime/worker ./
+USER node
 CMD ["node", "dist/main.js"]

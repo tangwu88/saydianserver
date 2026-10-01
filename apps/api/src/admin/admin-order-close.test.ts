@@ -90,13 +90,13 @@ describe("super-admin order close", () => {
     expect(h.tx.commerceSku.update).not.toHaveBeenCalled();
   });
 
-  it("rejects stale, unnoted, non-super-admin, and domestic requests", async () => {
+  it("rejects stale, unnoted and non-super-admin requests", async () => {
     const h = harness();
     await expect(h.service.closeCommerceOrder(orderId, input({ orderVersion: 1 }), current)).rejects.toMatchObject({ status: 409 });
     await expect(h.service.closeCommerceOrder(orderId, input({ note: "x" }), current)).rejects.toMatchObject({ status: 400 });
     await expect(h.service.closeCommerceOrder(orderId, input(), { ...current, roles: ["FINANCE"] })).rejects.toMatchObject({ status: 403 });
     vi.stubEnv("APP_REALM", "domestic");
-    await expect(h.service.closeCommerceOrder(orderId, input(), current)).rejects.toMatchObject({ status: 404 });
+    await expect(h.service.closeCommerceOrder(orderId, input(), { ...current, roles: ["FINANCE"] })).rejects.toMatchObject({ status: 403 });
     expect(h.tx.commerceOrder.updateMany).not.toHaveBeenCalled();
   });
 });

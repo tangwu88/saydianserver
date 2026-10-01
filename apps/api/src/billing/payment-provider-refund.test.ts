@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSign, generateKeyPairSync } from "node:crypto";
 import { IntegrationState, PaymentChannel } from "@prisma/client";
 import type { PrismaService } from "../common/prisma.service";
@@ -11,7 +11,7 @@ const keys = generateKeyPairSync("rsa", { modulusLength: 2048,
 const request: RefundForProvider = { refundNo: "REF-partial-1", paymentNo: "PAY-original-1", providerTransactionId: "provider-original-1",
   amountCents: 101, totalCents: 1000, currency: "CNY", reason: "测试退款", channel: PaymentChannel.WECHAT_APP };
 const paymentQuery = { paymentNo: "PAY-query-1", channel: PaymentChannel.WECHAT_JSAPI, providerMerchantId: "merchant-1" };
-const paymentClose = { ...paymentQuery, providerAppId: "app-1" };
+const paymentClose = { ...paymentQuery, providerAppId: "wxSyntheticApp123" };
 const wechat = (extra: Record<string, unknown> = {}) => ({ status: "SUCCESS", refund_id: "wx-refund-1", out_refund_no: request.refundNo,
   out_trade_no: request.paymentNo, transaction_id: request.providerTransactionId, amount: { total: 1000, refund: 101, currency: "CNY" }, ...extra });
 const alipay = (extra: Record<string, unknown> = {}) => ({ code: "10000", trade_no: request.providerTransactionId,
@@ -24,13 +24,14 @@ function signedWechat(raw: string) {
 }
 function fixture(extraSecrets: Record<string, string | undefined> = {}) {
   const prisma = { integrationConfig: { findUnique: vi.fn().mockResolvedValue({ state: IntegrationState.CONFIGURED,
-    publicConfig: { refundNotifyUrl: "https://example.invalid/refund-notify", gateway: "https://openapi.alipay.com/gateway.do" } }), updateMany: vi.fn() } };
-  const secrets = { resolve: vi.fn().mockResolvedValue({ merchantId: "merchant-1", serialNo: "MERCHANT-SERIAL", appId: "app-1", privateKeyPem: keys.privateKey,
-    appIdOfficial: "app-1", appIdMini: "mini-app-1", appIdApp: "native-app-1", publicKeyPem: keys.publicKey,
+    publicConfig: { redirectUri: "https://example.invalid/saidian-mall/oauth/callback", notifyUrl: "https://example.invalid/notify", refundNotifyUrl: "https://example.invalid/refund-notify", gateway: "https://openapi.alipay.com/gateway.do" } }), updateMany: vi.fn() } };
+  const secrets = { resolve: vi.fn().mockResolvedValue({ merchantId: "merchant-1", serialNo: "MERCHANT-SERIAL", appId: "wxSyntheticApp123", appSecret: "synthetic-official-secret", privateKeyPem: keys.privateKey,
+    apiV3Key: "x".repeat(32), appIdOfficial: "wxSyntheticApp123", appIdMini: "mini-app-1", appIdApp: "native-app-1", publicKeyPem: keys.publicKey,
     platformPublicKeyPem: keys.publicKey, platformSerialNo: "PLATFORM-SERIAL", ...extraSecrets }) };
   return new PaymentProviderService(prisma as unknown as PrismaService, secrets as unknown as IntegrationSecretsService);
 }
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => { vi.stubEnv("GLOBAL_WECHAT_H5_ENABLED", "true"); vi.stubEnv("COMMERCE_STOREFRONT_URL", "https://example.invalid/saidian-mall/"); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("provider refund response contract", () => {
   it("returns actual WeChat amount and complete request/transaction binding", () => {

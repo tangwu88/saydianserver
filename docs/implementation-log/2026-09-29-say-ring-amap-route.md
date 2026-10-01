@@ -21,6 +21,10 @@
 - `pnpm build`：通过；后台 Vite 提示既有大包体积警告，不影响构建。
 - `git diff --check`：通过。当前分支与 `origin/main` 分叉，按约定只提交并推送当前分支，不通过 `tools/Publish-Change.ps1` 对 `main` 强推或覆盖。
 
+补充：另一分支的历史记录
+
+- 功能提交 `bf36c99546aa59aaaa949243fe270e0d64cbc056` 已推送至 `origin/codex/say-ring-harmony-download-page` 并通过 `git ls-remote` 核对；本补记会另作仅文档提交。`origin/main` 未更新，CI 及线上版本未验收，不能称为已部署。
+
 ## 待验收
 
 - 高德真实 Key 尚未填写，供应商真实地图与中国境外服务范围未验收；Key 后续只在后台录入，不在聊天发送。

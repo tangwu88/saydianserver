@@ -24,7 +24,7 @@ describe.runIf(enabled)("local PostgreSQL transaction acceptance", () => {
     prisma = new PrismaClient();
     store = new CommerceStoreService(prisma as PrismaService);
     await prisma.user.createMany({ data: members.map(id => ({ id, nickname: `LOCAL_CONTRACT_${suffix}` })) });
-    await prisma.commerceAddress.create({ data: { id: addressId, userId: members[0]!, name: "合成测试", mobile: "00000000000", province: "测试省", city: "测试市", district: "测试区", detail: "不发货测试地址" } });
+    await prisma.commerceAddress.create({ data: { id: addressId, userId: members[0]!, name: "合成测试", mobile: "+8619900000099", countryCode: "CN", province: "测试省", city: "测试市", district: "测试区", detail: "不发货测试地址" } });
     await prisma.commerceProduct.create({ data: { id: productId, erpItemId: `LOCAL-${suffix}`, source: "LOCAL", name: "合成并发测试商品", status: ProductStatus.PUBLISHED, gallery: [], tags: [],
       skus: { create: { id: skuId, erpSkuId: `LOCAL-SKU-${suffix}`, erpItemId: `LOCAL-${suffix}`, salePriceCents: 1000, stock: 1 } },
     } });

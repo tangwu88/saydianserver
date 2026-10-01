@@ -1,4 +1,7 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { safeObject } from "../common/crypto";
 
 type Coordinate = { latitude: number; longitude: number };
@@ -12,9 +15,15 @@ export function parseSportRoute(input: unknown): Coordinate[] {
     const point = safeObject(item);
     const latitude = Number(point.latitude);
     const longitude = Number(point.longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
-        latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 ||
-        (latitude === 0 && longitude === 0)) {
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180 ||
+      (latitude === 0 && longitude === 0)
+    ) {
       throw new BadRequestException("运动轨迹包含无效坐标");
     }
     return { latitude, longitude };
@@ -25,11 +34,16 @@ function pair(point: Coordinate): string {
   return `${point.longitude.toFixed(6)},${point.latitude.toFixed(6)}`;
 }
 
-async function convertedCoordinates(points: Coordinate[], key: string): Promise<string[]> {
+async function convertedCoordinates(
+  points: Coordinate[],
+  key: string,
+): Promise<string[]> {
   const converted: string[] = [];
   for (let start = 0; start < points.length; start += 40) {
     const batch = points.slice(start, start + 40);
-    const url = new URL("https://restapi.amap.com/v3/assistant/coordinate/convert");
+    const url = new URL(
+      "https://restapi.amap.com/v3/assistant/coordinate/convert",
+    );
     url.searchParams.set("key", key);
     url.searchParams.set("coordsys", "gps");
     url.searchParams.set("locations", batch.map(pair).join("|"));
@@ -37,13 +51,16 @@ async function convertedCoordinates(points: Coordinate[], key: string): Promise<
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (!response.ok) throw new Error("provider unavailable");
-      data = await response.json() as Record<string, unknown>;
+      data = (await response.json()) as Record<string, unknown>;
     } catch {
       throw new ServiceUnavailableException("地图坐标转换暂时不可用");
     }
     const result = String(data.locations ?? "").split(";");
-    if (String(data.status) !== "1" || result.length !== batch.length ||
-        result.some((value) => !/^[-\d.]+,[-\d.]+$/.test(value))) {
+    if (
+      String(data.status) !== "1" ||
+      result.length !== batch.length ||
+      result.some((value) => !/^[-\d.]+,[-\d.]+$/.test(value))
+    ) {
       throw new ServiceUnavailableException("地图坐标转换暂时不可用");
     }
     converted.push(...result);
@@ -52,7 +69,8 @@ async function convertedCoordinates(points: Coordinate[], key: string): Promise<
 }
 
 export async function renderAmapSportRoute(
-  points: Coordinate[], webServiceKey: string,
+  points: Coordinate[],
+  webServiceKey: string,
 ): Promise<{ body: Buffer; contentType: string }> {
   const converted = await convertedCoordinates(points, webServiceKey);
   const longitude = converted.map((value) => Number(value.split(",")[0]));
@@ -62,7 +80,10 @@ export async function renderAmapSportRoute(
     Math.max(...latitude) - Math.min(...latitude),
     0.0001,
   );
-  const zoom = Math.max(5, Math.min(17, Math.floor(14 + Math.log2(0.02 / span))));
+  const zoom = Math.max(
+    5,
+    Math.min(17, Math.floor(14 + Math.log2(0.02 / span))),
+  );
   const url = new URL("https://restapi.amap.com/v3/staticmap");
   url.searchParams.set("key", webServiceKey);
   url.searchParams.set("zoom", String(zoom));
@@ -70,14 +91,19 @@ export async function renderAmapSportRoute(
   url.searchParams.set("paths", `5,0x316EF5,1,,:${converted.join(";")}`);
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    const contentType = (response.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+    const contentType =
+      (response.headers.get("content-type") ?? "")
+        .split(";")[0]
+        ?.trim()
+        .toLowerCase() ?? "";
     if (!response.ok || !["image/png", "image/jpeg"].includes(contentType)) {
       throw new Error("provider unavailable");
     }
     const size = Number(response.headers.get("content-length") ?? 0);
     if (size > 2 * 1024 * 1024) throw new Error("provider image too large");
     const body = Buffer.from(await response.arrayBuffer());
-    if (!body.length || body.length > 2 * 1024 * 1024) throw new Error("provider image invalid");
+    if (!body.length || body.length > 2 * 1024 * 1024)
+      throw new Error("provider image invalid");
     return { body, contentType };
   } catch {
     throw new ServiceUnavailableException("运动地图暂时不可用");

@@ -235,14 +235,13 @@ describe("global health report execution consent", () => {
     expect(h.state.report.status).toBe("READY");
   });
 
-  it("does not add global legal requirements or row locks to the domestic worker", async () => {
+  it("cannot bypass health consent through the retired domestic realm flag", async () => {
     vi.stubEnv("APP_REALM", "domestic");
     const h = harness();
     h.state.profile = null;
     h.state.documents = [];
-    await h.worker.generate(h.state.report.id);
-    expect(h.state.report.status).toBe("READY");
-    expect(h.prisma.healthProfile.findUnique).not.toHaveBeenCalled();
+    await expect(h.worker.generate(h.state.report.id)).rejects.toThrow(/consent is missing/);
+    expect(h.prisma.healthProfile.findUnique).toHaveBeenCalled();
     expect(h.prisma.globalLegalDocument.findMany).not.toHaveBeenCalled();
     expect(h.prisma.$queryRaw).not.toHaveBeenCalled();
   });

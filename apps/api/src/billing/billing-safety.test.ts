@@ -38,11 +38,11 @@ describe("transaction ownership and money request safety", () => {
     const service = new BillingService(prisma as any, providers as any, {} as any);
     vi.spyOn(service as any, "resolveBusiness").mockResolvedValue({ businessId: "o", commerceOrderId: "o", amountCents: 1, currency: "CNY", description: "test" });
     const input = { businessType: "commerce_order", businessId: "o", channel: "wechat_jsapi", idempotencyKey: "jsapi-binding-check" };
-    await expect(service.createPayment("u", input, {})).rejects.toThrow("未绑定");
+    await expect(service.createPayment("u", input, { clientUserAgent: "MicroMessenger" })).rejects.toThrow("未绑定");
     expect(providers.resolveOfficialPayer).toHaveBeenCalledWith("u", "official-app");
     expect(prisma.$transaction).not.toHaveBeenCalled();
     providers.identity.mockResolvedValue({ merchantId: "merchant", appId: null as any });
-    await expect(service.createPayment("u", input, {})).rejects.toThrow("应用尚未配置");
+    await expect(service.createPayment("u", input, { clientUserAgent: "MicroMessenger" })).rejects.toThrow("应用尚未配置");
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
   it("fails closed for untransferred transactions and paused outbound requests", () => {

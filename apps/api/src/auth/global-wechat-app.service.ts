@@ -6,7 +6,7 @@ import { PrismaService } from "../common/prisma.service";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { env } from "../common/environment";
 import { isUuid, safeObject, secureEqual, sha256 } from "../common/crypto";
-import { isGlobalRealm } from "../common/deployment-realm";
+
 import { AuthService } from "./auth.service";
 import { GlobalVerificationDeliveryService } from "./global-verification-delivery.service";
 import {
@@ -15,7 +15,13 @@ import {
   globalLocale,
   maskedIdentifier,
 } from "./global-identity";
-import { defaultGlobalLegalProduct, globalConsentSource, globalLegalBundle, recordSayRingMinimumAgeConsent, sayRingMinimumAgeConsent } from "./global-legal";
+import {
+  defaultGlobalLegalProduct,
+  globalConsentSource,
+  globalLegalBundle,
+  recordSayRingMinimumAgeConsent,
+  sayRingMinimumAgeConsent,
+} from "./global-legal";
 import { WechatAppAuthService } from "./wechat-app-auth.service";
 import {
   safeWechatProfile,
@@ -52,7 +58,7 @@ export class GlobalWechatAppService {
     deliveryOpen: boolean;
     smsReady: boolean;
   }) {
-    if (!isGlobalRealm() || !options.legalReady || !options.deliveryOpen) {
+    if (!options.legalReady || !options.deliveryOpen) {
       return {
         enabled: false,
         appId: null,
@@ -77,7 +83,11 @@ export class GlobalWechatAppService {
         "Read and agree to the terms and privacy policy.",
       );
     }
-    const legal = await this.legal(body.consentVersion, body.locale, body.product);
+    const legal = await this.legal(
+      body.consentVersion,
+      body.locale,
+      body.product,
+    );
     const identity = await this.wechat.exchange({
       code: String(body.code ?? ""),
       state: String(body.state ?? ""),
@@ -96,40 +106,42 @@ export class GlobalWechatAppService {
     if (linked?.user) {
       if (linked.user.status !== UserStatus.ACTIVE) throw inactive();
       if (linked.user.mobileVerifiedAt) {
-        const userId = await this.prisma.$transaction(async (tx) => {
-          await this.currentConfiguration(tx, identity.appId);
-          await lockUser(tx, linked.userId);
-          await lockIdentity(tx, identity.appId, identity.openId);
-          const current = await tx.wechatOfficialIdentity.findUnique({
-            where: {
-              appId_openId: {
-                appId: identity.appId,
-                openId: identity.openId,
+        const userId = await this.prisma
+          .$transaction(async (tx) => {
+            await this.currentConfiguration(tx, identity.appId);
+            await lockUser(tx, linked.userId);
+            await lockIdentity(tx, identity.appId, identity.openId);
+            const current = await tx.wechatOfficialIdentity.findUnique({
+              where: {
+                appId_openId: {
+                  appId: identity.appId,
+                  openId: identity.openId,
+                },
               },
-            },
-            include: { user: true },
-          });
-          if (
-            !current?.user ||
-            current.userId !== linked.userId ||
-            current.user.status !== UserStatus.ACTIVE ||
-            !current.user.mobileVerifiedAt
-          ) {
-            throw inactive();
-          }
-          await tx.user.update({
-            where: { id: current.userId },
-            data: {
-              wechatAppOpenId: identity.openId,
-              ...(identity.unionId
-                ? { wechatUnionId: identity.unionId }
-                : {}),
-              ...wechatProfileBackfill(current.user, profile),
-            },
-          });
-          await recordConsent(tx, current.userId, legal);
-          return current.userId;
-        }).catch(identityConflict);
+              include: { user: true },
+            });
+            if (
+              !current?.user ||
+              current.userId !== linked.userId ||
+              current.user.status !== UserStatus.ACTIVE ||
+              !current.user.mobileVerifiedAt
+            ) {
+              throw inactive();
+            }
+            await tx.user.update({
+              where: { id: current.userId },
+              data: {
+                wechatAppOpenId: identity.openId,
+                ...(identity.unionId
+                  ? { wechatUnionId: identity.unionId }
+                  : {}),
+                ...wechatProfileBackfill(current.user, profile),
+              },
+            });
+            await recordConsent(tx, current.userId, legal);
+            return current.userId;
+          })
+          .catch(identityConflict);
         return this.auth.issueSession(userId);
       }
     }
@@ -248,171 +260,187 @@ export class GlobalWechatAppService {
     const challengeId = String(body.challengeId ?? "");
     const code = String(body.code ?? "");
     if (!isUuid(challengeId) || !/^\d{6}$/.test(code)) throw invalidCode();
-    const result = await this.prisma.$transaction(async (tx) => {
-      await this.currentConfiguration(tx, ticket.appId);
-      await tx.$queryRaw`SELECT id FROM "GlobalVerificationChallenge" WHERE id = ${challengeId}::uuid FOR UPDATE`;
-      const challenge = await tx.globalVerificationChallenge.findUnique({
-        where: { id: challengeId },
-      });
-      if (
-        !challenge ||
-        challenge.channel !== "sms" ||
-        challenge.purpose !== bindingPurpose ||
-        !challenge.sentAt ||
-        challenge.consumedAt ||
-        challenge.attempts >= 5 ||
-        challenge.expiresAt <= new Date()
-      ) {
-        return { invalid: true as const };
-      }
-      if (
-        !secureEqual(
-          challenge.codeHash,
-          bindingHash(challengeId, code, ticket.tokenHash),
-        )
-      ) {
-        await tx.globalVerificationChallenge.updateMany({
-          where: { id: challengeId, consumedAt: null, attempts: { lt: 5 } },
-          data: { attempts: { increment: 1 } },
-        });
-        return { invalid: true as const };
-      }
-      const identity = globalIdentity("sms", challenge.identifier);
-      await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`global-wechat-app-phone:${identity.identifier}`}, 0))`;
-      await lockIdentity(tx, ticket.appId, ticket.openId);
-      const [linked, unionLinked, byPhone, byOpenId, byUnionId] =
-        await Promise.all([
-          tx.wechatOfficialIdentity.findUnique({
-            where: {
-              appId_openId: { appId: ticket.appId, openId: ticket.openId },
-            },
-          }),
-          ticket.unionId
-            ? tx.wechatOfficialIdentity.findFirst({
-                where: { unionId: ticket.unionId },
-              })
-            : null,
-          tx.user.findUnique({ where: { mobile: identity.identifier } }),
-          tx.user.findUnique({ where: { wechatAppOpenId: ticket.openId } }),
-          ticket.unionId
-            ? tx.user.findUnique({ where: { wechatUnionId: ticket.unionId } })
-            : null,
-        ]);
-      const ownerIds = new Set(
-        [
-          linked?.userId,
-          unionLinked?.userId,
-          byOpenId?.id,
-          byUnionId?.id,
-        ].filter((value): value is string => Boolean(value)),
-      );
-      if (ownerIds.size > 1) throw conflict();
-      const ownerId = ownerIds.values().next().value as string | undefined;
-      if (ownerId && byPhone && byPhone.id !== ownerId) throw conflict();
-      let user = ownerId
-        ? await tx.user.findUnique({ where: { id: ownerId } })
-        : byPhone;
-      if (user) {
-        await lockUser(tx, user.id);
-        user = await tx.user.findUnique({ where: { id: user.id } });
-        if (!user || user.status !== UserStatus.ACTIVE) throw inactive();
-        if (user.mobile && user.mobile !== identity.identifier) throw conflict();
-        if (
-          user.wechatAppOpenId &&
-          user.wechatAppOpenId !== ticket.openId
-        ) {
-          throw conflict();
-        }
-        if (
-          user.wechatUnionId &&
-          ticket.unionId &&
-          user.wechatUnionId !== ticket.unionId
-        ) {
-          throw conflict();
-        }
-      }
-      const legal = await this.legal(
-        body.consentVersion,
-        body.locale ?? challenge.locale,
-        body.product,
-        tx,
-      );
-      assertTicketProduct(ticket, legal.product);
-      const ageConsent = !user ? sayRingMinimumAgeConsent(legal.product, body.ageConfirmed) : null;
-      const consumed = await tx.globalVerificationChallenge.updateMany({
-        where: {
-          id: challengeId,
-          consumedAt: null,
-          attempts: { lt: 5 },
-          sentAt: { not: null },
-          expiresAt: { gt: new Date() },
-        },
-        data: { consumedAt: new Date() },
-      });
-      if (consumed.count !== 1) return { invalid: true as const };
-      if (user && !user.mobileVerifiedAt) {
-        await tx.userSession.updateMany({
-          where: { userId: user.id, revokedAt: null },
-          data: { revokedAt: new Date() },
-        });
-      }
-      const profile = verifiedWechatProfile(
-        body.wechatProfileProof,
-        String(body.bindTicket ?? ""),
-      );
-      const userData = {
-        mobile: identity.identifier,
-        mobileVerifiedAt: new Date(),
-        wechatAppOpenId: ticket.openId,
-        ...(ticket.unionId ? { wechatUnionId: ticket.unionId } : {}),
-      };
-      const saved = user
-        ? await tx.user.update({
-            where: { id: user.id },
-            data: { ...userData, ...wechatProfileBackfill(user, profile) },
-          })
-        : await tx.user.create({
-            data: {
-              ...userData,
-              passwordHash: null,
-              nickname: profile.nickname || "Saydian user",
-              ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
-              locale: globalLocale(body.locale ?? challenge.locale),
-            },
+    const result = await this.prisma
+      .$transaction(
+        async (tx) => {
+          await this.currentConfiguration(tx, ticket.appId);
+          await tx.$queryRaw`SELECT id FROM "GlobalVerificationChallenge" WHERE id = ${challengeId}::uuid FOR UPDATE`;
+          const challenge = await tx.globalVerificationChallenge.findUnique({
+            where: { id: challengeId },
           });
-      const claimed = await tx.commerceWechatBindTicket.updateMany({
-        where: {
-          tokenHash: ticket.tokenHash,
-          appId: ticket.appId,
-          consumedAt: null,
-          expiresAt: { gt: new Date() },
+          if (
+            !challenge ||
+            challenge.channel !== "sms" ||
+            challenge.purpose !== bindingPurpose ||
+            !challenge.sentAt ||
+            challenge.consumedAt ||
+            challenge.attempts >= 5 ||
+            challenge.expiresAt <= new Date()
+          ) {
+            return { invalid: true as const };
+          }
+          if (
+            !secureEqual(
+              challenge.codeHash,
+              bindingHash(challengeId, code, ticket.tokenHash),
+            )
+          ) {
+            await tx.globalVerificationChallenge.updateMany({
+              where: { id: challengeId, consumedAt: null, attempts: { lt: 5 } },
+              data: { attempts: { increment: 1 } },
+            });
+            return { invalid: true as const };
+          }
+          const identity = globalIdentity("sms", challenge.identifier);
+          await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`global-wechat-app-phone:${identity.identifier}`}, 0))`;
+          await lockIdentity(tx, ticket.appId, ticket.openId);
+          const [linked, unionLinked, byPhone, byOpenId, byUnionId] =
+            await Promise.all([
+              tx.wechatOfficialIdentity.findUnique({
+                where: {
+                  appId_openId: { appId: ticket.appId, openId: ticket.openId },
+                },
+              }),
+              ticket.unionId
+                ? tx.wechatOfficialIdentity.findFirst({
+                    where: { unionId: ticket.unionId },
+                  })
+                : null,
+              tx.user.findUnique({ where: { mobile: identity.identifier } }),
+              tx.user.findUnique({ where: { wechatAppOpenId: ticket.openId } }),
+              ticket.unionId
+                ? tx.user.findUnique({
+                    where: { wechatUnionId: ticket.unionId },
+                  })
+                : null,
+            ]);
+          const ownerIds = new Set(
+            [
+              linked?.userId,
+              unionLinked?.userId,
+              byOpenId?.id,
+              byUnionId?.id,
+            ].filter((value): value is string => Boolean(value)),
+          );
+          if (ownerIds.size > 1) throw conflict();
+          const ownerId = ownerIds.values().next().value as string | undefined;
+          if (ownerId && byPhone && byPhone.id !== ownerId) throw conflict();
+          let user = ownerId
+            ? await tx.user.findUnique({ where: { id: ownerId } })
+            : byPhone;
+          if (user) {
+            await lockUser(tx, user.id);
+            user = await tx.user.findUnique({ where: { id: user.id } });
+            if (!user || user.status !== UserStatus.ACTIVE) throw inactive();
+            if (user.mobile && user.mobile !== identity.identifier)
+              throw conflict();
+            if (
+              user.wechatAppOpenId &&
+              user.wechatAppOpenId !== ticket.openId
+            ) {
+              throw conflict();
+            }
+            if (
+              user.wechatUnionId &&
+              ticket.unionId &&
+              user.wechatUnionId !== ticket.unionId
+            ) {
+              throw conflict();
+            }
+          }
+          const legal = await this.legal(
+            body.consentVersion,
+            body.locale ?? challenge.locale,
+            body.product,
+            tx,
+          );
+          assertTicketProduct(ticket, legal.product);
+          const ageConsent = !user
+            ? sayRingMinimumAgeConsent(legal.product, body.ageConfirmed)
+            : null;
+          const consumed = await tx.globalVerificationChallenge.updateMany({
+            where: {
+              id: challengeId,
+              consumedAt: null,
+              attempts: { lt: 5 },
+              sentAt: { not: null },
+              expiresAt: { gt: new Date() },
+            },
+            data: { consumedAt: new Date() },
+          });
+          if (consumed.count !== 1) return { invalid: true as const };
+          if (user && !user.mobileVerifiedAt) {
+            await tx.userSession.updateMany({
+              where: { userId: user.id, revokedAt: null },
+              data: { revokedAt: new Date() },
+            });
+          }
+          const profile = verifiedWechatProfile(
+            body.wechatProfileProof,
+            String(body.bindTicket ?? ""),
+          );
+          const userData = {
+            mobile: identity.identifier,
+            mobileVerifiedAt: new Date(),
+            wechatAppOpenId: ticket.openId,
+            ...(ticket.unionId ? { wechatUnionId: ticket.unionId } : {}),
+          };
+          const saved = user
+            ? await tx.user.update({
+                where: { id: user.id },
+                data: { ...userData, ...wechatProfileBackfill(user, profile) },
+              })
+            : await tx.user.create({
+                data: {
+                  ...userData,
+                  passwordHash: null,
+                  nickname: profile.nickname || "Saydian user",
+                  ...(profile.avatarUrl
+                    ? { avatarUrl: profile.avatarUrl }
+                    : {}),
+                  locale: globalLocale(body.locale ?? challenge.locale),
+                },
+              });
+          const claimed = await tx.commerceWechatBindTicket.updateMany({
+            where: {
+              tokenHash: ticket.tokenHash,
+              appId: ticket.appId,
+              consumedAt: null,
+              expiresAt: { gt: new Date() },
+            },
+            data: { consumedAt: new Date() },
+          });
+          if (claimed.count !== 1) throw invalidTicket();
+          if (!linked) {
+            await tx.wechatOfficialIdentity.create({
+              data: {
+                userId: saved.id,
+                appId: ticket.appId,
+                openId: ticket.openId,
+                unionId: ticket.unionId,
+                verifiedAt: new Date(),
+              },
+            });
+          } else if (linked.userId !== saved.id) {
+            throw conflict();
+          }
+          await recordConsent(tx, saved.id, legal);
+          await recordSayRingMinimumAgeConsent(
+            tx,
+            saved.id,
+            ageConsent,
+            globalConsentSource("global_app_wechat", legal),
+          );
+          return { invalid: false as const, userId: saved.id };
         },
-        data: { consumedAt: new Date() },
-      });
-      if (claimed.count !== 1) throw invalidTicket();
-      if (!linked) {
-        await tx.wechatOfficialIdentity.create({
-          data: {
-            userId: saved.id,
-            appId: ticket.appId,
-            openId: ticket.openId,
-            unionId: ticket.unionId,
-            verifiedAt: new Date(),
-          },
-        });
-      } else if (linked.userId !== saved.id) {
-        throw conflict();
-      }
-      await recordConsent(tx, saved.id, legal);
-      await recordSayRingMinimumAgeConsent(tx, saved.id, ageConsent, globalConsentSource("global_app_wechat", legal));
-      return { invalid: false as const, userId: saved.id };
-    }, { maxWait: 10_000, timeout: 30_000 }).catch(identityConflict);
+        { maxWait: 10_000, timeout: 30_000 },
+      )
+      .catch(identityConflict);
     if (result.invalid) throw invalidCode();
     return this.auth.issueSession(result.userId);
   }
 
   private requireAvailable() {
-    if (!isGlobalRealm()) throw globalError(404, "not_found", "This feature is unavailable.");
     if (businessWritesPaused(process.env)) {
       throw globalError(
         503,
@@ -532,7 +560,11 @@ async function recordConsent(
   for (const documentType of Object.values(legal.documentTypes)) {
     await tx.consentRecord.upsert({
       where: {
-        userId_documentType_version: { userId, documentType, version: legal.consentVersion },
+        userId_documentType_version: {
+          userId,
+          documentType,
+          version: legal.consentVersion,
+        },
       },
       create: {
         userId,
@@ -603,6 +635,10 @@ function identityConflict(error: unknown): never {
 
 function assertTicketProduct(ticket: AppTicket, product: string) {
   if (ticket.product !== product) {
-    throw globalError(409, "product_mismatch", "Continue with the same product.");
+    throw globalError(
+      409,
+      "product_mismatch",
+      "Continue with the same product.",
+    );
   }
 }

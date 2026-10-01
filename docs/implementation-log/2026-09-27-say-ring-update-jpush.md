@@ -34,6 +34,17 @@
 - `tools/Start-Change.ps1` 因原工作区位于 `codex/global-api-foundation` 而非 `main` 主动停止，没有修改文件。随后确认工作区干净、抓取远端，并从 `origin/main@51e02549cb6e393c6a481f208ecfcf75a8d1a509` 创建 `codex/say-ring-update-push`，避免把已分叉历史带入本轮。
 - 后台首次类型检查发现包标识类型被旧国际 App 的字面量锁死，无法接收 `cn.saydian.ring`；改为按平台键约束的字符串映射后，定向和全量类型检查均通过。
 
+
+补充：另一分支的历史记录
+
+## 独立国际服务同步
+
+- 公网 `/global` 仍由 `codex/global-api-foundation` 独立发布，不能用 `main` 的提交或探针替代。基于该分支 `8052e65fd204a53aff0a9b7d77b6c24d91e8aff0` 建立 `codex/global-say-ring-update-push`，只移植本轮 25 个显式文件。
+- 移植时仅 `integration-settings.ts` 与对应测试发生冲突：保留国际分支现有的统一微信支付说明，新增 Say Ring 极光项，并把国际分支内置服务数从 13 调整为 14；没有带入 `main` 的其他支付文案或分叉提交。
+- 重新生成国际分支接口文档，共 346 条路由，`api:docs:check` 通过。
+- 国际分支完整验证：工具 10/10、H5 流程 61/61、H5 契约 38/38、商城 132、后台 135、API 790（另 4 项数据库测试按环境跳过）、Worker 49、下载页 10、迁移器 9、共享契约 11、交易域 28，全部执行项通过；全工作区类型检查和构建通过。
+- 国际部署结构检查 184 项、H5/临时手机入口部署测试 8/8、`git diff --check` 均通过；本机仍无 Docker Compose，容器运行检查留给线上发布器。
+
 ## 尚未验收
 
 - 后台尚未填写 Say Ring 极光 AppKey 与 Master Secret，Worker 尚未重启加载配置，真实通知送达未验收。

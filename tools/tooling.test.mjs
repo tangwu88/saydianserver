@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { findMissingConsumers } from "./check-client-contracts.mjs";
 import { fieldContracts } from "./api-field-contracts.mjs";
-import "./global-deployment.test.mjs";
+import "../deploy/scripts/release-manifest.test.mjs";
+import "../deploy/scripts/unified-deployment.test.mjs";
+import "../deploy/scripts/deploy-failure.test.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bash = process.env.SAYDIAN_BASH || (process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash");
@@ -56,7 +58,7 @@ test("HTTP fixture registers members only after test OTP verification", () => {
   const fixture = fs.readFileSync(path.join(root, "tools/http-contract-smoke.mjs"), "utf8");
   assert.match(fixture, /\/auth\/sms-code/);
   assert.match(fixture, /\/auth\/register-with-sms/);
-  assert.match(fixture, /check\(rejected\.json\.code, 400\)/);
+  assert.match(fixture, /check\(rejected\.json\.code, 503\)/);
   assert.doesNotMatch(fixture, /const a = \(await request\(v2 \+ "\/auth\/register"/);
 });
 test("deployment shell syntax and receiver rejection", () => {
@@ -69,7 +71,7 @@ test("deployment shell syntax and receiver rejection", () => {
   assert.match(denied.output, /Only release SHA or status/);
 });
 
-test("shared gateway rebuild preserves only an explicitly marked global route block", () => {
+test("shared gateway rebuild preserves the marked global routes and selected admin upstream", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "saydian-gateway-test-"));
   const bin = path.join(temporary, "bin");
   const deployRoot = path.join(temporary, "deploy-root");
@@ -88,6 +90,9 @@ old http block
 # END SAYDIAN APP HTTP app.saydian.cn
 # BEGIN SAYDIAN APP HTTPS app.saydian.cn
 server {
+  location /admin/ {
+    proxy_pass http://global-admin:8080;
+  }
   # BEGIN SAYDIAN GLOBAL ROUTES
   location = /global/health { proxy_pass http://global-api:8080/health/ready; }
   location = /global/saidian-mall { return 308 /global/saidian-mall/; }
@@ -123,6 +128,7 @@ server {
   assert.equal(configured.match(/location = \/global\/saidian-mall/g)?.length, 1);
   assert.equal(configured.match(/location \^~ \/global\/wechat\/sayring\//g)?.length, 1);
   assert.match(configured, /location \^~ \/global\/ \{ return 404; \}/);
+  assert.match(configured, /location \/admin\/ \{\s+proxy_pass http:\/\/global-admin:8080;/);
   assert.doesNotMatch(configured, /__SAYDIAN_GLOBAL_ROUTES__/);
   assert.match(configured, /proxy_pass http:\/\/saydianapp-api:8080/);
   const dockerCalls = fs.readFileSync(dockerLog, "utf8");
@@ -145,50 +151,78 @@ test("Say Ring Universal Link fallback is narrow, static and does not log OAuth 
   assert.doesNotMatch(gateway, /location \^~ \/global\/ \{/);
   assert.equal(gateway.match(/__SAYDIAN_GLOBAL_ROUTES__/g)?.length, 1);
 });
+
+test("admin upstream switch changes only the unique managed block and validates before reload", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "saydian-admin-upstream-test-"));
+  const bin = path.join(temporary, "bin");
+  const gatewayConfig = path.join(temporary, "gateway-nginx.conf");
+  const backupDir = path.join(temporary, "backups");
+  const dockerLog = path.join(temporary, "docker.log");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, "docker"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$DOCKER_LOG\"\n");
+  fs.chmodSync(path.join(bin, "docker"), 0o755);
+  fs.writeFileSync(gatewayConfig, `server {
+  location /admin/ {
+    proxy_pass http://saydianapp-admin:8080;
+  }
+  location /down/ {
+    proxy_pass http://saydianapp-admin:8080;
+  }
+}\n`);
+  const shellBin = process.platform === "win32"
+    ? `/${bin[0].toLowerCase()}${bin.slice(2).replaceAll("\\", "/")}`
+    : bin;
+  const result = spawnSync(bash, ["-c", `PATH='${shellBin}':\"$PATH\"; export PATH; exec sh deploy/scripts/switch-admin-upstream.sh`], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 60_000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      ADMIN_UPSTREAM: "global-admin",
+      GATEWAY_CONTAINER: "saydian-gateway-1",
+      GATEWAY_CONFIG_PATH: gatewayConfig,
+      GATEWAY_BACKUP_DIR: backupDir,
+      DOCKER_LOG: dockerLog,
+    },
+  });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  assert.equal(result.status, 0, output);
+  const configured = fs.readFileSync(gatewayConfig, "utf8");
+  assert.match(configured, /location \/admin\/ \{\s+proxy_pass http:\/\/global-admin:8080;/);
+  assert.match(configured, /location \/down\/ \{\s+proxy_pass http:\/\/saydianapp-admin:8080;/);
+  const dockerCalls = fs.readFileSync(dockerLog, "utf8");
+  assert.match(dockerCalls, /exec saydian-gateway-1 nginx -t/);
+  assert.match(dockerCalls, /exec saydian-gateway-1 nginx -s reload/);
+  assert.equal(fs.readdirSync(backupDir).length, 1);
+  fs.rmSync(temporary, { recursive: true, force: true });
+});
 test("production Redis expands the configured password in its container shell", () => {
   const compose = fs.readFileSync(path.join(root, "deploy/compose.production.yaml"), "utf8");
   assert.match(compose, /--requirepass \\"\$\$REDIS_PASSWORD\\"/);
   assert.match(compose, /redis-cli -a \\"\$\$REDIS_PASSWORD\\" ping/);
   assert.doesNotMatch(compose, /'\$\$REDIS_PASSWORD'/);
 });
-test("automatic release preserves maintenance and only a reviewed manual release may apply schema changes", () => {
-  const script = fs.readFileSync(path.join(root, "deploy/scripts/deploy-ci.sh"), "utf8");
-  assert.match(script, /prisma migrate status/);
-  assert.match(script, /\.apply-reviewed-migrations/);
-  assert.match(script, /if \[\[ "\$apply_migrations" == true \]\]; then\s+compose run --rm --no-deps api \.\/node_modules\/\.bin\/prisma migrate deploy/s);
-  assert.doesNotMatch(script, /MAINTENANCE_READ_ONLY=false|compose down|docker.*prune/);
-  assert.match(script, /trap 'rollback \$\?' ERR/);
-  assert.match(script, /images\.yaml/);
-  assert.match(
-    script,
-    /COMPOSE_PARALLEL_LIMIT=1 timeout --signal=TERM --kill-after=30s 90m \\\s+docker compose --env-file "\$env_file" -f "\$compose_file" pull --quiet "\$service"/s,
-  );
-  assert.match(script, /for attempt in 1 2 3/);
-  assert.match(script, /for page in admin down/);
-  assert.match(script, /sha256sum --strict --check SHA256SUMS/);
-  assert.match(script, /if \[\[ -f "\$source_downloads\/SHA256SUMS" \]\]/);
-  assert.match(script, /install -o root -g root -m 0644/);
-  assert.match(script, /\.publish-app-update/);
-  assert.match(script, /\.package-only/);
-  assert.match(script, /run_setting_tool restore/);
+test("one CI build supplies the deploy job and reviewed migration gate", () => {
+  const script = fs.readFileSync(path.join(root, "deploy/scripts/deploy-unified.sh"), "utf8");
+  assert.match(script, /prisma migrate deploy/);
+  assert.match(script, /unified-preflight.mjs/);
+  assert.doesNotMatch(script, /MAINTENANCE_READ_ONLY=false|compose down|docker.*prune|docker build|prisma.*seed/);
+  assert.match(script, /trap rollback ERR/);
+  assert.match(script, /SECONDS \+ 1200/);
+  assert.match(script, /--pull never/);
+  assert.match(script, /sha256sum/);
+  assert.match(script, /flock -n 9/);
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  assert.equal(workflow.match(/docker\/build-push-action@v6/g)?.length, 3);
   assert.match(workflow, /needs: verify/);
   assert.match(workflow, /AUTO_DEPLOY_ENABLED == 'true'/);
-  const productionWorkflow = fs.readFileSync(path.join(root, ".github/workflows/deploy-production.yml"), "utf8");
-  assert.match(productionWorkflow, /ServerAliveInterval=20.*ServerAliveCountMax=15.*TCPKeepAlive=yes/);
-  assert.match(productionWorkflow, /release-assets\.githubusercontent\.com/);
-  assert.match(productionWorkflow, /actions\/upload-artifact@v4/);
-  assert.match(productionWorkflow, /PUBLISH_APP_UPDATE/);
-  assert.match(productionWorkflow, /apply_migrations:/);
-  assert.match(productionWorkflow, /\[\[ "\$EVENT_NAME" == workflow_dispatch \]\]/);
-  assert.match(productionWorkflow, /gh run list --workflow ci\.yml --commit "\$REVISION" --event push/);
-  assert.match(productionWorkflow, /gh run view "\$run_id" --json jobs/);
-  assert.match(productionWorkflow, /select\(\.name == "verify" and \.conclusion == "success"\)/);
-  assert.doesNotMatch(productionWorkflow, /select\(\.conclusion == "success"\)/);
-  assert.match(productionWorkflow, /\.apply-reviewed-migrations/);
-  assert.match(productionWorkflow, /inputs\.package_only != true/);
-  assert.match(productionWorkflow, /PACKAGE_ONLY/);
-  assert.match(script, /application revision unchanged/);
+  const production = fs.readFileSync(path.join(root, ".github/workflows/deploy-production.yml"), "utf8");
+  assert.match(production, /cancel-in-progress: false/);
+  assert.match(production, /actions\/download-artifact@v4/);
+  assert.match(production, /first_cutover:/);
+  assert.doesNotMatch(production, /build-push-action|docker build|global_revision|package_only/);
+  assert.match(production, /select\(\.name == "verify" and \.conclusion == "success"\)/);
 });
 
 test("download page stays public, immutable and outside Git artifacts", () => {

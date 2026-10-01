@@ -23,7 +23,7 @@ import { PrismaService } from "../common/prisma.service";
 import { safeObject, sha256 } from "../common/crypto";
 import { existsSync } from "node:fs";
 import PDFDocument from "pdfkit";
-import { isGlobalRealm } from "../common/deployment-realm";
+
 import { globalError } from "../auth/global-identity";
 import { globalLegalReference } from "../auth/global-legal";
 import {
@@ -31,6 +31,7 @@ import {
   type EvidenceRecord,
   type HealthEvidence,
 } from "../health/health-evidence";
+import { foldedHealthRecordPeriodWhere } from "../health/health-record-scope";
 
 const REPORT_WINDOW_DAYS = 30;
 const MINIMUM_DISTINCT_DAYS = 3;
@@ -42,7 +43,10 @@ type AdminReportOptions = {
   requestId?: string;
   bypassMemberConsent?: boolean;
   bypassReportCredit?: boolean;
-  validate: (tx: Prisma.TransactionClient, alreadyCovered: boolean) => Promise<void>;
+  validate: (
+    tx: Prisma.TransactionClient,
+    alreadyCovered: boolean,
+  ) => Promise<void>;
 };
 
 @Injectable()
@@ -70,7 +74,7 @@ export class HealthReportsService {
       }),
     ]);
     const evidence = buildHealthEvidence(records);
-    const analysisDocument = isGlobalRealm() ? await this.analysisDocument(userId) : null;
+    const analysisDocument = await this.analysisDocument(userId);
     return {
       memberId: userId,
       period: isoPeriod(period),
@@ -96,14 +100,19 @@ export class HealthReportsService {
       })),
       activeWarningCount: warningCount,
       analysisConsent: {
-        ...(isGlobalRealm() ? { availableVersion: analysisDocument?.version ?? null, document: analysisDocument } : {}),
+        ...{
+          availableVersion: analysisDocument?.version ?? null,
+          document: analysisDocument,
+        },
         granted: Boolean(
-          profile?.analysisConsentedAt && !profile.analysisConsentWithdrawn && (!isGlobalRealm() || (analysisDocument && analysisDocument.version === profile.analysisConsentVersion)),
+          profile?.analysisConsentedAt &&
+          !profile.analysisConsentWithdrawn &&
+          analysisDocument &&
+          analysisDocument.version === profile.analysisConsentVersion,
         ),
         version: profile?.analysisConsentVersion ?? null,
         grantedAt: profile?.analysisConsentedAt?.toISOString() ?? null,
-        withdrawnAt:
-          profile?.analysisConsentWithdrawn?.toISOString() ?? null,
+        withdrawnAt: profile?.analysisConsentWithdrawn?.toISOString() ?? null,
       },
     };
   }
@@ -115,10 +124,20 @@ export class HealthReportsService {
     if (granted && (!version || version.length > 80)) {
       throw new BadRequestException("请先阅读并同意健康分析说明");
     }
-    if (isGlobalRealm() && granted) {
+    if (granted) {
       const document = await this.analysisDocument(userId, body.locale);
-      if (!document) throw globalError(503, "analysis_consent_unavailable", "The health analysis notice is not available yet.");
-      if (document.version !== version) throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
+      if (!document)
+        throw globalError(
+          503,
+          "analysis_consent_unavailable",
+          "The health analysis notice is not available yet.",
+        );
+      if (document.version !== version)
+        throw globalError(
+          409,
+          "consent_outdated",
+          "Read and agree to the latest health analysis notice.",
+        );
     }
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
@@ -169,21 +188,35 @@ export class HealthReportsService {
         granted,
         version: granted ? profile.analysisConsentVersion : null,
         grantedAt: granted
-          ? profile.analysisConsentedAt?.toISOString() ?? null
+          ? (profile.analysisConsentedAt?.toISOString() ?? null)
           : null,
         withdrawnAt: granted
           ? null
-          : profile.analysisConsentWithdrawn?.toISOString() ?? null,
+          : (profile.analysisConsentWithdrawn?.toISOString() ?? null),
       };
     });
   }
 
-  private async analysisDocument(userId: string, localeInput?: unknown, db: Prisma.TransactionClient = this.prisma) {
-    const user = await db.user.findUnique({ where: { id: userId }, select: { locale: true } });
-    return globalLegalReference(db, ANALYSIS_CONSENT_TYPE, localeInput ?? user?.locale);
+  private async analysisDocument(
+    userId: string,
+    localeInput?: unknown,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { locale: true },
+    });
+    return globalLegalReference(
+      db,
+      ANALYSIS_CONSENT_TYPE,
+      localeInput ?? user?.locale,
+    );
   }
 
-  async eligibility(userId: string, db: Prisma.TransactionClient = this.prisma): Promise<HealthReportEligibilityContract> {
+  async eligibility(
+    userId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<HealthReportEligibilityContract> {
     const period = reportPeriod();
     const [records, profile, credits] = await Promise.all([
       this.loadEvidenceRecords(userId, period.from, period.to, db),
@@ -193,14 +226,19 @@ export class HealthReportsService {
     const evidence = buildHealthEvidence(records);
     const missing: string[] = [];
     if (evidence.distinctDays < MINIMUM_DISTINCT_DAYS) {
-      missing.push(`还需要至少${MINIMUM_DISTINCT_DAYS - evidence.distinctDays}天有效记录`);
+      missing.push(
+        `还需要至少${MINIMUM_DISTINCT_DAYS - evidence.distinctDays}天有效记录`,
+      );
     }
     if (evidence.validRecordIds.length === 0) {
       missing.push("暂未获取可用于分析的健康记录");
     }
-    const analysisDocument = isGlobalRealm() ? await this.analysisDocument(userId, undefined, db) : null;
+    const analysisDocument = await this.analysisDocument(userId, undefined, db);
     const consentRequired = !(
-      profile?.analysisConsentedAt && !profile.analysisConsentWithdrawn && (!isGlobalRealm() || (analysisDocument && analysisDocument.version === profile.analysisConsentVersion))
+      profile?.analysisConsentedAt &&
+      !profile.analysisConsentWithdrawn &&
+      analysisDocument &&
+      analysisDocument.version === profile.analysisConsentVersion
     );
     return {
       eligible: missing.length === 0,
@@ -214,7 +252,9 @@ export class HealthReportsService {
     };
   }
 
-  async create(userId: string): Promise<HealthReportContract & { needsPayment: boolean }> {
+  async create(
+    userId: string,
+  ): Promise<HealthReportContract & { needsPayment: boolean }> {
     const { reused: _reused, ...report } = await this.createLocked(userId);
     return report;
   }
@@ -227,112 +267,233 @@ export class HealthReportsService {
   private async createLocked(userId: string, options?: AdminReportOptions) {
     // Every entry point shares this lock. Report, entitlement consumption and
     // outbox must commit together, including different keys for the same input.
-    return this.prisma.$transaction(async tx => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${"health-report-create:" + userId}, 0))`;
-      if (options) await options.validate(tx, true);
-      const scope = "admin_health_report_v1";
-      const requestHash = sha256(JSON.stringify({ userId }));
-      if (options) {
-        const previous = await tx.idempotencyRecord.findUnique({ where: { userId_scope_key: { userId, scope, key: options.idempotencyKey } } });
-        if (previous) {
-          if (previous.requestHash !== requestHash) throw new ConflictException("同一幂等键不能用于不同的报告请求");
-          let saved = await tx.healthReport.findFirst({ where: { id: String(safeObject(previous.responseBody).reportId ?? ""), userId } });
-          if (!saved) throw new ConflictException("原报告已不可用，请刷新后重新操作");
-          await options.validate(tx, saved.status !== PrismaReportStatus.AWAITING_PAYMENT);
-          if (options.bypassMemberConsent && saved.status !== PrismaReportStatus.READY && !saved.adminConsentBypass) {
-            saved = await tx.healthReport.update({ where: { id: saved.id }, data: { adminConsentBypass: true } });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${"health-report-create:" + userId}, 0))`;
+        if (options) await options.validate(tx, true);
+        const scope = "admin_health_report_v1";
+        const requestHash = sha256(JSON.stringify({ userId }));
+        if (options) {
+          const previous = await tx.idempotencyRecord.findUnique({
+            where: {
+              userId_scope_key: { userId, scope, key: options.idempotencyKey },
+            },
+          });
+          if (previous) {
+            if (previous.requestHash !== requestHash)
+              throw new ConflictException("同一幂等键不能用于不同的报告请求");
+            let saved = await tx.healthReport.findFirst({
+              where: {
+                id: String(safeObject(previous.responseBody).reportId ?? ""),
+                userId,
+              },
+            });
+            if (!saved)
+              throw new ConflictException("原报告已不可用，请刷新后重新操作");
+            await options.validate(
+              tx,
+              saved.status !== PrismaReportStatus.AWAITING_PAYMENT,
+            );
+            if (
+              options.bypassMemberConsent &&
+              saved.status !== PrismaReportStatus.READY &&
+              !saved.adminConsentBypass
+            ) {
+              saved = await tx.healthReport.update({
+                where: { id: saved.id },
+                data: { adminConsentBypass: true },
+              });
+            }
+            if (
+              options.bypassReportCredit &&
+              saved.status === PrismaReportStatus.AWAITING_PAYMENT
+            ) {
+              await this.queueReport(tx, userId, saved.id);
+              saved = await tx.healthReport.findUniqueOrThrow({
+                where: { id: saved.id },
+              });
+            }
+            await tx.auditLog.create({
+              data: {
+                actorType: "ADMIN",
+                actorId: options.actorId,
+                action: "HEALTH_REPORT_GENERATE_REQUEST",
+                entityType: "HEALTH_REPORT",
+                entityId: saved.id,
+                requestId: options.requestId ?? null,
+                afterJson: {
+                  memberId: userId,
+                  reused: true,
+                  memberConsentBypassed: options.bypassMemberConsent === true,
+                  reportCreditBypassed: options.bypassReportCredit === true,
+                },
+              },
+            });
+            return {
+              ...serializeReport(saved),
+              needsPayment:
+                saved.status === PrismaReportStatus.AWAITING_PAYMENT,
+              reused: true,
+            };
           }
-          if (options.bypassReportCredit && saved.status === PrismaReportStatus.AWAITING_PAYMENT) {
-            await this.queueReport(tx, userId, saved.id);
-            saved = await tx.healthReport.findUniqueOrThrow({ where: { id: saved.id } });
-          }
-          await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: saved.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: true, memberConsentBypassed: options.bypassMemberConsent === true, reportCreditBypassed: options.bypassReportCredit === true } } });
-          return { ...serializeReport(saved), needsPayment: saved.status === PrismaReportStatus.AWAITING_PAYMENT, reused: true };
         }
-      }
-      const period = reportPeriod();
-      const [records, profile, memberContext] = await Promise.all([
-        this.loadEvidenceRecords(userId, period.from, period.to, tx),
-        tx.healthProfile.findUnique({ where: { userId } }),
-        this.memberHealthContext(userId, period, tx),
-      ]);
-      const evidence = buildHealthEvidence(records);
-      if (evidence.distinctDays < MINIMUM_DISTINCT_DAYS || !evidence.validRecordIds.length) {
-        throw new BadRequestException(
-          `需要至少${MINIMUM_DISTINCT_DAYS}个不同日期的有效记录，暂不创建支付订单`,
+        const period = reportPeriod();
+        const [records, profile, memberContext] = await Promise.all([
+          this.loadEvidenceRecords(userId, period.from, period.to, tx),
+          tx.healthProfile.findUnique({ where: { userId } }),
+          this.memberHealthContext(userId, period, tx),
+        ]);
+        const evidence = buildHealthEvidence(records);
+        if (
+          evidence.distinctDays < MINIMUM_DISTINCT_DAYS ||
+          !evidence.validRecordIds.length
+        ) {
+          throw new BadRequestException(
+            `需要至少${MINIMUM_DISTINCT_DAYS}个不同日期的有效记录，暂不创建支付订单`,
+          );
+        }
+        if (
+          !options?.bypassMemberConsent &&
+          (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn)
+        ) {
+          throw new ForbiddenException("同意健康分析说明后才能生成详细报告");
+        }
+        if (!options?.bypassMemberConsent) {
+          const document = await this.analysisDocument(userId, undefined, tx);
+          if (!document || document.version !== profile?.analysisConsentVersion)
+            throw globalError(
+              409,
+              "consent_outdated",
+              "Read and agree to the latest health analysis notice.",
+            );
+        }
+        const inputDigest = evidenceDigest(
+          userId,
+          period,
+          evidence,
+          memberContext,
         );
-      }
-      if (!options?.bypassMemberConsent && (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn)) {
-        throw new ForbiddenException("同意健康分析说明后才能生成详细报告");
-      }
-      if (isGlobalRealm() && !options?.bypassMemberConsent) {
-        const document = await this.analysisDocument(userId, undefined, tx);
-        if (!document || document.version !== profile?.analysisConsentVersion) throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
-      }
-      const inputDigest = evidenceDigest(userId, period, evidence, memberContext);
-      const reusable = await tx.healthReport.findFirst({
-        where: {
-          userId,
-          inputDigest,
-          status: {
-            in: [
-              PrismaReportStatus.AWAITING_PAYMENT,
-              PrismaReportStatus.QUEUED,
-              PrismaReportStatus.GENERATING,
-              PrismaReportStatus.READY,
-            ],
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      });
-      if (options) await options.validate(tx, Boolean(reusable && reusable.status !== PrismaReportStatus.AWAITING_PAYMENT));
-      let report = reusable ?? await tx.healthReport.create({
-        data: {
-          userId,
-          windowStart: period.from,
-          windowEnd: period.to,
-          distinctDays: evidence.distinctDays,
-          validRecordCount: evidence.validRecordIds.length,
-          metricSummary: evidence.metrics.map(({ recordIds: _recordIds, ...metric }) => metric) as unknown as Prisma.InputJsonValue,
-          evidenceIndex: {
-            byMetric: evidence.metrics.map((metric) => ({
-              metric: metric.metric,
-              recordIds: metric.recordIds,
-            })),
-            memberContext,
-            dataQuality: {
-              validRecordCount: evidence.validRecordIds.length,
-              excludedRecordCount: evidence.invalidRecordIds.length,
-              distinctDays: evidence.distinctDays,
-              metricCount: evidence.metrics.length,
+        const reusable = await tx.healthReport.findFirst({
+          where: {
+            userId,
+            inputDigest,
+            status: {
+              in: [
+                PrismaReportStatus.AWAITING_PAYMENT,
+                PrismaReportStatus.QUEUED,
+                PrismaReportStatus.GENERATING,
+                PrismaReportStatus.READY,
+              ],
             },
           },
-          inputDigest,
-          freePreview: buildFreePreview(evidence),
-          templateVersion: REPORT_TEMPLATE_VERSION,
-          adminConsentBypass: options?.bypassMemberConsent === true,
-        },
-      });
-      if (reusable && options?.bypassMemberConsent && reusable.status !== PrismaReportStatus.READY && !reusable.adminConsentBypass) {
-        report = await tx.healthReport.update({ where: { id: reusable.id }, data: { adminConsentBypass: true } });
-      }
-      // Consumer reuse retains the original payment flow. Admins may only queue
-      // an unpaid report with an existing credit; never create a payment here.
-      const queued = reusable && (!options || reusable.status !== PrismaReportStatus.AWAITING_PAYMENT)
-        ? reusable.status !== PrismaReportStatus.AWAITING_PAYMENT
-        : options?.bypassReportCredit
-          ? await this.queueReport(tx, userId, report.id)
-          : await this.consumeCreditAndQueue(tx, userId, report.id);
-      if (options && !queued) throw new ConflictException({ errorKey: "health_report_unavailable", message: "报告次数不足，请先取得有效报告权益" });
-      const current = queued
-        ? await tx.healthReport.findUniqueOrThrow({ where: { id: report.id } })
-        : report;
-      if (options) {
-        await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: options.actorId, action: "HEALTH_REPORT_GENERATE_REQUEST", entityType: "HEALTH_REPORT", entityId: report.id, requestId: options.requestId ?? null, afterJson: { memberId: userId, reused: Boolean(reusable), memberConsentBypassed: options.bypassMemberConsent === true, reportCreditBypassed: options.bypassReportCredit === true } } });
-        await tx.idempotencyRecord.create({ data: { userId, scope, key: options.idempotencyKey, requestHash, responseCode: 201, responseBody: { reportId: report.id }, expiresAt: new Date(Date.now() + 30 * 86_400_000) } });
-      }
-      return { ...serializeReport(current), needsPayment: !queued, reused: Boolean(reusable) };
-    }, { maxWait: 10_000, timeout: 30_000 });
+          orderBy: { createdAt: "desc" },
+        });
+        if (options)
+          await options.validate(
+            tx,
+            Boolean(
+              reusable &&
+              reusable.status !== PrismaReportStatus.AWAITING_PAYMENT,
+            ),
+          );
+        let report =
+          reusable ??
+          (await tx.healthReport.create({
+            data: {
+              userId,
+              windowStart: period.from,
+              windowEnd: period.to,
+              distinctDays: evidence.distinctDays,
+              validRecordCount: evidence.validRecordIds.length,
+              metricSummary: evidence.metrics.map(
+                ({ recordIds: _recordIds, ...metric }) => metric,
+              ) as unknown as Prisma.InputJsonValue,
+              evidenceIndex: {
+                byMetric: evidence.metrics.map((metric) => ({
+                  metric: metric.metric,
+                  recordIds: metric.recordIds,
+                })),
+                memberContext,
+                dataQuality: {
+                  validRecordCount: evidence.validRecordIds.length,
+                  excludedRecordCount: evidence.invalidRecordIds.length,
+                  distinctDays: evidence.distinctDays,
+                  metricCount: evidence.metrics.length,
+                },
+              },
+              inputDigest,
+              freePreview: buildFreePreview(evidence),
+              templateVersion: REPORT_TEMPLATE_VERSION,
+              adminConsentBypass: options?.bypassMemberConsent === true,
+            },
+          }));
+        if (
+          reusable &&
+          options?.bypassMemberConsent &&
+          reusable.status !== PrismaReportStatus.READY &&
+          !reusable.adminConsentBypass
+        ) {
+          report = await tx.healthReport.update({
+            where: { id: reusable.id },
+            data: { adminConsentBypass: true },
+          });
+        }
+        // Consumer reuse retains the original payment flow. Admins may only queue
+        // an unpaid report with an existing credit; never create a payment here.
+        const queued =
+          reusable &&
+          (!options || reusable.status !== PrismaReportStatus.AWAITING_PAYMENT)
+            ? reusable.status !== PrismaReportStatus.AWAITING_PAYMENT
+            : options?.bypassReportCredit
+              ? await this.queueReport(tx, userId, report.id)
+              : await this.consumeCreditAndQueue(tx, userId, report.id);
+        if (options && !queued)
+          throw new ConflictException({
+            errorKey: "health_report_unavailable",
+            message: "报告次数不足，请先取得有效报告权益",
+          });
+        const current = queued
+          ? await tx.healthReport.findUniqueOrThrow({
+              where: { id: report.id },
+            })
+          : report;
+        if (options) {
+          await tx.auditLog.create({
+            data: {
+              actorType: "ADMIN",
+              actorId: options.actorId,
+              action: "HEALTH_REPORT_GENERATE_REQUEST",
+              entityType: "HEALTH_REPORT",
+              entityId: report.id,
+              requestId: options.requestId ?? null,
+              afterJson: {
+                memberId: userId,
+                reused: Boolean(reusable),
+                memberConsentBypassed: options.bypassMemberConsent === true,
+                reportCreditBypassed: options.bypassReportCredit === true,
+              },
+            },
+          });
+          await tx.idempotencyRecord.create({
+            data: {
+              userId,
+              scope,
+              key: options.idempotencyKey,
+              requestHash,
+              responseCode: 201,
+              responseBody: { reportId: report.id },
+              expiresAt: new Date(Date.now() + 30 * 86_400_000),
+            },
+          });
+        }
+        return {
+          ...serializeReport(current),
+          needsPayment: !queued,
+          reused: Boolean(reusable),
+        };
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
   }
 
   async list(userId: string) {
@@ -415,14 +576,24 @@ export class HealthReportsService {
     if (report.status !== PrismaReportStatus.FAILED) {
       throw new ConflictException("当前报告不需要重试");
     }
-    if (isGlobalRealm()) {
-      const profile = await this.prisma.healthProfile.findUnique({ where: { userId } });
+    {
+      const profile = await this.prisma.healthProfile.findUnique({
+        where: { userId },
+      });
       if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
-        throw globalError(403, "analysis_consent_required", "Agree to health analysis before retrying this report.");
+        throw globalError(
+          403,
+          "analysis_consent_required",
+          "Agree to health analysis before retrying this report.",
+        );
       }
       const document = await this.analysisDocument(userId);
       if (!document || document.version !== profile.analysisConsentVersion) {
-        throw globalError(409, "consent_outdated", "Read and agree to the latest health analysis notice.");
+        throw globalError(
+          409,
+          "consent_outdated",
+          "Read and agree to the latest health analysis notice.",
+        );
       }
     }
     await this.prisma.healthReport.update({
@@ -441,29 +612,33 @@ export class HealthReportsService {
     return report;
   }
 
-  private async loadEvidenceRecords(userId: string, from: Date, to: Date, db: Prisma.TransactionClient = this.prisma) {
+  private async loadEvidenceRecords(
+    userId: string,
+    from: Date,
+    to: Date,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
     const records = await db.healthRecord.findMany({
       where: {
         userId,
-        observedAt: { gte: from, lte: to },
         quality: { not: DataQuality.INVALID },
+        AND: [foldedHealthRecordPeriodWhere(from, to)],
       },
       orderBy: { observedAt: "asc" },
       take: 20_000,
       include: { ecgArtifact: { select: { id: true } } },
     });
-    return records.map(
-      (record): EvidenceRecord => ({
-        id: record.id,
-        metric: record.metric,
-        observedAt: record.observedAt,
-        timezoneOffsetMinutes: record.timezoneOffsetMinutes,
-        values: record.values,
-        quality: record.quality,
-        sourceModel: record.sourceModel,
-        hasEcgArtifact: Boolean(record.ecgArtifact),
-      }),
-    );
+    return records.map((record): EvidenceRecord => ({
+      id: record.id,
+      metric: record.metric,
+      observedAt: record.observedAt,
+      timezoneOffsetMinutes: record.timezoneOffsetMinutes,
+      values: record.values,
+      quality: record.quality,
+      sourceModel: record.sourceModel,
+      aggregationLocalDate: record.aggregationLocalDate,
+      hasEcgArtifact: Boolean(record.ecgArtifact),
+    }));
   }
 
   private async memberHealthContext(
@@ -479,13 +654,20 @@ export class HealthReportsService {
         heightCm: true,
         weightKg: true,
         locale: true,
-        activityGoal: { select: { steps: true, distanceMeters: true, caloriesKcal: true } },
+        activityGoal: {
+          select: { steps: true, distanceMeters: true, caloriesKcal: true },
+        },
         healthProfile: { select: { timezone: true } },
         devices: {
           where: { unboundAt: null },
           orderBy: { lastSeenAt: "desc" },
           take: 10,
-          select: { vendor: true, model: true, displayName: true, lastSeenAt: true },
+          select: {
+            vendor: true,
+            model: true,
+            displayName: true,
+            lastSeenAt: true,
+          },
         },
         warningEvents: {
           where: { observedAt: { gte: period.from, lte: period.to } },
@@ -498,14 +680,20 @@ export class HealthReportsService {
     if (!user) return {};
     const heightCm = finiteNumber(user.heightCm);
     const weightKg = finiteNumber(user.weightKg);
-    const ageYears = user.birthday ? Math.max(0, fullYears(user.birthday, period.to)) : null;
-    const warningGroups = new Map<string, { count: number; latestObservedAt: string }>();
+    const ageYears = user.birthday
+      ? Math.max(0, fullYears(user.birthday, period.to))
+      : null;
+    const warningGroups = new Map<
+      string,
+      { count: number; latestObservedAt: string }
+    >();
     for (const warning of user.warningEvents ?? []) {
       const metric = String(warning.metric).toLowerCase();
       const existing = warningGroups.get(metric);
       warningGroups.set(metric, {
         count: (existing?.count ?? 0) + 1,
-        latestObservedAt: existing?.latestObservedAt ?? warning.observedAt.toISOString(),
+        latestObservedAt:
+          existing?.latestObservedAt ?? warning.observedAt.toISOString(),
       });
     }
     return {
@@ -514,27 +702,38 @@ export class HealthReportsService {
         ageYears,
         heightCm,
         weightKg,
-        bmi: heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 100) / 100 : null,
+        bmi:
+          heightCm && weightKg
+            ? Math.round((weightKg / (heightCm / 100) ** 2) * 100) / 100
+            : null,
       },
       locale: user.locale ?? null,
       timezone: user.healthProfile?.timezone ?? null,
-      activityGoals: user.activityGoal ? {
-        steps: user.activityGoal.steps,
-        distanceMeters: user.activityGoal.distanceMeters,
-        caloriesKcal: user.activityGoal.caloriesKcal,
-      } : null,
-      devices: (user.devices ?? []).map(device => ({
+      activityGoals: user.activityGoal
+        ? {
+            steps: user.activityGoal.steps,
+            distanceMeters: user.activityGoal.distanceMeters,
+            caloriesKcal: user.activityGoal.caloriesKcal,
+          }
+        : null,
+      devices: (user.devices ?? []).map((device) => ({
         vendor: plainContextText(device.vendor),
         model: plainContextText(device.model),
         displayName: plainContextText(device.displayName),
         lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
       })),
-      warningSummary: [...warningGroups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([metric, value]) => ({ metric, ...value })),
-      privacy: "De-identified context: name, phone, email, account identifiers and device hardware identifiers are excluded.",
+      warningSummary: [...warningGroups.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([metric, value]) => ({ metric, ...value })),
+      privacy:
+        "De-identified context: name, phone, email, account identifiers and device hardware identifiers are excluded.",
     } as Prisma.InputJsonObject;
   }
 
-  private async availableCredits(userId: string, db: Prisma.TransactionClient = this.prisma) {
+  private async availableCredits(
+    userId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
     const now = new Date();
     const [memberships, standalone] = await Promise.all([
       db.healthMembership.findMany({
@@ -565,100 +764,108 @@ export class HealthReportsService {
     };
   }
 
-  private async consumeCreditAndQueue(tx: Prisma.TransactionClient, userId: string, reportId: string) {
-      const existing = await tx.reportCreditLedger.findUnique({
-        where: { idempotencyKey: `report-consume:${reportId}` },
+  private async consumeCreditAndQueue(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    reportId: string,
+  ) {
+    const existing = await tx.reportCreditLedger.findUnique({
+      where: { idempotencyKey: `report-consume:${reportId}` },
+    });
+    if (existing) return true;
+    const now = new Date();
+    const membership = await tx.healthMembership.findFirst({
+      where: {
+        userId,
+        status: MembershipStatus.ACTIVE,
+        startsAt: { lte: now },
+        expiresAt: { gt: now },
+        remainingCredits: { gt: 0 },
+      },
+      orderBy: { expiresAt: "asc" },
+    });
+    const standalone = await tx.reportCreditLedger.aggregate({
+      where: { userId, membershipId: null },
+      _sum: { delta: true },
+    });
+    const membershipCredits = await tx.healthMembership.aggregate({
+      where: {
+        userId,
+        status: MembershipStatus.ACTIVE,
+        startsAt: { lte: now },
+        expiresAt: { gt: now },
+      },
+      _sum: { remainingCredits: true },
+    });
+    const currentBalance =
+      Math.max(0, standalone._sum.delta ?? 0) +
+      (membershipCredits._sum.remainingCredits ?? 0);
+    if (membership) {
+      const changed = await tx.healthMembership.updateMany({
+        where: { id: membership.id, remainingCredits: { gt: 0 } },
+        data: { remainingCredits: { decrement: 1 } },
       });
-      if (existing) return true;
-      const now = new Date();
-      const membership = await tx.healthMembership.findFirst({
-        where: {
+      if (!changed.count) return false;
+      await tx.reportCreditLedger.create({
+        data: {
           userId,
-          status: MembershipStatus.ACTIVE,
-          startsAt: { lte: now },
-          expiresAt: { gt: now },
-          remainingCredits: { gt: 0 },
+          type: CreditLedgerType.CONSUME,
+          delta: -1,
+          balanceAfter: Math.max(0, currentBalance - 1),
+          sourceType: "health_membership",
+          sourceId: membership.id,
+          membershipId: membership.id,
+          healthReportId: reportId,
+          expiresAt: membership.expiresAt,
+          idempotencyKey: `report-consume:${reportId}`,
         },
-        orderBy: { expiresAt: "asc" },
       });
-      const standalone = await tx.reportCreditLedger.aggregate({
-        where: { userId, membershipId: null },
-        _sum: { delta: true },
-      });
-      const membershipCredits = await tx.healthMembership.aggregate({
-        where: {
+    } else if ((standalone._sum.delta ?? 0) > 0) {
+      await tx.reportCreditLedger.create({
+        data: {
           userId,
-          status: MembershipStatus.ACTIVE,
-          startsAt: { lte: now },
-          expiresAt: { gt: now },
+          type: CreditLedgerType.CONSUME,
+          delta: -1,
+          balanceAfter: Math.max(0, currentBalance - 1),
+          sourceType: "report_credit",
+          sourceId: reportId,
+          healthReportId: reportId,
+          idempotencyKey: `report-consume:${reportId}`,
         },
-        _sum: { remainingCredits: true },
       });
-      const currentBalance =
-        Math.max(0, standalone._sum.delta ?? 0) +
-        (membershipCredits._sum.remainingCredits ?? 0);
-      if (membership) {
-        const changed = await tx.healthMembership.updateMany({
-          where: { id: membership.id, remainingCredits: { gt: 0 } },
-          data: { remainingCredits: { decrement: 1 } },
-        });
-        if (!changed.count) return false;
-        await tx.reportCreditLedger.create({
-          data: {
-            userId,
-            type: CreditLedgerType.CONSUME,
-            delta: -1,
-            balanceAfter: Math.max(0, currentBalance - 1),
-            sourceType: "health_membership",
-            sourceId: membership.id,
-            membershipId: membership.id,
-            healthReportId: reportId,
-            expiresAt: membership.expiresAt,
-            idempotencyKey: `report-consume:${reportId}`,
-          },
-        });
-      } else if ((standalone._sum.delta ?? 0) > 0) {
-        await tx.reportCreditLedger.create({
-          data: {
-            userId,
-            type: CreditLedgerType.CONSUME,
-            delta: -1,
-            balanceAfter: Math.max(0, currentBalance - 1),
-            sourceType: "report_credit",
-            sourceId: reportId,
-            healthReportId: reportId,
-            idempotencyKey: `report-consume:${reportId}`,
-          },
-        });
-      } else {
-        return false;
-      }
-      await this.queueReport(tx, userId, reportId);
-      return true;
+    } else {
+      return false;
+    }
+    await this.queueReport(tx, userId, reportId);
+    return true;
   }
 
-  private async queueReport(tx: Prisma.TransactionClient, userId: string, reportId: string) {
-      await tx.healthReport.update({
-        where: { id: reportId },
-        data: { status: PrismaReportStatus.QUEUED },
-      });
-      await tx.outboxEvent.upsert({
-        where: { eventId: `health-report-generate:${reportId}` },
-        create: {
-          eventId: `health-report-generate:${reportId}`,
-          eventType: "health_report_generate",
-          aggregateType: "health_report",
-          aggregateId: reportId,
-          payload: { userId, reportId },
-        },
-        update: {
-          status: OutboxStatus.PENDING,
-          nextAttemptAt: new Date(),
-          lockedAt: null,
-          lastError: null,
-        },
-      });
-      return true;
+  private async queueReport(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    reportId: string,
+  ) {
+    await tx.healthReport.update({
+      where: { id: reportId },
+      data: { status: PrismaReportStatus.QUEUED },
+    });
+    await tx.outboxEvent.upsert({
+      where: { eventId: `health-report-generate:${reportId}` },
+      create: {
+        eventId: `health-report-generate:${reportId}`,
+        eventType: "health_report_generate",
+        aggregateType: "health_report",
+        aggregateId: reportId,
+        payload: { userId, reportId },
+      },
+      update: {
+        status: OutboxStatus.PENDING,
+        nextAttemptAt: new Date(),
+        lockedAt: null,
+        lastError: null,
+      },
+    });
+    return true;
   }
 
   private async enqueue(reportId: string, userId: string): Promise<void> {
@@ -735,20 +942,38 @@ async function createReportPdf(input: {
     try {
       if (input.font.family) document.font(input.font.path, input.font.family);
       else document.font(input.font.path);
-      document.fontSize(22).fillColor("#17202c").text("Saydian赛电健康管理参考报告");
+      document
+        .fontSize(22)
+        .fillColor("#17202c")
+        .text("Saydian赛电健康管理参考报告");
       document.moveDown(0.35);
-      document.fontSize(11).fillColor("#a32939").text("AI生成内容 · 仅供日常健康管理参考");
+      document
+        .fontSize(11)
+        .fillColor("#a32939")
+        .text("AI生成内容 · 仅供日常健康管理参考");
       document.moveDown(0.8);
       document.fontSize(10).fillColor("#5d6670");
-      document.text(`数据区间：${dateLabel(input.from)} 至 ${dateLabel(input.to)}`);
-      document.text(`数据完整度：${input.distinctDays}个自然日，${input.validRecordCount}条有效记录`);
+      document.text(
+        `数据区间：${dateLabel(input.from)} 至 ${dateLabel(input.to)}`,
+      );
+      document.text(
+        `数据完整度：${input.distinctDays}个自然日，${input.validRecordCount}条有效记录`,
+      );
       document.text(`报告编号：${input.id}`);
-      document.text(`生成时间：${input.generatedAt ? input.generatedAt.toISOString() : "未获取"}`);
+      document.text(
+        `生成时间：${input.generatedAt ? input.generatedAt.toISOString() : "未获取"}`,
+      );
       document.moveDown(1.1);
 
-      pdfSection(document, "概览", [plainPdfText(input.content.overview, "暂未获取概览")]);
+      pdfSection(document, "概览", [
+        plainPdfText(input.content.overview, "暂未获取概览"),
+      ]);
       pdfSection(document, "趋势", pdfTextList(input.content.trends));
-      pdfSection(document, "健康管理建议", pdfTextList(input.content.suggestions));
+      pdfSection(
+        document,
+        "健康管理建议",
+        pdfTextList(input.content.suggestions),
+      );
       pdfSection(document, "数据局限", pdfTextList(input.content.limitations));
 
       document.moveDown(0.8);
@@ -770,7 +995,11 @@ async function createReportPdf(input: {
   });
 }
 
-function pdfSection(document: PDFKit.PDFDocument, title: string, items: string[]) {
+function pdfSection(
+  document: PDFKit.PDFDocument,
+  title: string,
+  items: string[],
+) {
   document.fontSize(15).fillColor("#17202c").text(title);
   document.moveDown(0.35);
   const rows = items.length ? items : ["未获取"];
@@ -832,19 +1061,29 @@ function evidenceDigest(
 }
 
 function finiteNumber(value: unknown): number | null {
-  if (value === null || value === undefined || String(value).trim() === "") return null;
+  if (value === null || value === undefined || String(value).trim() === "")
+    return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
 
 function fullYears(birthday: Date, at: Date): number {
   let years = at.getUTCFullYear() - birthday.getUTCFullYear();
-  if (at.getUTCMonth() < birthday.getUTCMonth() || (at.getUTCMonth() === birthday.getUTCMonth() && at.getUTCDate() < birthday.getUTCDate())) years--;
+  if (
+    at.getUTCMonth() < birthday.getUTCMonth() ||
+    (at.getUTCMonth() === birthday.getUTCMonth() &&
+      at.getUTCDate() < birthday.getUTCDate())
+  )
+    years--;
   return years;
 }
 
 function plainContextText(value: unknown): string | null {
-  const text = String(value ?? "").replace(/[\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+  const text = String(value ?? "")
+    .replace(/[\u0000-\u001f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
   return text || null;
 }
 

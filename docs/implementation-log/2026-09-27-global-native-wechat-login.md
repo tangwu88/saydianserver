@@ -45,6 +45,12 @@
 - `pnpm api:docs:check`：通过，主线接口文档为 358 条。
 - `pnpm typecheck`：首次失败，因为新工作树尚未生成 Prisma Client；执行 `pnpm db:generate` 后重新运行通过，未用代码绕过类型错误。
 - `pnpm test`：通过，API 81 个测试文件通过、1 个跳过；798 项通过、4 项跳过；其余工作区测试同时通过。
+
+补充：另一分支的历史记录
+
+- `pnpm tools:test`：通过，接口文档为 346 条。
+- `pnpm typecheck`：通过。
+- `pnpm test`：通过，77 个测试文件通过、1 个跳过；786 项通过、4 项跳过。
 - `pnpm build`：通过。
 - `node deploy/global/check.mjs`：通过。
 - 部署脚本测试：通过。

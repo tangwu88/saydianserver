@@ -1,5 +1,7 @@
 # 安全更新、提交与自动部署
 
+> 当前执行 [统一生产手册](unified-production.md)。下文独立 tag 构建、旧部署参数及 package-only 入口仅作历史参考，不再用于新发布。
+
 ## 当前启用状态
 
 - 2026-09-06 已在 `tangwu88/saydianserver` 配置 `DEPLOY_HOST`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`、`DEPLOY_KNOWN_HOSTS` 和 `AUTO_DEPLOY_ENABLED=true`；文档只记录名称，不记录值。

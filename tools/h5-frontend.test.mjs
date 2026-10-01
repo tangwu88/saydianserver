@@ -26,9 +26,9 @@ function load(relative, globals = {}, imports = {}) {
 const model = load("apps/shop/src/commerce-model.ts");
 const normalize = (value) => JSON.parse(JSON.stringify(value));
 
-test("realm fixture executes storage isolation with scoped customer and employee promotion routes", () => {
+test("H5 and mini-program retain their storage namespaces but share the server", () => {
   const storage = new Map(), uni = { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value), removeStorageSync: key => storage.delete(key) };
-  const domestic = realmTestModules(uni, { repo }), global = realmTestModules(uni, { repo, env: { VITE_APP_REALM: "global" } });
+  const domestic = realmTestModules(uni, { repo, mini: true }), global = realmTestModules(uni, { repo, env: { VITE_APP_REALM: "global" } });
   domestic.realm.mallStorage.set("saidian-token", "domestic-test"); global.realm.mallStorage.set("saidian-token", "global-test");
   assert.equal(domestic.realm.mallStorage.get("saidian-token"), "domestic-test"); assert.equal(global.realm.mallStorage.get("saidian-token"), "global-test");
   assert.equal(domestic.realm.mallStorageKey("checkout-draft"), "checkout-draft"); assert.equal(global.realm.mallStorageKey("checkout-draft"), "saydian-global-mall:checkout-draft");
@@ -100,7 +100,7 @@ function sessionHarness() {
   return { api, storage, requests, navigations };
 }
 const session = id => ({ token: "test-access-" + id, refreshToken: "test-refresh-" + id, user: { id } });
-const checkoutKeys = ["checkout-items", "checkout-address", "checkout-draft", "checkout-pending", "checkout-cart-ids"];
+const checkoutKeys = ["saydian-global-mall:checkout-items", "saydian-global-mall:checkout-address", "saydian-global-mall:checkout-draft", "saydian-global-mall:checkout-pending", "saydian-global-mall:checkout-cart-ids"];
 function addCheckout(storage) { for (const key of checkoutKeys) storage.set(key, "test-" + key); }
 
 test("old account refresh cannot overwrite or clear a newer login", async () => {
@@ -112,8 +112,8 @@ test("old account refresh cannot overwrite or clear a newer login", async () => 
   h.api.saveMallSession(session("member-B"));
   h.requests[1].success({ statusCode: 200, data: session("member-A-refreshed") });
   await handling; await rejected;
-  assert.equal(h.storage.get("saidian-token"), "test-access-member-B");
-  assert.equal(h.storage.get("saidian-user").id, "member-B");
+  assert.equal(h.storage.get("saydian-global-mall:saidian-token"), "test-access-member-B");
+  assert.equal(h.storage.get("saydian-global-mall:saidian-user").id, "member-B");
   assert.equal(h.navigations.length, 0);
 });
 test("same member can recover an uncertain checkout after session expiry", async () => {
@@ -122,21 +122,21 @@ test("same member can recover an uncertain checkout after session expiry", async
   const rejected = assert.rejects(pending, /expired/);
   const handling = h.requests[0].success({ statusCode: 401, data: { message: "expired" } });
   h.requests[1].success({ statusCode: 401, data: {} }); await handling; await rejected;
-  assert.equal(h.storage.has("saidian-token"), false);
-  assert.equal(h.storage.get("checkout-owner"), "member-A");
+  assert.equal(h.storage.has("saydian-global-mall:saidian-token"), false);
+  assert.equal(h.storage.get("saydian-global-mall:checkout-owner"), "member-A");
   h.api.saveMallSession(session("member-A"));
   for (const key of checkoutKeys) assert.equal(h.storage.get(key), "test-" + key);
 });
 test("switching member clears customer checkout but preserves employee identity", () => {
   const h = sessionHarness(); h.api.saveMallSession(session("member-A")); addCheckout(h.storage);
-  h.storage.set("employee-token", "test-independent-employee-token");
+  h.storage.set("saydian-global-mall:employee-token", "test-independent-employee-token");
   h.api.clearMallSession(true); h.api.saveMallSession(session("member-B"));
   for (const key of checkoutKeys) assert.equal(h.storage.has(key), false, key);
-  assert.equal(h.storage.get("checkout-owner"), "member-B");
-  assert.equal(h.storage.get("employee-token"), "test-independent-employee-token");
+  assert.equal(h.storage.get("saydian-global-mall:checkout-owner"), "member-B");
+  assert.equal(h.storage.get("saydian-global-mall:employee-token"), "test-independent-employee-token");
   h.api.clearMallSession();
-  assert.equal(h.storage.has("checkout-owner"), false);
-  assert.equal(h.storage.get("employee-token"), "test-independent-employee-token");
+  assert.equal(h.storage.has("saydian-global-mall:checkout-owner"), false);
+  assert.equal(h.storage.get("saydian-global-mall:employee-token"), "test-independent-employee-token");
 });
 test("unknown money remains unknown instead of a fake zero", () => {
   const { api } = sessionHarness();
