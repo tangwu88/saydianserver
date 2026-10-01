@@ -56,11 +56,11 @@ async function success(path, options, label) {
 async function newUser(suffix, passwordHash) {
   let mobile;
   for (let attempt = 0; attempt < 20; attempt++) {
-    const candidate = `199${randomInt(10_000_000, 100_000_000)}`;
+    const candidate = `+86199${randomInt(10_000_000, 100_000_000)}`;
     if (!(await prisma.user.findUnique({ where: { mobile: candidate }, select: { id: true } }))) { mobile = candidate; break; }
   }
   if (!mobile) throw new Error("Cannot allocate an unused synthetic mobile");
-  const row = await prisma.user.create({ data: { id: randomUUID(), mobile, passwordHash, nickname: `${marker}:${suffix}` } });
+  const row = await prisma.user.create({ data: { id: randomUUID(), mobile, mobileVerifiedAt: new Date(), passwordHash, nickname: `${marker}:${suffix}` } });
   owned.users.push({ id: row.id, nickname: row.nickname });
   return { id: row.id, mobile, publicId: row.compatibilityId };
 }

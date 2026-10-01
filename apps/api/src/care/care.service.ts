@@ -9,14 +9,17 @@ import {
   CareStatus,
   HealthMetric as PrismaHealthMetric,
   NotificationType,
-  Prisma,
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import type { HealthMetric } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
 import { normalizedMobile, safeObject } from "../common/crypto";
-import { isGlobalRealm } from "../common/deployment-realm";
+
 import { normalizedEmail } from "../auth/global-identity";
+import {
+  foldedHealthRecordPeriodWhere,
+  healthAggregationContract,
+} from "../health/health-record-scope";
 
 const metricMap: Record<HealthMetric, PrismaHealthMetric> = {
   sleep: PrismaHealthMetric.SLEEP,
@@ -44,23 +47,30 @@ export class CareService {
 
   async invite(inviterId: string, mobileInput: string) {
     const mobile = normalizedMobile(mobileInput);
-    const email = isGlobalRealm() ? normalizedEmail(mobileInput) : "";
+    const email = normalizedEmail(mobileInput);
     if (!mobile && !email) throw new BadRequestException("手机号格式不正确");
-    const recipient = await this.prisma.user.findUnique({ where: email ? { email } : { mobile } });
+    const recipient = await this.prisma.user.findUnique({
+      where: email ? { email } : { mobile },
+    });
     if (!recipient) throw new NotFoundException("未找到该用户");
-    if (recipient.id === inviterId) throw new BadRequestException("不能关爱自己");
+    if (recipient.id === inviterId)
+      throw new BadRequestException("不能关爱自己");
     const invitationId = `care_${randomUUID()}`;
     const eventId = `care-invitation-${invitationId}`;
     const relationship = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.careRelationship.findUnique({
-        where: { inviterId_recipientId: { inviterId, recipientId: recipient.id } },
+        where: {
+          inviterId_recipientId: { inviterId, recipientId: recipient.id },
+        },
       });
       if (existing?.status === CareStatus.ACTIVE) {
         throw new ConflictException("已建立关爱关系，无需重复邀请");
       }
       if (existing?.status === CareStatus.PENDING) return existing;
       const relation = await tx.careRelationship.upsert({
-        where: { inviterId_recipientId: { inviterId, recipientId: recipient.id } },
+        where: {
+          inviterId_recipientId: { inviterId, recipientId: recipient.id },
+        },
         create: {
           invitationId,
           inviterId,
@@ -75,7 +85,9 @@ export class CareService {
           expiresAt: null,
         },
       });
-      await tx.carePermission.deleteMany({ where: { relationshipId: relation.id } });
+      await tx.carePermission.deleteMany({
+        where: { relationshipId: relation.id },
+      });
       const notification = await tx.notification.upsert({
         where: { userId_eventId: { userId: recipient.id, eventId } },
         create: {
@@ -177,7 +189,10 @@ export class CareService {
       throw new BadRequestException("共享指标不正确");
     }
     const expiresAt = body.expiresAt ? new Date(String(body.expiresAt)) : null;
-    if (expiresAt && (Number.isNaN(expiresAt.valueOf()) || expiresAt <= new Date())) {
+    if (
+      expiresAt &&
+      (Number.isNaN(expiresAt.valueOf()) || expiresAt <= new Date())
+    ) {
       throw new BadRequestException("共享到期时间不正确");
     }
     await this.prisma.$transaction(async (tx) => {
@@ -204,7 +219,9 @@ export class CareService {
   }
 
   async revoke(userId: string, id: string) {
-    const relationship = await this.prisma.careRelationship.findUnique({ where: { id } });
+    const relationship = await this.prisma.careRelationship.findUnique({
+      where: { id },
+    });
     if (
       !relationship ||
       (relationship.inviterId !== userId && relationship.recipientId !== userId)
@@ -242,11 +259,11 @@ export class CareService {
     const now = new Date();
     const allowed = Boolean(
       relationship &&
-        relationship.inviterId === viewerId &&
-        relationship.status === CareStatus.ACTIVE &&
-        (!relationship.expiresAt || relationship.expiresAt > now) &&
-        permission &&
-        (!permission.expiresAt || permission.expiresAt > now),
+      relationship.inviterId === viewerId &&
+      relationship.status === CareStatus.ACTIVE &&
+      (!relationship.expiresAt || relationship.expiresAt > now) &&
+      permission &&
+      (!permission.expiresAt || permission.expiresAt > now),
     );
     if (relationship) {
       await this.prisma.careAccessAudit.create({
@@ -263,22 +280,33 @@ export class CareService {
     if (!allowed || !relationship) {
       throw new ForbiddenException("对方尚未授权查看这项健康数据");
     }
-    const from = fromInput ? new Date(fromInput) : page ? new Date(0) : new Date(Date.now() - 7 * 86400_000);
+    const from = fromInput
+      ? new Date(fromInput)
+      : page
+        ? new Date(0)
+        : new Date(Date.now() - 7 * 86400_000);
     const to = toInput ? new Date(toInput) : now;
-    if (Number.isNaN(from.valueOf()) || Number.isNaN(to.valueOf()) || from >= to) {
+    if (
+      Number.isNaN(from.valueOf()) ||
+      Number.isNaN(to.valueOf()) ||
+      from >= to
+    ) {
       throw new BadRequestException("查询时间范围不正确");
     }
     const records = await this.prisma.healthRecord.findMany({
       where: {
         userId: relationship.recipientId,
         metric,
-        observedAt: { gte: from, lt: to },
+        // A historical summary belongs to aggregationLocalDate even when it
+        // was read from the watch and uploaded much later.
+        AND: [foldedHealthRecordPeriodWhere(from, to)],
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
       skip: page ? (page - 1) * 30 : 0,
       take: page ? 30 : 20_001,
     });
-    if (records.length > 20_000) throw new BadRequestException("记录较多，请缩小查询时间范围");
+    if (records.length > 20_000)
+      throw new BadRequestException("记录较多，请缩小查询时间范围");
     return records.map((record) => ({
       id: record.clientRecordId,
       metric: metricReverse[record.metric],
@@ -287,6 +315,9 @@ export class CareService {
       values: record.values,
       unit: record.unit,
       quality: record.quality.toLowerCase(),
+      ...(healthAggregationContract(record)
+        ? { aggregation: healthAggregationContract(record) }
+        : {}),
     }));
   }
 

@@ -5,19 +5,17 @@ import {
   shouldPauseWorkers,
 } from "@saydian/app-contracts";
 import { WechatH5AuthService } from "../auth/wechat-h5-auth.service";
-import { env, envBoolean } from "../common/environment";
+import { env } from "../common/environment";
 import { safeObject } from "../common/crypto";
 import { PrismaService } from "../common/prisma.service";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
-import { isGlobalRealm } from "../common/deployment-realm";
+
 import {
   configuredGlobalMarkets,
   globalCommerceCountry,
   globalCommerceCurrency,
   globalCommercePaymentChannels,
   globalPaymentConfigurationReady,
-  paymentRsaKey as rsaKey,
-  securePaymentEndpoint as secureEndpoint,
 } from "./global-commerce-policy";
 import { GlobalVerificationDeliveryService } from "../auth/global-verification-delivery.service";
 
@@ -38,60 +36,32 @@ export class CommerceCapabilitiesService {
 
   // Configuration readiness is not a provider verification or a payer identity
   // assertion. Creating a payment still validates the actual User.
-  async publicCapabilities(locale?: string, client: "h5" | "app" = "h5", product?: unknown) {
-    const global = isGlobalRealm();
+  async publicCapabilities(
+    locale?: string,
+    client: "h5" | "app" = "h5",
+    product?: unknown,
+  ) {
     const readOnly = businessWritesPaused(process.env);
     const outboundPaused = shouldPauseWorkers(process.env);
-    const demo =
-      process.env.NODE_ENV !== "production" && envBoolean("H5_DEMO_ENABLED");
     const rows = await this.prisma.integrationConfig.findMany({
-      where: { key: { in: ["sms", "wechat_pay", "wechat_pay_app", "alipay", "alipay_app"] } },
+      where: {
+        key: {
+          in: ["sms", "wechat_pay", "wechat_pay_app", "alipay", "alipay_app"],
+        },
+      },
     });
     const byKey = new Map(rows.map((row) => [row.key, row]));
     const verificationReady = await this.verificationDelivery.capabilities();
     const configured = (key: string) =>
       byKey.get(key)?.state === IntegrationState.CONFIGURED;
-    let sms =
-      !global &&
-      process.env.NODE_ENV !== "production" &&
-      envBoolean("ALLOW_TEST_OTP");
-    if (!global && !sms && configured("sms")) {
-      try {
-        const publicConfig = safeObject(byKey.get("sms")?.publicConfig);
-        const secret = await this.secrets.resolve("sms", {
-          webhookUrl: "SMS_WEBHOOK_URL",
-          webhookToken: "SMS_WEBHOOK_TOKEN",
-          accessKeyId: "ALIBABA_CLOUD_ACCESS_KEY_ID",
-          accessKeySecret: "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
-        });
-        const provider = String(
-          publicConfig.provider ?? env("SMS_PROVIDER", "disabled"),
-        ).toLowerCase();
-        sms = provider === "webhook"
-          ? !!secret.webhookToken && secureEndpoint(
-              String(publicConfig.webhookUrl ?? secret.webhookUrl ?? ""),
-            )
-          : provider === "aliyun"
-            ? !!secret.accessKeyId &&
-              !!secret.accessKeySecret &&
-              !!String(publicConfig.signName ?? env("ALIYUN_SMS_SIGN_NAME", "")).trim() &&
-              /^SMS_[A-Za-z0-9]+$/.test(
-                String(publicConfig.templateCode ?? env("ALIYUN_SMS_TEMPLATE_CODE", "")).trim(),
-              )
-            : false;
-      } catch {
-        sms = false;
-      }
-    }
+
     let officialAppId: string | null = null;
     try {
       officialAppId = (await this.official.configured()).appId;
     } catch {
       officialAppId = null;
     }
-    let wechat = false,
-      jsapi = false,
-      mini = false,
+    let jsapi = false,
       alipay = false,
       wechatApp = false,
       alipayApp = false;
@@ -105,44 +75,12 @@ export class CommerceCapabilitiesService {
           platformSerialNo: "WECHAT_PAY_PLATFORM_SERIAL_NO",
           apiV3Key: "WECHAT_PAY_API_V3_KEY",
           appIdOfficial: "WECHAT_PAY_APP_ID_OFFICIAL",
-          appIdMini: "WECHAT_PAY_APP_ID_MINI",
         });
         const config = safeObject(byKey.get("wechat_pay")?.publicConfig);
-        const notify = String(
-          config.notifyUrl ??
-            `${env("PUBLIC_BASE_URL", "")}/api/saydian-app/v2/billing/payments/wechat/notify`,
-        );
-        const merchantReady =
-          !!secret.merchantId &&
-          !!secret.serialNo &&
-          !!secret.platformSerialNo &&
-          secret.apiV3Key?.length === 32 &&
-          rsaKey(secret.privateKeyPem, true) &&
-          rsaKey(secret.platformPublicKeyPem, false) &&
-          secureEndpoint(notify);
-        // Native/H5 use appIdOfficial; mini uses its own appId. Missing
-        // official-account OAuth configuration must not disable existing mini payments.
-        wechat =
-          merchantReady &&
-          /^wx[A-Za-z0-9]{8,64}$/.test(secret.appIdOfficial ?? "");
-        mini =
-          merchantReady && /^wx[A-Za-z0-9]{8,64}$/.test(secret.appIdMini ?? "");
-        jsapi =
-          wechat && !!officialAppId && secret.appIdOfficial === officialAppId;
-        if (
-          global &&
-          !globalPaymentConfigurationReady(
-            "WECHAT_H5",
-            config,
-            secret,
-            env("PUBLIC_BASE_URL", ""),
-          )
-        )
-          wechat = jsapi = false;
+        jsapi = globalPaymentConfigurationReady("WECHAT_JSAPI", config, secret, env("PUBLIC_BASE_URL", ""))
+          && !!officialAppId && secret.appIdOfficial === officialAppId;
       } catch {
-        wechat = false;
         jsapi = false;
-        mini = false;
       }
     }
     if (configured("alipay")) {
@@ -153,25 +91,12 @@ export class CommerceCapabilitiesService {
           publicKeyPem: "ALIPAY_PUBLIC_KEY_PEM",
         });
         const config = safeObject(byKey.get("alipay")?.publicConfig);
-        const notify = String(
-          config.notifyUrl ??
-            `${env("PUBLIC_BASE_URL", "")}/api/saydian-app/v2/billing/payments/alipay/notify`,
+        alipay = globalPaymentConfigurationReady(
+          "ALIPAY_WAP",
+          config,
+          secret,
+          env("PUBLIC_BASE_URL", ""),
         );
-        alipay =
-          !!secret.appId &&
-          rsaKey(secret.privateKeyPem, true) &&
-          rsaKey(secret.publicKeyPem, false) &&
-          secureEndpoint(notify) &&
-          secureEndpoint(
-            String(config.gateway ?? "https://openapi.alipay.com/gateway.do"),
-          );
-        if (global)
-          alipay = globalPaymentConfigurationReady(
-            "ALIPAY_WAP",
-            config,
-            secret,
-            env("PUBLIC_BASE_URL", ""),
-          );
       } catch {
         alipay = false;
       }
@@ -226,30 +151,6 @@ export class CommerceCapabilitiesService {
         ),
       },
       {
-        channel: "wechat_mini",
-        environments: ["mini"],
-        ...capability(
-          mini && !outboundPaused,
-          mini && outboundPaused ? "交易维护中" : "微信小程序支付未配置",
-        ),
-      },
-      {
-        channel: "wechat_h5",
-        environments: ["browser"],
-        ...capability(
-          wechat && !outboundPaused,
-          wechat && outboundPaused ? "交易维护中" : "微信 H5 支付未配置",
-        ),
-      },
-      {
-        channel: "wechat_native",
-        environments: ["browser"],
-        ...capability(
-          wechat && !outboundPaused,
-          wechat && outboundPaused ? "交易维护中" : "微信扫码支付未配置",
-        ),
-      },
-      {
         channel: "alipay_wap",
         environments: ["browser"],
         ...capability(
@@ -282,7 +183,7 @@ export class CommerceCapabilitiesService {
         ),
       },
     ];
-    if (global) {
+    {
       const [official, marketConfig] = await Promise.all([
         this.official.globalCapabilities(locale, product),
         this.prisma.commerceBusinessConfig.findUnique({
@@ -303,7 +204,9 @@ export class CommerceCapabilitiesService {
           sms: {
             ...capability(
               verificationReady.sms && !readOnly,
-              readOnly ? "系统维护中" : "International SMS verification is not configured.",
+              readOnly
+                ? "系统维护中"
+                : "International SMS verification is not configured.",
             ),
           },
           email: capability(
@@ -315,12 +218,16 @@ export class CommerceCapabilitiesService {
           wechatBinding: official.wechatBinding,
         },
         payments: payments
-          .filter((payment) =>
-            globalCommercePaymentChannels.some(
-              (channel) => channel.toLowerCase() === payment.channel,
-            ) && (client === "app"
-              ? payment.environments.includes("android") || payment.environments.includes("ios")
-              : !payment.environments.includes("android") && !payment.environments.includes("ios")),
+          .filter(
+            (payment) =>
+              globalCommercePaymentChannels.some(
+                (channel) => channel.toLowerCase() === payment.channel,
+              ) &&
+              (client === "app"
+                ? payment.environments.includes("android") ||
+                  payment.environments.includes("ios")
+                : !payment.environments.includes("android") &&
+                  !payment.environments.includes("ios")),
           )
           .map((payment) =>
             checkoutAvailable
@@ -344,7 +251,7 @@ export class CommerceCapabilitiesService {
           minimumCashCents: 1,
           points: {
             supported: checkoutAvailable,
-            requiresVerifiedAccount: false,
+            requiresVerifiedAccount: true,
           },
         },
         maintenance: {
@@ -354,36 +261,6 @@ export class CommerceCapabilitiesService {
         demo: false,
       };
     }
-    return {
-      login: {
-        password: capability(!readOnly, "系统维护中"),
-        sms: capability(
-          sms && !readOnly,
-          readOnly ? "系统维护中" : "短信服务未配置",
-        ),
-        email: capability(
-          verificationReady.email && !readOnly,
-          readOnly ? "系统维护中" : "邮箱验证码服务未配置",
-        ),
-        defaultChannel: "sms",
-        wechatH5: capability(
-          !!officialAppId && !readOnly,
-          readOnly ? "系统维护中" : "微信公众号登录未配置",
-        ),
-      },
-      payments: client === "app"
-        ? payments.filter(payment => payment.environments.includes("android") || payment.environments.includes("ios"))
-        : payments.filter(payment => !payment.environments.includes("android") && !payment.environments.includes("ios")),
-      checkout: {
-        minimumCashCents: 1,
-        points: { supported: true, requiresVerifiedAccount: true },
-      },
-      maintenance: {
-        readOnly,
-        ...(readOnly ? { reason: "系统维护中，仅可浏览已有信息" } : {}),
-      },
-      demo,
-    };
   }
 }
 

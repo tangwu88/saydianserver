@@ -36,7 +36,7 @@ async function fixture(
   const calls = { jwt: [] as any[], lookup: [] as any[], cas: [] as any[], upsert: [] as any[] };
   const token = options.badCredential ? "SYNTHETIC-UNKNOWN-CREDENTIAL" : kind === "opaque" ? opaque
     : sign({ sub: id, sid: sessionId, typ: "access", jti: "synthetic-access-jti" }, secret,
-      { issuer: "saydianapp-server", audience: "saydian-app", expiresIn: 300 });
+      { issuer: "saydian-global-server", audience: "saydian-global-app", expiresIn: 300 });
   const expiresAt = new Date("2098-01-01T00:00:00.000Z");
   const tx = {
     legacySessionCredential: {

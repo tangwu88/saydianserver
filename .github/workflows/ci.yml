@@ -11,6 +11,9 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
     services:
       postgres:
         image: postgres:16-alpine
@@ -96,19 +99,59 @@ jobs:
       - name: HTTP compatibility and authorization smoke tests
         run: |
           ALLOW_HTTP_FIXTURES=true pnpm test:http
-      - name: Build verified container images
+      - name: Rehearse consistent backup and isolated PostgreSQL restore
+        timeout-minutes: 10
+        run: bash tools/smoke-backup-restore.sh
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/api.Dockerfile
+          load: true
+          tags: ghcr.io/tangwu88/saydianserver-api:sha-${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/worker.Dockerfile
+          load: true
+          tags: ghcr.io/tangwu88/saydianserver-worker:sha-${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/admin.Dockerfile
+          load: true
+          tags: ghcr.io/tangwu88/saydianserver-admin:sha-${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - name: Smoke test the actual runtime images
+        run: bash tools/smoke-runtime-images.sh "$GITHUB_SHA"
+      - name: Publish tested images and immutable release manifest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          docker build -f docker/api.Dockerfile -t saydianapp-api:ci .
-          docker build -f docker/worker.Dockerfile -t saydianapp-worker:ci .
-          docker build -f docker/admin.Dockerfile -t saydianapp-admin:ci .
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for component in api worker admin; do
+            docker push "ghcr.io/tangwu88/saydianserver-$component:sha-$GITHUB_SHA"
+          done
+          node deploy/scripts/release-manifest.mjs create "$GITHUB_SHA" deploy/release-manifest.json
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: release-${{ github.sha }}
+          path: deploy/release-manifest.json
+          retention-days: 90
+          if-no-files-found: error
   auto-deploy:
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AUTO_DEPLOY_ENABLED == 'true'
     uses: ./.github/workflows/deploy-production.yml
     with:
       revision: ${{ github.sha }}
+      build_run_id: ${{ format('{0}', github.run_id) }}
     secrets: inherit
     permissions:
       contents: read
       actions: read
-      packages: write
+      packages: read

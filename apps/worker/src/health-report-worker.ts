@@ -25,7 +25,11 @@ export class HealthReportWorker {
     });
     if (!report || report.status === ReportStatus.REVOKED) return;
     if (report.status === ReportStatus.READY && report.fullContent) return;
-    if (isGlobalRealm() && report.status !== ReportStatus.QUEUED && report.status !== ReportStatus.GENERATING) return;
+    if (
+      report.status !== ReportStatus.QUEUED &&
+      report.status !== ReportStatus.GENERATING
+    )
+      return;
     const integration = await this.prisma.integrationConfig.findUnique({
       where: { key: "ai" },
     });
@@ -33,7 +37,10 @@ export class HealthReportWorker {
     const provider = String(
       publicConfig.provider ?? env("AI_PROVIDER", "disabled"),
     ).trim();
-    if (integration?.state !== IntegrationState.CONFIGURED || provider === "disabled") {
+    if (
+      integration?.state !== IntegrationState.CONFIGURED ||
+      provider === "disabled"
+    ) {
       throw new PermanentTaskError("AI report provider is unconfigured");
     }
     const secrets = await resolveWorkerSecrets(this.prisma, "ai", {
@@ -42,7 +49,10 @@ export class HealthReportWorker {
       model: "AI_MODEL",
     });
     const providerSettings = {
-      baseUrl: String(publicConfig.baseUrl ?? secrets.baseUrl ?? "").replace(/\/$/, ""),
+      baseUrl: String(publicConfig.baseUrl ?? secrets.baseUrl ?? "").replace(
+        /\/$/,
+        "",
+      ),
       apiKey: secrets.apiKey ?? "",
       model: String(publicConfig.model ?? secrets.model ?? "configured-model"),
     };
@@ -53,22 +63,37 @@ export class HealthReportWorker {
     // SUPER_ADMIN requests persist a separate audited authorization snapshot;
     // the worker still rejects inactive members and any changed snapshot.
     const adminConsentBypass = report.adminConsentBypass === true;
-    const consent = isGlobalRealm() ? await assertGlobalAnalysisAllowed(this.prisma, report.userId, adminConsentBypass) : null;
+    const consent = await assertGlobalAnalysisAllowed(
+      this.prisma,
+      report.userId,
+      adminConsentBypass,
+    );
     const startData = {
       status: ReportStatus.GENERATING,
       generationAttempts: { increment: 1 },
       failureReason: null,
     };
-    if (isGlobalRealm()) {
+    {
       const started = await this.prisma.healthReport.updateMany({
-        where: { id: report.id, adminConsentBypass, status: { in: [ReportStatus.QUEUED, ReportStatus.GENERATING] } }, data: startData,
+        where: {
+          id: report.id,
+          adminConsentBypass,
+          status: { in: [ReportStatus.QUEUED, ReportStatus.GENERATING] },
+        },
+        data: startData,
       });
       if (started.count !== 1) return;
-      if (await assertGlobalAnalysisAllowed(this.prisma, report.userId, adminConsentBypass) !== consent) {
-        throw new PermanentTaskError("Health AI analysis authorization changed before generation");
+      if (
+        (await assertGlobalAnalysisAllowed(
+          this.prisma,
+          report.userId,
+          adminConsentBypass,
+        )) !== consent
+      ) {
+        throw new PermanentTaskError(
+          "Health AI analysis authorization changed before generation",
+        );
       }
-    } else {
-      await this.prisma.healthReport.update({ where: { id: report.id }, data: startData });
     }
     const content = await callAiProvider(
       report.metricSummary,
@@ -84,13 +109,24 @@ export class HealthReportWorker {
     await markWorkerIntegrationVerified(this.prisma, "ai");
     const eventId = `health-report-ready:${report.id}`;
     await this.prisma.$transaction(async (tx) => {
-      if (isGlobalRealm()) {
+      {
         await lockGlobalReport(tx, report.userId, report.id);
-        const current = await tx.healthReport.findUnique({ where: { id: report.id } });
+        const current = await tx.healthReport.findUnique({
+          where: { id: report.id },
+        });
         if (!current || current.status !== ReportStatus.GENERATING) return;
         // Keep the authorization rows locked until READY and its notification commit.
-        if (current.adminConsentBypass !== adminConsentBypass || await assertGlobalAnalysisAllowed(tx, report.userId, adminConsentBypass) !== consent) {
-          throw new PermanentTaskError("Health AI analysis authorization changed during generation");
+        if (
+          current.adminConsentBypass !== adminConsentBypass ||
+          (await assertGlobalAnalysisAllowed(
+            tx,
+            report.userId,
+            adminConsentBypass,
+          )) !== consent
+        ) {
+          throw new PermanentTaskError(
+            "Health AI analysis authorization changed during generation",
+          );
         }
       }
       await tx.healthReport.update({
@@ -142,14 +178,25 @@ export class HealthReportWorker {
     const report = await this.prisma.healthReport.findUnique({
       where: { id: reportId },
     });
-    if (!report || report.status === ReportStatus.READY || report.status === ReportStatus.REVOKED) {
+    if (
+      !report ||
+      report.status === ReportStatus.READY ||
+      report.status === ReportStatus.REVOKED
+    ) {
       return;
     }
     await this.prisma.$transaction(async (tx) => {
-      if (isGlobalRealm()) {
+      {
         await lockGlobalReport(tx, report.userId, report.id);
-        const current = await tx.healthReport.findUnique({ where: { id: report.id } });
-        if (!current || current.status === ReportStatus.READY || current.status === ReportStatus.REVOKED) return;
+        const current = await tx.healthReport.findUnique({
+          where: { id: report.id },
+        });
+        if (
+          !current ||
+          current.status === ReportStatus.READY ||
+          current.status === ReportStatus.REVOKED
+        )
+          return;
       }
       const restoreKey = `report-restore:${report.id}`;
       const restored = await tx.reportCreditLedger.findUnique({
@@ -168,9 +215,9 @@ export class HealthReportWorker {
             : null;
           const canRestoreMembership = Boolean(
             membership &&
-              membership.status === MembershipStatus.ACTIVE &&
-              membership.expiresAt &&
-              membership.expiresAt > now,
+            membership.status === MembershipStatus.ACTIVE &&
+            membership.expiresAt &&
+            membership.expiresAt > now,
           );
           if (canRestoreMembership && membership) {
             await tx.healthMembership.update({
@@ -190,10 +237,12 @@ export class HealthReportWorker {
               balanceAfter: Math.max(0, current._sum.delta ?? 0) + 1,
               sourceType: "generation_failure",
               sourceId: report.id,
-              membershipId: canRestoreMembership ? membership?.id ?? null : null,
+              membershipId: canRestoreMembership
+                ? (membership?.id ?? null)
+                : null,
               healthReportId: report.id,
               expiresAt: canRestoreMembership
-                ? membership?.expiresAt ?? null
+                ? (membership?.expiresAt ?? null)
                 : null,
               idempotencyKey: restoreKey,
               note: "报告持续生成失败，次数已退回",
@@ -212,11 +261,11 @@ export class HealthReportWorker {
   }
 }
 
-function isGlobalRealm(): boolean {
-  return process.env.APP_REALM === "global";
-}
-
-async function lockGlobalReport(tx: Prisma.TransactionClient, userId: string, reportId: string): Promise<void> {
+async function lockGlobalReport(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  reportId: string,
+): Promise<void> {
   // Always acquire member before profile and report. No lock spans AI I/O.
   await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId}::uuid FOR UPDATE`;
   await tx.$queryRaw`SELECT "id" FROM "HealthProfile" WHERE "userId" = ${userId}::uuid FOR UPDATE`;
@@ -224,34 +273,67 @@ async function lockGlobalReport(tx: Prisma.TransactionClient, userId: string, re
 }
 
 async function assertGlobalAnalysisAllowed(
-  prisma: Pick<Prisma.TransactionClient, "user" | "healthProfile" | "globalLegalDocument">,
+  prisma: Pick<
+    Prisma.TransactionClient,
+    "user" | "healthProfile" | "globalLegalDocument"
+  >,
   userId: string,
   adminConsentBypass = false,
 ): Promise<string> {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { status: true, locale: true } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { status: true, locale: true },
+  });
   if (!user || user.status !== UserStatus.ACTIVE) {
     throw new PermanentTaskError("Health report member is inactive");
   }
   if (adminConsentBypass) return "super-admin-audited-bypass-v1";
   const profile = await prisma.healthProfile.findUnique({ where: { userId } });
   if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
-    throw new PermanentTaskError("Health AI analysis consent is missing or withdrawn");
+    throw new PermanentTaskError(
+      "Health AI analysis consent is missing or withdrawn",
+    );
   }
   // Same language normalization and English fallback as the API's globalLegalReference.
-  const raw = String(user.locale ?? "en").split(",")[0]!.split(";")[0]!.trim().replace(/_/g, "-");
+  const raw = String(user.locale ?? "en")
+    .split(",")[0]!
+    .split(";")[0]!
+    .trim()
+    .replace(/_/g, "-");
   const supported = ["en", "zh-Hans", "zh-Hant", "de", "fr", "es", "ja", "ko"];
-  const preferred = /^zh-(TW|HK|MO|Hant)(-|$)/i.test(raw) ? "zh-Hant"
-    : /^zh(-|$)/i.test(raw) ? "zh-Hans"
-      : supported.find(locale => locale.toLowerCase() === raw.toLowerCase())
-        ?? supported.find(locale => locale === raw.split("-")[0]?.toLowerCase()) ?? "en";
+  const preferred = /^zh-(TW|HK|MO|Hant)(-|$)/i.test(raw)
+    ? "zh-Hant"
+    : /^zh(-|$)/i.test(raw)
+      ? "zh-Hans"
+      : (supported.find(
+          (locale) => locale.toLowerCase() === raw.toLowerCase(),
+        ) ??
+        supported.find(
+          (locale) => locale === raw.split("-")[0]?.toLowerCase(),
+        ) ??
+        "en");
   const locales = preferred === "en" ? ["en"] : [preferred, "en"];
   const documents = await prisma.globalLegalDocument.findMany({
-    where: { documentType: "health_ai_analysis", locale: { in: locales }, active: true, reviewed: true, publishedAt: { lte: new Date() } },
+    where: {
+      documentType: "health_ai_analysis",
+      locale: { in: locales },
+      active: true,
+      reviewed: true,
+      publishedAt: { lte: new Date() },
+    },
     orderBy: { publishedAt: "desc" },
   });
-  const current = locales.map(locale => documents.find(document => document.locale === locale && document.contentHtml.trim())).find(Boolean);
+  const current = locales
+    .map((locale) =>
+      documents.find(
+        (document) => document.locale === locale && document.contentHtml.trim(),
+      ),
+    )
+    .find(Boolean);
   if (!current || current.version !== profile.analysisConsentVersion) {
-    throw new PermanentTaskError("Health AI analysis consent is outdated or notice is unavailable");
+    throw new PermanentTaskError(
+      "Health AI analysis consent is outdated or notice is unavailable",
+    );
   }
   return `${current.version}:${profile.analysisConsentedAt.toISOString()}`;
 }
@@ -297,7 +379,8 @@ async function callAiProvider(
     }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(`AI report provider returned ${response.status}`);
+  if (!response.ok)
+    throw new Error(`AI report provider returned ${response.status}`);
   const payload = asObject(await response.json());
   const choices = Array.isArray(payload.choices) ? payload.choices : [];
   const message = asObject(asObject(choices[0]).message);
@@ -376,7 +459,11 @@ export function validateReportContent(
   };
 }
 
-function stringArray(value: unknown, maximumItems: number, maximumLength: number) {
+function stringArray(
+  value: unknown,
+  maximumItems: number,
+  maximumLength: number,
+) {
   if (!Array.isArray(value)) return [];
   return value
     .slice(0, maximumItems)
@@ -403,6 +490,7 @@ function env(name: string, fallback = ""): string {
 }
 
 function sanitizeError(error: unknown): string {
-  const message = error instanceof Error ? error.message : "report generation failed";
+  const message =
+    error instanceof Error ? error.message : "report generation failed";
   return message.replace(/[\r\n]/g, " ").slice(0, 500);
 }

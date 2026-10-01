@@ -19,7 +19,7 @@ const isSayRing =
   window.location.pathname.startsWith("/say-ring/");
 const pagePath = isSayRing ? "/say-ring" : "/down";
 const manifestEndpoint = isSayRing
-  ? "/global/api/saydian-app/v2/support/app-update?product=say-ring"
+  ? "/api/saydian-app/v2/support/app-update?product=say-ring"
   : "/api/saydian-app/v2/support/app-update";
 
 configurePage();

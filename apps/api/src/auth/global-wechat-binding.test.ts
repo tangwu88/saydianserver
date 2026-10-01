@@ -102,8 +102,11 @@ describe("global WeChat gate, callback and consent", () => {
     await expect(h.binding.bindAccount(appId, accountInput())).rejects.toMatchObject({ status: 503 });
     expect(h.db.commerceOAuthState.create).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
   });
-  it.each(["https://demo.invalid/saidian-mall/oauth/callback", redirectUri + "?next=bad", redirectUri + "#/pages/login/index", "https://evil.invalid/global/saidian-mall/oauth/callback", "http://localhost/global/saidian-mall/oauth/callback"])("requires the exact international HTTPS callback: %s", url => {
+  it.each(["https://demo.invalid/untrusted/oauth/callback", redirectUri + "?next=bad", redirectUri + "#/pages/login/index", "https://evil.invalid/global/saidian-mall/oauth/callback", "http://localhost/global/saidian-mall/oauth/callback"])("requires an approved exact HTTPS callback: %s", url => {
     expect(() => officialRedirectUri(url, url.includes("localhost") ? "http://localhost/global/saidian-mall/" : "https://demo.invalid/global/saidian-mall/")).toThrow();
+  });
+  it.each([redirectUri, "https://demo.invalid/saidian-mall/oauth/callback"])("accepts canonical and legacy callback %s", url => {
+    expect(officialRedirectUri(url, "https://demo.invalid/saidian-mall/")).toBe(url);
   });
   it("builds only the configured official authorization and does not mutate native/mini/WeCom identity", async () => {
     const h = harness(); const result = await h.h5.authorize({ returnTo: "/pages/profile/index", codeChallenge: sha256(verifier), consentVersion: "legal-v1", locale: "en" });
@@ -261,7 +264,7 @@ describe("ticket-scoped international binding verification", () => {
 });
 
 describe("global mall refresh keeps account and temporary-session boundaries", () => {
-  it("allows ordinary global password accounts without weakening the domestic phone-verification rule", async () => {
+  it("requires verified contact for password commerce login independent of former realm", async () => {
     const service = new AuthService({} as any, {} as any, {} as any, {} as any);
     vi.spyOn(service as any, "passwordUser").mockResolvedValue({ id: memberId, emailVerifiedAt: null, mobileVerifiedAt: null });
     const issue = vi.spyOn(service as any, "issueSession").mockResolvedValue({
@@ -269,31 +272,28 @@ describe("global mall refresh keeps account and temporary-session boundaries", (
       refreshToken: "synthetic-refresh",
       member: { id: memberId },
     });
-    await expect(service.loginForMall("member@example.com", password)).resolves.toMatchObject({
-      token: "synthetic",
-      user: { id: memberId },
-    });
-    expect(issue).toHaveBeenCalledOnce();
+    await expect(service.loginForMall("member@example.com", password)).rejects.toMatchObject({ status: 401 });
+    expect(issue).not.toHaveBeenCalled();
     vi.stubEnv("APP_REALM", "domestic");
     await expect(service.loginForMall("19900001234", password)).rejects.toMatchObject({ status: 401, message: "请先使用手机验证码验证后登录商城" });
-    expect(issue).toHaveBeenCalledOnce();
+    expect(issue).not.toHaveBeenCalled();
   });
-  it("adds only safe international member display fields and keeps the domestic shape unchanged", () => {
+  it("adds only safe member display fields on every entrypoint", () => {
     const service = new AuthService({} as any, {} as any, {} as any, {} as any) as any;
     const session = { accessToken: "synthetic", refreshToken: "synthetic-refresh", expiresAt: "test", member: { id: memberId, nickname: "Member", memberNo: "1042", promo_code: "1042", emailMasked: "m***@example.com", phoneMasked: "+12***0123" } };
     const global = service.mallSession(session, "+12025550123");
     expect(global.user).toMatchObject({ memberNo: "1042", promo_code: "1042", emailMasked: "m***@example.com", phoneMasked: "+12***0123", mobile: "+12***0123" });
     expect(JSON.stringify(global)).not.toContain("+12025550123"); expect(global.user).not.toHaveProperty("emailVerifiedAt");
     vi.stubEnv("APP_REALM", "domestic");
-    expect(service.mallSession(session, "19900001234").user).toEqual({ id: memberId, nickname: "Member", mobile: "19900001234", avatarUrl: null });
+    expect(service.mallSession(session, "19900001234").user).toEqual(global.user);
   });
-  it("rotates an ordinary unverified global mall session without treating it as a temporary phone session", async () => {
+  it("does not elevate an unverified ordinary session during mall refresh", async () => {
     const update = vi.fn().mockResolvedValue({ count: 1 });
     const user = { id: memberId, status: "ACTIVE", emailVerifiedAt: null, mobileVerifiedAt: null };
     const service = new AuthService({ userSession: { findUnique: vi.fn().mockResolvedValue({ id: "session", user, userId: memberId, expiresAt: new Date(Date.now() + 300_000), revokedAt: null }), updateMany: update } } as any, {} as any, {} as any, {} as any);
     vi.spyOn(service as any, "sessionContract").mockResolvedValue({ member: { id: memberId }, accessToken: "test" });
-    await expect(service.refreshForMall("synthetic-refresh")).resolves.toMatchObject({ token: "test" });
-    expect(update).toHaveBeenCalledOnce();
+    await expect(service.refreshForMall("synthetic-refresh")).rejects.toMatchObject({ status: 403 });
+    expect(update).not.toHaveBeenCalled();
   });
 });
 

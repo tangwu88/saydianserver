@@ -1,5 +1,7 @@
 # Saydian赛电 App 服务端交接
 
+> 2026-10-02 统一服务端实施：最新发布机制见 [统一生产手册](unified-production.md) 和 [本轮实施记录](implementation-log/2026-10-02-unified-build-once.md)。下文独立国际发布、旧 SHA、硬盘容量和迁移门禁说明属于历史状态，不能作为本次上线完成证明。
+
 交接基线日期：2026-09-06；2026-09-09 补记隔离本地场景调试，下面既有生产发布记录未在本轮重新核验。当前源码仓库：`https://github.com/tangwu88/saydianserver`（Public），默认分支 `main`。
 
 ## 1. 当前状态

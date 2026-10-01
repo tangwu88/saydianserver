@@ -25,7 +25,10 @@ import {
   memberPromoterExternalId,
 } from "../common/member-promoter-identity";
 import { CommerceWithdrawalService } from "./commerce-withdrawal.service";
-import { employeeDashboardQuery, type EmployeeDashboardQuery } from "./employee-dashboard-query";
+import {
+  employeeDashboardQuery,
+  type EmployeeDashboardQuery,
+} from "./employee-dashboard-query";
 
 type WeComSettings = {
   corpId: string;
@@ -65,7 +68,8 @@ export class EmployeePromotionService {
 
   async oauth(codeInput: string) {
     const code = codeInput.trim();
-    if (!code) throw new BadRequestException("企业微信登录信息缺失，请重新进入");
+    if (!code)
+      throw new BadRequestException("企业微信登录信息缺失，请重新进入");
     const token = await this.wecomAccessToken();
     const response = await fetch(
       `https://qyapi.weixin.qq.com/cgi-bin/auth/getuserinfo?access_token=${encodeURIComponent(token)}&code=${encodeURIComponent(code)}`,
@@ -105,55 +109,133 @@ export class EmployeePromotionService {
     const filter = employeeDashboardQuery(query);
     const period = { gte: filter.start, lt: filter.end };
     const orderWhere = { referralEmployeeId: employeeId, createdAt: period };
-    const [employee, paid, refunded, orders, total, plan, withdrawal, recentAccruals] = await Promise.all([
+    const [
+      employee,
+      paid,
+      refunded,
+      orders,
+      total,
+      plan,
+      withdrawal,
+      recentAccruals,
+    ] = await Promise.all([
       this.prisma.commerceEmployee.findFirstOrThrow({
         where: { id: employeeId, active: true },
-        select: { id: true, name: true, avatarUrl: true, referralCode: true, departmentNames: true },
+        select: {
+          id: true,
+          name: true,
+          avatarUrl: true,
+          referralCode: true,
+          departmentNames: true,
+        },
       }),
       this.prisma.commerceOrder.aggregate({
         where: { referralEmployeeId: employeeId, paidAt: period },
-        _count: true, _sum: { payableCents: true },
+        _count: true,
+        _sum: { payableCents: true },
       }),
       this.prisma.paymentRefund.aggregate({
-        where: { status: RefundStatus.SUCCEEDED, completedAt: period,
-          paymentIntent: { commerceOrder: { is: { referralEmployeeId: employeeId } } } },
+        where: {
+          status: RefundStatus.SUCCEEDED,
+          completedAt: period,
+          paymentIntent: {
+            commerceOrder: { is: { referralEmployeeId: employeeId } },
+          },
+        },
         _sum: { amountCents: true },
       }),
       this.prisma.commerceOrder.findMany({
         where: orderWhere,
-        select: { id: true, orderNo: true, status: true, payableCents: true, paidAt: true, createdAt: true,
-          user: { select: { nickname: true } } },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: filter.skip, take: filter.pageSize,
+        select: {
+          id: true,
+          orderNo: true,
+          status: true,
+          payableCents: true,
+          paidAt: true,
+          createdAt: true,
+          user: { select: { nickname: true } },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: filter.skip,
+        take: filter.pageSize,
       }),
       this.prisma.commerceOrder.count({ where: orderWhere }),
-      this.prisma.commerceCommissionPlan.findUnique({ where: { id: "default" } }),
+      this.prisma.commerceCommissionPlan.findUnique({
+        where: { id: "default" },
+      }),
       this.withdrawals.employeeSummary(employeeId),
       this.prisma.commerceCommissionAccrual.findMany({
-        where: { employeeId, createdAt: period }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 10,
+        where: { employeeId, createdAt: period },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 10,
       }),
     ]);
-    let promotion: Awaited<ReturnType<EmployeePromotionService["promotion"]>> | null = null;
-    try { promotion = await this.promotion(employeeId); }
-    catch (error) { if (!(error instanceof ServiceUnavailableException)) throw error; }
+    let promotion: Awaited<
+      ReturnType<EmployeePromotionService["promotion"]>
+    > | null = null;
+    try {
+      promotion = await this.promotion(employeeId);
+    } catch (error) {
+      if (!(error instanceof ServiceUnavailableException)) throw error;
+    }
     // Aggregate null means a verified empty result set, not missing imported balances.
     const salesCents = paid._sum.payableCents ?? 0;
     const refundCents = refunded._sum.amountCents ?? 0;
     return {
-      employee, range: { key: filter.range, start: filter.start, end: filter.end, endExclusive: true, timezone: filter.timezone },
-      paidOrders: paid._count, salesCents, refundCents, netSalesCents: salesCents - refundCents,
-      metricBasis: { sales: "paidAt", refunds: "completedAt", orders: "createdAt" },
-      trend: null, trendStatus: "UNAVAILABLE", trendReason: "当前接口尚未提供逐日汇总，不以空数组或随机趋势代替",
-      orders, pagination: { page: filter.page, pageSize: filter.pageSize, total, hasMore: filter.skip + orders.length < total },
-      promotion, promotionStatus: promotion ? "AVAILABLE" : "UNCONFIGURED",
+      employee,
+      range: {
+        key: filter.range,
+        start: filter.start,
+        end: filter.end,
+        endExclusive: true,
+        timezone: filter.timezone,
+      },
+      paidOrders: paid._count,
+      salesCents,
+      refundCents,
+      netSalesCents: salesCents - refundCents,
+      metricBasis: {
+        sales: "paidAt",
+        refunds: "completedAt",
+        orders: "createdAt",
+      },
+      trend: null,
+      trendStatus: "UNAVAILABLE",
+      trendReason: "当前接口尚未提供逐日汇总，不以空数组或随机趋势代替",
+      orders,
+      pagination: {
+        page: filter.page,
+        pageSize: filter.pageSize,
+        total,
+        hasMore: filter.skip + orders.length < total,
+      },
+      promotion,
+      promotionStatus: promotion ? "AVAILABLE" : "UNCONFIGURED",
       bonus: {
-        plan: plan ? { enabled: plan.enabled, rateBps: plan.rateBps, settlementDays: plan.settlementDays,
-          withdrawalEnabled: withdrawal.plan.enabled, minimumWithdrawCents: withdrawal.plan.minimumWithdrawCents,
-          dailyWithdrawLimitCents: withdrawal.plan.dailyWithdrawLimitCents, reviewRequired: true } : null,
-        wallet: withdrawal.wallet, walletStatus: withdrawal.wallet ? "AVAILABLE" : "UNAVAILABLE",
-        recentAccruals, recentWithdrawals: withdrawal.withdrawals.slice(0, 20),
-        withdrawal: { canApply: withdrawal.canApply, identity: withdrawal.identity, pendingCount: withdrawal.pendingCount,
-          availableAmountCents: withdrawal.availableAmountCents, dailyUsedCents: withdrawal.dailyUsedCents,
-          dailyRemainingCents: withdrawal.dailyRemainingCents, payoutMode: withdrawal.payoutMode },
+        plan: plan
+          ? {
+              enabled: plan.enabled,
+              rateBps: plan.rateBps,
+              settlementDays: plan.settlementDays,
+              withdrawalEnabled: withdrawal.plan.enabled,
+              minimumWithdrawCents: withdrawal.plan.minimumWithdrawCents,
+              dailyWithdrawLimitCents: withdrawal.plan.dailyWithdrawLimitCents,
+              reviewRequired: true,
+            }
+          : null,
+        wallet: withdrawal.wallet,
+        walletStatus: withdrawal.wallet ? "AVAILABLE" : "UNAVAILABLE",
+        recentAccruals,
+        recentWithdrawals: withdrawal.withdrawals.slice(0, 20),
+        withdrawal: {
+          canApply: withdrawal.canApply,
+          identity: withdrawal.identity,
+          pendingCount: withdrawal.pendingCount,
+          availableAmountCents: withdrawal.availableAmountCents,
+          dailyUsedCents: withdrawal.dailyUsedCents,
+          dailyRemainingCents: withdrawal.dailyRemainingCents,
+          payoutMode: withdrawal.payoutMode,
+        },
       },
     };
   }
@@ -238,7 +320,11 @@ export class EmployeePromotionService {
       referralCode: employee.referralCode,
       linkUrl,
       qrDataUrl,
-      posterDataUrl: promotionPoster(employee.name, employee.referralCode, qrDataUrl),
+      posterDataUrl: promotionPoster(
+        employee.name,
+        employee.referralCode,
+        qrDataUrl,
+      ),
       qrType: "H5" as const,
     };
   }
@@ -252,7 +338,10 @@ export class EmployeePromotionService {
         status: CouponStatus.ACTIVE,
         validFrom: { lte: now },
         validUntil: { gte: now },
-        OR: [{ employeeClaimUntil: null }, { employeeClaimUntil: { gte: now } }],
+        OR: [
+          { employeeClaimUntil: null },
+          { employeeClaimUntil: { gte: now } },
+        ],
       },
       include: {
         employeeGrants: { where: { employeeId } },
@@ -268,7 +357,8 @@ export class EmployeePromotionService {
       ...coupon,
       remainingEmployeeQuota: Math.max(
         0,
-        coupon.perEmployeeLimit - (coupon.employeeGrants[0]?.allocatedQuantity ?? 0),
+        coupon.perEmployeeLimit -
+          (coupon.employeeGrants[0]?.allocatedQuantity ?? 0),
       ),
       gifts: coupon.gifts.map((gift) => ({
         id: gift.id,
@@ -281,13 +371,19 @@ export class EmployeePromotionService {
     }));
   }
 
-  async claimCoupons(employeeId: string, couponId: string, quantityInput: unknown) {
+  async claimCoupons(
+    employeeId: string,
+    couponId: string,
+    quantityInput: unknown,
+  ) {
     await this.expireGifts();
     const requestedInput = Number(quantityInput);
     const created = await this.prisma.$transaction(
       async (tx) => {
         const [employee, coupon] = await Promise.all([
-          tx.commerceEmployee.findFirst({ where: { id: employeeId, active: true } }),
+          tx.commerceEmployee.findFirst({
+            where: { id: employeeId, active: true },
+          }),
           tx.commerceCoupon.findUnique({ where: { id: couponId } }),
         ]);
         const now = new Date();
@@ -329,7 +425,15 @@ export class EmployeePromotionService {
           where: { id: grant.id },
           data: { allocatedQuantity: { increment: quantity } },
         });
-        const rows: Array<{ gift: { id: string; code: string; status: CouponGiftStatus; expiresAt: Date }; token: string }> = [];
+        const rows: Array<{
+          gift: {
+            id: string;
+            code: string;
+            status: CouponGiftStatus;
+            expiresAt: Date;
+          };
+          token: string;
+        }> = [];
         for (let index = 0; index < quantity; index += 1) {
           const token = randomToken();
           const gift = await tx.commerceCouponGift.create({
@@ -414,7 +518,8 @@ export class EmployeePromotionService {
             redeemedAt: now,
           },
         });
-        if (changed.count !== 1) throw new BadRequestException("优惠券已被领取");
+        if (changed.count !== 1)
+          throw new BadRequestException("优惠券已被领取");
         const claim = await tx.commerceCouponClaim.create({
           data: {
             couponId: gift.couponId,
@@ -455,7 +560,12 @@ export class EmployeePromotionService {
   }
 
   private async presentNewGift(
-    gift: { id: string; code: string; status: CouponGiftStatus; expiresAt: Date },
+    gift: {
+      id: string;
+      code: string;
+      status: CouponGiftStatus;
+      expiresAt: Date;
+    },
     token: string,
   ) {
     const base = (await this.storefrontBase()).replace(/\/+$/, "");
@@ -472,7 +582,10 @@ export class EmployeePromotionService {
 
   private async expireGifts() {
     const rows = await this.prisma.commerceCouponGift.findMany({
-      where: { status: CouponGiftStatus.RESERVED, expiresAt: { lt: new Date() } },
+      where: {
+        status: CouponGiftStatus.RESERVED,
+        expiresAt: { lt: new Date() },
+      },
       select: { id: true, couponId: true, grantId: true },
       take: 500,
     });
@@ -528,7 +641,7 @@ export class EmployeePromotionService {
         avatarUrl: optionalString(result.avatar),
         departmentNames: Array.isArray(result.department)
           ? result.department.map(String)
-          : existing?.departmentNames ?? [],
+          : (existing?.departmentNames ?? []),
         active: true,
       },
     });
@@ -566,14 +679,21 @@ export class EmployeePromotionService {
         data: {
           state: IntegrationState.ERROR,
           lastCheckedAt: new Date(),
-          lastError: `token:${String(result.errcode ?? response.status)}`.slice(0, 300),
+          lastError: `token:${String(result.errcode ?? response.status)}`.slice(
+            0,
+            300,
+          ),
         },
       });
-      throw new ServiceUnavailableException("企业微信登录暂时无法使用，请稍后再试");
+      throw new ServiceUnavailableException(
+        "企业微信登录暂时无法使用，请稍后再试",
+      );
     }
     this.cachedWeComToken = {
       value,
-      expiresAt: Date.now() + Math.max(60, Number(result.expires_in ?? 7200) - 300) * 1000,
+      expiresAt:
+        Date.now() +
+        Math.max(60, Number(result.expires_in ?? 7200) - 300) * 1000,
     };
     await this.prisma.integrationConfig.updateMany({
       where: { key: "wecom" },
@@ -585,14 +705,32 @@ export class EmployeePromotionService {
   // Generating a local share link is not an enterprise-WeChat provider call.
   // OAuth itself still uses wecomSettings and remains unavailable without credentials.
   private async storefrontBase() {
-    const config = await this.prisma.integrationConfig.findUnique({ where: { key: "wecom" } });
-    const configured = env("COMMERCE_STOREFRONT_URL", String(safeObject(config?.publicConfig).storefrontUrl ?? "")).replace(/#.*$/, "");
+    const config = await this.prisma.integrationConfig.findUnique({
+      where: { key: "wecom" },
+    });
+    const configured = env(
+      "COMMERCE_STOREFRONT_URL",
+      String(safeObject(config?.publicConfig).storefrontUrl ?? ""),
+    ).replace(/#.*$/, "");
     try {
       const url = new URL(configured);
       const local = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
-      if (url.username || url.password || url.search || (url.protocol !== "https:" && !(env("NODE_ENV", "development") !== "production" && local && url.protocol === "http:"))) throw new Error();
+      if (
+        url.username ||
+        url.password ||
+        url.search ||
+        (url.protocol !== "https:" &&
+          !(
+            env("NODE_ENV", "development") !== "production" &&
+            local &&
+            url.protocol === "http:"
+          ))
+      )
+        throw new Error();
       return url.toString().replace(/\/+$/, "");
-    } catch { throw new ServiceUnavailableException("商城推广地址尚未配置"); }
+    } catch {
+      throw new ServiceUnavailableException("商城推广地址尚未配置");
+    }
   }
 
   private async wecomSettings(): Promise<WeComSettings> {
@@ -600,7 +738,9 @@ export class EmployeePromotionService {
       where: { key: "wecom" },
     });
     if (!integration || integration.state !== IntegrationState.CONFIGURED) {
-      throw new ServiceUnavailableException("企业微信登录暂时无法使用，请稍后再试");
+      throw new ServiceUnavailableException(
+        "企业微信登录暂时无法使用，请稍后再试",
+      );
     }
     const publicConfig = safeObject(integration.publicConfig);
     const secrets = await this.integrationSecrets.resolve("wecom", {
@@ -616,13 +756,17 @@ export class EmployeePromotionService {
       String(publicConfig.storefrontUrl ?? ""),
     ).replace(/#.*$/, "");
     if (!corpId || !agentId || !secret || !storefrontUrl) {
-      throw new ServiceUnavailableException("企业微信登录暂时无法使用，请稍后再试");
+      throw new ServiceUnavailableException(
+        "企业微信登录暂时无法使用，请稍后再试",
+      );
     }
     let storefrontHost: string;
     try {
       storefrontHost = new URL(storefrontUrl).hostname.toLowerCase();
     } catch {
-      throw new ServiceUnavailableException("企业微信登录暂时无法使用，请稍后再试");
+      throw new ServiceUnavailableException(
+        "企业微信登录暂时无法使用，请稍后再试",
+      );
     }
     const configuredHosts = Array.isArray(publicConfig.allowedRedirectHosts)
       ? publicConfig.allowedRedirectHosts.map(String)
@@ -641,7 +785,6 @@ export class EmployeePromotionService {
     );
     return { corpId, agentId, secret, storefrontUrl, allowedRedirectHosts };
   }
-
 }
 
 export function validateEmployeeRedirectUri(
@@ -683,17 +826,25 @@ function optionalString(value: unknown) {
   return text || null;
 }
 
-function promotionPoster(name: string, referralCode: string, qrDataUrl: string) {
+function promotionPoster(
+  name: string,
+  referralCode: string,
+  qrDataUrl: string,
+) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="750" height="1120" viewBox="0 0 750 1120"><defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#153f39"/><stop offset="1" stop-color="#287d6c"/></linearGradient></defs><rect width="750" height="1120" rx="36" fill="url(#b)"/><text x="72" y="130" fill="#fff" font-size="50" font-weight="700">赛电智能健康生活</text><text x="72" y="190" fill="#d8eee8" font-size="28">官方商城 · 正品服务 · 售后可查</text><rect x="72" y="280" width="606" height="690" rx="34" fill="#fff"/><text x="375" y="370" text-anchor="middle" fill="#183f38" font-size="30" font-weight="700">${escapeXml(name)} 为您推荐</text><image href="${qrDataUrl}" x="145" y="430" width="460" height="460"/><text x="375" y="930" text-anchor="middle" fill="#6e7e7a" font-size="24">微信扫码进入赛电商城</text><text x="375" y="1035" text-anchor="middle" fill="#d6ece6" font-size="24">推荐号 ${escapeXml(referralCode)}</text></svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
 function escapeXml(value: string) {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&apos;",
-  })[character] ?? character);
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&apos;",
+      })[character] ?? character,
+  );
 }

@@ -3,14 +3,7 @@ import { globalApiAllowed } from "./realm-config";
 import { safeMallRoute } from "./commerce-model";
 let sessionGeneration = 0;
 let loginRedirecting = false;
-let defaultApiBase = "/api/saidian-mall/v1";
-/* #ifdef MP-WEIXIN */
-defaultApiBase = "https://stest.saydian.cn/api/saidian-mall/v1";
-/* #endif */
-export const API_BASE = (isGlobalMall ? mallConfig.apiBase : import.meta.env.VITE_API_BASE || defaultApiBase).replace(
-  /\/$/,
-  "",
-);
+export const API_BASE = mallConfig.apiBase;
 let miniLoginPromise: Promise<any> | null = null;
 let refreshPromise: Promise<any> | null = null;
 export const COMMERCE_CONSENT_VERSION = "commerce-legal-v1";

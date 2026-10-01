@@ -458,24 +458,41 @@ model ActivityGoal {
 }
 
 model DeviceBinding {
-  id            String         @id @default(uuid()) @db.Uuid
-  userId        String         @db.Uuid
-  hardwareKey   String         @unique
-  vendor        String
-  model         String
-  displayName   String
-  firmware      String?
-  capabilities  Json
-  syncCursor    String?
-  boundAt       DateTime       @default(now())
-  unboundAt     DateTime?
-  lastSeenAt    DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  healthRecords HealthRecord[]
+  id               String                  @id @default(uuid()) @db.Uuid
+  userId           String                  @db.Uuid
+  hardwareKey      String                  @unique
+  vendor           String
+  model            String
+  displayName      String
+  macAddress       String?                 @db.VarChar(17)
+  firmware         String?
+  capabilities     Json
+  syncCursor       String?
+  boundAt          DateTime                @default(now())
+  unboundAt        DateTime?
+  lastSeenAt       DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  healthRecords    HealthRecord[]
+  connectionEvents DeviceConnectionEvent[]
 
   @@index([userId, unboundAt])
+}
+
+model DeviceConnectionEvent {
+  id              String        @id @default(uuid()) @db.Uuid
+  deviceBindingId String        @db.Uuid
+  connectedAt     DateTime      @default(now())
+  vendor          String
+  model           String
+  displayName     String
+  macAddress      String?       @db.VarChar(17)
+  firmware        String?
+  rawPayload      String
+  deviceBinding   DeviceBinding @relation(fields: [deviceBindingId], references: [id], onDelete: Cascade)
+
+  @@index([deviceBindingId, connectedAt])
 }
 
 model HealthRecord {
@@ -497,6 +514,11 @@ model HealthRecord {
   deviceBindingId         String?        @db.Uuid
   // Scoped device fingerprint also preserves identity before a device is bound.
   sourceDeviceKey         String?
+  // Versioned daily summaries retain every upload while only the newest
+  // version in each member/metric/device/local-date fold is query-visible.
+  aggregationKind         String?        @db.VarChar(32)
+  aggregationLocalDate    String?        @db.VarChar(10)
+  aggregationActive       Boolean        @default(false)
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
   user                    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -506,6 +528,7 @@ model HealthRecord {
   @@unique([userId, clientRecordId])
   @@index([userId, metric, observedAt])
   @@index([deviceBindingId, observedAt])
+  @@index([userId, aggregationKind, aggregationActive, aggregationLocalDate])
 }
 
 model EcgArtifact {

@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
 import { hash } from "bcryptjs";
 import { IntegrationState, PaymentChannel } from "@prisma/client";
 import { sha256 } from "../common/crypto";
 import { AuthService } from "./auth.service";
+import { GlobalWechatBindingService } from "./global-wechat-binding.service";
 import { WechatH5AuthService, officialRedirectUri, safeH5ReturnTo } from "./wechat-h5-auth.service";
 import { verifiedWechatProfile } from "./wechat-h5-profile";
 import { CommerceCapabilitiesService } from "../commerce/commerce-capabilities.service";
@@ -12,7 +13,8 @@ import { PaymentProviderService, trustedPaymentUrl, commerceAlipayReturnUrl, com
 const verifier = "v".repeat(64);
 const stateText = "a".repeat(64);
 const bindTicket = "b".repeat(64);
-const mobile = "19900001234";
+const mobile = "+8619900001234";
+beforeEach(() => { for (const [key, value] of Object.entries({ GLOBAL_WECHAT_H5_ENABLED: "true", H5_DEMO_ENABLED: "false", BUSINESS_WRITES_PAUSED: "false", MAINTENANCE_READ_ONLY: "false", GLOBAL_WECHAT_PHONE_TEST_ENABLED: "false" })) vi.stubEnv(key, value); });
 const config = { appId: "wx1234567890abcdef", appSecret: "synthetic-test-only-secret", redirectUri: "https://demo.invalid/login" };
 const future = () => new Date(Date.now() + 60_000);
 function harness() {
@@ -27,13 +29,15 @@ function harness() {
     wechatOfficialIdentity: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn() },
     user: { findUnique: vi.fn().mockResolvedValue(user), update: vi.fn().mockResolvedValue(user), updateMany: vi.fn(), create: vi.fn().mockResolvedValue(user) },
     consentRecord: { upsert: vi.fn() }, commerceEmployee: { findFirst: vi.fn() },
-    integrationConfig: { updateMany: vi.fn(), findUnique: vi.fn().mockResolvedValue({ state: IntegrationState.UNCONFIGURED }) },
+    integrationConfig: { updateMany: vi.fn(), findUnique: vi.fn().mockResolvedValue({ state: IntegrationState.CONFIGURED }) },
+    globalLegalDocument: { findMany: vi.fn().mockResolvedValue(["user_agreement", "privacy_policy"].map(documentType => ({ documentType, version: "commerce-legal-v1", locale: "en", contentHtml: "Synthetic reviewed terms" }))) },
     $queryRaw: vi.fn(),
   };
   const prisma = { ...db, $transaction: vi.fn(async (work: (tx: typeof db) => unknown) => work(db)) };
   const session = { token: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: future().toISOString(), user: { id: user.id, mobile } };
   const auth = { issueMallSession: vi.fn().mockResolvedValue(session), consumeMobileBindingCode: vi.fn(), bindReferral: vi.fn() };
-  const service = new WechatH5AuthService(prisma as any, auth as any, { resolve: vi.fn() } as any);
+  const binding = new GlobalWechatBindingService(prisma as any, auth as any, {} as any);
+  const service = new WechatH5AuthService(prisma as any, auth as any, { resolve: vi.fn() } as any, binding);
   vi.spyOn(service, "configured").mockResolvedValue(config);
   const fetchMock = vi.fn(async (input: URL | RequestInfo) => String(input).includes("/sns/userinfo")
     ? new Response(JSON.stringify({ openid: ticket.openId, nickname: "微信会员", headimgurl: "https://cdn.example.invalid/wechat.png" }))
@@ -57,12 +61,12 @@ describe("official-account H5 contract", () => {
     expect(lookup).toHaveBeenCalledWith({ where: { mobile } });
     expect(issuance).toHaveBeenCalledWith("existing-user-id");
     expect(result).toEqual({ token: session.accessToken, refreshToken: session.refreshToken, expiresAt: session.expiresAt,
-      user: { id: session.member.id, mobile, nickname: "客户", avatarUrl: null } });
+      user: { id: session.member.id, mobile: "199****1234", nickname: "客户", avatarUrl: null, memberNo: null, promo_code: null, emailMasked: null, phoneMasked: null } });
     expect(result).not.toHaveProperty("data");
   });
   it("uses a server-minted state hash and a fixed configured callback", async () => {
     const h = harness();
-    const result = await h.service.authorize({ returnTo: "/orders?status=paid", codeChallenge: sha256(verifier) });
+    const result = await h.service.authorize({ returnTo: "/orders?status=paid", codeChallenge: sha256(verifier), consentVersion: "commerce-legal-v1" });
     const url = new URL(result.authorizeUrl);
     expect(url.origin).toBe("https://open.weixin.qq.com");
     expect(url.searchParams.get("redirect_uri")).toBe(config.redirectUri);
@@ -72,20 +76,20 @@ describe("official-account H5 contract", () => {
   });
   it("rejects a verifier copied from a different browser before provider access", async () => {
     const h = harness();
-    await expect(h.service.login({ ...loginInput(), codeVerifier: "x".repeat(64) })).rejects.toThrow("已失效");
+    await expect(h.service.login({ ...loginInput(), codeVerifier: "x".repeat(64) })).rejects.toThrow("expired");
     expect(h.fetchMock).not.toHaveBeenCalled();
     expect(h.db.commerceOAuthState.updateMany).not.toHaveBeenCalled();
   });
   it("rejects consumed and expired states without requesting the provider", async () => {
     const h = harness(); h.state.consumedAt = new Date();
-    await expect(h.service.login(loginInput())).rejects.toThrow("已失效");
+    await expect(h.service.login(loginInput())).rejects.toThrow("expired");
     h.state.consumedAt = null; h.state.expiresAt = new Date(0);
-    await expect(h.service.login(loginInput())).rejects.toThrow("已失效");
+    await expect(h.service.login(loginInput())).rejects.toThrow("expired");
     expect(h.fetchMock).not.toHaveBeenCalled();
   });
   it("only the CAS winner may exchange a code", async () => {
     const h = harness(); h.db.commerceOAuthState.updateMany.mockResolvedValue({ count: 0 });
-    await expect(h.service.login(loginInput())).rejects.toThrow("已失效");
+    await expect(h.service.login(loginInput())).rejects.toThrow("expired");
     expect(h.fetchMock).not.toHaveBeenCalled();
   });
   it("returns a binding ticket, not a consumer token or anonymous User", async () => {
@@ -106,7 +110,7 @@ describe("official-account H5 contract", () => {
     const result = await h.service.login(loginInput());
     expect(result).toMatchObject({ requiresMobileBinding: false, token: h.session.token, user: { id: h.user.id } });
     expect(h.db.wechatOfficialIdentity.findUnique).toHaveBeenCalledWith({
-      where: { appId_openId: { appId: config.appId, openId: h.ticket.openId } }, include: { user: true },
+      where: { appId_openId: { appId: config.appId, openId: h.ticket.openId } },
     });
   });
   it("phone verification links an existing mobile User without replacing it", async () => {
@@ -117,6 +121,18 @@ describe("official-account H5 contract", () => {
     expect(h.db.wechatOfficialIdentity.create.mock.calls[0]![0].data).toMatchObject({
       userId: "user-1", appId: config.appId, openId: h.ticket.openId,
     });
+  });
+  it("legacy phone binding cannot bypass Say Ring's product-specific consent flow", async () => {
+    const h = harness(); Object.assign(h.ticket, { product: "say-ring" });
+    await expect(h.service.bindMobile(bindInput())).rejects.toThrow(/product-specific/);
+    expect(h.auth.consumeMobileBindingCode).not.toHaveBeenCalled();
+    expect(h.auth.issueMallSession).not.toHaveBeenCalled();
+  });
+  it("legacy SMS binding cannot claim an unverified password account without its original password", async () => {
+    const h = harness(); Object.assign(h.user, { mobileVerifiedAt: null, passwordHash: "synthetic-existing-hash" });
+    await expect(h.service.bindMobile(bindInput())).rejects.toThrow(/原密码/);
+    expect(h.db.user.update).not.toHaveBeenCalled();
+    expect(h.auth.issueMallSession).not.toHaveBeenCalled();
   });
   it("does not move an existing identity across two mobile accounts", async () => {
     const h = harness();
@@ -136,7 +152,7 @@ describe("official-account H5 contract", () => {
   });
   it("rejects a replayed binding ticket before SMS consumption", async () => {
     const h = harness(); h.ticket.consumedAt = new Date();
-    await expect(h.service.bindMobile(bindInput())).rejects.toThrow("已失效");
+    await expect(h.service.bindMobile(bindInput())).rejects.toThrow("expired");
     expect(h.auth.consumeMobileBindingCode).not.toHaveBeenCalled();
   });
   it("will not bind or issue sessions when SMS verification fails", async () => {
@@ -155,7 +171,8 @@ describe("official-account H5 contract", () => {
   });
   it("keeps missing official integration unavailable without networking", async () => {
     const h = harness(); vi.mocked(h.service.configured).mockRestore();
-    await expect(h.service.authorize({ returnTo: "/", codeChallenge: sha256(verifier) })).rejects.toThrow("未配置");
+    h.db.integrationConfig.findUnique.mockResolvedValue({ state: IntegrationState.UNCONFIGURED } as any);
+    await expect(h.service.authorize({ returnTo: "/", codeChallenge: sha256(verifier), consentVersion: "commerce-legal-v1" })).rejects.toThrow("not configured");
     expect(h.fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -165,11 +182,11 @@ describe("H5 public capabilities", () => {
     vi.stubEnv("NODE_ENV", "development"); vi.stubEnv("H5_DEMO_ENABLED", "true"); vi.stubEnv("ALLOW_TEST_OTP", "true");
     vi.stubEnv("MAINTENANCE_READ_ONLY", "false"); vi.stubEnv("BUSINESS_WRITES_PAUSED", "false"); vi.stubEnv("WORKER_OUTBOUND_PAUSED", "false");
     const secrets = { resolve: vi.fn() };
-    const service = new CommerceCapabilitiesService({ integrationConfig: { findMany: vi.fn().mockResolvedValue([]) } } as any,
-      secrets as any, { configured: vi.fn().mockRejectedValue(new Error("not configured")) } as any,
+    const service = new CommerceCapabilitiesService({ integrationConfig: { findMany: vi.fn().mockResolvedValue([]) }, commerceBusinessConfig: { findUnique: vi.fn().mockResolvedValue(null) } } as any,
+      secrets as any, { configured: vi.fn().mockRejectedValue(new Error("not configured")), globalCapabilities: vi.fn().mockResolvedValue({ wechatH5: { enabled: false } }) } as any,
       { capabilities: vi.fn().mockResolvedValue({ email: false, sms: false, smsCountries: [] }) } as any);
     const result = await service.publicCapabilities();
-    expect(result).toMatchObject({ demo: true, maintenance: { readOnly: false }, login: { password: { enabled: true }, sms: { enabled: true }, wechatH5: { enabled: false } } });
+    expect(result).toMatchObject({ demo: false, maintenance: { readOnly: false }, login: { password: { enabled: true }, sms: { enabled: false }, wechatH5: { enabled: false } } });
     expect(result.payments.every(item => !item.enabled)).toBe(true);
     expect(secrets.resolve).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toMatch(/appSecret|privateKey|merchantId/);
@@ -188,11 +205,11 @@ describe("scoped JSAPI payer", () => {
     const outbound = vi.spyOn(service as any, "wechatRequest").mockResolvedValue({ code_url: "weixin://wxpay/bizpayurl?pr=synthetic" });
     const input = { id: "intent-1", paymentNo: "synthetic-payment", amountCents: 100, currency: "CNY",
       description: "synthetic", businessId: "order-1", channel: PaymentChannel.WECHAT_NATIVE };
-    const result = await service.create(input, {});
+    const result = await (service as any).createWechat(input, {});
     expect(result.codeUrl).toBe("weixin://wxpay/bizpayurl?pr=synthetic");
     expect(result.qrDataUrl).toMatch(/^data:image\/png;base64,/);
     outbound.mockResolvedValue({ code_url: "https://evil.invalid" });
-    await expect(service.create(input, {})).rejects.toThrow("二维码");
+    await expect((service as any).createWechat(input, {})).rejects.toThrow("二维码");
   });
   it("rejects arbitrary payment redirects and fixes the commerce return route", () => {
     vi.stubEnv("NODE_ENV", "development");
@@ -220,7 +237,7 @@ describe("scoped JSAPI payer", () => {
       merchantId: "synthetic-merchant", serialNo: "synthetic-serial", privateKeyPem: keys.privateKey, appIdOfficial: config.appId,
     }) } as any);
     const outbound = vi.spyOn(service as any, "wechatRequest").mockResolvedValue({ prepay_id: "synthetic-prepay" });
-    await service.create({ id: "intent-1", userId: "member-1", paymentNo: "synthetic-payment", amountCents: 100,
+    await (service as any).createWechat({ id: "intent-1", userId: "member-1", paymentNo: "synthetic-payment", amountCents: 100,
       currency: "CNY", description: "synthetic", businessId: "order-1", channel: PaymentChannel.WECHAT_JSAPI }, { wechatOpenId: "wrong-mini-openid" });
     expect(outbound.mock.calls[0]![2]).toMatchObject({ appid: config.appId, payer: { openid: "official-payer" } });
   });

@@ -3,7 +3,7 @@ import { Gender, Prisma } from "@prisma/client";
 import { AuthService } from "../auth/auth.service";
 import { PrismaService } from "../common/prisma.service";
 import { safeObject } from "../common/crypto";
-import { isGlobalRealm } from "../common/deployment-realm";
+
 import { globalLocale } from "../auth/global-identity";
 
 @Injectable()
@@ -20,14 +20,17 @@ export class MembersService {
   async saveProfile(userId: string, input: unknown) {
     const body = safeObject(input);
     const data: Prisma.UserUpdateInput = {};
-    if (isGlobalRealm() && body.locale !== undefined) data.locale = globalLocale(body.locale);
+    if (body.locale !== undefined) data.locale = globalLocale(body.locale);
     if (body.nickname !== undefined) {
       const nickname = String(body.nickname).trim();
-      if (!nickname || nickname.length > 40) throw new BadRequestException("昵称不正确");
+      if (!nickname || nickname.length > 40)
+        throw new BadRequestException("昵称不正确");
       data.nickname = nickname;
     }
     if (body.avatarUrl !== undefined || body.head_portrait !== undefined) {
-      const avatarUrl = String(body.avatarUrl ?? body.head_portrait ?? "").trim();
+      const avatarUrl = String(
+        body.avatarUrl ?? body.head_portrait ?? "",
+      ).trim();
       if (avatarUrl && !/^https?:\/\//i.test(avatarUrl)) {
         throw new BadRequestException("头像地址不正确");
       }
@@ -44,7 +47,10 @@ export class MembersService {
     }
     if (body.birthday !== undefined) {
       const birthday = body.birthday ? new Date(String(body.birthday)) : null;
-      if (birthday && (Number.isNaN(birthday.valueOf()) || birthday >= new Date())) {
+      if (
+        birthday &&
+        (Number.isNaN(birthday.valueOf()) || birthday >= new Date())
+      ) {
         throw new BadRequestException("出生日期不正确");
       }
       data.birthday = birthday;
@@ -56,7 +62,9 @@ export class MembersService {
       if (body[field] !== undefined || body[legacyField] !== undefined) {
         const value = Number(body[field] ?? body[legacyField]);
         if (!Number.isFinite(value) || value < min || value > max) {
-          throw new BadRequestException(field === "heightCm" ? "身高不正确" : "体重不正确");
+          throw new BadRequestException(
+            field === "heightCm" ? "身高不正确" : "体重不正确",
+          );
         }
         data[field] = new Prisma.Decimal(value);
       }
@@ -66,7 +74,9 @@ export class MembersService {
   }
 
   async goals(userId: string) {
-    const goal = await this.prisma.activityGoal.findUnique({ where: { userId } });
+    const goal = await this.prisma.activityGoal.findUnique({
+      where: { userId },
+    });
     return {
       steps: goal?.steps ?? null,
       distanceMeters: goal?.distanceMeters ?? null,

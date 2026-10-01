@@ -34,6 +34,7 @@ function fixture(publicConfig: Record<string, unknown> = {}) {
     commerceSku: {
       findUnique: vi.fn().mockResolvedValue(null),
       upsert: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   };
   const prisma = {
@@ -87,6 +88,20 @@ const inventory = {
   modified: "2026-09-15 10:01:00",
 };
 
+const productVariant = {
+  ...product,
+  sku_id: "ERP-SKU-002",
+  properties_value: "银色",
+  sku_code: "690000000002",
+  pic_big: "https://cdn.example.invalid/watch-silver.jpg",
+};
+
+const inventoryVariant = {
+  ...inventory,
+  sku_id: "ERP-SKU-002",
+  qty: 4,
+};
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -104,7 +119,16 @@ describe("administrator direct Jushuitan product import", () => {
         providerResponse({ code: 0, data: { datas: [product] } }),
       )
       .mockResolvedValueOnce(
-        providerResponse({ code: 0, data: { datas: [inventory] } }),
+        providerResponse({
+          code: 0,
+          data: { datas: [product, productVariant] },
+        }),
+      )
+      .mockResolvedValueOnce(
+        providerResponse({
+          code: 0,
+          data: { datas: [inventory, inventoryVariant] },
+        }),
       );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -116,18 +140,24 @@ describe("administrator direct Jushuitan product import", () => {
       },
     );
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(String(fetchMock.mock.calls[0]![0])).toBe(
       "https://openapi.jushuitan.com/open/sku/query",
     );
     expect(String(fetchMock.mock.calls[1]![0])).toBe(
+      "https://openapi.jushuitan.com/open/sku/query",
+    );
+    expect(String(fetchMock.mock.calls[2]![0])).toBe(
       "https://openapi.jushuitan.com/open/inventory/query",
     );
     const productParams = new URLSearchParams(
       String(fetchMock.mock.calls[0]![1]!.body),
     );
-    const inventoryParams = new URLSearchParams(
+    const familyParams = new URLSearchParams(
       String(fetchMock.mock.calls[1]![1]!.body),
+    );
+    const inventoryParams = new URLSearchParams(
+      String(fetchMock.mock.calls[2]![1]!.body),
     );
     expect(JSON.parse(productParams.get("biz")!)).toEqual({
       sku_ids: "ERP-SKU-001",
@@ -136,8 +166,15 @@ describe("administrator direct Jushuitan product import", () => {
       flds: "purchase_price,pics",
       loadSkuBin: true,
     });
+    expect(JSON.parse(familyParams.get("biz")!)).toEqual({
+      i_ids: ["ITEM-001"],
+      page_index: 1,
+      page_size: 100,
+      flds: "purchase_price,pics",
+      loadSkuBin: true,
+    });
     expect(JSON.parse(inventoryParams.get("biz")!)).toEqual({
-      sku_ids: "ERP-SKU-001",
+      sku_ids: "ERP-SKU-001,ERP-SKU-002",
       page_index: 1,
       page_size: 100,
       has_lock_qty: true,
@@ -145,7 +182,7 @@ describe("administrator direct Jushuitan product import", () => {
     expect(productParams.get("sign")).toMatch(/^[0-9a-f]{32}$/);
     expect(
       h.tx.commerceProduct.findUnique.mock.invocationCallOrder[0],
-    ).toBeGreaterThan(fetchMock.mock.invocationCallOrder[1]!);
+    ).toBeGreaterThan(fetchMock.mock.invocationCallOrder[2]!);
     expect(h.tx.commerceProduct.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
@@ -177,10 +214,29 @@ describe("administrator direct Jushuitan product import", () => {
         }),
       }),
     );
+    expect(h.tx.commerceSku.upsert).toHaveBeenCalledTimes(2);
+    expect(h.tx.commerceSku.upsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          erpSkuId: "ERP-SKU-002",
+          specification: "银色",
+          stock: 4,
+        }),
+      }),
+    );
+    expect(h.tx.commerceSku.updateMany).toHaveBeenCalledWith({
+      where: {
+        productId: h.saved.id,
+        erpSkuId: { notIn: ["ERP-SKU-001", "ERP-SKU-002"] },
+      },
+      data: { enabled: false, stock: 0 },
+    });
     expect(result).toMatchObject({
       id: h.saved.id,
       erpLookup: {
         requestedSku: "ERP-SKU-001",
+        erpItemId: "ITEM-001",
+        skuCount: 2,
         product: { category: "血压手表", supplier_id: 321 },
         inventory: { qty: 7, order_lock: 2, pick_lock: 1 },
       },
@@ -206,6 +262,13 @@ describe("administrator direct Jushuitan product import", () => {
         providerResponse({
           code: 0,
           issuccess: true,
+          data: { datas: [product] },
+        }),
+      )
+      .mockResolvedValueOnce(
+        providerResponse({
+          code: 0,
+          issuccess: true,
           data: { inventorys: [inventory] },
         }),
       );
@@ -216,17 +279,24 @@ describe("administrator direct Jushuitan product import", () => {
     });
 
     const productUrl = new URL(String(fetchMock.mock.calls[0]![0]));
-    const inventoryUrl = new URL(String(fetchMock.mock.calls[1]![0]));
+    const familyUrl = new URL(String(fetchMock.mock.calls[1]![0]));
+    const inventoryUrl = new URL(String(fetchMock.mock.calls[2]![0]));
     expect(productUrl.origin + productUrl.pathname).toBe(
       "https://open.erp321.com/api/open/query.aspx",
     );
     expect(productUrl.searchParams.get("method")).toBe("sku.query");
+    expect(familyUrl.searchParams.get("method")).toBe("sku.query");
     expect(inventoryUrl.searchParams.get("method")).toBe("inventory.query");
     expect(productUrl.searchParams.get("sign")).toMatch(/^[0-9a-f]{32}$/);
     expect(JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))).toEqual({
       sku_ids: "ERP-SKU-001",
       page_index: 1,
       page_size: 20,
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]![1]!.body))).toEqual({
+      i_ids: ["ITEM-001"],
+      page_index: 1,
+      page_size: 100,
     });
     expect(h.prisma.$transaction).toHaveBeenCalledOnce();
   });
@@ -235,6 +305,9 @@ describe("administrator direct Jushuitan product import", () => {
     const h = fixture();
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce(
+        providerResponse({ code: 0, data: { datas: [product] } }),
+      )
       .mockResolvedValueOnce(
         providerResponse({ code: 0, data: { datas: [product] } }),
       )

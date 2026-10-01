@@ -35,16 +35,19 @@ function harness() {
   const tickets = new Map<string, any>();
   const challenges = new Map<string, any>();
   const throttles = new Map<string, Date>();
-  const legalRows = ["user_agreement", "privacy_policy", "say_ring_user_agreement", "say_ring_privacy_policy"].map(
-    (documentType) => ({
-      documentType,
-      version: "legal-v1",
-      locale: "zh-Hans",
-      contentHtml: "Synthetic legal text",
-      reviewed: true,
-      active: true,
-    }),
-  );
+  const legalRows = [
+    "user_agreement",
+    "privacy_policy",
+    "say_ring_user_agreement",
+    "say_ring_privacy_policy",
+  ].map((documentType) => ({
+    documentType,
+    version: "legal-v1",
+    locale: "zh-Hans",
+    contentHtml: "Synthetic legal text",
+    reviewed: true,
+    active: true,
+  }));
 
   const userFor = (where: any) =>
     users.find((user) =>
@@ -52,11 +55,13 @@ function harness() {
     ) ?? null;
   const identityFor = (where: any) => {
     if (where.appId_openId) {
-      return identities.find(
-        (item) =>
-          item.appId === where.appId_openId.appId &&
-          item.openId === where.appId_openId.openId,
-      ) ?? null;
+      return (
+        identities.find(
+          (item) =>
+            item.appId === where.appId_openId.appId &&
+            item.openId === where.appId_openId.openId,
+        ) ?? null
+      );
     }
     return null;
   };
@@ -68,10 +73,17 @@ function harness() {
         publicConfig: {},
       })),
     },
-    globalLegalDocument: { findMany: vi.fn(async ({ where }: any) => legalRows.filter(row => where.documentType.in.includes(row.documentType))) },
+    globalLegalDocument: {
+      findMany: vi.fn(async ({ where }: any) =>
+        legalRows.filter((row) =>
+          where.documentType.in.includes(row.documentType),
+        ),
+      ),
+    },
     globalVerificationThrottle: {
       upsert: vi.fn(async ({ where, create }: any) => {
-        if (!throttles.has(where.key)) throttles.set(where.key, create.reservedAt);
+        if (!throttles.has(where.key))
+          throttles.set(where.key, create.reservedAt);
       }),
       updateMany: vi.fn(async ({ where, data }: any) => {
         const current = throttles.get(where.key);
@@ -81,13 +93,14 @@ function harness() {
       }),
     },
     globalVerificationChallenge: {
-      count: vi.fn(async ({ where }: any) =>
-        [...challenges.values()].filter(
-          (row) =>
-            row.channel === where.channel &&
-            row.identifier === where.identifier &&
-            row.createdAt > where.createdAt.gt,
-        ).length,
+      count: vi.fn(
+        async ({ where }: any) =>
+          [...challenges.values()].filter(
+            (row) =>
+              row.channel === where.channel &&
+              row.identifier === where.identifier &&
+              row.createdAt > where.createdAt.gt,
+          ).length,
       ),
       create: vi.fn(async ({ data }: any) => {
         challenges.set(data.id, {
@@ -98,8 +111,8 @@ function harness() {
           createdAt: new Date(),
         });
       }),
-      findUnique: vi.fn(async ({ where }: any) =>
-        challenges.get(where.id) ?? null,
+      findUnique: vi.fn(
+        async ({ where }: any) => challenges.get(where.id) ?? null,
       ),
       update: vi.fn(async ({ where, data }: any) =>
         Object.assign(challenges.get(where.id), data),
@@ -120,14 +133,16 @@ function harness() {
       }),
     },
     commerceWechatBindTicket: {
-      create: vi.fn(async ({ data }: any) => tickets.set(data.tokenHash, {
-        ...data,
-        referralCode: null,
-        consumedAt: null,
-        createdAt: new Date(),
-      })),
-      findUnique: vi.fn(async ({ where }: any) =>
-        tickets.get(where.tokenHash) ?? null,
+      create: vi.fn(async ({ data }: any) =>
+        tickets.set(data.tokenHash, {
+          ...data,
+          referralCode: null,
+          consumedAt: null,
+          createdAt: new Date(),
+        }),
+      ),
+      findUnique: vi.fn(
+        async ({ where }: any) => tickets.get(where.tokenHash) ?? null,
       ),
       updateMany: vi.fn(async ({ where, data }: any) => {
         const row = tickets.get(where.tokenHash);
@@ -150,8 +165,9 @@ function harness() {
           ? { ...row, user: userFor({ id: row.userId }) }
           : row;
       }),
-      findFirst: vi.fn(async ({ where }: any) =>
-        identities.find((item) => item.unionId === where.unionId) ?? null,
+      findFirst: vi.fn(
+        async ({ where }: any) =>
+          identities.find((item) => item.unionId === where.unionId) ?? null,
       ),
       create: vi.fn(async ({ data }: any) => {
         const row = { id: randomUUID(), ...data };
@@ -255,12 +271,14 @@ describe("global native WeChat phone binding", () => {
     expect(h.users).toHaveLength(0);
     expect(h.auth.issueSession).not.toHaveBeenCalled();
 
-    await expect(h.service.requestPhoneCode({
-      bindTicket: pending.bindTicket,
-      identifier: "+8613812345678",
-      consentVersion: "legal-v1",
-      locale: "zh-Hans",
-    })).rejects.toMatchObject({ status: 409 });
+    await expect(
+      h.service.requestPhoneCode({
+        bindTicket: pending.bindTicket,
+        identifier: "+8613812345678",
+        consentVersion: "legal-v1",
+        locale: "zh-Hans",
+      }),
+    ).rejects.toMatchObject({ status: 409 });
     expect(h.delivery.send).not.toHaveBeenCalled();
 
     const challenge: any = await h.service.requestPhoneCode({
@@ -297,11 +315,26 @@ describe("global native WeChat phone binding", () => {
       appId,
       openId: identity.openId,
     });
-    expect(h.tickets.get(sha256(pending.bindTicket)).consumedAt).toBeInstanceOf(Date);
-    expect(h.prisma.consentRecord.upsert.mock.calls.map(([call]: any[]) => call.create)).toEqual([
-      expect.objectContaining({ documentType: "say_ring_user_agreement", source: "global_app_wechat:say-ring:zh-Hans" }),
-      expect.objectContaining({ documentType: "say_ring_privacy_policy", source: "global_app_wechat:say-ring:zh-Hans" }),
-      expect.objectContaining({ documentType: "say_ring_minimum_age", source: "global_app_wechat:say-ring:zh-Hans" }),
+    expect(h.tickets.get(sha256(pending.bindTicket)).consumedAt).toBeInstanceOf(
+      Date,
+    );
+    expect(
+      h.prisma.consentRecord.upsert.mock.calls.map(
+        ([call]: any[]) => call.create,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        documentType: "say_ring_user_agreement",
+        source: "global_app_wechat:say-ring:zh-Hans",
+      }),
+      expect.objectContaining({
+        documentType: "say_ring_privacy_policy",
+        source: "global_app_wechat:say-ring:zh-Hans",
+      }),
+      expect.objectContaining({
+        documentType: "say_ring_minimum_age",
+        source: "global_app_wechat:say-ring:zh-Hans",
+      }),
     ]);
 
     const next: any = await h.service.login({

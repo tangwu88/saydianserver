@@ -560,6 +560,38 @@
       }
     },
     {
+      "key": "AdminController.memberDevices",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/members/:id/devices",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "会员设备列表",
+      "request": "id=会员 UUID",
+      "response": "返回指定会员最多500台设备，含稳定脱敏标识、蓝牙名称、型号、MAC、固件、最近连接和绑定状态",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.rawHealth",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/members/:id/health-records",
@@ -642,7 +674,39 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "后台设备快照",
       "request": "无请求体",
-      "response": "最多500条；尚无分页",
+      "response": "最多500条；含会员编号、昵称、蓝牙名称、型号、稳定脱敏设备标识和客户端确认的 MAC；尚无分页",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.deviceConnections",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/devices/:id/connections",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "设备连接详情",
+      "request": "id=设备绑定 UUID",
+      "response": "当前设备快照与最新200条成功连接上报；设备标识由会员范围的单向哈希生成；每条新记录含以 ` | ` 分隔的完整请求体字符串，不含请求头或登录令牌；历史从本功能上线后开始",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -1498,9 +1562,9 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
-      "summary": "按SKU实时获取并导入ERP商品",
-      "request": "{sku:单个ERP SKU，最多100字符}；不读取本地同步列表作为资料来源",
-      "response": "聚水潭商品与库存均成功后新增或刷新草稿商品，并返回完整已知ERP字段；未配置、无权限、未找到或库存缺失时不导入",
+      "summary": "按SKU定位SPU并实时导入ERP商品",
+      "request": "{sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存",
+      "response": "聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入",
       "dependency": "聚水潭商品查询与库存查询",
       "successStatus": 201,
       "contract": {
@@ -1739,6 +1803,41 @@
       "request": "id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?}",
       "response": "展示资料；ERP编号、内部名称、SKU和库存不会被覆盖",
       "dependency": "主库商城/聚水潭",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.deleteCommerceProduct",
+      "method": "DELETE",
+      "path": "/api/saydian-app/admin/v1/commerce-products/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "永久删除未产生业务历史的商品",
+      "request": "id=商品UUID；删除前需由后台二次确认",
+      "response": "无订单或评价时清理购物车、收藏及商品SKU后返回{deleted:true}；已有订单或评价返回409并要求归档",
+      "dependency": "主库商城",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -20148,9 +20247,9 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/devices/devices.controller.ts",
-      "summary": "绑定设备快照",
-      "request": "{deviceId/hardwareId,vendor,model,displayName/name,firmware?,capabilities?:string[],syncCursor?}",
-      "response": "Device；不是服务端蓝牙连接",
+      "summary": "上报设备连接",
+      "request": "{deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?}；macAddress仅接受标准 MAC，iOS UUID 不可冒充",
+      "response": "Device；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 | 字段=值` 字符串；不是服务端蓝牙连接",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
@@ -20235,6 +20334,31 @@
       }
     },
     {
+      "key": "HealthController.capabilities",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/capabilities",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/health/health.controller.ts",
+      "summary": "健康同步能力",
+      "request": "无请求体",
+      "response": "{dailySummaryVersions:true,dailySummaryVersion:1}；只表示服务端支持日汇总版本折叠，与普通设备能力无关",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health/health.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "HealthController.ingestBatch",
       "method": "POST",
       "path": "/api/saydian-app/v2/health/records/batch",
@@ -20257,7 +20381,7 @@
       "envelope": "v2",
       "source": "apps/api/src/health/health.controller.ts",
       "summary": "健康批量同步",
-      "request": "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册",
+      "request": "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册",
       "response": "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收",
       "dependency": "核心服务",
       "successStatus": 201,
@@ -20302,7 +20426,7 @@
       "source": "apps/api/src/health/health.controller.ts",
       "summary": "本人健康历史",
       "request": "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间",
-      "response": "{items,nextCursor}；按采集时间和UUID稳定分页，相同采集时间记录不丢页",
+      "response": "{items,nextCursor}；逐条记录保持原样；同会员/指标/设备/本地日期的日汇总只返回最新版本并回显aggregation",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -21680,7 +21804,7 @@
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/legacy/legacy-member.controller.ts",
       "summary": "旧前缀批量健康同步",
-      "request": "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册；V1 缺少幂等头时使用请求摘要",
+      "request": "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册；V1 缺少幂等头时使用请求摘要",
       "response": "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收",
       "dependency": "核心服务",
       "successStatus": 201,
@@ -24293,6 +24417,38 @@
       }
     },
     {
+      "key": "FilesController.uploadSayRingAvatar",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/files/say-ring-avatar",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "Say Ring 上传头像",
+      "request": "会员令牌；multipart file，JPEG/PNG/WebP，最大 10 MiB；仅国际环境",
+      "response": "{id,url,sha256,byteSize}；URL 与现有头像接口一致",
+      "dependency": "Say Ring 专用服务器持久目录；开关关闭时沿用原头像存储",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "FilesController.upload",
       "method": "POST",
       "path": "/api/saydian-app/v2/files",
@@ -24385,9 +24541,9 @@
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "获取公开头像",
-      "request": "id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件",
+      "request": "id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件",
       "response": "原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载",
-      "dependency": "对象存储",
+      "dependency": "原有对象存储或 Say Ring 专用服务器持久目录",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

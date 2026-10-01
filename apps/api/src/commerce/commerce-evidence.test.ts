@@ -166,17 +166,17 @@ describe("private after-sale image evidence", () => {
       }),
     ).rejects.toThrow("不属于");
   });
-  it("retains old empty requests and domestic legacy evidence shape without changing existing upload semantics", async () => {
+  it("accepts empty legacy requests without allowing arbitrary external evidence URLs", async () => {
     vi.stubEnv("APP_REALM", "global");
     expect(
       await afterSaleEvidenceReferences({} as any, "a", { evidenceImages: [] }),
     ).toEqual([]);
     vi.stubEnv("APP_REALM", "domestic");
-    expect(
-      await afterSaleEvidenceReferences({} as any, "a", {
+    await expect(
+      afterSaleEvidenceReferences({} as any, "a", {
         evidenceImages: ["legacy-image"],
       }),
-    ).toEqual(["legacy-image"]);
+    ).rejects.toThrow("不能提交外部图片地址");
   });
   it("admin reader enforces resource READ, linked after-sale, actual file owner, and writes audit", async () => {
     const h = fixture();

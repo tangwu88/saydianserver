@@ -5,7 +5,7 @@ import type { IntegrationSecretsService } from "../common/integration-secrets.se
 
 const unavailable = {
   configured: false,
-  message: "客服渠道暂时无法使用，请稍后再试",
+  message: "Support is temporarily unavailable. Please try again later.",
 };
 afterEach(() => vi.unstubAllEnvs());
 function harness(rows: Array<{ key: string; public: boolean; value: unknown }>) {
@@ -93,7 +93,7 @@ describe("public support configuration boundary", () => {
     const h = harness([]);
     expect(await h.service.supportConfig()).toEqual(unavailable);
     expect(h.findFirst).toHaveBeenCalledWith({
-      where: { key: "support", public: true },
+      where: { key: "global_support", public: true },
       select: { value: true },
     });
     expect(h.findUnique).not.toHaveBeenCalled();
@@ -102,7 +102,7 @@ describe("public support configuration boundary", () => {
   it("never even loads a non-public support JSON value", async () => {
     let privateValueReads = 0;
     const privateRow = {
-      key: "support",
+      key: "global_support",
       public: false,
       get value() {
         privateValueReads++;
@@ -116,10 +116,11 @@ describe("public support configuration boundary", () => {
   it("preserves the published support contract", async () => {
     const value = {
       configured: true,
+      phone: "400 638 6738",
       message: "SYSTEM-QA-public-help",
       serviceHours: "SYSTEM-QA",
     };
-    const h = harness([{ key: "support", public: true, value }]);
+    const h = harness([{ key: "global_support", public: true, value }]);
     expect(await h.service.supportConfig()).toEqual(value);
   });
   it("does not return another setting even when that setting is public", async () => {
@@ -133,7 +134,7 @@ describe("public support configuration boundary", () => {
     expect(await h.service.supportConfig()).toEqual(unavailable);
   });
   it("fails closed to the normal unavailable value for a null published payload", async () => {
-    const h = harness([{ key: "support", public: true, value: null }]);
+    const h = harness([{ key: "global_support", public: true, value: null }]);
     expect(await h.service.supportConfig()).toEqual(unavailable);
   });
 });

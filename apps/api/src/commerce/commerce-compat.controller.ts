@@ -22,13 +22,10 @@ import { Throttle } from "@nestjs/throttler";
 import { BillingService } from "../billing/billing.service";
 import { safeObject } from "../common/crypto";
 import { RawResponse } from "../common/raw-response.decorator";
-import {
-  CurrentUser,
-  type AuthenticatedUser,
-} from "../common/request-context";
+import { CurrentUser, type AuthenticatedUser } from "../common/request-context";
 import { UserAuthGuard } from "../common/user-auth.guard";
 import { CommerceService } from "./commerce.service";
-import { isGlobalRealm } from "../common/deployment-realm";
+
 import { SupportService } from "../support/support.service";
 import { GlobalAuthService } from "../auth/global-auth.service";
 
@@ -57,61 +54,97 @@ export class CommerceCompatibilityController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   loginPassword(@Body() input: unknown) {
     const body = safeObject(input);
-    return this.auth.loginForMall(String((isGlobalRealm() ? body.identifier ?? body.mobile : body.mobile) ?? ""), String(body.password ?? ""),
-      body.referralCode ? String(body.referralCode) : undefined);
+    return this.auth.loginForMall(
+      String(body.identifier ?? body.mobile ?? ""),
+      String(body.password ?? ""),
+      body.referralCode ? String(body.referralCode) : undefined,
+    );
   }
 
   @Post("auth/wechat/h5/authorize-url")
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   authorizeWechatH5(@Body() input: unknown) {
     const body = safeObject(input);
-    return this.wechatH5.authorize({ returnTo: String(body.returnTo ?? "/"), codeChallenge: String(body.codeChallenge ?? ""),
-      consentVersion: String(body.consentVersion ?? ""), locale: body.locale, product: body.product,
-      ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}) });
+    return this.wechatH5.authorize({
+      returnTo: String(body.returnTo ?? "/"),
+      codeChallenge: String(body.codeChallenge ?? ""),
+      consentVersion: String(body.consentVersion ?? ""),
+      locale: body.locale,
+      product: body.product,
+      ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}),
+    });
   }
 
   @Post("auth/wechat/h5/login")
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   loginWechatH5(@Body() input: unknown) {
     const body = safeObject(input);
-    return this.wechatH5.login({ code: String(body.code ?? ""), state: String(body.state ?? ""),
-      codeVerifier: String(body.codeVerifier ?? ""), consentVersion: String(body.consentVersion ?? ""), locale: body.locale, product: body.product });
+    return this.wechatH5.login({
+      code: String(body.code ?? ""),
+      state: String(body.state ?? ""),
+      codeVerifier: String(body.codeVerifier ?? ""),
+      consentVersion: String(body.consentVersion ?? ""),
+      locale: body.locale,
+      product: body.product,
+    });
   }
 
   @Post("auth/wechat/h5/bind-mobile")
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   bindWechatH5Mobile(@Body() input: unknown) {
     const body = safeObject(input);
-    return this.wechatH5.bindMobile({ bindTicket: String(body.bindTicket ?? ""), mobile: String(body.mobile ?? ""),
-      code: String(body.code ?? ""), consentVersion: String(body.consentVersion ?? ""), wechatProfileProof: body.wechatProfileProof });
+    return this.wechatH5.bindMobile({
+      bindTicket: String(body.bindTicket ?? ""),
+      mobile: String(body.mobile ?? ""),
+      code: String(body.code ?? ""),
+      consentVersion: String(body.consentVersion ?? ""),
+      wechatProfileProof: body.wechatProfileProof,
+    });
   }
 
   @Post("auth/wechat/h5/bind-account")
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  bindWechatH5Account(@Body() input: unknown) { return this.wechatH5.bindGlobalAccount(input); }
+  bindWechatH5Account(@Body() input: unknown) {
+    return this.wechatH5.bindGlobalAccount(input);
+  }
 
   @Post("auth/wechat/h5/binding-code")
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  requestWechatH5BindingCode(@Body() input: unknown) { return this.wechatH5.requestGlobalBindingCode(input); }
+  requestWechatH5BindingCode(@Body() input: unknown) {
+    return this.wechatH5.requestGlobalBindingCode(input);
+  }
 
   @Post("auth/wechat/h5/bind-code")
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  bindWechatH5Code(@Body() input: unknown) { return this.wechatH5.bindGlobalCode(input); }
+  bindWechatH5Code(@Body() input: unknown) {
+    return this.wechatH5.bindGlobalCode(input);
+  }
 
   @Post("auth/wechat/h5/phone-code")
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  requestWechatH5PhoneCode(@Body() input: unknown) { return this.wechatH5.requestGlobalPhoneCode(input); }
+  requestWechatH5PhoneCode(@Body() input: unknown) {
+    return this.wechatH5.requestGlobalPhoneCode(input);
+  }
 
   @Post("auth/wechat/h5/bind-phone")
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  bindWechatH5Phone(@Body() input: unknown) { return this.wechatH5.bindGlobalPhone(input); }
+  bindWechatH5Phone(@Body() input: unknown) {
+    return this.wechatH5.bindGlobalPhone(input);
+  }
 
   @Get("auth/wechat/h5/account")
   @UseGuards(UserAuthGuard)
-  wechatH5Account(@CurrentUser() user: AuthenticatedUser) { return this.auth.mallAccount(user.id, user.sessionId); }
+  wechatH5Account(@CurrentUser() user: AuthenticatedUser) {
+    return this.auth.mallAccount(user.id, user.sessionId);
+  }
 
   @Get("storefront/capabilities")
-  storefrontCapabilities(@Query("locale") locale?: string, @Query("product") product?: string) { return this.capabilities.publicCapabilities(locale, "h5", product); }
+  storefrontCapabilities(
+    @Query("locale") locale?: string,
+    @Query("product") product?: string,
+  ) {
+    return this.capabilities.publicCapabilities(locale, "h5", product);
+  }
 
   @Get("payments/:id")
   @UseGuards(UserAuthGuard)
@@ -122,7 +155,10 @@ export class CommerceCompatibilityController {
   @Post("auth/sms/request")
   async requestSms(@Body() input: unknown) {
     const body = safeObject(input);
-    const result = await this.auth.requestSmsCode(String(body.mobile ?? ""), body.usage === "bind_mobile" ? "bind_mobile" : "login");
+    const result = await this.auth.requestSmsCode(
+      String(body.mobile ?? ""),
+      body.usage === "bind_mobile" ? "bind_mobile" : "login",
+    );
     return { configured: true, ...result };
   }
 
@@ -142,33 +178,21 @@ export class CommerceCompatibilityController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async requestLoginCode(@Body() input: unknown) {
     const body = safeObject(input);
-    if (isGlobalRealm() || body.channel === "email") {
-      return this.globalAuth.requestLoginCode(body);
+    // Legacy SMS transport has no challengeId; it still uses the shared User table.
+    if (body.channel === "sms" && /^1[3-9]\d{9}$/.test(String(body.identifier ?? ""))) {
+      return { ...(await this.auth.requestSmsCode(String(body.identifier), "login")), configured: true, channel: "sms", retryAfter: 60 };
     }
-    if (body.channel !== "sms") {
-      return this.globalAuth.requestLoginCode(body);
-    }
-    const result = await this.auth.requestSmsCode(String(body.identifier ?? ""), "login");
-    return { configured: true, channel: "sms", retryAfter: 60, ...result };
+    return this.globalAuth.requestLoginCode(body);
   }
 
   @Post("auth/code/login")
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   loginCode(@Body() input: unknown) {
     const body = safeObject(input);
-    if (isGlobalRealm() || body.channel === "email") {
-      return this.globalAuth.loginWithCode(body);
+    if (body.channel === "sms" && !body.challengeId) {
+      return this.auth.loginWithSms({ mobile: String(body.identifier ?? body.mobile ?? ""), code: String(body.code ?? ""), consentVersion: String(body.consentVersion ?? ""), consentSource: "commerce_code", ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}) });
     }
-    if (body.channel !== "sms") {
-      return this.globalAuth.loginWithCode(body);
-    }
-    return this.auth.loginWithSms({
-      mobile: String(body.identifier ?? ""),
-      code: String(body.code ?? ""),
-      consentVersion: String(body.consentVersion ?? ""),
-      consentSource: "commerce_code",
-      ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}),
-    });
+    return this.globalAuth.loginWithCode(body);
   }
 
   @Post("auth/wechat/mini")
@@ -191,10 +215,7 @@ export class CommerceCompatibilityController {
 
   @Post("auth/referral")
   @UseGuards(UserAuthGuard)
-  referral(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() input: unknown,
-  ) {
+  referral(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
     return this.auth.bindReferral(
       user.id,
       String(safeObject(input).referralCode ?? ""),
@@ -203,8 +224,13 @@ export class CommerceCompatibilityController {
 
   @Get("storefront/bootstrap")
   async bootstrap(@Query("ref") referralCode?: string) {
-    const suffix = referralCode ? `?referralCode=${encodeURIComponent(referralCode)}` : "";
-    const [storefront, capabilities] = await Promise.all([this.commerce.publicGet(`/storefront/bootstrap${suffix}`), this.capabilities.publicCapabilities()]);
+    const suffix = referralCode
+      ? `?referralCode=${encodeURIComponent(referralCode)}`
+      : "";
+    const [storefront, capabilities] = await Promise.all([
+      this.commerce.publicGet(`/storefront/bootstrap${suffix}`),
+      this.capabilities.publicCapabilities(),
+    ]);
     return { ...storefront, capabilities };
   }
 
@@ -216,19 +242,26 @@ export class CommerceCompatibilityController {
 
   @Post("storefront/feedback")
   @UseGuards(UserAuthGuard)
-  submitFeedback(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+  submitFeedback(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: unknown,
+  ) {
     return this.support.createFeedback(user.id, input);
   }
 
   @Get("storefront/products")
   products(@Query() query: Record<string, string>) {
     const params = new URLSearchParams(query).toString();
-    return this.commerce.publicGet(`/storefront/products${params ? `?${params}` : ""}`);
+    return this.commerce.publicGet(
+      `/storefront/products${params ? `?${params}` : ""}`,
+    );
   }
 
   @Get("storefront/products/:id")
   product(@Param("id") id: string) {
-    return this.commerce.publicGet(`/storefront/products/${encodeURIComponent(id)}`);
+    return this.commerce.publicGet(
+      `/storefront/products/${encodeURIComponent(id)}`,
+    );
   }
 
   @Get("storefront/cart")
@@ -239,10 +272,7 @@ export class CommerceCompatibilityController {
 
   @Post("storefront/cart/items")
   @UseGuards(UserAuthGuard)
-  putCart(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() input: unknown,
-  ) {
+  putCart(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
     return this.commerce.forUser(user.id, "POST", "/cart/items", input);
   }
 
@@ -264,10 +294,7 @@ export class CommerceCompatibilityController {
 
   @Post("storefront/addresses")
   @UseGuards(UserAuthGuard)
-  saveAddress(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() input: unknown,
-  ) {
+  saveAddress(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
     const body = safeObject(input);
     const id = String(body.id ?? "").trim();
     return this.commerce.forUser(
@@ -308,10 +335,7 @@ export class CommerceCompatibilityController {
 
   @Post("storefront/orders/preview")
   @UseGuards(UserAuthGuard)
-  previewOrder(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() input: unknown,
-  ) {
+  previewOrder(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
     return this.commerce.forUser(user.id, "POST", "/orders/preview", input);
   }
 
@@ -393,14 +417,33 @@ export class CommerceCompatibilityController {
   @Post("storefront/orders/:id/after-sales/:saleId/return-logistics")
   @HttpCode(200)
   @UseGuards(UserAuthGuard)
-  returnLogistics(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Param("saleId") saleId: string, @Body() input: unknown) {
-    return this.commerce.forUser(user.id, "POST", `/orders/${encodeURIComponent(id)}/after-sales/${encodeURIComponent(saleId)}/return-logistics`, input);
+  returnLogistics(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Param("saleId") saleId: string,
+    @Body() input: unknown,
+  ) {
+    return this.commerce.forUser(
+      user.id,
+      "POST",
+      `/orders/${encodeURIComponent(id)}/after-sales/${encodeURIComponent(saleId)}/return-logistics`,
+      input,
+    );
   }
 
   @Post("storefront/orders/:id/after-sales/preview")
   @UseGuards(UserAuthGuard)
-  previewAfterSale(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() input: unknown) {
-    return this.commerce.forUser(user.id, "POST", `/orders/${encodeURIComponent(id)}/after-sales/preview`, input);
+  previewAfterSale(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() input: unknown,
+  ) {
+    return this.commerce.forUser(
+      user.id,
+      "POST",
+      `/orders/${encodeURIComponent(id)}/after-sales/preview`,
+      input,
+    );
   }
 
   @Get("storefront/points")
@@ -448,7 +491,10 @@ export class CommerceCompatibilityController {
 
   @Post("storefront/coupons/code/claim")
   @UseGuards(UserAuthGuard)
-  claimCouponByCode(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+  claimCouponByCode(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: unknown,
+  ) {
     return this.commerce.claimCouponByCode(user.id, input);
   }
 
@@ -460,16 +506,16 @@ export class CommerceCompatibilityController {
 
   @Get("storefront/coupons/available")
   @UseGuards(UserAuthGuard)
-  availableCoupons(@CurrentUser() user: AuthenticatedUser, @Query("page") page?: string) {
+  availableCoupons(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("page") page?: string,
+  ) {
     return this.commerce.availableCoupons(user.id, Number(page ?? 1));
   }
 
   @Post("storefront/reviews")
   @UseGuards(UserAuthGuard)
-  review(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() input: unknown,
-  ) {
+  review(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
     return this.commerce.createReview(user.id, input);
   }
 
@@ -481,7 +527,9 @@ export class CommerceCompatibilityController {
     @Req() request: Request,
   ) {
     const body = safeObject(input);
-    const channel = String(body.channel ?? "").trim().toLowerCase();
+    const channel = String(body.channel ?? "")
+      .trim()
+      .toLowerCase();
     const orderId = String(body.orderId ?? body.order_id ?? "").trim();
     return this.billing.createPayment(
       user.id,
@@ -538,8 +586,13 @@ export class CommerceCompatibilityController {
     @Res() response: Response,
   ) {
     const payload = Object.fromEntries(
-      Object.entries(safeObject(input)).map(([key, value]) => [key, String(value)]),
+      Object.entries(safeObject(input)).map(([key, value]) => [
+        key,
+        String(value),
+      ]),
     );
-    response.type("text/plain").send(await this.billing.handleAlipayNotification(payload));
+    response
+      .type("text/plain")
+      .send(await this.billing.handleAlipayNotification(payload));
   }
 }

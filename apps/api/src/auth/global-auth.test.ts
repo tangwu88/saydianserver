@@ -2,68 +2,238 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { GlobalAuthService } from "./global-auth.service";
 import { GlobalVerificationDeliveryService } from "./global-verification-delivery.service";
-import { globalIdentity, globalLocale, globalLocales, internationalPhone, normalizedEmail } from "./global-identity";
+import {
+  globalIdentity,
+  globalLocale,
+  globalLocales,
+  internationalPhone,
+  normalizedEmail,
+} from "./global-identity";
 import { AuthService } from "./auth.service";
 import { hash } from "bcryptjs";
 import { UnauthorizedException } from "@nestjs/common";
 
 beforeEach(() => {
   vi.stubEnv("APP_REALM", "global");
-  vi.stubEnv("REFRESH_TOKEN_PEPPER", "synthetic-global-test-pepper-not-a-live-secret");
+  vi.stubEnv(
+    "REFRESH_TOKEN_PEPPER",
+    "synthetic-global-test-pepper-not-a-live-secret",
+  );
   vi.stubEnv("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED", "false");
 });
-afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 function harness() {
   let records = new Map<string, any>();
   let users = new Map<string, any>();
   let throttles = new Map<string, any>();
   const sessions: string[] = [];
-  const delivery = { capabilities: vi.fn(async () => ({ email: true, sms: true, smsCountries: ["US", "DE"] })), assertAvailable: vi.fn(async () => ({})), send: vi.fn(async (_input: any) => undefined) };
+  const delivery = {
+    capabilities: vi.fn(async () => ({
+      email: true,
+      sms: true,
+      smsCountries: ["US", "DE"],
+    })),
+    assertAvailable: vi.fn(async () => ({})),
+    send: vi.fn(async (_input: any) => undefined),
+  };
   const tx: any = {
-    globalLegalDocument: { findMany: vi.fn(async ({ where }: any) => ["user_agreement", "privacy_policy", "say_ring_user_agreement", "say_ring_privacy_policy"]
-      .filter(documentType => where.documentType.in.includes(documentType))
-      .map(documentType => ({ documentType, version: "v1", locale: "en", contentHtml: "Synthetic test legal text", reviewed: true, active: true }))) },
+    globalLegalDocument: {
+      findMany: vi.fn(async ({ where }: any) =>
+        [
+          "user_agreement",
+          "privacy_policy",
+          "say_ring_user_agreement",
+          "say_ring_privacy_policy",
+        ]
+          .filter((documentType) =>
+            where.documentType.in.includes(documentType),
+          )
+          .map((documentType) => ({
+            documentType,
+            version: "v1",
+            locale: "en",
+            contentHtml: "Synthetic test legal text",
+            reviewed: true,
+            active: true,
+          })),
+      ),
+    },
     globalVerificationThrottle: {
-      upsert: async ({ where, create }: any) => { if (!throttles.has(where.key)) throttles.set(where.key, create); },
-      updateMany: async ({ where, data }: any) => { const row = throttles.get(where.key); if (!row || row.reservedAt > where.reservedAt.lte) return { count: 0 }; Object.assign(row, data); return { count: 1 }; },
+      upsert: async ({ where, create }: any) => {
+        if (!throttles.has(where.key)) throttles.set(where.key, create);
+      },
+      updateMany: async ({ where, data }: any) => {
+        const row = throttles.get(where.key);
+        if (!row || row.reservedAt > where.reservedAt.lte) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
+      },
     },
     globalVerificationChallenge: {
-      count: async ({ where }: any) => [...records.values()].filter(row => row.channel === where.channel && row.identifier === where.identifier && row.createdAt > where.createdAt.gt).length,
-      create: async ({ data }: any) => { records.set(data.id, { ...data, sentAt: null, consumedAt: null, attempts: 0, createdAt: new Date() }); },
+      count: async ({ where }: any) =>
+        [...records.values()].filter(
+          (row) =>
+            row.channel === where.channel &&
+            row.identifier === where.identifier &&
+            row.createdAt > where.createdAt.gt,
+        ).length,
+      create: async ({ data }: any) => {
+        records.set(data.id, {
+          ...data,
+          sentAt: null,
+          consumedAt: null,
+          attempts: 0,
+          createdAt: new Date(),
+        });
+      },
       findUnique: async ({ where }: any) => records.get(where.id) ?? null,
-      update: async ({ where, data }: any) => Object.assign(records.get(where.id), data),
-      updateMany: async ({ where, data }: any) => { const row = records.get(where.id); if (!row || row.consumedAt || row.attempts >= (where.attempts?.lt ?? 99) || (where.expiresAt && row.expiresAt <= where.expiresAt.gt)) return { count: 0 }; if (data.attempts) row.attempts++; if (data.consumedAt) row.consumedAt = data.consumedAt; return { count: 1 }; },
+      update: async ({ where, data }: any) =>
+        Object.assign(records.get(where.id), data),
+      updateMany: async ({ where, data }: any) => {
+        const row = records.get(where.id);
+        if (
+          !row ||
+          row.consumedAt ||
+          row.attempts >= (where.attempts?.lt ?? 99) ||
+          (where.expiresAt && row.expiresAt <= where.expiresAt.gt)
+        )
+          return { count: 0 };
+        if (data.attempts) row.attempts++;
+        if (data.consumedAt) row.consumedAt = data.consumedAt;
+        return { count: 1 };
+      },
     },
     user: {
-      findUnique: async ({ where }: any) => [...users.values()].find(row => Object.entries(where).every(([key, value]) => row[key] === value)) ?? null,
-      create: vi.fn(async ({ data }: any) => { const user = { id: randomUUID(), status: "ACTIVE", ...data }; users.set(user.id, user); return user; }),
-      update: async ({ where, data }: any) => Object.assign(users.get(where.id), data),
+      findUnique: async ({ where }: any) =>
+        [...users.values()].find((row) =>
+          Object.entries(where).every(([key, value]) => row[key] === value),
+        ) ?? null,
+      create: vi.fn(async ({ data }: any) => {
+        const user = { id: randomUUID(), status: "ACTIVE", ...data };
+        users.set(user.id, user);
+        return user;
+      }),
+      update: async ({ where, data }: any) =>
+        Object.assign(users.get(where.id), data),
     },
-    consentRecord: { create: vi.fn(async () => undefined), upsert: vi.fn(async () => undefined) },
+    consentRecord: {
+      create: vi.fn(async () => undefined),
+      upsert: vi.fn(async () => undefined),
+    },
     userSession: { updateMany: vi.fn(async () => ({ count: 1 })) },
   };
-  const prisma: any = { ...tx, $transaction: async (run: any) => { const snapshot = structuredClone({ records, users, throttles }); try { return await run(tx); } catch (error) { records = snapshot.records; users = snapshot.users; throttles = snapshot.throttles; throw error; } } };
-  const issueSession = vi.fn(async (id: string) => { sessions.push(id); const user = users.get(id); return { accessToken: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + 900_000).toISOString(), member: { id, nickname: user.nickname ?? "Test", locale: user.locale ?? "en" } }; });
-  const issueMallSession = vi.fn(async (id: string) => { sessions.push(id); const user = users.get(id); return { token: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + 900_000).toISOString(), user: { id, nickname: user.nickname ?? "Test", mobile: user.mobile ?? null, avatarUrl: null } }; });
-  const auth: any = { issueSession, issueMallSession, login: vi.fn(async () => ({ accessToken: "synthetic-access" })), authenticatePassword: vi.fn(async () => ({ id: "ring-password-user" })), bindReferral: vi.fn(async () => ({ bound: true })) };
+  const prisma: any = {
+    ...tx,
+    $transaction: async (run: any) => {
+      const snapshot = structuredClone({ records, users, throttles });
+      try {
+        return await run(tx);
+      } catch (error) {
+        records = snapshot.records;
+        users = snapshot.users;
+        throttles = snapshot.throttles;
+        throw error;
+      }
+    },
+  };
+  const issueSession = vi.fn(async (id: string) => {
+    sessions.push(id);
+    const user = users.get(id);
+    return {
+      accessToken: "synthetic-access",
+      refreshToken: "synthetic-refresh",
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+      member: {
+        id,
+        nickname: user.nickname ?? "Test",
+        locale: user.locale ?? "en",
+      },
+    };
+  });
+  const issueMallSession = vi.fn(async (id: string) => {
+    sessions.push(id);
+    const user = users.get(id);
+    return {
+      token: "synthetic-access",
+      refreshToken: "synthetic-refresh",
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+      user: {
+        id,
+        nickname: user.nickname ?? "Test",
+        mobile: user.mobile ?? null,
+        avatarUrl: null,
+      },
+    };
+  });
+  const auth: any = {
+    issueSession,
+    issueMallSession,
+    login: vi.fn(async () => ({ accessToken: "synthetic-access" })),
+    authenticatePassword: vi.fn(async () => ({ id: "ring-password-user" })),
+    bindReferral: vi.fn(async () => ({ bound: true })),
+  };
   const service = new GlobalAuthService(prisma, delivery as any, auth);
-  return { service, prisma, delivery, auth, tx, sessions, records: () => records, users: () => users };
+  return {
+    service,
+    prisma,
+    delivery,
+    auth,
+    tx,
+    sessions,
+    records: () => records,
+    users: () => users,
+  };
 }
 
 describe("global international identity", () => {
   it("uses strict valid international numbers rather than China-only length", () => {
-    for (const phone of ["+12025550123", "+4915123456789", "+33612345678", "+819012345678", "+821012345678"]) expect(internationalPhone(phone)?.identifier).toBe(phone);
-    for (const phone of ["13800138000", "+123", "Call +12025550123", "+12025550123 ext.12"]) expect(internationalPhone(phone)).toBeNull();
+    for (const phone of [
+      "+12025550123",
+      "+4915123456789",
+      "+33612345678",
+      "+819012345678",
+      "+821012345678",
+    ])
+      expect(internationalPhone(phone)?.identifier).toBe(phone);
+    for (const phone of [
+      "13800138000",
+      "+123",
+      "Call +12025550123",
+      "+12025550123 ext.12",
+    ])
+      expect(internationalPhone(phone)).toBeNull();
   });
   it("normalizes email without accepting malformed identifiers", () => {
     expect(normalizedEmail(" User@Example.COM ")).toBe("user@example.com");
-    for (const email of ["a@", "a@-example.com", "a..b@example.com", "a b@example.com", "a@example..com"]) expect(normalizedEmail(email)).toBe("");
+    for (const email of [
+      "a@",
+      "a@-example.com",
+      "a..b@example.com",
+      "a b@example.com",
+      "a@example..com",
+    ])
+      expect(normalizedEmail(email)).toBe("");
     expect(() => globalIdentity("email", "+12025550123")).toThrow();
   });
   it("has the exact eight locales and predictable English fallback", () => {
-    expect(globalLocales).toEqual(["en", "zh-Hans", "zh-Hant", "de", "fr", "es", "ja", "ko"]);
-    expect(globalLocale("zh_TW")).toBe("zh-Hant"); expect(globalLocale("zh-CN")).toBe("zh-Hans"); expect(globalLocale("de-DE")).toBe("de"); expect(globalLocale("ru")).toBe("en");
+    expect(globalLocales).toEqual([
+      "en",
+      "zh-Hans",
+      "zh-Hant",
+      "de",
+      "fr",
+      "es",
+      "ja",
+      "ko",
+    ]);
+    expect(globalLocale("zh_TW")).toBe("zh-Hant");
+    expect(globalLocale("zh-CN")).toBe("zh-Hans");
+    expect(globalLocale("de-DE")).toBe("de");
+    expect(globalLocale("ru")).toBe("en");
   });
 });
 
@@ -71,100 +241,279 @@ describe("global registration challenges", () => {
   it("does not advertise registration while business writes are paused", async () => {
     vi.stubEnv("BUSINESS_WRITES_PAUSED", "true");
     const value = await harness().service.capabilities("en");
-    expect(value.registration).toEqual({ email: false, sms: false, verificationRequired: true });
+    expect(value.registration).toEqual({
+      email: false,
+      sms: false,
+      verificationRequired: true,
+    });
     expect(value.recovery).toEqual({ email: false, sms: false });
   });
   it("keeps registration closed without reviewed legal documents and rejects an outdated version", async () => {
-    const h = harness(); h.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
+    const h = harness();
+    h.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
     const capabilities = await h.service.capabilities("en");
-    expect(capabilities.registration).toEqual({ email: false, sms: false, verificationRequired: true }); expect(capabilities.consentVersion).toBeNull(); expect(capabilities.legal).toBeNull();
+    expect(capabilities.registration).toEqual({
+      email: false,
+      sms: false,
+      verificationRequired: true,
+    });
+    expect(capabilities.consentVersion).toBeNull();
+    expect(capabilities.legal).toBeNull();
     expect(capabilities.recovery).toEqual({ email: true, sms: true });
     h.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
-    await expect(h.service.requestCode({ channel: "email", identifier: "legal@example.com" })).rejects.toThrow("not available yet");
+    await expect(
+      h.service.requestCode({
+        channel: "email",
+        identifier: "legal@example.com",
+      }),
+    ).rejects.toThrow("not available yet");
     expect(h.delivery.send).not.toHaveBeenCalled();
-    await expect(h.service.register({ challengeId: randomUUID(), code: "123456", password: "Synthetic-password", consentVersion: "old" })).rejects.toThrow("terms have changed");
+    await expect(
+      h.service.register({
+        challengeId: randomUUID(),
+        code: "123456",
+        password: "Synthetic-password",
+        consentVersion: "old",
+      }),
+    ).rejects.toThrow("terms have changed");
     expect(h.users().size).toBe(0);
   });
   it("isolates Say Ring capabilities and consent records behind the explicit product", async () => {
     const h = harness();
     const capabilities = await h.service.capabilities("en", "say-ring");
-    expect(capabilities).toMatchObject({ product: "say-ring", consentVersion: "v1" });
-    expect(capabilities.legal?.userAgreement.path).toContain("/say_ring_user_agreement?");
-    expect(capabilities.legal?.privacyPolicy.path).toContain("/say_ring_privacy_policy?");
-    const challenge = await h.service.requestCode({ channel: "email", identifier: "ring@example.com", purpose: "register", locale: "en", product: "say-ring" });
-    await expect(h.service.register({ challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-only-password!", consentVersion: "v1", locale: "en", product: "say-ring" })).rejects.toThrow("14 or older");
+    expect(capabilities).toMatchObject({
+      product: "say-ring",
+      consentVersion: "v1",
+    });
+    expect(capabilities.legal?.userAgreement.path).toContain(
+      "/say_ring_user_agreement?",
+    );
+    expect(capabilities.legal?.privacyPolicy.path).toContain(
+      "/say_ring_privacy_policy?",
+    );
+    const challenge = await h.service.requestCode({
+      channel: "email",
+      identifier: "ring@example.com",
+      purpose: "register",
+      locale: "en",
+      product: "say-ring",
+    });
+    await expect(
+      h.service.register({
+        challengeId: challenge.challengeId,
+        code: h.delivery.send.mock.calls[0]![0].code,
+        password: "Synthetic-only-password!",
+        consentVersion: "v1",
+        locale: "en",
+        product: "say-ring",
+      }),
+    ).rejects.toThrow("14 or older");
     expect(h.users().size).toBe(0);
-    await h.service.register({ challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-only-password!", consentVersion: "v1", locale: "en", product: "say-ring", ageConfirmed: true });
-    expect(h.tx.consentRecord.create.mock.calls.map(([call]: any[]) => call.data)).toEqual([
-      expect.objectContaining({ documentType: "say_ring_user_agreement", version: "v1", source: "global_app_v2:say-ring:en" }),
-      expect.objectContaining({ documentType: "say_ring_privacy_policy", version: "v1", source: "global_app_v2:say-ring:en" }),
+    await h.service.register({
+      challengeId: challenge.challengeId,
+      code: h.delivery.send.mock.calls[0]![0].code,
+      password: "Synthetic-only-password!",
+      consentVersion: "v1",
+      locale: "en",
+      product: "say-ring",
+      ageConfirmed: true,
+    });
+    expect(
+      h.tx.consentRecord.create.mock.calls.map(([call]: any[]) => call.data),
+    ).toEqual([
+      expect.objectContaining({
+        documentType: "say_ring_user_agreement",
+        version: "v1",
+        source: "global_app_v2:say-ring:en",
+      }),
+      expect.objectContaining({
+        documentType: "say_ring_privacy_policy",
+        version: "v1",
+        source: "global_app_v2:say-ring:en",
+      }),
     ]);
-    expect(h.tx.consentRecord.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({ documentType: "say_ring_minimum_age", version: "14-plus-v1" }),
-    }));
-    await expect(h.service.capabilities("en", "other-app")).rejects.toThrow("supported product");
+    expect(h.tx.consentRecord.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          documentType: "say_ring_minimum_age",
+          version: "14-plus-v1",
+        }),
+      }),
+    );
+    await expect(h.service.capabilities("en", "other-app")).rejects.toThrow(
+      "supported product",
+    );
   });
   it("allows reset delivery without registration legal documents, but never without a verified channel", async () => {
-    const h = harness(); h.tx.globalLegalDocument.findMany.mockResolvedValue([]);
-    const challenge = await h.service.requestCode({ channel: "email", identifier: "recovery@example.com", purpose: "reset_password" });
-    expect(challenge.challengeId).toBeTruthy(); expect(h.tx.globalLegalDocument.findMany).not.toHaveBeenCalled();
-    h.delivery.capabilities.mockResolvedValue({ email: false, sms: false, smsCountries: [] });
-    expect((await h.service.capabilities("en")).recovery).toEqual({ email: false, sms: false });
+    const h = harness();
+    h.tx.globalLegalDocument.findMany.mockResolvedValue([]);
+    const challenge = await h.service.requestCode({
+      channel: "email",
+      identifier: "recovery@example.com",
+      purpose: "reset_password",
+    });
+    expect(challenge.challengeId).toBeTruthy();
+    expect(h.tx.globalLegalDocument.findMany).not.toHaveBeenCalled();
+    h.delivery.capabilities.mockResolvedValue({
+      email: false,
+      sms: false,
+      smsCountries: [],
+    });
+    expect((await h.service.capabilities("en")).recovery).toEqual({
+      email: false,
+      sms: false,
+    });
   });
   it("does not touch persistence or delivery when a channel is unavailable", async () => {
-    const h = harness(); h.delivery.assertAvailable.mockRejectedValue(new Error("unavailable"));
-    await expect(h.service.requestCode({ channel: "email", identifier: "user@example.com" })).rejects.toThrow("unavailable");
-    expect(h.records().size).toBe(0); expect(h.delivery.send).not.toHaveBeenCalled();
+    const h = harness();
+    h.delivery.assertAvailable.mockRejectedValue(new Error("unavailable"));
+    await expect(
+      h.service.requestCode({
+        channel: "email",
+        identifier: "user@example.com",
+      }),
+    ).rejects.toThrow("unavailable");
+    expect(h.records().size).toBe(0);
+    expect(h.delivery.send).not.toHaveBeenCalled();
   });
   it("returns opaque challenge data, never the code, then creates a verified email account", async () => {
     const h = harness();
-    const challenge = await h.service.requestCode({ channel: "email", identifier: "New@Example.com", purpose: "register", locale: "de-DE" });
-    expect(challenge).toEqual({ challengeId: expect.any(String), expiresIn: 300, retryAfter: 60, maskedIdentifier: "n***@example.com" });
+    const challenge = await h.service.requestCode({
+      channel: "email",
+      identifier: "New@Example.com",
+      purpose: "register",
+      locale: "de-DE",
+    });
+    expect(challenge).toEqual({
+      challengeId: expect.any(String),
+      expiresIn: 300,
+      retryAfter: 60,
+      maskedIdentifier: "n***@example.com",
+    });
     const sent = h.delivery.send.mock.calls[0]![0];
-    expect(sent.locale).toBe("de"); expect(JSON.stringify(challenge)).not.toContain(sent.code);
-    const session = await h.service.register({ challengeId: challenge.challengeId, code: sent.code, password: "Synthetic-only-password!", consentVersion: "v1" });
+    expect(sent.locale).toBe("de");
+    expect(JSON.stringify(challenge)).not.toContain(sent.code);
+    const session = await h.service.register({
+      challengeId: challenge.challengeId,
+      code: sent.code,
+      password: "Synthetic-only-password!",
+      consentVersion: "v1",
+    });
     const stored = h.users().get(session.member.id);
-    expect(stored.email).toBe("new@example.com"); expect(stored.emailVerifiedAt).toBeInstanceOf(Date); expect(stored.mobile).toBeUndefined(); expect(session.member.locale).toBe("de");
+    expect(stored.email).toBe("new@example.com");
+    expect(stored.emailVerifiedAt).toBeInstanceOf(Date);
+    expect(stored.mobile).toBeUndefined();
+    expect(session.member.locale).toBe("de");
     expect(h.tx.consentRecord.create).toHaveBeenCalledTimes(2);
-    await expect(h.service.register({ challengeId: challenge.challengeId, code: sent.code, password: "Synthetic-only-password!", consentVersion: "v1" })).rejects.toThrow("expired");
-    expect(h.users().size).toBe(1); expect(h.sessions).toHaveLength(1);
+    await expect(
+      h.service.register({
+        challengeId: challenge.challengeId,
+        code: sent.code,
+        password: "Synthetic-only-password!",
+        consentVersion: "v1",
+      }),
+    ).rejects.toThrow("expired");
+    expect(h.users().size).toBe(1);
+    expect(h.sessions).toHaveLength(1);
   });
   it.each([
     ["email", "Member@Example.com", "member@example.com", "emailVerifiedAt"],
     ["sms", "+1 202 555 0123", "+12025550123", "mobileVerifiedAt"],
-  ] as const)("logs in or creates a passwordless %s account with one consumed OTP", async (channel, entered, normalized, verifiedField) => {
-    const h = harness();
-    const challenge = await h.service.requestLoginCode({ channel, identifier: entered, locale: "en" });
-    const sent = h.delivery.send.mock.calls[0]![0];
-    expect(sent).toMatchObject({ purpose: "login", identifier: normalized });
-    const session = await h.service.loginWithCode({ channel, identifier: entered, challengeId: challenge.challengeId, code: sent.code, consentVersion: "v1", locale: "en" });
-    const stored = h.users().get(session.user.id);
-    expect(stored[verifiedField]).toBeInstanceOf(Date);
-    expect(stored.passwordHash).toBeNull();
-    expect(h.tx.consentRecord.upsert).toHaveBeenCalledTimes(2);
-    await expect(h.service.loginWithCode({ channel, identifier: entered, challengeId: challenge.challengeId, code: sent.code, consentVersion: "v1", locale: "en" })).rejects.toThrow("expired");
-  });
+  ] as const)(
+    "logs in or creates a passwordless %s account with one consumed OTP",
+    async (channel, entered, normalized, verifiedField) => {
+      const h = harness();
+      const challenge = await h.service.requestLoginCode({
+        channel,
+        identifier: entered,
+        locale: "en",
+      });
+      const sent = h.delivery.send.mock.calls[0]![0];
+      expect(sent).toMatchObject({ purpose: "login", identifier: normalized });
+      const session = await h.service.loginWithCode({
+        channel,
+        identifier: entered,
+        challengeId: challenge.challengeId,
+        code: sent.code,
+        consentVersion: "v1",
+        locale: "en",
+      });
+      const stored = h.users().get(session.user.id);
+      expect(stored[verifiedField]).toBeInstanceOf(Date);
+      expect(stored.passwordHash).toBeNull();
+      expect(h.tx.consentRecord.upsert).toHaveBeenCalledTimes(2);
+      await expect(
+        h.service.loginWithCode({
+          channel,
+          identifier: entered,
+          challengeId: challenge.challengeId,
+          code: sent.code,
+          consentVersion: "v1",
+          locale: "en",
+        }),
+      ).rejects.toThrow("expired");
+    },
+  );
   it("binds a captured promoter when an international member completes code login", async () => {
     const h = harness();
-    const challenge = await h.service.requestLoginCode({ channel: "sms", identifier: "+1 202 555 0123", locale: "en" });
+    const challenge = await h.service.requestLoginCode({
+      channel: "sms",
+      identifier: "+1 202 555 0123",
+      locale: "en",
+    });
     const sent = h.delivery.send.mock.calls[0]![0];
-    const session = await h.service.loginWithCode({ channel: "sms", identifier: "+1 202 555 0123", challengeId: challenge.challengeId, code: sent.code, consentVersion: "v1", locale: "en", referralCode: "TEAM01" });
+    const session = await h.service.loginWithCode({
+      channel: "sms",
+      identifier: "+1 202 555 0123",
+      challengeId: challenge.challengeId,
+      code: sent.code,
+      consentVersion: "v1",
+      locale: "en",
+      referralCode: "TEAM01",
+    });
     expect(h.auth.bindReferral).toHaveBeenCalledWith(session.user.id, "TEAM01");
   });
-  it("supports domestic passwordless email login without weakening phone normalization", async () => {
+  it("supports the same passwordless email login independent of former realm", async () => {
     vi.stubEnv("APP_REALM", "domestic");
     const h = harness();
-    const challenge = await h.service.requestLoginCode({ channel: "email", identifier: "Domestic@Example.com" });
+    const challenge = await h.service.requestLoginCode({
+      channel: "email",
+      identifier: "Domestic@Example.com",
+    });
     const sent = h.delivery.send.mock.calls[0]![0];
-    const session = await h.service.loginWithCode({ channel: "email", identifier: "domestic@example.com", challengeId: challenge.challengeId, code: sent.code, consentVersion: "commerce-legal-v1" });
-    expect(h.users().get(session.user.id)).toMatchObject({ email: "domestic@example.com", emailVerifiedAt: expect.any(Date), nickname: "赛电用户", passwordHash: null });
-    await expect(h.service.requestLoginCode({ channel: "sms", identifier: "13800138000" })).rejects.toThrow("valid email");
+    const session = await h.service.loginWithCode({
+      channel: "email",
+      identifier: "domestic@example.com",
+      challengeId: challenge.challengeId,
+      code: sent.code,
+      consentVersion: "v1",
+    });
+    expect(h.users().get(session.user.id)).toMatchObject({
+      email: "domestic@example.com",
+      emailVerifiedAt: expect.any(Date),
+      nickname: "Saydian user",
+      passwordHash: null,
+    });
+    await expect(
+      h.service.requestLoginCode({ channel: "sms", identifier: "13800138000" }),
+    ).rejects.toThrow("valid email");
   });
   it("creates a verified international phone account with E.164 storage", async () => {
-    const h = harness(); const challenge = await h.service.requestCode({ channel: "sms", identifier: "+1 202 555 0123" });
-    const session = await h.service.register({ challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-only-password!", consentVersion: "v1" });
+    const h = harness();
+    const challenge = await h.service.requestCode({
+      channel: "sms",
+      identifier: "+1 202 555 0123",
+    });
+    const session = await h.service.register({
+      challengeId: challenge.challengeId,
+      code: h.delivery.send.mock.calls[0]![0].code,
+      password: "Synthetic-only-password!",
+      consentVersion: "v1",
+    });
     const stored = h.users().get(session.member.id);
-    expect(stored.mobile).toBe("+12025550123"); expect(stored.mobileVerifiedAt).toBeInstanceOf(Date); expect(stored.email).toBeUndefined();
+    expect(stored.mobile).toBe("+12025550123");
+    expect(stored.mobileVerifiedAt).toBeInstanceOf(Date);
+    expect(stored.email).toBeUndefined();
   });
   it("temporarily registers email or international phone without sending or marking a code as verified", async () => {
     vi.stubEnv("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED", "true");
@@ -202,78 +551,224 @@ describe("global registration challenges", () => {
   });
   it("keeps no-code registration closed unless the explicit temporary switch is enabled", async () => {
     const h = harness();
-    await expect(h.service.registerWithoutVerification({
-      channel: "email",
-      identifier: "closed@example.com",
-      password: "Synthetic-only-password!",
-      consentVersion: "v1",
-    })).rejects.toThrow("temporarily unavailable");
+    await expect(
+      h.service.registerWithoutVerification({
+        channel: "email",
+        identifier: "closed@example.com",
+        password: "Synthetic-only-password!",
+        consentVersion: "v1",
+      }),
+    ).rejects.toThrow("temporarily unavailable");
     expect(h.users().size).toBe(0);
     expect(h.sessions).toHaveLength(0);
   });
   it("enforces cooldown across verification purposes", async () => {
-    const h = harness(); await h.service.requestCode({ channel: "email", identifier: "rate@example.com" });
-    await expect(h.service.requestCode({ channel: "email", identifier: "rate@example.com", purpose: "reset_password" })).rejects.toThrow("wait");
+    const h = harness();
+    await h.service.requestCode({
+      channel: "email",
+      identifier: "rate@example.com",
+    });
+    await expect(
+      h.service.requestCode({
+        channel: "email",
+        identifier: "rate@example.com",
+        purpose: "reset_password",
+      }),
+    ).rejects.toThrow("wait");
     expect(h.delivery.send).toHaveBeenCalledTimes(1);
   });
   it("caps ten requests per recipient per day after cooldowns", async () => {
     const h = harness();
-    for (let i = 0; i < 10; i++) h.records().set(String(i), { channel: "email", identifier: "rate@example.com", createdAt: new Date() });
-    await expect(h.service.requestCode({ channel: "email", identifier: "rate@example.com" })).rejects.toThrow("Too many"); expect(h.delivery.send).not.toHaveBeenCalled();
+    for (let i = 0; i < 10; i++)
+      h.records().set(String(i), {
+        channel: "email",
+        identifier: "rate@example.com",
+        createdAt: new Date(),
+      });
+    await expect(
+      h.service.requestCode({
+        channel: "email",
+        identifier: "rate@example.com",
+      }),
+    ).rejects.toThrow("Too many");
+    expect(h.delivery.send).not.toHaveBeenCalled();
   });
   it("does not accept a failed delivery or issue a session", async () => {
-    const h = harness(); h.delivery.send.mockRejectedValue(new Error("provider failed"));
-    await expect(h.service.requestCode({ channel: "email", identifier: "fail@example.com" })).rejects.toThrow("provider failed");
-    expect([...h.records().values()][0].consumedAt).toBeInstanceOf(Date); expect(h.sessions).toHaveLength(0);
+    const h = harness();
+    h.delivery.send.mockRejectedValue(new Error("provider failed"));
+    await expect(
+      h.service.requestCode({
+        channel: "email",
+        identifier: "fail@example.com",
+      }),
+    ).rejects.toThrow("provider failed");
+    expect([...h.records().values()][0].consumedAt).toBeInstanceOf(Date);
+    expect(h.sessions).toHaveLength(0);
   });
   it("commits wrong-attempt counters and rejects the correct code after five failures", async () => {
-    const h = harness(); const ch = await h.service.requestCode({ channel: "email", identifier: "try@example.com" });
-    const valid = h.delivery.send.mock.calls[0]![0].code; const wrong = valid === "123456" ? "123457" : "123456";
-    for (let i = 0; i < 5; i++) await expect(h.service.register({ challengeId: ch.challengeId, code: wrong, password: "Synthetic-only-password!", consentVersion: "v1" })).rejects.toThrow("expired");
+    const h = harness();
+    const ch = await h.service.requestCode({
+      channel: "email",
+      identifier: "try@example.com",
+    });
+    const valid = h.delivery.send.mock.calls[0]![0].code;
+    const wrong = valid === "123456" ? "123457" : "123456";
+    for (let i = 0; i < 5; i++)
+      await expect(
+        h.service.register({
+          challengeId: ch.challengeId,
+          code: wrong,
+          password: "Synthetic-only-password!",
+          consentVersion: "v1",
+        }),
+      ).rejects.toThrow("expired");
     expect(h.records().get(ch.challengeId).attempts).toBe(5);
-    await expect(h.service.register({ challengeId: ch.challengeId, code: valid, password: "Synthetic-only-password!", consentVersion: "v1" })).rejects.toThrow("expired"); expect(h.sessions).toHaveLength(0);
+    await expect(
+      h.service.register({
+        challengeId: ch.challengeId,
+        code: valid,
+        password: "Synthetic-only-password!",
+        consentVersion: "v1",
+      }),
+    ).rejects.toThrow("expired");
+    expect(h.sessions).toHaveLength(0);
   });
   it("rejects expired, wrong-purpose and unknown challenges", async () => {
-    const h = harness(); const ch = await h.service.requestCode({ channel: "email", identifier: "reset@example.com", purpose: "reset_password" });
-    const input = { challengeId: ch.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-only-password!", consentVersion: "v1" };
+    const h = harness();
+    const ch = await h.service.requestCode({
+      channel: "email",
+      identifier: "reset@example.com",
+      purpose: "reset_password",
+    });
+    const input = {
+      challengeId: ch.challengeId,
+      code: h.delivery.send.mock.calls[0]![0].code,
+      password: "Synthetic-only-password!",
+      consentVersion: "v1",
+    };
     await expect(h.service.register(input)).rejects.toThrow("expired");
     h.records().get(ch.challengeId).expiresAt = new Date(0);
     await expect(h.service.resetPassword(input)).rejects.toThrow("expired");
-    await expect(h.service.resetPassword({ ...input, challengeId: randomUUID() })).rejects.toThrow("expired");
+    await expect(
+      h.service.resetPassword({ ...input, challengeId: randomUUID() }),
+    ).rejects.toThrow("expired");
   });
   it("requires consent and validates UTF-8 password byte length before consuming a code", async () => {
     const h = harness();
-    await expect(h.service.register({ password: "Synthetic-only-password!" })).rejects.toThrow("terms");
-    await expect(h.service.register({ password: "好".repeat(25), consentVersion: "v1" })).rejects.toThrow("UTF-8"); expect(h.sessions).toHaveLength(0);
+    await expect(
+      h.service.register({ password: "Synthetic-only-password!" }),
+    ).rejects.toThrow("terms");
+    await expect(
+      h.service.register({ password: "好".repeat(25), consentVersion: "v1" }),
+    ).rejects.toThrow("UTF-8");
+    expect(h.sessions).toHaveLength(0);
   });
   it("resets a verified account and revokes previous sessions in the same transaction", async () => {
-    const h = harness(); h.users().set("member", { id: "member", email: "reset@example.com", status: "ACTIVE", passwordHash: "old" });
-    const ch = await h.service.requestCode({ channel: "email", identifier: "reset@example.com", purpose: "reset_password" });
-    const session = await h.service.resetPassword({ challengeId: ch.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-new-password!" });
-    expect(h.users().get(session.member.id).passwordHash).not.toBe("old"); expect(h.tx.userSession.updateMany).toHaveBeenCalledWith({ where: { userId: "member", revokedAt: null }, data: { revokedAt: expect.any(Date) } });
+    const h = harness();
+    h.users().set("member", {
+      id: "member",
+      email: "reset@example.com",
+      status: "ACTIVE",
+      passwordHash: "old",
+    });
+    const ch = await h.service.requestCode({
+      channel: "email",
+      identifier: "reset@example.com",
+      purpose: "reset_password",
+    });
+    const session = await h.service.resetPassword({
+      challengeId: ch.challengeId,
+      code: h.delivery.send.mock.calls[0]![0].code,
+      password: "Synthetic-new-password!",
+    });
+    expect(h.users().get(session.member.id).passwordHash).not.toBe("old");
+    expect(h.tx.userSession.updateMany).toHaveBeenCalledWith({
+      where: { userId: "member", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
   });
   it("never uses a merely registered phone as a password-reset credential", async () => {
-    const h = harness(); h.users().set("member", { id: "member", mobile: "+12025550123", mobileVerifiedAt: null, status: "ACTIVE", passwordHash: null });
-    const ch = await h.service.requestCode({ channel: "sms", identifier: "+12025550123", purpose: "reset_password" });
-    await expect(h.service.resetPassword({ challengeId: ch.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-new-password!" })).rejects.toMatchObject({ status: 403 });
-    expect(h.users().get("member").passwordHash).toBeNull(); expect(h.records().get(ch.challengeId).consumedAt).toBeNull(); expect(h.sessions).toHaveLength(0);
+    const h = harness();
+    h.users().set("member", {
+      id: "member",
+      mobile: "+12025550123",
+      mobileVerifiedAt: null,
+      status: "ACTIVE",
+      passwordHash: null,
+    });
+    const ch = await h.service.requestCode({
+      channel: "sms",
+      identifier: "+12025550123",
+      purpose: "reset_password",
+    });
+    await expect(
+      h.service.resetPassword({
+        challengeId: ch.challengeId,
+        code: h.delivery.send.mock.calls[0]![0].code,
+        password: "Synthetic-new-password!",
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(h.users().get("member").passwordHash).toBeNull();
+    expect(h.records().get(ch.challengeId).consumedAt).toBeNull();
+    expect(h.sessions).toHaveLength(0);
   });
   it("does not revive a disabled account through reset", async () => {
-    const h = harness(); h.users().set("member", { id: "member", email: "disabled@example.com", status: "DISABLED" });
-    const ch = await h.service.requestCode({ channel: "email", identifier: "disabled@example.com", purpose: "reset_password" });
-    await expect(h.service.resetPassword({ challengeId: ch.challengeId, code: h.delivery.send.mock.calls[0]![0].code, password: "Synthetic-new-password!" })).rejects.toThrow("cannot be reset"); expect(h.sessions).toHaveLength(0);
-  });
-  it("normalizes login aliases and is unavailable on the domestic deployment", async () => {
     const h = harness();
-    await h.service.login({ identifier: "Test@Example.com", password: "Synthetic-only-password!" });
-    await h.service.login({ channel: "sms", identifier: "+1 202 555 0123", password: "Synthetic-only-password!" });
-    expect(h.auth.login).toHaveBeenNthCalledWith(1, "test@example.com", "Synthetic-only-password!");
-    expect(h.auth.login).toHaveBeenNthCalledWith(2, "+12025550123", "Synthetic-only-password!");
-    vi.stubEnv("APP_REALM", "domestic"); await expect(h.service.capabilities()).rejects.toThrow("unavailable");
+    h.users().set("member", {
+      id: "member",
+      email: "disabled@example.com",
+      status: "DISABLED",
+    });
+    const ch = await h.service.requestCode({
+      channel: "email",
+      identifier: "disabled@example.com",
+      purpose: "reset_password",
+    });
+    await expect(
+      h.service.resetPassword({
+        challengeId: ch.challengeId,
+        code: h.delivery.send.mock.calls[0]![0].code,
+        password: "Synthetic-new-password!",
+      }),
+    ).rejects.toThrow("cannot be reset");
+    expect(h.sessions).toHaveLength(0);
+  });
+  it("normalizes login aliases into the same account domain", async () => {
+    const h = harness();
+    await h.service.login({
+      identifier: "Test@Example.com",
+      password: "Synthetic-only-password!",
+    });
+    await h.service.login({
+      channel: "sms",
+      identifier: "+1 202 555 0123",
+      password: "Synthetic-only-password!",
+    });
+    expect(h.auth.login).toHaveBeenNthCalledWith(
+      1,
+      "test@example.com",
+      "Synthetic-only-password!",
+    );
+    expect(h.auth.login).toHaveBeenNthCalledWith(
+      2,
+      "+12025550123",
+      "Synthetic-only-password!",
+    );
+    vi.stubEnv("APP_REALM", "domestic");
+    await expect(h.service.capabilities()).resolves.toMatchObject({ realm: "global" });
+    await h.service.login({ mobile: "13800138000", password: "Synthetic-only-password!" });
+    expect(h.auth.login).toHaveBeenLastCalledWith("+8613800138000", "Synthetic-only-password!");
   });
   it("records Say Ring password consent only after the current legal contract and credentials pass", async () => {
     const h = harness();
-    h.users().set("ring-password-user", { id: "ring-password-user", email: "ring@example.com", emailVerifiedAt: null, mobileVerifiedAt: null, nickname: "Ring", status: "ACTIVE" });
+    h.users().set("ring-password-user", {
+      id: "ring-password-user",
+      email: "ring@example.com",
+      emailVerifiedAt: null,
+      mobileVerifiedAt: null,
+      nickname: "Ring",
+      status: "ACTIVE",
+    });
     await h.service.login({
       channel: "email",
       identifier: "Ring@Example.com",
@@ -284,41 +779,130 @@ describe("global registration challenges", () => {
       consentAccepted: true,
       ageConfirmed: false,
     });
-    expect(h.auth.authenticatePassword).toHaveBeenCalledWith("ring@example.com", "Synthetic-only-password!");
-    expect(h.tx.consentRecord.upsert.mock.calls.map(([call]: any[]) => call)).toEqual([
-      expect.objectContaining({ create: expect.objectContaining({ userId: "ring-password-user", documentType: "say_ring_user_agreement", version: "v1", source: "global_app_v2_password:say-ring:en" }) }),
-      expect.objectContaining({ create: expect.objectContaining({ userId: "ring-password-user", documentType: "say_ring_privacy_policy", version: "v1", source: "global_app_v2_password:say-ring:en" }) }),
+    expect(h.auth.authenticatePassword).toHaveBeenCalledWith(
+      "ring@example.com",
+      "Synthetic-only-password!",
+    );
+    expect(
+      h.tx.consentRecord.upsert.mock.calls.map(([call]: any[]) => call),
+    ).toEqual([
+      expect.objectContaining({
+        create: expect.objectContaining({
+          userId: "ring-password-user",
+          documentType: "say_ring_user_agreement",
+          version: "v1",
+          source: "global_app_v2_password:say-ring:en",
+        }),
+      }),
+      expect.objectContaining({
+        create: expect.objectContaining({
+          userId: "ring-password-user",
+          documentType: "say_ring_privacy_policy",
+          version: "v1",
+          source: "global_app_v2_password:say-ring:en",
+        }),
+      }),
     ]);
     expect(h.auth.issueSession).toHaveBeenCalledWith("ring-password-user");
     expect(h.tx.user.create).not.toHaveBeenCalled();
-    expect(h.users().get("ring-password-user")).toMatchObject({ emailVerifiedAt: null, mobileVerifiedAt: null });
-    expect(h.tx.consentRecord.upsert.mock.calls.some(([call]: any[]) => call.create.documentType === "say_ring_minimum_age")).toBe(false);
+    expect(h.users().get("ring-password-user")).toMatchObject({
+      emailVerifiedAt: null,
+      mobileVerifiedAt: null,
+    });
+    expect(
+      h.tx.consentRecord.upsert.mock.calls.some(
+        ([call]: any[]) => call.create.documentType === "say_ring_minimum_age",
+      ),
+    ).toBe(false);
   });
   it("does not authenticate or issue a session when Say Ring consent or legal checks fail", async () => {
     const missingConsent = harness();
-    await expect(missingConsent.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "v1" })).rejects.toMatchObject({ status: 400, response: { errorKey: "consent_required" } });
+    await expect(
+      missingConsent.service.login({
+        channel: "email",
+        identifier: "ring@example.com",
+        password: "Synthetic-only-password!",
+        product: "say-ring",
+        locale: "en",
+        consentVersion: "v1",
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      response: { errorKey: "consent_required" },
+    });
     expect(missingConsent.auth.authenticatePassword).not.toHaveBeenCalled();
     expect(missingConsent.auth.issueSession).not.toHaveBeenCalled();
 
-    const unavailable = harness(); unavailable.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
-    await expect(unavailable.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "v1", consentAccepted: true })).rejects.toMatchObject({ status: 503, response: { errorKey: "legal_unavailable" } });
+    const unavailable = harness();
+    unavailable.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
+    await expect(
+      unavailable.service.login({
+        channel: "email",
+        identifier: "ring@example.com",
+        password: "Synthetic-only-password!",
+        product: "say-ring",
+        locale: "en",
+        consentVersion: "v1",
+        consentAccepted: true,
+      }),
+    ).rejects.toMatchObject({
+      status: 503,
+      response: { errorKey: "legal_unavailable" },
+    });
     expect(unavailable.auth.authenticatePassword).not.toHaveBeenCalled();
 
     const stale = harness();
-    await expect(stale.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "old", consentAccepted: true })).rejects.toMatchObject({ status: 409, response: { errorKey: "consent_outdated" } });
+    await expect(
+      stale.service.login({
+        channel: "email",
+        identifier: "ring@example.com",
+        password: "Synthetic-only-password!",
+        product: "say-ring",
+        locale: "en",
+        consentVersion: "old",
+        consentAccepted: true,
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      response: { errorKey: "consent_outdated" },
+    });
     expect(stale.auth.authenticatePassword).not.toHaveBeenCalled();
   });
   it("does not record consent or issue a Say Ring session for invalid existing credentials", async () => {
     const h = harness();
-    h.auth.authenticatePassword.mockRejectedValueOnce(new UnauthorizedException("账号或密码错误"));
-    await expect(h.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "v1", consentAccepted: true })).rejects.toMatchObject({ status: 401 });
+    h.auth.authenticatePassword.mockRejectedValueOnce(
+      new UnauthorizedException("账号或密码错误"),
+    );
+    await expect(
+      h.service.login({
+        channel: "email",
+        identifier: "ring@example.com",
+        password: "Synthetic-only-password!",
+        product: "say-ring",
+        locale: "en",
+        consentVersion: "v1",
+        consentAccepted: true,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
     expect(h.tx.consentRecord.upsert).not.toHaveBeenCalled();
     expect(h.auth.issueSession).not.toHaveBeenCalled();
   });
   it("does not issue a Say Ring session when dedicated consent persistence fails", async () => {
     const h = harness();
-    h.tx.consentRecord.upsert.mockRejectedValueOnce(new Error("synthetic persistence failure"));
-    await expect(h.service.login({ channel: "email", identifier: "ring@example.com", password: "Synthetic-only-password!", product: "say-ring", locale: "en", consentVersion: "v1", consentAccepted: true })).rejects.toThrow("synthetic persistence failure");
+    h.tx.consentRecord.upsert.mockRejectedValueOnce(
+      new Error("synthetic persistence failure"),
+    );
+    await expect(
+      h.service.login({
+        channel: "email",
+        identifier: "ring@example.com",
+        password: "Synthetic-only-password!",
+        product: "say-ring",
+        locale: "en",
+        consentVersion: "v1",
+        consentAccepted: true,
+      }),
+    ).rejects.toThrow("synthetic persistence failure");
     expect(h.auth.authenticatePassword).toHaveBeenCalledOnce();
     expect(h.auth.issueSession).not.toHaveBeenCalled();
   });
@@ -334,35 +918,133 @@ describe("global registration challenges", () => {
       passwordHash: await hash(password, 12),
       ...where,
     }));
-    const auth = new AuthService({ user: { findUnique } } as any, {} as any, {} as any, {} as any);
+    const auth = new AuthService(
+      { user: { findUnique } } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
     vi.spyOn(auth, "issueSession").mockResolvedValue({} as any);
     await expect(auth.login("+1 202 555 0123", password)).resolves.toEqual({});
     vi.stubEnv("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED", "true");
     await expect(auth.login("+1 202 555 0123", password)).resolves.toEqual({});
-    expect(findUnique).toHaveBeenLastCalledWith({ where: { mobile: "+12025550123" } });
+    expect(findUnique).toHaveBeenLastCalledWith({
+      where: { mobile: "+12025550123" },
+    });
   });
 });
 
 describe("global real-channel readiness", () => {
   it("is disabled by default without reading any credentials", async () => {
-    vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "disabled"); vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled");
-    const resolve = vi.fn(); const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: vi.fn().mockResolvedValue(null) } } as any, { resolve } as any);
-    expect(await service.capabilities()).toEqual({ email: false, sms: false, smsCountries: [] }); expect(resolve).not.toHaveBeenCalled();
+    vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "disabled");
+    vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled");
+    const resolve = vi.fn();
+    const service = new GlobalVerificationDeliveryService(
+      {
+        integrationConfig: { findUnique: vi.fn().mockResolvedValue(null) },
+      } as any,
+      { resolve } as any,
+      { aliyunReady: vi.fn().mockResolvedValue(false) } as any,
+    );
+    expect(await service.capabilities()).toEqual({
+      email: false,
+      sms: false,
+      smsCountries: [],
+    });
+    expect(resolve).not.toHaveBeenCalled();
   });
   it("requires configured and operator-verified delivery with actual secret fields", async () => {
-    vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "webhook"); vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled");
-    const row = { state: "CONFIGURED", publicConfig: { provider: "webhook", webhookUrl: "https://example.invalid/verify", deliveryVerified: false } };
-    const resolve = vi.fn(async () => ({ webhookToken: "synthetic-provider-token" }));
-    const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: async () => row } } as any, { resolve } as any);
-    expect((await service.capabilities()).email).toBe(false); expect(resolve).not.toHaveBeenCalled();
-    row.publicConfig.deliveryVerified = true; expect((await service.capabilities()).email).toBe(true);
-    resolve.mockResolvedValue({} as any); expect((await service.capabilities()).email).toBe(false);
+    vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "webhook");
+    vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled");
+    const row = {
+      state: "CONFIGURED",
+      publicConfig: {
+        provider: "webhook",
+        webhookUrl: "https://example.invalid/verify",
+        deliveryVerified: false,
+      },
+    };
+    const resolve = vi.fn(async () => ({
+      webhookToken: "synthetic-provider-token",
+    }));
+    const service = new GlobalVerificationDeliveryService(
+      { integrationConfig: { findUnique: async () => row } } as any,
+      { resolve } as any,
+      { aliyunReady: vi.fn().mockResolvedValue(false) } as any,
+    );
+    expect((await service.capabilities()).email).toBe(false);
+    expect(resolve).not.toHaveBeenCalled();
+    row.publicConfig.deliveryVerified = true;
+    expect((await service.capabilities()).email).toBe(true);
+    resolve.mockResolvedValue({} as any);
+    expect((await service.capabilities()).email).toBe(false);
   });
   it("never promises every phone country and does not call the network outside configured countries", async () => {
-    vi.stubEnv("GLOBAL_SMS_PROVIDER", "webhook"); vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "disabled");
-    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
-    const service = new GlobalVerificationDeliveryService({ integrationConfig: { findUnique: async () => ({ state: "CONFIGURED", publicConfig: { provider: "webhook", deliveryVerified: true, countries: ["US", "US", "ZZ"] } }) } } as any, { resolve: async () => ({ webhookUrl: "https://example.invalid/verify", webhookToken: "synthetic-provider-token" }) } as any);
+    vi.stubEnv("GLOBAL_SMS_PROVIDER", "webhook");
+    vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "disabled");
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const service = new GlobalVerificationDeliveryService(
+      {
+        integrationConfig: {
+          findUnique: async () => ({
+            state: "CONFIGURED",
+            publicConfig: {
+              provider: "webhook",
+              deliveryVerified: true,
+              countries: ["US", "US", "ZZ"],
+            },
+          }),
+        },
+      } as any,
+      {
+        resolve: async () => ({
+          webhookUrl: "https://example.invalid/verify",
+          webhookToken: "synthetic-provider-token",
+        }),
+      } as any,
+      { aliyunReady: vi.fn().mockResolvedValue(false) } as any,
+    );
     expect((await service.capabilities()).smsCountries).toEqual(["US"]);
-    await expect(service.assertAvailable("sms", "DE")).rejects.toThrow("not available"); expect(fetch).not.toHaveBeenCalled();
+    await expect(service.assertAvailable("sms", "DE")).rejects.toThrow(
+      "not available",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("uses the configured Aliyun SMS integration only for mainland China numbers", async () => {
+    vi.stubEnv("GLOBAL_SMS_PROVIDER", "disabled");
+    vi.stubEnv("GLOBAL_EMAIL_PROVIDER", "disabled");
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const sms = {
+      aliyunReady: vi.fn().mockResolvedValue(true),
+      send: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new GlobalVerificationDeliveryService(
+      {
+        integrationConfig: { findUnique: vi.fn().mockResolvedValue(null) },
+      } as any,
+      { resolve: vi.fn() } as any,
+      sms as any,
+    );
+    expect(await service.capabilities()).toEqual({
+      email: false,
+      sms: true,
+      smsCountries: ["CN"],
+    });
+    await service.send({
+      channel: "sms",
+      identifier: "+8613812345678",
+      country: "CN",
+      code: "123456",
+      purpose: "login",
+      locale: "zh-CN",
+      challengeId: "synthetic",
+    });
+    expect(sms.send).toHaveBeenCalledWith("13812345678", "123456", "login");
+    await expect(service.assertAvailable("sms", "US")).rejects.toThrow(
+      "not available",
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

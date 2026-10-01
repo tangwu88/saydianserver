@@ -56,7 +56,7 @@ describe("MaintenanceMiddleware", () => {
 
     expect(status).toHaveBeenCalledWith(503);
     expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "系统维护中，请稍后再试" }),
+      expect.objectContaining({ message: "The service is under maintenance. Please try again later." }),
     );
     expect(next).not.toHaveBeenCalled();
   });

@@ -49,11 +49,11 @@ describe("raw health access without a manual super-admin reason", () => {
     await expect(h.service.rawHealth(superAdmin, "member-id", "request-id", "")).rejects.toThrow("audit unavailable");
   });
 
-  it("does not change the domestic reason policy or audit shape", async () => {
+  it("applies the same authorization and audit rules independent of former realm", async () => {
     vi.stubEnv("APP_REALM", "domestic"); const h = harness();
-    await expect(h.service.rawHealth(superAdmin, "member-id", "r", "")).rejects.toThrow("5至300字");
+    await expect(h.service.rawHealth(auditor, "member-id", "r", "")).rejects.toThrow("5至300字");
     await h.service.rawHealth(superAdmin, "member-id", "r", "已有人工审核原因");
-    expect(h.auditLog.create.mock.calls[0]?.[0].data.afterJson).toEqual({ recordCount: 1, reason: "已有人工审核原因" });
+    expect(h.auditLog.create.mock.calls[0]?.[0].data.afterJson).toEqual({ recordCount: 1, reason: "已有人工审核原因", reasonSource: "PROVIDED" });
   });
 
   it("takes authorization roles only from the authenticated context, not request query claims", () => {

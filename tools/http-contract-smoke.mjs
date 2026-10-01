@@ -24,7 +24,7 @@ const v2 = "/api/saydian-app/v2";
 const password = "local-fixture-password-only";
 async function registerVerified(mobile, nickname) {
   const rejected = await request(v2 + "/auth/register", { method: "POST", body: { mobile, password, nickname, consentVersion: "fixture-only" } });
-  check(rejected.json.code, 400);
+  check(rejected.json.code, 503); // Unverified registration stays disabled in the unified account service.
   const otp = (await request(v2 + "/auth/sms-code", { method: "POST", body: { mobile, usage: "register" } })).json;
   check(otp.code, 200);
   assert.match(otp.data.devCode ?? "", /^\d{6}$/);
@@ -73,6 +73,22 @@ try {
   check((await request(v1 + "/care/save", { method: "POST", token: tokenB, body: { id: invites[0].id, examine_status: 1 } })).json.code, 200);
   const memberB = (await request(v1 + "/member/my", { token: tokenB })).json.data;
   const memberA = login.json.data.member;
+  const canonicalLogin = await request(v2 + "/auth/login", { method: "POST", body: { mobile: "19900000002", password } });
+  const aliasLogin = await request("/global" + v2 + "/auth/login", { method: "POST", body: { username: "+8619900000002", password } });
+  check(canonicalLogin.json.code, 200); check(aliasLogin.json.code, 200);
+  check(canonicalLogin.json.data.member.id, b.data.member.id);
+  check(aliasLogin.json.data.member.id, b.data.member.id);
+  const bound = await request(v2 + "/devices", { method: "POST", token: tokenB, body: { deviceId: "synthetic-ci-device", vendor: "TEST", model: "CI-only", sdkData: "raw|connection|fixture" } });
+  check(bound.json.code, 200);
+  for (const suffix of ["/members/me", "/devices", "/health/records?metric=heart_rate"]) {
+    const direct = await request(v2 + suffix, { token: canonicalLogin.json.data.accessToken });
+    const alias = await request("/global" + v2 + suffix, { token: aliasLogin.json.data.accessToken });
+    check(direct.json.code, 200); check(alias.json.code, 200); check(alias.json.data, direct.json.data);
+  }
+  check((await prisma.deviceConnectionEvent.findFirstOrThrow({ where: { deviceBindingId: bound.json.data.id } })).rawPayload.includes("sdkData=raw\\|connection\\|fixture"), true);
+  const canonicalOrders = await request("/api/saidian-mall/v1/storefront/orders", { token: tokenB });
+  const aliasOrders = await request("/global/api/saidian-mall/v1/storefront/orders", { token: aliasLogin.json.data.accessToken });
+  check(canonicalOrders.status, 200); check(aliasOrders.json.data ?? aliasOrders.json, canonicalOrders.json.data ?? canonicalOrders.json);
   check((await request(`${v1}/daily-date/preview?type=heartReat&selectmember=${memberB.id}`, { token: tokenA })).json.code, 403);
   check((await request(v1 + "/care-setting", { method: "POST", token: tokenB, body: { to_member_id: memberA.id, setting: ["heartReat"] } })).json.code, 200);
   check((await request(`${v1}/daily-date/preview?type=heartReat&selectMemberId=${memberB.id}`, { token: tokenA })).json.data[0].heartReat, 75);

@@ -41,12 +41,46 @@ temporary_dir=$(mktemp -d)
 trap 'rm -rf -- "$temporary_dir"' EXIT
 candidate="$temporary_dir/gateway-nginx.conf"
 preserved_global_routes="$temporary_dir/global-routes.conf"
+preserved_admin_upstream="$temporary_dir/admin-upstream.txt"
 http_begin="# BEGIN SAYDIAN APP HTTP $app_domain"
 http_end="# END SAYDIAN APP HTTP $app_domain"
 https_begin="# BEGIN SAYDIAN APP HTTPS $app_domain"
 https_end="# END SAYDIAN APP HTTPS $app_domain"
 global_begin="  # BEGIN SAYDIAN GLOBAL ROUTES"
 global_end="  # END SAYDIAN GLOBAL ROUTES"
+
+# Preserve the intentionally selected public admin upstream when the domestic
+# managed block is regenerated. Fresh installs without an admin block continue
+# to use the domestic template default.
+if ! awk \
+  -v https_begin="$https_begin" -v https_end="$https_end" '
+  $0 == https_begin { in_https = 1 }
+  in_https && $0 == "  location /admin/ {" {
+    if (in_admin || seen_admin) exit 51
+    in_admin = 1
+    seen_admin = 1
+    next
+  }
+  in_admin && $0 ~ /^[[:space:]]*proxy_pass[[:space:]]/ {
+    passes++
+    if ($0 == "    proxy_pass http://global-admin:8080;") upstream = "global-admin"
+    else if ($0 == "    proxy_pass http://saydianapp-admin:8080;") upstream = "saydianapp-admin"
+    else exit 52
+  }
+  in_admin && $0 == "  }" { in_admin = 0; closed_admin = 1 }
+  $0 == https_end {
+    if (in_admin) exit 53
+    in_https = 0
+  }
+  END {
+    if (in_admin || seen_admin != closed_admin || (seen_admin && passes != 1)) exit 54
+    if (upstream) print upstream
+  }
+' "$gateway_config" > "$preserved_admin_upstream"; then
+  echo "Cannot safely identify the existing /admin/ upstream" >&2
+  exit 1
+fi
+admin_upstream=$(cat "$preserved_admin_upstream")
 
 # The independently deployed international routes live inside the managed TLS
 # server block. Preserve that explicitly marked block when this script rebuilds
@@ -89,10 +123,18 @@ sed "s/__APP_DOMAIN__/$app_domain/g" "$http_template" >> "$candidate"
 printf '\n' >> "$candidate"
 awk \
   -v app_domain="$app_domain" \
+  -v admin_upstream="$admin_upstream" \
   -v placeholder="  __SAYDIAN_GLOBAL_ROUTES__" \
   -v routes_file="$preserved_global_routes" '
   {
     gsub(/__APP_DOMAIN__/, app_domain)
+    if ($0 == "  location /admin/ {") {
+      in_admin = 1
+      admin_blocks++
+    } else if (in_admin && $0 == "    proxy_pass http://saydianapp-admin:8080;" && admin_upstream == "global-admin") {
+      $0 = "    proxy_pass http://global-admin:8080;"
+      admin_replacements++
+    }
     if ($0 == placeholder) {
       while ((getline route < routes_file) > 0) print route
       close(routes_file)
@@ -100,8 +142,12 @@ awk \
       next
     }
     print
+    if (in_admin && $0 == "  }") in_admin = 0
   }
-  END { if (placeholders != 1) exit 46 }
+  END {
+    if (placeholders != 1 || admin_blocks != 1) exit 46
+    if (admin_upstream == "global-admin" && admin_replacements != 1) exit 47
+  }
 ' "$https_template" >> "$candidate"
 cp "$candidate" "$gateway_config"
 if ! docker exec "$gateway_container" nginx -t; then

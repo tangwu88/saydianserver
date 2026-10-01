@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **363 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **368 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -48,7 +48,7 @@
 | `POST /api/v1/member/member/save` | 旧版修改资料 | member | Profile：nickname、head_portrait/avatarUrl、sex/gender、birthday、height/heightCm、weight/weightKg；仅提交需修改字段 | LegacyProfile | 核心服务 |
 | `GET /api/v1/member/member-mubiao/preview` | 旧版活动目标 | member | 无请求体 | {steps,juli,reliang} | 核心服务 |
 | `POST /api/v1/member/member-mubiao` | 旧版保存目标 | member | 表单 steps、juli(米)、reliang(kcal) | 规范目标对象；以重新读取为准 | 核心服务 |
-| `POST /api/v1/member/health-records/batch` | 旧前缀批量健康同步 | member | HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册；V1 缺少幂等头时使用请求摘要 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
+| `POST /api/v1/member/health-records/batch` | 旧前缀批量健康同步 | member | HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册；V1 缺少幂等头时使用请求摘要 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
 | `GET /api/v1/member/health-warning/preview` | 旧App预警开关与阈值 | member | 无请求体 | heart_auto/heart_num/blood_pressure_auto/blood_glucose_auto/body_temperature_auto；不提供诊断 | 核心服务 |
 | `POST /api/v1/member/health-warning` | 保存旧App预警配置 | member | multipart旧开关与heart_num；保留未暴露的阈值和共享配置；未配置阈值不得开启 | 旧预警配置 | 核心服务 |
 | `POST /api/v1/member/feedback` | 旧App意见反馈 | member | multipart type/content/contact/attachments；附件需本人所有 | {id,status} | 核心服务 |
@@ -163,7 +163,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（114）
+## V2 App 接口（116）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -242,11 +242,12 @@
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
 | `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503；语言指令不改变健康安全边界 |
 | `GET /api/saydian-app/v2/devices` | 已绑定设备 | member | 无请求体 | Device[]；只含未解绑设备 | 核心服务 |
-| `POST /api/saydian-app/v2/devices` | 绑定设备快照 | member | {deviceId/hardwareId,vendor,model,displayName/name,firmware?,capabilities?:string[],syncCursor?} | Device；不是服务端蓝牙连接 | 核心服务 |
+| `POST /api/saydian-app/v2/devices` | 上报设备连接 | member | {deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?}；macAddress仅接受标准 MAC，iOS UUID 不可冒充 | Device；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 \| 字段=值` 字符串；不是服务端蓝牙连接 | 核心服务 |
 | `PATCH /api/saydian-app/v2/devices/:id/capabilities` | 更新设备能力及游标 | member | path:id；{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID | Device | 核心服务 |
 | `DELETE /api/saydian-app/v2/devices/:id` | 解绑设备 | member | path:id；id=绑定记录 UUID | {unbound:true}；保留历史健康数据 | 核心服务 |
-| `POST /api/saydian-app/v2/health/records/batch` | 健康批量同步 | member | header:idempotency-key；HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储，不填不推断；详细记录结构见调用手册 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
-| `GET /api/saydian-app/v2/health/records` | 本人健康历史 | member | query:metric?，query:limit?，query:before?；metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间 | {items,nextCursor}；按采集时间和UUID稳定分页，相同采集时间记录不丢页 | 核心服务 |
+| `GET /api/saydian-app/v2/health/capabilities` | 健康同步能力 | member | 无请求体 | {dailySummaryVersions:true,dailySummaryVersion:1}；只表示服务端支持日汇总版本折叠，与普通设备能力无关 | 核心服务 |
+| `POST /api/saydian-app/v2/health/records/batch` | 健康批量同步 | member | header:idempotency-key；HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
+| `GET /api/saydian-app/v2/health/records` | 本人健康历史 | member | query:metric?，query:limit?，query:before?；metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间 | {items,nextCursor}；逐条记录保持原样；同会员/指标/设备/本地日期的日汇总只返回最新版本并回显aggregation | 核心服务 |
 | `GET /api/saydian-app/v2/health/warning-rules` | 读取阈值提醒 | member | 无请求体 | 规则数组；未获取阈值为 null | 核心服务 |
 | `GET /api/saydian-app/v2/health/warnings` | 读取提醒事件 | member | query:limit?；limit 默认 50 | 提醒数组；仅阈值提醒，不是诊断 | 核心服务 |
 | `POST /api/saydian-app/v2/health/warning-rules` | 保存阈值提醒 | member | {rules:[{metric,enabled,lowThreshold?,highThreshold?,secondaryHighThreshold?,shareWithCare?}]}；目前仅本人的提醒闭环 | 保存后的规则数组 | 核心服务 |
@@ -278,11 +279,12 @@
 | `POST /api/saydian-app/v2/support/sport-route-map` | Say Ring 高德运动轨迹图 | member | 会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点 | 高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图 | 高德 Web 服务坐标转换与静态地图 API |
 | `GET /api/saydian-app/v2/support/app-package/:fileName` | Say Ring 公开安装包 | public | path:fileName；fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名 | 安装包原始文件流，含 Content-Length、ETag 和 nosniff | 已配置对象存储 |
 | `POST /api/saydian-app/v2/support/feedback` | 提交反馈 | member | {content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项} | {id,status} | 核心服务 |
+| `POST /api/saydian-app/v2/files/say-ring-avatar` | Say Ring 上传头像 | member | file:file；会员令牌；multipart file，JPEG/PNG/WebP，最大 10 MiB；仅国际环境 | {id,url,sha256,byteSize}；URL 与现有头像接口一致 | Say Ring 专用服务器持久目录；开关关闭时沿用原头像存储 |
 | `POST /api/saydian-app/v2/files` | 上传图片 | member | file:file，query:purpose?；multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP | {id,url,...} | 私有对象存储 |
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
-| `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 对象存储 |
+| `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（104）
+## 管理后台接口（107）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -302,9 +304,11 @@
 | `POST /api/saydian-app/admin/v1/members/:id/points-adjustments` | 超级管理员调整会员积分 | admin: SUPER_ADMIN | path:id；id=会员UUID；{deltaCents:非零整数分,reason:2至200字,idempotencyKey:UUID}；单次绝对值不超过100万元 | 返回{userId,deltaCents,balanceCents,idempotent}；余额不可为负，生成会员积分流水与后台审计，同一请求编号安全重试；国内与国际版SUPER_ADMIN可用 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/members/:id/verification` | 超级管理员人工确认联系方式 | admin: SUPER_ADMIN | path:id；id=会员UUID；{channel:mobile\|email,verified:boolean,expectedUpdatedAt}；只调整已有联系方式的验证状态，不修改号码或邮箱 | 返回脱敏联系方式与手机/邮箱独立验证状态；并发变化409；写入专门审计。人工确认后会员需重新登录，临时测试会话不会原地提权 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-summary` | 会员健康数量摘要 | admin | path:id；id=会员 UUID | 按指标数量与首末采集时间 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/members/:id/devices` | 会员设备列表 | admin | path:id；id=会员 UUID | 返回指定会员最多500台设备，含稳定脱敏标识、蓝牙名称、型号、MAC、固件、最近连接和绑定状态 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/care` | 后台关爱关系 | admin | 无请求体 | 最多500条，双方昵称和指标权限；尚无分页 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/devices` | 后台设备快照 | admin | 无请求体 | 最多500条；尚无分页 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/devices` | 后台设备快照 | admin | 无请求体 | 最多500条；含会员编号、昵称、蓝牙名称、型号、稳定脱敏设备标识和客户端确认的 MAC；尚无分页 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/devices/:id/connections` | 设备连接详情 | admin | path:id；id=设备绑定 UUID | 当前设备快照与最新200条成功连接上报；设备标识由会员范围的单向哈希生成；每条新记录含以 ` \| ` 分隔的完整请求体字符串，不含请求头或登录令牌；历史从本功能上线后开始 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/feedback` | 反馈工单 | admin | query:status?；status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选 | 最多500条；含会员编号、昵称、问题内容、处理状态以及已发送给会员的客服回复 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/feedback/:id` | 更新反馈状态并回复会员 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；{status,assignedTo?,replyContent?:2–2000字}；回复内容非空时记录当前管理员和回复时间 | 反馈记录；会员端只可读取自己的反馈及回复，不返回后台管理员身份 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/articles` | 后台文章含草稿 | admin | 无请求体 | 最多500条，含分类 | 核心服务 |
@@ -329,10 +333,11 @@
 | `PATCH /api/saydian-app/admin/v1/settings/:key` | 保存客服、更新或 Say Ring 显示设置 | admin: SUPER_ADMIN, APP_OPERATIONS | path:key；{value:非空JSON对象,public?:boolean}；更新配置必须通过 DownloadManifest v1 校验；say_ring_app_display仅接受{hideAi:boolean}且必须公开，true隐藏AI相关内容 | 设置对象；结构约定见调用手册 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/commerce-products` | 总后台商品列表 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:search?，query:page?，query:status?；search可查商品名或ERP编号；page默认1 | 主库商品、SKU及ERP库存快照；不直接改权威库存 | 主库商城/聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products` | 拒绝手工新增ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 请先通过聚水潭商品同步建立商品和SKU | HTTP 400；不会创建第二套库存 | 聚水潭 |
-| `POST /api/saydian-app/admin/v1/commerce-products/erp-import` | 按SKU实时获取并导入ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {sku:单个ERP SKU，最多100字符}；不读取本地同步列表作为资料来源 | 聚水潭商品与库存均成功后新增或刷新草稿商品，并返回完整已知ERP字段；未配置、无权限、未找到或库存缺失时不导入 | 聚水潭商品查询与库存查询 |
+| `POST /api/saydian-app/admin/v1/commerce-products/erp-import` | 按SKU定位SPU并实时导入ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存 | 聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入 | 聚水潭商品查询与库存查询 |
 | `POST /api/saydian-app/admin/v1/commerce-products/batch` | 商品批量上下架与归档 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {ids:商品UUID数组,action:PUBLISH/DISABLE/ARCHIVE}；ERP和自建商品保留各自库存权威 | 批量处理结果 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `PATCH /api/saydian-app/admin/v1/commerce-products/:id/skus` | 快速修改商品SKU售价与库存 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数}]}；每次1至100条 | 原子更新并返回商品；版本过期409且不部分保存；ERP商品后续同步可能覆盖手工值 | 主库商城/聚水潭 |
 | `PATCH /api/saydian-app/admin/v1/commerce-products/:id` | 编辑商品展示资料 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?} | 展示资料；ERP编号、内部名称、SKU和库存不会被覆盖 | 主库商城/聚水潭 |
+| `DELETE /api/saydian-app/admin/v1/commerce-products/:id` | 永久删除未产生业务历史的商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；删除前需由后台二次确认 | 无订单或评价时清理购物车、收藏及商品SKU后返回{deleted:true}；已有订单或评价返回409并要求归档 | 主库商城 |
 | `GET /api/saydian-app/admin/v1/commerce-categories` | 商城分类 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | 无请求体 | 分类树平铺数据 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/commerce-categories` | 新增商城分类 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {name,parentId?,iconUrl?,sort?,enabled?} | 分类 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/commerce-categories/:id` | 编辑商城分类 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=分类UUID；字段同新增 | 分类 | 核心服务 |

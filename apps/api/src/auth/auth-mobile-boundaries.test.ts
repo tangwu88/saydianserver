@@ -43,11 +43,18 @@ describe("verified registration and inactive member boundaries", () => {
     await expect(auth.loginForMall(registration.mobile, registration.password)).rejects.toThrow("验证码");
     expect((auth as any).issueSession).not.toHaveBeenCalled();
   });
+  it("legacy reset cannot use an unverified registration as recovery proof", async () => {
+    const transaction = vi.fn();
+    const auth = service({ user: { findUnique: async () => ({ id: "old", status: "ACTIVE", mobileVerifiedAt: null }) }, $transaction: transaction });
+    (auth as any).consumeSms = vi.fn();
+    await expect(auth.resetPassword(registration.mobile, "123456", registration.password)).rejects.toThrow("未找到可重置");
+    expect(transaction).not.toHaveBeenCalled();
+  });
   it("mall resource authentication requires a verified phone even with an App-issued token", async () => {
     vi.stubEnv("ACCESS_TOKEN_SECRET", "synthetic-user-guard-key-longer-than-32");
     vi.stubEnv("LEGACY_SESSION_BRIDGE_ENABLED", "false");
     const findFirst = vi.fn().mockResolvedValue(null);
-    const token = sign({ sub: "user", sid: "session", typ: "access", jti: "jti" }, process.env.ACCESS_TOKEN_SECRET!, { issuer: "saydianapp-server", audience: "saydian-app" });
+    const token = sign({ sub: "user", sid: "session", typ: "access", jti: "jti" }, process.env.ACCESS_TOKEN_SECRET!, { issuer: "saydian-global-server", audience: "saydian-global-app" });
     const request = { path: "/api/saidian-mall/v1/storefront/cart", header: () => `Bearer ${token}` };
     await expect(new UserAuthGuard({ userSession: { findFirst } } as any).canActivate({ switchToHttp: () => ({ getRequest: () => request }) } as any)).rejects.toThrow("登录已失效");
     expect(findFirst.mock.calls[0]?.[0].where.user).toEqual({

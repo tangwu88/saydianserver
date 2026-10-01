@@ -29,10 +29,7 @@ import type {
   PaymentChannel as PaymentChannelContract,
   PaymentIntentContract,
 } from "@saydian/app-contracts";
-import {
-  isBusinessType,
-  isPaymentChannel,
-} from "@saydian/app-contracts";
+import { isBusinessType, isPaymentChannel } from "@saydian/app-contracts";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "../common/prisma.service";
 import { isUuid, safeObject, sha256 } from "../common/crypto";
@@ -50,10 +47,20 @@ import {
   paymentIntegrationKeyForStoredIntent,
   type PaymentIntegrationKey,
 } from "./payment-provider.service";
-import { onCommerceOrderPaid, onCommerceRefundSucceeded, onCommercePointsRefundSucceeded, afterSaleSettlementSnapshot, settlePointOnlyAfterSale, allItemsReturned } from "../commerce/commerce-finance";
+import {
+  onCommerceOrderPaid,
+  onCommerceRefundSucceeded,
+  onCommercePointsRefundSucceeded,
+  afterSaleSettlementSnapshot,
+  settlePointOnlyAfterSale,
+  allItemsReturned,
+} from "../commerce/commerce-finance";
 import { orderFulfillmentState } from "../commerce/commerce-finance";
-import { shouldDeferCallbacks, shouldPauseWorkers } from "@saydian/app-contracts";
-import { isGlobalRealm } from "../common/deployment-realm";
+import {
+  shouldDeferCallbacks,
+  shouldPauseWorkers,
+} from "@saydian/app-contracts";
+
 import { globalCommercePaymentChannelAllowedForUserAgent } from "../commerce/global-commerce-policy";
 import { globalError } from "../auth/global-identity";
 
@@ -85,7 +92,9 @@ export class BillingService {
     private readonly apple: AppleIapService,
   ) {}
 
-  async offers(platformInput?: string): Promise<{ items: BillingOfferContract[] }> {
+  async offers(
+    platformInput?: string,
+  ): Promise<{ items: BillingOfferContract[] }> {
     const platform = normalizedPlatform(platformInput);
     const now = new Date();
     const offers = await this.prisma.healthReportOffer.findMany({
@@ -93,7 +102,9 @@ export class BillingService {
         active: true,
         ...(platform ? { platforms: { has: platform } } : {}),
         OR: [{ effectiveFrom: null }, { effectiveFrom: { lte: now } }],
-        AND: [{ OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: now } }] }],
+        AND: [
+          { OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: now } }] },
+        ],
       },
       orderBy: [{ entitlement: "asc" }, { priceCents: "asc" }],
     });
@@ -103,7 +114,8 @@ export class BillingService {
         code: offer.code,
         title: offer.title,
         description: offer.description,
-        entitlement: offer.entitlement.toLowerCase() as BillingOfferContract["entitlement"],
+        entitlement:
+          offer.entitlement.toLowerCase() as BillingOfferContract["entitlement"],
         priceCents: offer.priceCents,
         currency: offer.currency,
         creditCount: offer.creditCount,
@@ -180,8 +192,12 @@ export class BillingService {
       include: { user: { select: { wechatOpenId: true } } },
     });
     if (existing) {
-      if (existing.userId !== userId || existing.businessType !== businessTypeMap[businessTypeInput] ||
-        existing.channel !== paymentChannelMap[channelInput] || (businessId && existing.businessId !== businessId)) {
+      if (
+        existing.userId !== userId ||
+        existing.businessType !== businessTypeMap[businessTypeInput] ||
+        existing.channel !== paymentChannelMap[channelInput] ||
+        (businessId && existing.businessId !== businessId)
+      ) {
         throw new ConflictException("支付请求编号已被使用");
       }
       return serializePayment(existing);
@@ -194,9 +210,12 @@ export class BillingService {
     // Membership resolution can create a row: reject unsupported global scopes first.
     assertGlobalPaymentScope({ channel, businessType });
     if (
-      isGlobalRealm() &&
       businessType === BusinessType.COMMERCE_ORDER &&
-      !globalCommercePaymentChannelAllowedForUserAgent(channel, context.clientUserAgent, platform)
+      !globalCommercePaymentChannelAllowedForUserAgent(
+        channel,
+        context.clientUserAgent,
+        platform,
+      )
     ) {
       throw globalError(
         400,
@@ -211,50 +230,63 @@ export class BillingService {
       offerId,
       platform,
     );
-    assertGlobalPaymentSupported({ channel, businessType, currency: resolved.currency });
+    assertGlobalPaymentSupported({
+      channel,
+      businessType,
+      currency: resolved.currency,
+    });
     const identity = await this.providers.identity(channel);
     const integrationKey = paymentIntegrationKeyForNewIntent(channel);
     if (channel === PaymentChannel.WECHAT_JSAPI) {
-      if (!identity.appId) throw new ServiceUnavailableException("微信公众号支付应用尚未配置");
+      if (!identity.appId)
+        throw new ServiceUnavailableException("微信公众号支付应用尚未配置");
       // Fail before reserving a pending payment relationship; the provider rechecks at dispatch.
       await this.providers.resolveOfficialPayer(userId, identity.appId);
     }
-    const reserved = await this.prisma.$transaction(async tx => {
+    const reserved = await this.prisma.$transaction(async (tx) => {
       if (resolved.commerceOrderId) {
         await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${resolved.commerceOrderId}::uuid FOR UPDATE`;
-        const order = await tx.commerceOrder.findUniqueOrThrow({ where: { id: resolved.commerceOrderId } });
+        const order = await tx.commerceOrder.findUniqueOrThrow({
+          where: { id: resolved.commerceOrderId },
+        });
         assertNewExecutionOwner(order);
-        if (order.status !== CommerceOrderStatus.PENDING_PAYMENT) throw new ConflictException("订单状态已变化，请刷新");
+        if (order.status !== CommerceOrderStatus.PENDING_PAYMENT)
+          throw new ConflictException("订单状态已变化，请刷新");
         const active = await tx.paymentIntent.findFirst({
-          where: { commerceOrderId: order.id, status: { notIn: [PaymentStatus.CLOSED] } },
-          include: { user: { select: { wechatOpenId: true } } }, orderBy: { createdAt: "desc" },
+          where: {
+            commerceOrderId: order.id,
+            status: { notIn: [PaymentStatus.CLOSED] },
+          },
+          include: { user: { select: { wechatOpenId: true } } },
+          orderBy: { createdAt: "desc" },
         });
         if (active) {
           assertNewExecutionOwner(active);
-          if (active.channel !== channel) throw new ConflictException("原支付关系未关闭，请先确认原渠道状态");
+          if (active.channel !== channel)
+            throw new ConflictException("原支付关系未关闭，请先确认原渠道状态");
           return { intent: active, dispatch: false };
         }
       }
       const intent = await tx.paymentIntent.create({
-      data: {
-        paymentNo: paymentNumber(),
-        userId,
-        businessType,
-        businessId: resolved.businessId,
-        commerceOrderId: resolved.commerceOrderId,
-        healthReportId: resolved.healthReportId,
-        healthMembershipId: resolved.healthMembershipId,
-        channel,
-        integrationKey,
-        amountCents: resolved.amountCents,
-        currency: resolved.currency,
-        providerMerchantId: identity.merchantId,
-        providerAppId: identity.appId,
-        description: resolved.description,
-        idempotencyKey,
-      },
-      include: { user: { select: { wechatOpenId: true } } },
-    });
+        data: {
+          paymentNo: paymentNumber(),
+          userId,
+          businessType,
+          businessId: resolved.businessId,
+          commerceOrderId: resolved.commerceOrderId,
+          healthReportId: resolved.healthReportId,
+          healthMembershipId: resolved.healthMembershipId,
+          channel,
+          integrationKey,
+          amountCents: resolved.amountCents,
+          currency: resolved.currency,
+          providerMerchantId: identity.merchantId,
+          providerAppId: identity.appId,
+          description: resolved.description,
+          idempotencyKey,
+        },
+        include: { user: { select: { wechatOpenId: true } } },
+      });
       return { intent, dispatch: true };
     });
     const { intent } = reserved;
@@ -273,7 +305,9 @@ export class BillingService {
           providerPayload: invoke as Prisma.InputJsonValue,
         },
       });
-      const updated = await this.prisma.paymentIntent.findUniqueOrThrow({ where: { id: intent.id } });
+      const updated = await this.prisma.paymentIntent.findUniqueOrThrow({
+        where: { id: intent.id },
+      });
       return serializePayment(updated);
     } catch (error) {
       await this.prisma.paymentIntent.updateMany({
@@ -281,7 +315,8 @@ export class BillingService {
         data: {
           status: PaymentStatus.PENDING,
           providerPayload: {
-            errorCode: "provider_result_unknown", reconciliationRequired: true,
+            errorCode: "provider_result_unknown",
+            reconciliationRequired: true,
           },
         },
       });
@@ -295,7 +330,9 @@ export class BillingService {
     });
     if (!intent) throw new NotFoundException("支付记录不存在");
     if (
-      ([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status) &&
+      (
+        [PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]
+      ).includes(intent.status) &&
       intent.channel.startsWith("WECHAT") &&
       intent.providerMerchantId &&
       intent.providerAppId
@@ -321,9 +358,15 @@ export class BillingService {
           ) {
             throw new BadRequestException("微信查单结果与原支付记录不匹配");
           }
-          await this.markPaid(intent.paymentNo, transactionId, paidCents, payload, {
-            integrationKey: paymentIntegrationKeyForStoredIntent(intent),
-          });
+          await this.markPaid(
+            intent.paymentNo,
+            transactionId,
+            paidCents,
+            payload,
+            {
+              integrationKey: paymentIntegrationKeyForStoredIntent(intent),
+            },
+          );
           const refreshed = await this.prisma.paymentIntent.findFirst({
             where: { id, userId },
           });
@@ -336,14 +379,20 @@ export class BillingService {
       }
     }
     if (
-      ([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status) &&
+      (
+        [PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]
+      ).includes(intent.status) &&
       intent.channel.startsWith("ALIPAY") &&
       intent.providerAppId
     ) {
       try {
         assertPaymentOutboundEnabled();
         const payload = await this.providers.queryAlipayPayment(intent);
-        if (["TRADE_SUCCESS", "TRADE_FINISHED"].includes(String(payload.trade_status ?? ""))) {
+        if (
+          ["TRADE_SUCCESS", "TRADE_FINISHED"].includes(
+            String(payload.trade_status ?? ""),
+          )
+        ) {
           const transactionId = String(payload.trade_no ?? "");
           const paidCents = alipayPaymentCents(payload.total_amount);
           if (
@@ -355,10 +404,16 @@ export class BillingService {
           ) {
             throw new BadRequestException("支付宝查单结果与原支付记录不匹配");
           }
-          await this.markPaid(intent.paymentNo, transactionId, paidCents, payload, {
-            alipayAppId: intent.providerAppId,
-            integrationKey: paymentIntegrationKeyForStoredIntent(intent),
-          });
+          await this.markPaid(
+            intent.paymentNo,
+            transactionId,
+            paidCents,
+            payload,
+            {
+              alipayAppId: intent.providerAppId,
+              integrationKey: paymentIntegrationKeyForStoredIntent(intent),
+            },
+          );
           const refreshed = await this.prisma.paymentIntent.findFirst({
             where: { id, userId },
           });
@@ -381,47 +436,86 @@ export class BillingService {
     requestId?: string,
   ) {
     const roles = current.roles?.length ? current.roles : [current.role];
-    if (!isGlobalRealm()) throw new NotFoundException("此功能仅供国际版后台使用");
-    if (!current.id || !roles.includes(AdminRole.SUPER_ADMIN)) throw new ForbiddenException("只有超级管理员可以关闭在线支付");
-    if (!isUuid(orderId) || !isUuid(paymentId)) throw new BadRequestException("订单或支付记录编号不正确");
+
+    if (!current.id || !roles.includes(AdminRole.SUPER_ADMIN))
+      throw new ForbiddenException("只有超级管理员可以关闭在线支付");
+    if (!isUuid(orderId) || !isUuid(paymentId))
+      throw new BadRequestException("订单或支付记录编号不正确");
     const body = safeObject(input);
-    if (Object.keys(body).some((field) => !["note", "orderVersion", "idempotencyKey"].includes(field))) {
+    if (
+      Object.keys(body).some(
+        (field) => !["note", "orderVersion", "idempotencyKey"].includes(field),
+      )
+    ) {
       throw new BadRequestException("关闭在线支付包含不支持的字段");
     }
     const orderVersion = Number(body.orderVersion);
-    if (!Number.isSafeInteger(orderVersion) || orderVersion < 0) throw new BadRequestException("订单版本不正确");
+    if (!Number.isSafeInteger(orderVersion) || orderVersion < 0)
+      throw new BadRequestException("订单版本不正确");
     const note = String(body.note ?? "").trim();
-    if (note.length < 2 || note.length > 500) throw new BadRequestException("请填写2至500字的渠道关单备注");
+    if (note.length < 2 || note.length > 500)
+      throw new BadRequestException("请填写2至500字的渠道关单备注");
     const idempotencyKey = String(body.idempotencyKey ?? "").trim();
-    if (idempotencyKey.length < 8 || idempotencyKey.length > 120) throw new BadRequestException("请提供有效的操作请求编号");
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 120)
+      throw new BadRequestException("请提供有效的操作请求编号");
     const scope = "admin_order_payment_close_v1";
-    const requestHash = sha256(JSON.stringify({ orderId, paymentId, note, orderVersion, actorId: current.id }));
-    const readOrder = () => this.prisma.commerceOrder.findUnique({
-      where: { id: orderId },
-      include: { paymentIntents: { where: { id: paymentId } } },
-    });
+    const requestHash = sha256(
+      JSON.stringify({
+        orderId,
+        paymentId,
+        note,
+        orderVersion,
+        actorId: current.id,
+      }),
+    );
+    const readOrder = () =>
+      this.prisma.commerceOrder.findUnique({
+        where: { id: orderId },
+        include: { paymentIntents: { where: { id: paymentId } } },
+      });
     let order = await readOrder();
     if (!order) throw new NotFoundException("订单不存在");
     assertNewExecutionOwner(order);
     const previousRequest = await this.prisma.idempotencyRecord.findUnique({
-      where: { userId_scope_key: { userId: order.userId, scope, key: idempotencyKey } },
+      where: {
+        userId_scope_key: { userId: order.userId, scope, key: idempotencyKey },
+      },
     });
     if (previousRequest) {
-      if (previousRequest.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
+      if (previousRequest.requestHash !== requestHash)
+        throw new ConflictException("操作请求编号已被不同参数使用");
       return { ...safeObject(previousRequest.responseBody), reused: true };
     }
-    if (order.version !== orderVersion) throw new ConflictException("订单已更新，请刷新后重试");
+    if (order.version !== orderVersion)
+      throw new ConflictException("订单已更新，请刷新后重试");
     if (order.status !== CommerceOrderStatus.PENDING_PAYMENT || order.paidAt) {
       throw new ConflictException("只有待付款订单可以关闭在线支付");
     }
     let intent = order.paymentIntents[0];
-    if (!intent || intent.commerceOrderId !== orderId || intent.userId !== order.userId) throw new NotFoundException("订单支付记录不存在");
+    if (
+      !intent ||
+      intent.commerceOrderId !== orderId ||
+      intent.userId !== order.userId
+    )
+      throw new NotFoundException("订单支付记录不存在");
     assertNewExecutionOwner(intent);
     if (intent.status === PaymentStatus.CLOSED) {
-      return { orderId, paymentId, paymentStatus: PaymentStatus.CLOSED, orderVersion: order.version, reused: true };
+      return {
+        orderId,
+        paymentId,
+        paymentStatus: PaymentStatus.CLOSED,
+        orderVersion: order.version,
+        reused: true,
+      };
     }
-    if (!([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status)) {
-      throw new ConflictException("该支付记录已完成或不可关闭，请先核对渠道结果");
+    if (
+      !(
+        [PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]
+      ).includes(intent.status)
+    ) {
+      throw new ConflictException(
+        "该支付记录已完成或不可关闭，请先核对渠道结果",
+      );
     }
 
     await this.payment(order.userId, paymentId);
@@ -429,90 +523,139 @@ export class BillingService {
     if (!order) throw new NotFoundException("订单不存在");
     intent = order.paymentIntents[0];
     if (!intent) throw new NotFoundException("订单支付记录不存在");
-    if (order.status !== CommerceOrderStatus.PENDING_PAYMENT || order.paidAt ||
-        !([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(intent.status)) {
-      throw new ConflictException("渠道结果已变化，未执行关单，请刷新订单后核对");
+    if (
+      order.status !== CommerceOrderStatus.PENDING_PAYMENT ||
+      order.paidAt ||
+      !(
+        [PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]
+      ).includes(intent.status)
+    ) {
+      throw new ConflictException(
+        "渠道结果已变化，未执行关单，请刷新订单后核对",
+      );
     }
     assertPaymentOutboundEnabled();
     const providerResult = await this.providers.closePayment(intent);
     const closedAt = new Date();
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${orderId}::uuid FOR UPDATE`;
-      const lockedOrder = await tx.commerceOrder.findUnique({
-        where: { id: orderId },
-        include: { paymentIntents: { where: { id: paymentId } } },
-      });
-      if (!lockedOrder) throw new NotFoundException("订单不存在");
-      assertNewExecutionOwner(lockedOrder);
-      const prior = await tx.idempotencyRecord.findUnique({
-        where: { userId_scope_key: { userId: lockedOrder.userId, scope, key: idempotencyKey } },
-      });
-      if (prior) {
-        if (prior.requestHash !== requestHash) throw new ConflictException("操作请求编号已被不同参数使用");
-        return { ...safeObject(prior.responseBody), reused: true };
-      }
-      const lockedIntent = lockedOrder.paymentIntents[0];
-      if (!lockedIntent) throw new NotFoundException("订单支付记录不存在");
-      if (lockedIntent.status === PaymentStatus.CLOSED) {
-        return { orderId, paymentId, paymentStatus: PaymentStatus.CLOSED, orderVersion: lockedOrder.version, reused: true };
-      }
-      if (lockedOrder.status !== CommerceOrderStatus.PENDING_PAYMENT || lockedOrder.paidAt ||
-          !([PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]).includes(lockedIntent.status)) {
-        throw new ConflictException("支付或订单状态已变化，请立即核对渠道结果");
-      }
-      const paymentChanged = await tx.paymentIntent.updateMany({
-        where: { id: paymentId, commerceOrderId: orderId, status: { in: [PaymentStatus.CREATED, PaymentStatus.PENDING] } },
-        data: {
-          status: PaymentStatus.CLOSED,
-          providerPayload: {
-            ...safeObject(lockedIntent.providerPayload),
-            closeResult: providerResult,
-            closedByAdminId: current.id,
-            closedAt: closedAt.toISOString(),
-          } as Prisma.InputJsonValue,
-        },
-      });
-      if (!paymentChanged.count) throw new ConflictException("支付状态已变化，请立即核对渠道结果");
-      const adminRemark = [lockedOrder.adminRemark, `[关闭在线支付 ${closedAt.toISOString()}] ${note}`].filter(Boolean).join("\n");
-      const nextOrderVersion = lockedOrder.version + 1;
-      const orderChanged = await tx.commerceOrder.updateMany({
-        where: { id: orderId, status: CommerceOrderStatus.PENDING_PAYMENT, paidAt: null, executionOwner: "NEW_SYSTEM" },
-        data: { adminRemark, version: { increment: 1 } },
-      });
-      if (!orderChanged.count) throw new ConflictException("订单状态已变化，请立即核对渠道结果");
-      const result = {
-        orderId,
-        paymentId,
-        paymentStatus: PaymentStatus.CLOSED,
-        orderVersion: nextOrderVersion,
-        closedAt: closedAt.toISOString(),
-      };
-      await tx.auditLog.create({
-        data: {
-          actorType: "ADMIN",
-          actorId: current.id,
-          action: "COMMERCE_ORDER_ONLINE_PAYMENT_CLOSED",
-          entityType: "PAYMENT_INTENT",
-          entityId: paymentId,
-          requestId: requestId ?? null,
-          beforeJson: { status: lockedIntent.status, orderVersion: lockedOrder.version },
-          afterJson: { ...result, note },
-        },
-      });
-      await tx.idempotencyRecord.create({
-        data: {
-          userId: lockedOrder.userId,
-          scope,
-          key: idempotencyKey,
-          requestHash,
-          responseCode: 201,
-          responseBody: result,
-          expiresAt: new Date(closedAt.valueOf() + 30 * 86_400_000),
-        },
-      });
-      return { ...result, reused: false };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${orderId}::uuid FOR UPDATE`;
+        const lockedOrder = await tx.commerceOrder.findUnique({
+          where: { id: orderId },
+          include: { paymentIntents: { where: { id: paymentId } } },
+        });
+        if (!lockedOrder) throw new NotFoundException("订单不存在");
+        assertNewExecutionOwner(lockedOrder);
+        const prior = await tx.idempotencyRecord.findUnique({
+          where: {
+            userId_scope_key: {
+              userId: lockedOrder.userId,
+              scope,
+              key: idempotencyKey,
+            },
+          },
+        });
+        if (prior) {
+          if (prior.requestHash !== requestHash)
+            throw new ConflictException("操作请求编号已被不同参数使用");
+          return { ...safeObject(prior.responseBody), reused: true };
+        }
+        const lockedIntent = lockedOrder.paymentIntents[0];
+        if (!lockedIntent) throw new NotFoundException("订单支付记录不存在");
+        if (lockedIntent.status === PaymentStatus.CLOSED) {
+          return {
+            orderId,
+            paymentId,
+            paymentStatus: PaymentStatus.CLOSED,
+            orderVersion: lockedOrder.version,
+            reused: true,
+          };
+        }
+        if (
+          lockedOrder.status !== CommerceOrderStatus.PENDING_PAYMENT ||
+          lockedOrder.paidAt ||
+          !(
+            [PaymentStatus.CREATED, PaymentStatus.PENDING] as PaymentStatus[]
+          ).includes(lockedIntent.status)
+        ) {
+          throw new ConflictException(
+            "支付或订单状态已变化，请立即核对渠道结果",
+          );
+        }
+        const paymentChanged = await tx.paymentIntent.updateMany({
+          where: {
+            id: paymentId,
+            commerceOrderId: orderId,
+            status: { in: [PaymentStatus.CREATED, PaymentStatus.PENDING] },
+          },
+          data: {
+            status: PaymentStatus.CLOSED,
+            providerPayload: {
+              ...safeObject(lockedIntent.providerPayload),
+              closeResult: providerResult,
+              closedByAdminId: current.id,
+              closedAt: closedAt.toISOString(),
+            } as Prisma.InputJsonValue,
+          },
+        });
+        if (!paymentChanged.count)
+          throw new ConflictException("支付状态已变化，请立即核对渠道结果");
+        const adminRemark = [
+          lockedOrder.adminRemark,
+          `[关闭在线支付 ${closedAt.toISOString()}] ${note}`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        const nextOrderVersion = lockedOrder.version + 1;
+        const orderChanged = await tx.commerceOrder.updateMany({
+          where: {
+            id: orderId,
+            status: CommerceOrderStatus.PENDING_PAYMENT,
+            paidAt: null,
+            executionOwner: "NEW_SYSTEM",
+          },
+          data: { adminRemark, version: { increment: 1 } },
+        });
+        if (!orderChanged.count)
+          throw new ConflictException("订单状态已变化，请立即核对渠道结果");
+        const result = {
+          orderId,
+          paymentId,
+          paymentStatus: PaymentStatus.CLOSED,
+          orderVersion: nextOrderVersion,
+          closedAt: closedAt.toISOString(),
+        };
+        await tx.auditLog.create({
+          data: {
+            actorType: "ADMIN",
+            actorId: current.id,
+            action: "COMMERCE_ORDER_ONLINE_PAYMENT_CLOSED",
+            entityType: "PAYMENT_INTENT",
+            entityId: paymentId,
+            requestId: requestId ?? null,
+            beforeJson: {
+              status: lockedIntent.status,
+              orderVersion: lockedOrder.version,
+            },
+            afterJson: { ...result, note },
+          },
+        });
+        await tx.idempotencyRecord.create({
+          data: {
+            userId: lockedOrder.userId,
+            scope,
+            key: idempotencyKey,
+            requestHash,
+            responseCode: 201,
+            responseBody: result,
+            expiresAt: new Date(closedAt.valueOf() + 30 * 86_400_000),
+          },
+        });
+        return { ...result, reused: false };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async handleWechatNotification(
@@ -537,7 +680,8 @@ export class BillingService {
       "PAYMENT_SUCCEEDED",
       decrypted,
       async () => {
-        if (decrypted.trade_state !== "SUCCESS") throw new BadRequestException("微信支付通知不是成功状态");
+        if (decrypted.trade_state !== "SUCCESS")
+          throw new BadRequestException("微信支付通知不是成功状态");
         const amount = safeObject(decrypted.amount);
         await this.markPaid(
           String(decrypted.out_trade_no ?? ""),
@@ -563,7 +707,11 @@ export class BillingService {
       "PAYMENT_STATUS",
       payload,
       async () => {
-        if (["TRADE_SUCCESS", "TRADE_FINISHED"].includes(payload.trade_status ?? "")) {
+        if (
+          ["TRADE_SUCCESS", "TRADE_FINISHED"].includes(
+            payload.trade_status ?? "",
+          )
+        ) {
           await this.markPaid(
             payload.out_trade_no ?? "",
             payload.trade_no ?? "",
@@ -631,15 +779,23 @@ export class BillingService {
     assertNewExecutionOwner(afterSale);
     assertNewExecutionOwner(afterSale.order);
     if (afterSale.requestedCents === 0) {
-      return this.prisma.$transaction(tx => settlePointOnlyAfterSale(tx, afterSaleId));
+      return this.prisma.$transaction((tx) =>
+        settlePointOnlyAfterSale(tx, afterSaleId),
+      );
     }
-    if (afterSale.type === "RETURN_REFUND" && afterSale.status !== AfterSaleStatus.RETURNED) {
+    if (
+      afterSale.type === "RETURN_REFUND" &&
+      afterSale.status !== AfterSaleStatus.RETURNED
+    ) {
       throw new ConflictException("退货退款必须先确认退回商品");
     }
     if (
-      !([AfterSaleStatus.APPROVED, AfterSaleStatus.RETURNED] as AfterSaleStatus[]).includes(
-        afterSale.status,
-      )
+      !(
+        [
+          AfterSaleStatus.APPROVED,
+          AfterSaleStatus.RETURNED,
+        ] as AfterSaleStatus[]
+      ).includes(afterSale.status)
     ) {
       throw new ConflictException("售后尚未通过，不能退款");
     }
@@ -671,86 +827,145 @@ export class BillingService {
     }
     assertPaymentOutboundEnabled();
     const reservation = await this.prisma.$transaction(async (tx) => {
-    const target = await tx.paymentIntent.findUnique({ where: { id: paymentIntentId }, select: { commerceOrderId: true } });
-    if (target?.commerceOrderId) await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${target.commerceOrderId}::uuid FOR UPDATE`;
-    await tx.$queryRaw`SELECT id FROM "PaymentIntent" WHERE id = ${paymentIntentId}::uuid FOR UPDATE`;
-    const intent = await tx.paymentIntent.findUnique({
-      where: { id: paymentIntentId },
-      include: { refunds: true, commerceOrder: true },
-    });
-    if (!intent) throw new NotFoundException("支付记录不存在");
-    assertNewExecutionOwner(intent);
-    if (intent.commerceOrder) assertNewExecutionOwner(intent.commerceOrder);
-    const existing = await tx.paymentRefund.findUnique({ where: { idempotencyKey } });
-    if (existing) {
-      if (existing.paymentIntentId !== intent.id || existing.amountCents !== amountCents || existing.afterSaleId !== afterSaleId) {
-        throw new ConflictException("退款请求编号已被不同参数使用");
-      }
-      // Includes migrated and uncertain requests: never send an existing money
-      // request again. Reconcile its original provider reference first.
-      return { intent, refund: existing, dispatch: false };
-    }
-    let refundAllocation: { merchandiseRefundCents: number; shippingRefundCents: number } | undefined;
-    if (afterSaleId) {
-      const afterSale = await tx.commerceAfterSale.findUnique({ where: { id: afterSaleId } });
-      if (!afterSale || afterSale.orderId !== intent.commerceOrderId || amountCents > afterSale.requestedCents ||
-        !([AfterSaleStatus.APPROVED, AfterSaleStatus.RETURNED] as AfterSaleStatus[]).includes(afterSale.status)) {
-        throw new ConflictException("售后归属、审核状态或退款额度不匹配");
-      }
-      assertNewExecutionOwner(afterSale);
-      if (afterSale.type === "RETURN_REFUND" && afterSale.status !== AfterSaleStatus.RETURNED) throw new ConflictException("退货尚未确认收货");
-      const allocation = await afterSaleSettlementSnapshot(tx, afterSaleId);
-      if (!allocation.legacyCash && amountCents !== allocation.sale.requestedCents) throw new ConflictException("必须按已审核的现金与积分分摊整体结算");
-      if (allocation.sale.refunds.some(refund => ["CREATED", "PROCESSING", "SUCCEEDED"].includes(refund.status))) throw new ConflictException("此售后已有退款占用，请核对原退款");
-      // Original cash-only pre-snapshot refunds keep their legacy policy.
-      if (!allocation.legacyCash) refundAllocation = allocation;
-    } else if (intent.commerceOrder && (intent.commerceOrder.pricingVersion === 1 || intent.commerceOrder.pointDiscountCents > 0 || intent.commerceOrder.sourceSystem !== "canonical")) {
-      throw new ConflictException("请先建立并核验商品级售后，不能绕过积分或运费分摊");
-    }
-    if (intent.channel === PaymentChannel.APPLE_IAP) {
-      throw new BadRequestException("苹果购买退款请通过App Store申请");
-    }
-    if (
-      !([PaymentStatus.SUCCEEDED, PaymentStatus.REFUNDING, PaymentStatus.PARTIAL_REFUNDED] as PaymentStatus[]).includes(
-        intent.status,
-      )
-    ) {
-      throw new ConflictException("当前支付记录不可退款");
-    }
-    const committed = intent.refunds
-      .filter((refund) =>
-        ([RefundStatus.CREATED, RefundStatus.PROCESSING, RefundStatus.SUCCEEDED] as RefundStatus[]).includes(
-          refund.status,
-        ),
-      )
-      .reduce((total, refund) => total + refund.amountCents, 0);
-    if (committed + amountCents > intent.amountCents) {
-      throw new BadRequestException("退款金额超过可退金额");
-    }
-
-    const refund = await tx.paymentRefund.create({
-      data: {
-        refundNo: refundNumber(),
-        paymentIntentId: intent.id,
-        afterSaleId,
-        amountCents,
-        ...(refundAllocation ? { merchandiseRefundCents: refundAllocation.merchandiseRefundCents, shippingRefundCents: refundAllocation.shippingRefundCents } : {}),
-        reason,
-        idempotencyKey,
-        status: RefundStatus.PROCESSING,
-      },
-    });
-    await tx.paymentIntent.update({
-      where: { id: intent.id },
-      data: { status: PaymentStatus.REFUNDING },
-    });
-    if (afterSaleId) {
-      await tx.commerceAfterSale.update({
-        where: { id: afterSaleId },
-        data: { status: AfterSaleStatus.REFUNDING, version: { increment: 1 } },
+      const target = await tx.paymentIntent.findUnique({
+        where: { id: paymentIntentId },
+        select: { commerceOrderId: true },
       });
-    }
-    return { intent, refund, dispatch: true };
+      if (target?.commerceOrderId)
+        await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${target.commerceOrderId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "PaymentIntent" WHERE id = ${paymentIntentId}::uuid FOR UPDATE`;
+      const intent = await tx.paymentIntent.findUnique({
+        where: { id: paymentIntentId },
+        include: { refunds: true, commerceOrder: true },
+      });
+      if (!intent) throw new NotFoundException("支付记录不存在");
+      assertNewExecutionOwner(intent);
+      if (intent.commerceOrder) assertNewExecutionOwner(intent.commerceOrder);
+      const existing = await tx.paymentRefund.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        if (
+          existing.paymentIntentId !== intent.id ||
+          existing.amountCents !== amountCents ||
+          existing.afterSaleId !== afterSaleId
+        ) {
+          throw new ConflictException("退款请求编号已被不同参数使用");
+        }
+        // Includes migrated and uncertain requests: never send an existing money
+        // request again. Reconcile its original provider reference first.
+        return { intent, refund: existing, dispatch: false };
+      }
+      let refundAllocation:
+        | { merchandiseRefundCents: number; shippingRefundCents: number }
+        | undefined;
+      if (afterSaleId) {
+        const afterSale = await tx.commerceAfterSale.findUnique({
+          where: { id: afterSaleId },
+        });
+        if (
+          !afterSale ||
+          afterSale.orderId !== intent.commerceOrderId ||
+          amountCents > afterSale.requestedCents ||
+          !(
+            [
+              AfterSaleStatus.APPROVED,
+              AfterSaleStatus.RETURNED,
+            ] as AfterSaleStatus[]
+          ).includes(afterSale.status)
+        ) {
+          throw new ConflictException("售后归属、审核状态或退款额度不匹配");
+        }
+        assertNewExecutionOwner(afterSale);
+        if (
+          afterSale.type === "RETURN_REFUND" &&
+          afterSale.status !== AfterSaleStatus.RETURNED
+        )
+          throw new ConflictException("退货尚未确认收货");
+        const allocation = await afterSaleSettlementSnapshot(tx, afterSaleId);
+        if (
+          !allocation.legacyCash &&
+          amountCents !== allocation.sale.requestedCents
+        )
+          throw new ConflictException("必须按已审核的现金与积分分摊整体结算");
+        if (
+          allocation.sale.refunds.some((refund) =>
+            ["CREATED", "PROCESSING", "SUCCEEDED"].includes(refund.status),
+          )
+        )
+          throw new ConflictException("此售后已有退款占用，请核对原退款");
+        // Original cash-only pre-snapshot refunds keep their legacy policy.
+        if (!allocation.legacyCash) refundAllocation = allocation;
+      } else if (
+        intent.commerceOrder &&
+        (intent.commerceOrder.pricingVersion === 1 ||
+          intent.commerceOrder.pointDiscountCents > 0 ||
+          intent.commerceOrder.sourceSystem !== "canonical")
+      ) {
+        throw new ConflictException(
+          "请先建立并核验商品级售后，不能绕过积分或运费分摊",
+        );
+      }
+      if (intent.channel === PaymentChannel.APPLE_IAP) {
+        throw new BadRequestException("苹果购买退款请通过App Store申请");
+      }
+      if (
+        !(
+          [
+            PaymentStatus.SUCCEEDED,
+            PaymentStatus.REFUNDING,
+            PaymentStatus.PARTIAL_REFUNDED,
+          ] as PaymentStatus[]
+        ).includes(intent.status)
+      ) {
+        throw new ConflictException("当前支付记录不可退款");
+      }
+      const committed = intent.refunds
+        .filter((refund) =>
+          (
+            [
+              RefundStatus.CREATED,
+              RefundStatus.PROCESSING,
+              RefundStatus.SUCCEEDED,
+            ] as RefundStatus[]
+          ).includes(refund.status),
+        )
+        .reduce((total, refund) => total + refund.amountCents, 0);
+      if (committed + amountCents > intent.amountCents) {
+        throw new BadRequestException("退款金额超过可退金额");
+      }
+
+      const refund = await tx.paymentRefund.create({
+        data: {
+          refundNo: refundNumber(),
+          paymentIntentId: intent.id,
+          afterSaleId,
+          amountCents,
+          ...(refundAllocation
+            ? {
+                merchandiseRefundCents: refundAllocation.merchandiseRefundCents,
+                shippingRefundCents: refundAllocation.shippingRefundCents,
+              }
+            : {}),
+          reason,
+          idempotencyKey,
+          status: RefundStatus.PROCESSING,
+        },
+      });
+      await tx.paymentIntent.update({
+        where: { id: intent.id },
+        data: { status: PaymentStatus.REFUNDING },
+      });
+      if (afterSaleId) {
+        await tx.commerceAfterSale.update({
+          where: { id: afterSaleId },
+          data: {
+            status: AfterSaleStatus.REFUNDING,
+            version: { increment: 1 },
+          },
+        });
+      }
+      return { intent, refund, dispatch: true };
     });
     const { intent, refund } = reservation;
     if (!reservation.dispatch) return refund;
@@ -788,13 +1003,18 @@ export class BillingService {
           paymentIntegrationKeyForStoredIntent(intent),
         );
       }
-      return this.prisma.paymentRefund.findUniqueOrThrow({ where: { id: refund.id } });
+      return this.prisma.paymentRefund.findUniqueOrThrow({
+        where: { id: refund.id },
+      });
     } catch (error) {
       await this.prisma.paymentRefund.updateMany({
         where: { id: refund.id, status: { not: RefundStatus.SUCCEEDED } },
         data: {
           status: RefundStatus.PROCESSING,
-          providerPayload: { errorCode: "provider_result_unknown", reconciliationRequired: true },
+          providerPayload: {
+            errorCode: "provider_result_unknown",
+            reconciliationRequired: true,
+          },
         },
       });
       throw error;
@@ -804,7 +1024,9 @@ export class BillingService {
   async verifyAppleTransaction(userId: string, input: unknown) {
     const body = safeObject(input);
     const paymentIntentId = String(body.paymentIntentId ?? "").trim();
-    const signedTransactionInfo = String(body.signedTransactionInfo ?? "").trim();
+    const signedTransactionInfo = String(
+      body.signedTransactionInfo ?? "",
+    ).trim();
     if (!paymentIntentId || !signedTransactionInfo) {
       throw new BadRequestException("购买凭证不完整");
     }
@@ -817,7 +1039,9 @@ export class BillingService {
     });
     if (!intent) throw new NotFoundException("购买记录不存在");
     try {
-      const verified = await this.apple.verifyTransaction(signedTransactionInfo);
+      const verified = await this.apple.verifyTransaction(
+        signedTransactionInfo,
+      );
       await markIntegrationVerified(this.prisma, "apple_iap");
       return await this.applyVerifiedApplePurchase(
         verified.transaction,
@@ -848,7 +1072,9 @@ export class BillingService {
     const notification = verified.notification;
     await markIntegrationVerified(this.prisma, "apple_iap");
     const eventKey = String(notification.notificationUUID ?? "").trim();
-    const eventType = String(notification.notificationType ?? "UNKNOWN").toUpperCase();
+    const eventType = String(
+      notification.notificationType ?? "UNKNOWN",
+    ).toUpperCase();
     const transaction = verified.transaction;
     await this.processProviderEvent(
       "apple_iap_notification",
@@ -857,7 +1083,10 @@ export class BillingService {
       appleNotificationPayload(notification, transaction, verified.environment),
       async () => {
         if (!transaction) return;
-        if (["REFUND", "REVOKE"].includes(eventType) || transaction.revocationDate) {
+        if (
+          ["REFUND", "REVOKE"].includes(eventType) ||
+          transaction.revocationDate
+        ) {
           await this.applyAppleRefund(transaction, verified.environment);
           return;
         }
@@ -897,7 +1126,9 @@ export class BillingService {
       },
     });
     if (!intent) throw new NotFoundException("购买记录不存在");
-    const expectedProductId = String(safeObject(intent.providerPayload).productId ?? "");
+    const expectedProductId = String(
+      safeObject(intent.providerPayload).productId ?? "",
+    );
     if (!expectedProductId) {
       throw new ServiceUnavailableException("苹果购买记录不完整，请联系客服");
     }
@@ -930,12 +1161,13 @@ export class BillingService {
       transactionId,
       "PAYMENT_SUCCEEDED",
       payload,
-      async () => this.markPaid(
-        intent.paymentNo,
-        transactionId,
-        intent.amountCents,
-        payload,
-      ),
+      async () =>
+        this.markPaid(
+          intent.paymentNo,
+          transactionId,
+          intent.amountCents,
+          payload,
+        ),
     );
     return this.payment(userId, intent.id);
   }
@@ -958,7 +1190,9 @@ export class BillingService {
     });
     if (!intent) return;
     assertNewExecutionOwner(intent);
-    const expectedProductId = String(safeObject(intent.providerPayload).productId ?? "");
+    const expectedProductId = String(
+      safeObject(intent.providerPayload).productId ?? "",
+    );
     const validationError = appleTransactionValidationError(transaction, {
       accountToken: intent.id,
       productId: expectedProductId,
@@ -966,7 +1200,8 @@ export class BillingService {
       currency: intent.currency,
       allowRevoked: true,
     });
-    if (validationError) throw new BadRequestException("苹果退款内容与原购买不匹配");
+    if (validationError)
+      throw new BadRequestException("苹果退款内容与原购买不匹配");
     const refundNo = `APPLE-${transactionId}`;
     const payload = appleTransactionPayload(transaction, environment);
     const refund = await this.prisma.paymentRefund.upsert({
@@ -1012,21 +1247,40 @@ export class BillingService {
       assertPaymentIntegrationBinding(intent, verification.integrationKey);
     }
     assertProviderResultIdentity(intent, payload, false, verification);
-    if (!transactionId || !Number.isSafeInteger(paidCents) || paidCents !== intent.amountCents) {
+    if (
+      !transactionId ||
+      !Number.isSafeInteger(paidCents) ||
+      paidCents !== intent.amountCents
+    ) {
       throw new BadRequestException("支付金额不一致");
     }
-    if (intent.providerTransactionId && intent.providerTransactionId !== transactionId) throw new ConflictException("支付记录已绑定其他渠道交易");
+    if (
+      intent.providerTransactionId &&
+      intent.providerTransactionId !== transactionId
+    )
+      throw new ConflictException("支付记录已绑定其他渠道交易");
     if (intent.status === PaymentStatus.SUCCEEDED) return;
     await this.prisma.$transaction(async (tx) => {
       // Consistent lock order with order cancellation and payment creation.
       if (intent.commerceOrderId) {
         await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${intent.commerceOrderId}::uuid FOR UPDATE`;
-        assertNewExecutionOwner(await tx.commerceOrder.findUniqueOrThrow({ where: { id: intent.commerceOrderId } }));
+        assertNewExecutionOwner(
+          await tx.commerceOrder.findUniqueOrThrow({
+            where: { id: intent.commerceOrderId },
+          }),
+        );
       }
       const changed = await tx.paymentIntent.updateMany({
         where: {
           id: intent.id,
-          status: { in: [PaymentStatus.CREATED, PaymentStatus.PENDING, PaymentStatus.FAILED, PaymentStatus.CLOSED] },
+          status: {
+            in: [
+              PaymentStatus.CREATED,
+              PaymentStatus.PENDING,
+              PaymentStatus.FAILED,
+              PaymentStatus.CLOSED,
+            ],
+          },
         },
         data: {
           status: PaymentStatus.SUCCEEDED,
@@ -1036,36 +1290,67 @@ export class BillingService {
         },
       });
       if (!changed.count) return;
-      if (intent.businessType === BusinessType.COMMERCE_ORDER && intent.commerceOrderId) {
+      if (
+        intent.businessType === BusinessType.COMMERCE_ORDER &&
+        intent.commerceOrderId
+      ) {
         const paidOrder = await tx.commerceOrder.updateMany({
           where: {
             id: intent.commerceOrderId,
             status: CommerceOrderStatus.PENDING_PAYMENT,
           },
-          data: { status: CommerceOrderStatus.PAID, paidAt: new Date(), version: { increment: 1 } },
+          data: {
+            status: CommerceOrderStatus.PAID,
+            paidAt: new Date(),
+            version: { increment: 1 },
+          },
         });
         if (!paidOrder.count) {
-          await tx.auditLog.create({ data: { actorType: "provider", actorId: transactionId, action: "PAYMENT_ORDER_STATE_CONFLICT", entityType: "commerce_order", entityId: intent.commerceOrderId,
-            afterJson: { paymentNo, paidCents, reconciliationRequired: true, message: "款项已确认，订单状态不允许自动履约；未重新预占库存或推送ERP" } } });
+          await tx.auditLog.create({
+            data: {
+              actorType: "provider",
+              actorId: transactionId,
+              action: "PAYMENT_ORDER_STATE_CONFLICT",
+              entityType: "commerce_order",
+              entityId: intent.commerceOrderId,
+              afterJson: {
+                paymentNo,
+                paidCents,
+                reconciliationRequired: true,
+                message:
+                  "款项已确认，订单状态不允许自动履约；未重新预占库存或推送ERP",
+              },
+            },
+          });
           return;
         }
         await onCommerceOrderPaid(tx, intent.commerceOrderId);
-        const erpItems = await tx.commerceOrderItem.count({ where: { orderId: intent.commerceOrderId, product: { source: "ERP" } } });
-        if (erpItems) {
-        await tx.commerceIntegrationJob.upsert({
-          where: { idempotencyKey: `jushuitan-order:${intent.commerceOrderId}` },
-          create: {
-            type: "JUSHUITAN_ORDER_PUSH",
-            idempotencyKey: `jushuitan-order:${intent.commerceOrderId}`,
-            aggregateType: "commerce_order",
-            aggregateId: intent.commerceOrderId,
-            payload: { orderId: intent.commerceOrderId },
+        const erpItems = await tx.commerceOrderItem.count({
+          where: {
+            orderId: intent.commerceOrderId,
+            product: { source: "ERP" },
           },
-          update: {},
         });
+        if (erpItems) {
+          await tx.commerceIntegrationJob.upsert({
+            where: {
+              idempotencyKey: `jushuitan-order:${intent.commerceOrderId}`,
+            },
+            create: {
+              type: "JUSHUITAN_ORDER_PUSH",
+              idempotencyKey: `jushuitan-order:${intent.commerceOrderId}`,
+              aggregateType: "commerce_order",
+              aggregateId: intent.commerceOrderId,
+              payload: { orderId: intent.commerceOrderId },
+            },
+            update: {},
+          });
         }
       }
-      if (intent.businessType === BusinessType.HEALTH_REPORT && intent.healthReportId) {
+      if (
+        intent.businessType === BusinessType.HEALTH_REPORT &&
+        intent.healthReportId
+      ) {
         await this.grantAndConsumeSingleReport(
           tx,
           intent.userId,
@@ -1077,7 +1362,12 @@ export class BillingService {
         intent.businessType === BusinessType.HEALTH_MEMBERSHIP &&
         intent.healthMembershipId
       ) {
-        await this.activateMembership(tx, intent.userId, intent.healthMembershipId, intent.id);
+        await this.activateMembership(
+          tx,
+          intent.userId,
+          intent.healthMembershipId,
+          intent.id,
+        );
       }
     });
   }
@@ -1179,20 +1469,37 @@ export class BillingService {
     });
     if (!refund) throw new NotFoundException("退款记录不存在");
     assertPaymentIntegrationBinding(refund.paymentIntent, integrationKey);
-    await this.prisma.$transaction(async tx => {
+    await this.prisma.$transaction(async (tx) => {
       if (refund.paymentIntent.commerceOrderId) {
         await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${refund.paymentIntent.commerceOrderId}::uuid FOR UPDATE`;
-        assertNewExecutionOwner(await tx.commerceOrder.findUniqueOrThrow({ where: { id: refund.paymentIntent.commerceOrderId } }));
+        assertNewExecutionOwner(
+          await tx.commerceOrder.findUniqueOrThrow({
+            where: { id: refund.paymentIntent.commerceOrderId },
+          }),
+        );
       }
       await tx.$queryRaw`SELECT id FROM "PaymentIntent" WHERE id = ${refund.paymentIntentId}::uuid FOR UPDATE`;
-      const current = await tx.paymentRefund.findUniqueOrThrow({ where: { id: refund.id }, include: { paymentIntent: true } });
-      assertRefundResultBinding(current, payload, amountCents, String(payload.refund_id ?? "") || null);
-      if (current.paymentIntent.providerMerchantId && payload.mchid !== current.paymentIntent.providerMerchantId) throw new BadRequestException("微信退款回执商户不匹配");
+      const current = await tx.paymentRefund.findUniqueOrThrow({
+        where: { id: refund.id },
+        include: { paymentIntent: true },
+      });
+      assertRefundResultBinding(
+        current,
+        payload,
+        amountCents,
+        String(payload.refund_id ?? "") || null,
+      );
+      if (
+        current.paymentIntent.providerMerchantId &&
+        payload.mchid !== current.paymentIntent.providerMerchantId
+      )
+        throw new BadRequestException("微信退款回执商户不匹配");
       if (current.status === RefundStatus.SUCCEEDED) return;
       await tx.paymentRefund.updateMany({
         where: { id: current.id, status: { not: RefundStatus.SUCCEEDED } },
         data: {
-          status: status === "CLOSED" ? RefundStatus.CLOSED : RefundStatus.PROCESSING,
+          status:
+            status === "CLOSED" ? RefundStatus.CLOSED : RefundStatus.PROCESSING,
           providerPayload: payload as Prisma.InputJsonValue,
         },
       });
@@ -1222,8 +1529,16 @@ export class BillingService {
         await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${refund.paymentIntent.commerceOrderId}::uuid FOR UPDATE`;
       }
       await tx.$queryRaw`SELECT id FROM "PaymentIntent" WHERE id = ${refund.paymentIntentId}::uuid FOR UPDATE`;
-      const current = await tx.paymentRefund.findUniqueOrThrow({ where: { id: refund.id }, include: { paymentIntent: true } });
-      assertRefundResultBinding(current, payload, amountCents, providerRefundId);
+      const current = await tx.paymentRefund.findUniqueOrThrow({
+        where: { id: refund.id },
+        include: { paymentIntent: true },
+      });
+      assertRefundResultBinding(
+        current,
+        payload,
+        amountCents,
+        providerRefundId,
+      );
       const completed = await tx.paymentRefund.updateMany({
         where: { id: refund.id, completedAt: null },
         data: {
@@ -1241,25 +1556,42 @@ export class BillingService {
         },
         _sum: { amountCents: true },
       });
-      const fullyRefunded = (totals._sum.amountCents ?? 0) >= refund.paymentIntent.amountCents;
+      const fullyRefunded =
+        (totals._sum.amountCents ?? 0) >= refund.paymentIntent.amountCents;
       await this.restorePaymentRefundStatus(tx, refund.paymentIntentId);
       if (refund.afterSaleId) {
         await tx.commerceAfterSale.update({
           where: { id: refund.afterSaleId },
-          data: { status: AfterSaleStatus.COMPLETED, version: { increment: 1 } },
+          data: {
+            status: AfterSaleStatus.COMPLETED,
+            version: { increment: 1 },
+          },
         });
       }
       if (refund.paymentIntent.commerceOrderId) {
-        const order = await tx.commerceOrder.findUniqueOrThrow({ where: { id: refund.paymentIntent.commerceOrderId }, include: { items: true, shipments: { include: { items: true } }, afterSales: { include: { items: true } } } });
+        const order = await tx.commerceOrder.findUniqueOrThrow({
+          where: { id: refund.paymentIntent.commerceOrderId },
+          include: {
+            items: true,
+            shipments: { include: { items: true } },
+            afterSales: { include: { items: true } },
+          },
+        });
         assertNewExecutionOwner(order);
-        const openAfterSale = order.afterSales.some(item => item.id !== refund.afterSaleId && !["REJECTED", "CANCELLED", "COMPLETED"].includes(item.status));
+        const openAfterSale = order.afterSales.some(
+          (item) =>
+            item.id !== refund.afterSaleId &&
+            !["REJECTED", "CANCELLED", "COMPLETED"].includes(item.status),
+        );
         await tx.commerceOrder.update({
           where: { id: refund.paymentIntent.commerceOrderId },
           data: {
-            ...(fullyRefunded && (order.pricingVersion !== 1 || allItemsReturned(order))
+            ...(fullyRefunded &&
+            (order.pricingVersion !== 1 || allItemsReturned(order))
               ? { status: CommerceOrderStatus.REFUNDED }
-              : openAfterSale ? { status: CommerceOrderStatus.AFTER_SALE }
-              : orderFulfillmentState(order)),
+              : openAfterSale
+                ? { status: CommerceOrderStatus.AFTER_SALE }
+                : orderFulfillmentState(order)),
             version: { increment: 1 },
           },
         });
@@ -1306,7 +1638,11 @@ export class BillingService {
           });
           await tx.healthReport.updateMany({
             where: {
-              id: { in: consumed.flatMap((item) => item.healthReportId ? [item.healthReportId] : []) },
+              id: {
+                in: consumed.flatMap((item) =>
+                  item.healthReportId ? [item.healthReportId] : [],
+                ),
+              },
             },
             data: { status: ReportStatus.REVOKED, revokedAt: new Date() },
           });
@@ -1338,7 +1674,10 @@ export class BillingService {
   }
 
   // Caller holds the order -> payment locks; never recompute outside this transaction.
-  private async restorePaymentRefundStatus(tx: Prisma.TransactionClient, paymentIntentId: string) {
+  private async restorePaymentRefundStatus(
+    tx: Prisma.TransactionClient,
+    paymentIntentId: string,
+  ) {
     const totals = await tx.paymentRefund.aggregate({
       where: { paymentIntentId, status: RefundStatus.SUCCEEDED },
       _sum: { amountCents: true },
@@ -1347,15 +1686,23 @@ export class BillingService {
       where: { id: paymentIntentId },
     });
     const refunded = totals._sum.amountCents ?? 0;
-    const pending = await tx.paymentRefund.count({ where: { paymentIntentId, status: { in: [RefundStatus.CREATED, RefundStatus.PROCESSING] } } });
+    const pending = await tx.paymentRefund.count({
+      where: {
+        paymentIntentId,
+        status: { in: [RefundStatus.CREATED, RefundStatus.PROCESSING] },
+      },
+    });
     await tx.paymentIntent.update({
       where: { id: paymentIntentId },
       data: {
-        status: pending > 0 ? PaymentStatus.REFUNDING : refunded === 0
-          ? PaymentStatus.SUCCEEDED
-          : refunded >= intent.amountCents
-            ? PaymentStatus.REFUNDED
-            : PaymentStatus.PARTIAL_REFUNDED,
+        status:
+          pending > 0
+            ? PaymentStatus.REFUNDING
+            : refunded === 0
+              ? PaymentStatus.SUCCEEDED
+              : refunded >= intent.amountCents
+                ? PaymentStatus.REFUNDED
+                : PaymentStatus.PARTIAL_REFUNDED,
       },
     });
   }
@@ -1374,7 +1721,9 @@ export class BillingService {
         active: true,
         ...(platform ? { platforms: { has: platform } } : {}),
         OR: [{ effectiveFrom: null }, { effectiveFrom: { lte: now } }],
-        AND: [{ OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: now } }] }],
+        AND: [
+          { OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: now } }] },
+        ],
       },
     });
     if (!offer) throw new BadRequestException("购买方案已失效，请刷新后重试");
@@ -1508,7 +1857,9 @@ export class BillingService {
             eventType,
             payload: payload as Prisma.InputJsonValue,
             verifiedAt: new Date(),
-            processingState: shouldDeferCallbacks(process.env) ? "DEFERRED" : "VERIFIED",
+            processingState: shouldDeferCallbacks(process.env)
+              ? "DEFERRED"
+              : "VERIFIED",
           },
         });
       } catch (error) {
@@ -1518,19 +1869,31 @@ export class BillingService {
     // Older inbox rows contain encrypted provider bodies and have no verification
     // marker. Only a freshly signature-verified delivery can upgrade them.
     if (existing && !existing.verifiedAt) {
-      await this.prisma.providerEvent.update({ where: { id: existing.id }, data: {
-        payload: payload as Prisma.InputJsonValue, verifiedAt: new Date(), processingState: "VERIFIED",
-      } });
+      await this.prisma.providerEvent.update({
+        where: { id: existing.id },
+        data: {
+          payload: payload as Prisma.InputJsonValue,
+          verifiedAt: new Date(),
+          processingState: "VERIFIED",
+        },
+      });
     }
     if (shouldDeferCallbacks(process.env)) {
-      await this.prisma.providerEvent.updateMany({ where: { provider, eventKey, processedAt: null }, data: { processingState: "DEFERRED" } });
+      await this.prisma.providerEvent.updateMany({
+        where: { provider, eventKey, processedAt: null },
+        data: { processingState: "DEFERRED" },
+      });
       return;
     }
     try {
       await handle();
       await this.prisma.providerEvent.update({
         where: { provider_eventKey: { provider, eventKey } },
-        data: { processedAt: new Date(), processError: null, processingState: "COMPLETED" },
+        data: {
+          processedAt: new Date(),
+          processError: null,
+          processingState: "COMPLETED",
+        },
       });
     } catch (error) {
       await this.prisma.providerEvent.update({
@@ -1542,44 +1905,130 @@ export class BillingService {
   }
 
   async replayVerifiedProviderEvents(input: unknown) {
-    if (shouldDeferCallbacks(process.env)) throw new ConflictException("回调业务处理仍暂停，不能回放");
-    const limit = Math.max(1, Math.min(100, Math.trunc(Number(safeObject(input).limit) || 20)));
-    const events = await this.prisma.providerEvent.findMany({ where: { processedAt: null, verifiedAt: { not: null } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: limit });
-    const results: Array<{ id: string; processed: boolean; error?: string }> = [];
+    if (shouldDeferCallbacks(process.env))
+      throw new ConflictException("回调业务处理仍暂停，不能回放");
+    const limit = Math.max(
+      1,
+      Math.min(100, Math.trunc(Number(safeObject(input).limit) || 20)),
+    );
+    const events = await this.prisma.providerEvent.findMany({
+      where: { processedAt: null, verifiedAt: { not: null } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: limit,
+    });
+    const results: Array<{ id: string; processed: boolean; error?: string }> =
+      [];
     for (const event of events) {
       if (shouldDeferCallbacks(process.env)) break;
       try {
         const payload = safeObject(event.payload);
-        await this.processProviderEvent(event.provider, event.eventKey, event.eventType, payload, async () => {
-          if (event.provider === "wechat_pay" || event.provider === "wechat_pay_app") {
-            if (event.eventType === "REFUND_STATUS") return this.applyWechatRefundResult(payload, event.provider);
-            if (payload.trade_state !== "SUCCESS") throw new ConflictException("微信支付事件不是成功状态");
-            const amount = safeObject(payload.amount);
-            return this.markPaid(String(payload.out_trade_no ?? ""), String(payload.transaction_id ?? ""), Number(amount.total), payload, { integrationKey: event.provider });
-          }
-          if (event.provider === "alipay" || event.provider === "alipay_app") {
-            if (["TRADE_SUCCESS", "TRADE_FINISHED"].includes(String(payload.trade_status))) {
-              await this.markPaid(String(payload.out_trade_no ?? ""), String(payload.trade_no ?? ""), Math.round(Number(payload.total_amount) * 100), payload, { alipayAppId: String(payload.app_id ?? "") || null, integrationKey: event.provider });
+        await this.processProviderEvent(
+          event.provider,
+          event.eventKey,
+          event.eventType,
+          payload,
+          async () => {
+            if (
+              event.provider === "wechat_pay" ||
+              event.provider === "wechat_pay_app"
+            ) {
+              if (event.eventType === "REFUND_STATUS")
+                return this.applyWechatRefundResult(payload, event.provider);
+              if (payload.trade_state !== "SUCCESS")
+                throw new ConflictException("微信支付事件不是成功状态");
+              const amount = safeObject(payload.amount);
+              return this.markPaid(
+                String(payload.out_trade_no ?? ""),
+                String(payload.transaction_id ?? ""),
+                Number(amount.total),
+                payload,
+                { integrationKey: event.provider },
+              );
             }
-            return;
-          }
-          if (event.provider === "apple_iap" || event.provider === "apple_iap_notification") {
-            const transaction = (event.provider === "apple_iap" ? payload : safeObject(payload.transaction)) as import("@apple/app-store-server-library").JWSTransactionDecodedPayload;
-            const environment = String(payload.environment) as import("@apple/app-store-server-library").Environment;
-            if (!transaction.transactionId || !transaction.appAccountToken) throw new ConflictException("历史苹果回调内容不足，需原签名回执复核");
-            if (event.eventType === "REFUND_REVERSED") throw new ConflictException("苹果退款撤销需财务复核，不自动重发权益");
-            if (["REFUND", "REVOKE"].includes(event.eventType) || transaction.revocationDate) return this.applyAppleRefund(transaction, environment);
-            const intent = await this.prisma.paymentIntent.findUniqueOrThrow({ where: { id: String(transaction.appAccountToken) } });
-            const error = appleTransactionValidationError(transaction, { accountToken: intent.id, productId: String(safeObject(intent.providerPayload).productId ?? ""), amountCents: intent.amountCents, currency: intent.currency });
-            if (error) throw new ConflictException("苹果回调与原支付不匹配");
-            return this.markPaid(intent.paymentNo, String(transaction.transactionId), intent.amountCents, payload);
-          }
-          throw new ConflictException("未知供应商事件，不能自动回放");
-        });
+            if (
+              event.provider === "alipay" ||
+              event.provider === "alipay_app"
+            ) {
+              if (
+                ["TRADE_SUCCESS", "TRADE_FINISHED"].includes(
+                  String(payload.trade_status),
+                )
+              ) {
+                await this.markPaid(
+                  String(payload.out_trade_no ?? ""),
+                  String(payload.trade_no ?? ""),
+                  Math.round(Number(payload.total_amount) * 100),
+                  payload,
+                  {
+                    alipayAppId: String(payload.app_id ?? "") || null,
+                    integrationKey: event.provider,
+                  },
+                );
+              }
+              return;
+            }
+            if (
+              event.provider === "apple_iap" ||
+              event.provider === "apple_iap_notification"
+            ) {
+              const transaction = (
+                event.provider === "apple_iap"
+                  ? payload
+                  : safeObject(payload.transaction)
+              ) as import("@apple/app-store-server-library").JWSTransactionDecodedPayload;
+              const environment = String(
+                payload.environment,
+              ) as import("@apple/app-store-server-library").Environment;
+              if (!transaction.transactionId || !transaction.appAccountToken)
+                throw new ConflictException(
+                  "历史苹果回调内容不足，需原签名回执复核",
+                );
+              if (event.eventType === "REFUND_REVERSED")
+                throw new ConflictException(
+                  "苹果退款撤销需财务复核，不自动重发权益",
+                );
+              if (
+                ["REFUND", "REVOKE"].includes(event.eventType) ||
+                transaction.revocationDate
+              )
+                return this.applyAppleRefund(transaction, environment);
+              const intent = await this.prisma.paymentIntent.findUniqueOrThrow({
+                where: { id: String(transaction.appAccountToken) },
+              });
+              const error = appleTransactionValidationError(transaction, {
+                accountToken: intent.id,
+                productId: String(
+                  safeObject(intent.providerPayload).productId ?? "",
+                ),
+                amountCents: intent.amountCents,
+                currency: intent.currency,
+              });
+              if (error) throw new ConflictException("苹果回调与原支付不匹配");
+              return this.markPaid(
+                intent.paymentNo,
+                String(transaction.transactionId),
+                intent.amountCents,
+                payload,
+              );
+            }
+            throw new ConflictException("未知供应商事件，不能自动回放");
+          },
+        );
         results.push({ id: event.id, processed: true });
-      } catch (error) { results.push({ id: event.id, processed: false, error: sanitizeError(error) }); }
+      } catch (error) {
+        results.push({
+          id: event.id,
+          processed: false,
+          error: sanitizeError(error),
+        });
+      }
     }
-    return { items: results, remaining: await this.prisma.providerEvent.count({ where: { processedAt: null, verifiedAt: { not: null } } }) };
+    return {
+      items: results,
+      remaining: await this.prisma.providerEvent.count({
+        where: { processedAt: null, verifiedAt: { not: null } },
+      }),
+    };
   }
 
   private async expireMemberships(userId: string, now: Date): Promise<void> {
@@ -1641,7 +2090,9 @@ async function queueReport(
 }
 
 function normalizedPlatform(value: unknown): string | null {
-  const platform = String(value ?? "").trim().toLowerCase();
+  const platform = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (!platform) return null;
   if (!["android", "ios", "h5", "mini_program", "web"].includes(platform)) {
     throw new BadRequestException("客户端平台不正确");
@@ -1650,8 +2101,10 @@ function normalizedPlatform(value: unknown): string | null {
 }
 
 function alipayPaymentCents(value: unknown): number {
-  if (!(["string", "number"] as string[]).includes(typeof value) ||
-      (typeof value === "number" && !Number.isFinite(value))) {
+  if (
+    !(["string", "number"] as string[]).includes(typeof value) ||
+    (typeof value === "number" && !Number.isFinite(value))
+  ) {
     throw new BadRequestException("支付宝查单金额格式无效");
   }
   const normalized = String(value);
@@ -1686,44 +2139,127 @@ function paymentNumber(): string {
 }
 
 export function assertNewExecutionOwner(record: { executionOwner: string }) {
-  if (record.executionOwner !== "NEW_SYSTEM") throw new ConflictException("该交易尚未完成新系统接管核验，禁止资金或履约出站");
+  if (record.executionOwner !== "NEW_SYSTEM")
+    throw new ConflictException(
+      "该交易尚未完成新系统接管核验，禁止资金或履约出站",
+    );
 }
 
-export function assertPaymentOutboundEnabled(environment: Record<string, string | undefined> = process.env) {
-  if (shouldPauseWorkers(environment)) throw new ServiceUnavailableException("交易出站已暂停，原支付及退款关系保留，待恢复后核对");
+export function assertPaymentOutboundEnabled(
+  environment: Record<string, string | undefined> = process.env,
+) {
+  if (shouldPauseWorkers(environment))
+    throw new ServiceUnavailableException(
+      "交易出站已暂停，原支付及退款关系保留，待恢复后核对",
+    );
 }
 
-export function assertProviderResultIdentity(intent: { channel: PaymentChannel; currency: string; providerMerchantId: string | null; providerAppId: string | null }, payload: Record<string, unknown>, refund = false, verification: { alipayAppId?: string | null } = {}) {
+export function assertProviderResultIdentity(
+  intent: {
+    channel: PaymentChannel;
+    currency: string;
+    providerMerchantId: string | null;
+    providerAppId: string | null;
+  },
+  payload: Record<string, unknown>,
+  refund = false,
+  verification: { alipayAppId?: string | null } = {},
+) {
   if (intent.channel === PaymentChannel.APPLE_IAP) return;
   const amount = safeObject(payload.amount);
-  if (amount.currency && amount.currency !== intent.currency) throw new BadRequestException("渠道回执币种不匹配");
+  if (amount.currency && amount.currency !== intent.currency)
+    throw new BadRequestException("渠道回执币种不匹配");
   if (intent.channel.startsWith("WECHAT")) {
-    if ((!refund || payload.mchid !== undefined) && intent.providerMerchantId && String(payload.mchid ?? "") !== intent.providerMerchantId) throw new BadRequestException("微信回执商户不匹配");
-    if (!refund && intent.providerAppId && String(payload.appid ?? "") !== intent.providerAppId) throw new BadRequestException("微信回执应用不匹配");
-  } else if (!refund && intent.providerAppId &&
-      String(payload.app_id ?? verification.alipayAppId ?? "") !== intent.providerAppId) {
+    if (
+      (!refund || payload.mchid !== undefined) &&
+      intent.providerMerchantId &&
+      String(payload.mchid ?? "") !== intent.providerMerchantId
+    )
+      throw new BadRequestException("微信回执商户不匹配");
+    if (
+      !refund &&
+      intent.providerAppId &&
+      String(payload.appid ?? "") !== intent.providerAppId
+    )
+      throw new BadRequestException("微信回执应用不匹配");
+  } else if (
+    !refund &&
+    intent.providerAppId &&
+    String(payload.app_id ?? verification.alipayAppId ?? "") !==
+      intent.providerAppId
+  ) {
     throw new BadRequestException("支付宝回执应用不匹配");
   }
 }
 
-export function assertRefundResultBinding(refund: {
-  executionOwner: string; refundNo: string; amountCents: number; providerRefundId: string | null;
-  paymentIntent: { executionOwner: string; channel: PaymentChannel; currency: string; providerMerchantId: string | null; providerAppId: string | null; paymentNo: string; providerTransactionId: string | null };
-}, payload: Record<string, unknown>, amountCents: number, providerRefundId: string | null) {
+export function assertRefundResultBinding(
+  refund: {
+    executionOwner: string;
+    refundNo: string;
+    amountCents: number;
+    providerRefundId: string | null;
+    paymentIntent: {
+      executionOwner: string;
+      channel: PaymentChannel;
+      currency: string;
+      providerMerchantId: string | null;
+      providerAppId: string | null;
+      paymentNo: string;
+      providerTransactionId: string | null;
+    };
+  },
+  payload: Record<string, unknown>,
+  amountCents: number,
+  providerRefundId: string | null,
+) {
   assertNewExecutionOwner(refund);
   const intent = refund.paymentIntent;
   assertNewExecutionOwner(intent);
   assertProviderResultIdentity(intent, payload, true);
-  if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || amountCents !== refund.amountCents) throw new BadRequestException("退款金额不一致");
-  if (!providerRefundId || (refund.providerRefundId && refund.providerRefundId !== providerRefundId)) throw new BadRequestException("渠道退款编号不匹配");
+  if (
+    !Number.isSafeInteger(amountCents) ||
+    amountCents <= 0 ||
+    amountCents !== refund.amountCents
+  )
+    throw new BadRequestException("退款金额不一致");
+  if (
+    !providerRefundId ||
+    (refund.providerRefundId && refund.providerRefundId !== providerRefundId)
+  )
+    throw new BadRequestException("渠道退款编号不匹配");
   if (intent.channel === PaymentChannel.APPLE_IAP) return; // Verified signed Apple transaction is checked before this method.
-  if (String(payload.out_trade_no ?? "") !== intent.paymentNo) throw new BadRequestException("退款原支付编号不匹配");
-  const transactionId = String(intent.channel.startsWith("WECHAT") ? payload.transaction_id ?? "" : payload.trade_no ?? "");
-  if (!transactionId || !intent.providerTransactionId || transactionId !== intent.providerTransactionId) throw new BadRequestException("退款原渠道交易不匹配");
-  if (intent.channel.startsWith("WECHAT") && String(payload.out_refund_no ?? "") !== refund.refundNo) throw new BadRequestException("渠道退款请求编号不匹配");
-  if (intent.channel.startsWith("WECHAT") && payload.refund_status !== undefined && intent.providerMerchantId && payload.mchid !== intent.providerMerchantId) throw new BadRequestException("微信退款回执商户不匹配");
-  if (payload.out_request_no !== undefined && String(payload.out_request_no) !== refund.refundNo) throw new BadRequestException("渠道退款请求编号不匹配");
-  if (payload.refund_currency && payload.refund_currency !== intent.currency) throw new BadRequestException("渠道退款币种不匹配");
+  if (String(payload.out_trade_no ?? "") !== intent.paymentNo)
+    throw new BadRequestException("退款原支付编号不匹配");
+  const transactionId = String(
+    intent.channel.startsWith("WECHAT")
+      ? (payload.transaction_id ?? "")
+      : (payload.trade_no ?? ""),
+  );
+  if (
+    !transactionId ||
+    !intent.providerTransactionId ||
+    transactionId !== intent.providerTransactionId
+  )
+    throw new BadRequestException("退款原渠道交易不匹配");
+  if (
+    intent.channel.startsWith("WECHAT") &&
+    String(payload.out_refund_no ?? "") !== refund.refundNo
+  )
+    throw new BadRequestException("渠道退款请求编号不匹配");
+  if (
+    intent.channel.startsWith("WECHAT") &&
+    payload.refund_status !== undefined &&
+    intent.providerMerchantId &&
+    payload.mchid !== intent.providerMerchantId
+  )
+    throw new BadRequestException("微信退款回执商户不匹配");
+  if (
+    payload.out_request_no !== undefined &&
+    String(payload.out_request_no) !== refund.refundNo
+  )
+    throw new BadRequestException("渠道退款请求编号不匹配");
+  if (payload.refund_currency && payload.refund_currency !== intent.currency)
+    throw new BadRequestException("渠道退款币种不匹配");
 }
 
 function refundNumber(): string {
@@ -1753,7 +2289,9 @@ function appleTransactionPayload(
 
 function appleNotificationPayload(
   notification: import("@apple/app-store-server-library").ResponseBodyV2DecodedPayload,
-  transaction: import("@apple/app-store-server-library").JWSTransactionDecodedPayload | null,
+  transaction:
+    | import("@apple/app-store-server-library").JWSTransactionDecodedPayload
+    | null,
   environment: import("@apple/app-store-server-library").Environment,
 ): Record<string, unknown> {
   return withoutUndefined({
@@ -1763,7 +2301,9 @@ function appleNotificationPayload(
     subtype: notification.subtype,
     version: notification.version,
     signedDate: notification.signedDate,
-    transaction: transaction ? appleTransactionPayload(transaction, environment) : undefined,
+    transaction: transaction
+      ? appleTransactionPayload(transaction, environment)
+      : undefined,
   });
 }
 
@@ -1790,7 +2330,8 @@ function serializePayment(intent: {
   return {
     id: intent.id,
     paymentNo: intent.paymentNo,
-    businessType: intent.businessType.toLowerCase() as PaymentIntentContract["businessType"],
+    businessType:
+      intent.businessType.toLowerCase() as PaymentIntentContract["businessType"],
     businessId: intent.businessId,
     channel: intent.channel.toLowerCase() as PaymentIntentContract["channel"],
     status: intent.status.toLowerCase() as PaymentIntentContract["status"],
@@ -1820,5 +2361,8 @@ function sanitizeError(error: unknown): string {
 }
 
 function isUniqueConstraint(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  );
 }

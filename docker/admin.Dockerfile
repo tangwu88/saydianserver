@@ -19,3 +19,5 @@ COPY --from=build /workspace/apps/admin-web/dist /usr/share/nginx/html/admin
 COPY --from=build /workspace/apps/download-web/dist /usr/share/nginx/html/down
 COPY --from=build /workspace/apps/shop/dist/build/h5 /usr/share/nginx/html/saidian-mall
 EXPOSE 8080
+ENTRYPOINT ["nginx"]
+CMD ["-g", "daemon off;"]

@@ -1,36 +1,68 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+  type OnModuleInit,
+} from "@nestjs/common";
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { IntegrationState, Prisma } from "@prisma/client";
 import { parseDownloadManifest } from "@saydian/app-contracts";
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
 import { PrismaService } from "../common/prisma.service";
-import { env } from "../common/environment";
+import { env, envBoolean } from "../common/environment";
 import { safeObject, sha256 } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
-import { isGlobalRealm } from "../common/deployment-realm";
+
 import { parseGlobalDownloadManifest } from "./global-download-manifest";
 import { normalizePublishedGlobalSupport } from "./global-support-config";
 import { canAdminResource } from "@saydian/app-contracts";
 import { parseSportRoute, renderAmapSportRoute } from "./sport-route-map";
-import { evidenceId, evidenceLimits, evidencePurpose, validateEvidenceImage } from "../commerce/commerce-evidence";
+import {
+  evidenceId,
+  evidenceLimits,
+  evidencePurpose,
+  validateEvidenceImage,
+} from "../commerce/commerce-evidence";
+import {
+  assertSayRingAvatarDirectory,
+  isSayRingLocalAvatarKey,
+  normalizeSayRingAvatar,
+  readSayRingAvatar,
+  removeSayRingAvatar,
+  writeSayRingAvatar,
+} from "./say-ring-avatar-store";
 
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 @Injectable()
-export class SupportService {
+export class SupportService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    if (envBoolean("SAY_RING_LOCAL_AVATAR_WRITE_ENABLED"))
+      await assertSayRingAvatarDirectory();
+  }
 
   async createFeedback(userId: string, input: unknown) {
     const body = safeObject(input);
     const category = String(body.category ?? "other").trim();
     const content = String(body.content ?? "").trim();
     const contact = String(body.contact ?? "").trim();
-    const attachments = Array.isArray(body.attachments) ? body.attachments.map(String).slice(0, 6) : [];
+    const attachments = Array.isArray(body.attachments)
+      ? body.attachments.map(String).slice(0, 6)
+      : [];
     if (!content || content.length < 5 || content.length > 2000) {
       throw new BadRequestException("请填写5至2000字的问题说明");
     }
@@ -43,7 +75,8 @@ export class SupportService {
           status: "ACTIVE",
         },
       });
-      if (count !== attachments.length) throw new BadRequestException("反馈附件不正确");
+      if (count !== attachments.length)
+        throw new BadRequestException("反馈附件不正确");
     }
     const feedback = await this.prisma.feedback.create({
       data: {
@@ -80,16 +113,14 @@ export class SupportService {
     // Read only the explicitly published support record; do not load private JSON.
     const setting = await this.prisma.appSetting.findFirst({
       where: {
-        key: isGlobalRealm() ? "global_support" : "support",
+        key: "global_support",
         public: true,
       },
       select: { value: true },
     });
-    const unavailableMessage = isGlobalRealm() ? "Support is temporarily unavailable. Please try again later." : "客服渠道暂时无法使用，请稍后再试";
-    if (isGlobalRealm()) {
-      return normalizePublishedGlobalSupport(setting?.value, unavailableMessage);
-    }
-    return setting?.value ?? { configured: false, message: unavailableMessage };
+    const unavailableMessage =
+      "Support is temporarily unavailable. Please try again later.";
+    return normalizePublishedGlobalSupport(setting?.value, unavailableMessage);
   }
 
   async appDisplayConfig(productInput?: string) {
@@ -110,7 +141,6 @@ export class SupportService {
   }
 
   async sportMapConfig() {
-    if (!isGlobalRealm()) return { provider: "amap", configured: false };
     const setting = await this.prisma.appSetting.findFirst({
       where: { key: "say_ring_map", public: true },
       select: { value: true },
@@ -132,11 +162,13 @@ export class SupportService {
   async sportRouteMap(input: unknown) {
     const points = parseSportRoute(input);
     const config = await this.sportMapConfig();
-    if (!config.configured) throw new ServiceUnavailableException("运动地图尚未配置");
+    if (!config.configured)
+      throw new ServiceUnavailableException("运动地图尚未配置");
     const secrets = await this.integrationSecrets.resolve("say_ring_amap", {
       webServiceKey: "SAY_RING_AMAP_WEB_SERVICE_KEY",
     });
-    if (!secrets.webServiceKey) throw new ServiceUnavailableException("运动地图尚未配置");
+    if (!secrets.webServiceKey)
+      throw new ServiceUnavailableException("运动地图尚未配置");
     return renderAmapSportRoute(points, secrets.webServiceKey);
   }
 
@@ -146,8 +178,8 @@ export class SupportService {
       .toLowerCase();
     let key = "app_update";
     let globalProduct: "saydian-global" | "say-ring" = "saydian-global";
-    if (isGlobalRealm()) {
-      if (!product || product === "saydian-global") {
+    if (product) {
+      if (product === "saydian-global") {
         key = "global_app_update";
       } else if (product === "say-ring") {
         key = "say_ring_app_update";
@@ -159,22 +191,35 @@ export class SupportService {
     const setting = await this.prisma.appSetting.findUnique({ where: { key } });
     if (!setting?.public) throw new NotFoundException("暂未发布更新信息");
     try {
-      return isGlobalRealm() ? parseGlobalDownloadManifest(setting.value, globalProduct) : parseDownloadManifest(setting.value);
+      return product
+        ? parseGlobalDownloadManifest(setting.value, globalProduct)
+        : parseDownloadManifest(setting.value);
     } catch {
       throw new ServiceUnavailableException("下载信息暂时不可用");
     }
   }
 
-  async uploadImage(userId: string, file: Express.Multer.File, purposeInput: string) {
+  async uploadImage(
+    userId: string,
+    file: Express.Multer.File,
+    purposeInput: string,
+  ) {
     if (!file || !allowedImageTypes.has(file.mimetype)) {
       throw new BadRequestException("请选择 JPG、PNG 或 WebP 图片");
     }
     if (file.size <= 0 || file.size > 10 * 1024 * 1024) {
       throw new BadRequestException("图片大小不能超过10MB");
     }
-    const purpose = ["avatar", "feedback", "ecg"].includes(purposeInput) ? purposeInput : "feedback";
+    const purpose = ["avatar", "feedback", "ecg"].includes(purposeInput)
+      ? purposeInput
+      : "feedback";
     const digest = sha256(file.buffer);
-    const extension = file.mimetype === "image/png" ? "png" : file.mimetype === "image/webp" ? "webp" : "jpg";
+    const extension =
+      file.mimetype === "image/png"
+        ? "png"
+        : file.mimetype === "image/webp"
+          ? "webp"
+          : "jpg";
     const objectKey = `${purpose}/${userId}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.${extension}`;
     const storage = await this.storage();
     try {
@@ -202,7 +247,10 @@ export class SupportService {
         purpose,
       },
     });
-    const publicBase = env("PUBLIC_BASE_URL", "http://localhost:8080").replace(/\/$/, "");
+    const publicBase = env("PUBLIC_BASE_URL", "http://localhost:8080").replace(
+      /\/$/,
+      "",
+    );
     return {
       id: stored.id,
       url: `${publicBase}/api/saydian-app/v2/files/${stored.id}`,
@@ -211,9 +259,57 @@ export class SupportService {
     };
   }
 
+  async uploadSayRingAvatar(userId: string, file: Express.Multer.File) {
+    if (!envBoolean("SAY_RING_LOCAL_AVATAR_WRITE_ENABLED"))
+      return this.uploadImage(userId, file, "avatar");
+    const avatar = await normalizeSayRingAvatar(file);
+    const written = await writeSayRingAvatar(avatar.bytes, avatar.extension);
+    let stored;
+    try {
+      stored = await this.prisma.fileObject.create({
+        data: {
+          ownerUserId: userId,
+          objectKey: written.objectKey,
+          originalName: String(file.originalname || "avatar").slice(0, 255),
+          contentType: avatar.contentType,
+          byteSize: avatar.bytes.length,
+          sha256: avatar.sha256,
+          purpose: "avatar",
+        },
+      });
+    } catch (error) {
+      // A connection can fail after the insert commits. Keep the bytes if the
+      // row exists or its outcome cannot be checked; an orphan is recoverable.
+      let definitelyNotStored = false;
+      try {
+        definitelyNotStored = !(await this.prisma.fileObject.findUnique({
+          where: { objectKey: written.objectKey },
+          select: { id: true },
+        }));
+      } catch {}
+      if (definitelyNotStored) await removeSayRingAvatar(written.objectKey);
+      throw error;
+    }
+    const publicBase = env("PUBLIC_BASE_URL", "http://localhost:8080").replace(
+      /\/$/,
+      "",
+    );
+    return {
+      id: stored.id,
+      url: `${publicBase}/api/saydian-app/v2/files/${stored.id}`,
+      sha256: stored.sha256,
+      byteSize: stored.byteSize,
+    };
+  }
+
   async uploadAdminContentImage(adminId: string, file: Express.Multer.File) {
     const contentType = validateEvidenceImage(file);
-    const extension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+    const extension =
+      contentType === "image/png"
+        ? "png"
+        : contentType === "image/webp"
+          ? "webp"
+          : "jpg";
     const digest = sha256(file.buffer);
     const objectKey = `admin-content/${adminId}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.${extension}`;
     const storage = await this.storage();
@@ -235,14 +331,20 @@ export class SupportService {
       data: {
         ownerUserId: null,
         objectKey,
-        originalName: String(file.originalname || "content-image").slice(0, 255),
+        originalName: String(file.originalname || "content-image").slice(
+          0,
+          255,
+        ),
         contentType,
         byteSize: file.buffer.length,
         sha256: digest,
         purpose: "admin-content",
       },
     });
-    const publicBase = env("PUBLIC_BASE_URL", "http://localhost:8080").replace(/\/$/, "");
+    const publicBase = env("PUBLIC_BASE_URL", "http://localhost:8080").replace(
+      /\/$/,
+      "",
+    );
     return {
       id: stored.id,
       url: `${publicBase}/api/saydian-app/v2/files/${stored.id}`,
@@ -251,11 +353,16 @@ export class SupportService {
     };
   }
 
-  async uploadAdminAppPackage(adminId: string, file: Express.Multer.File, platformInput: string) {
+  async uploadAdminAppPackage(
+    adminId: string,
+    file: Express.Multer.File,
+    platformInput: string,
+  ) {
     const platform = String(platformInput ?? "")
       .trim()
       .toLowerCase();
-    const extension = platform === "android" ? "apk" : platform === "harmonyos" ? "hap" : "";
+    const extension =
+      platform === "android" ? "apk" : platform === "harmonyos" ? "hap" : "";
     if (
       !file ||
       !extension ||
@@ -265,7 +372,11 @@ export class SupportService {
     ) {
       throw new BadRequestException("请选择与平台匹配的 APK 或 HAP 安装包");
     }
-    if (file.size <= 0 || file.size > 128 * 1024 * 1024 || file.buffer.length !== file.size) {
+    if (
+      file.size <= 0 ||
+      file.size > 128 * 1024 * 1024 ||
+      file.buffer.length !== file.size
+    ) {
       throw new BadRequestException("安装包大小必须在 128MB 以内");
     }
     if (file.buffer[0] !== 0x50 || file.buffer[1] !== 0x4b) {
@@ -274,7 +385,10 @@ export class SupportService {
     const digest = sha256(file.buffer);
     const fileName = `say-ring-${platform}-${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
     const purpose = "app-package:say-ring";
-    const contentType = extension === "apk" ? "application/vnd.android.package-archive" : "application/octet-stream";
+    const contentType =
+      extension === "apk"
+        ? "application/vnd.android.package-archive"
+        : "application/octet-stream";
     const objectKey = `app-packages/say-ring/${platform}/${fileName}`;
     const storage = await this.storage();
     try {
@@ -312,7 +426,10 @@ export class SupportService {
 
   async publicAppPackage(fileNameInput: string) {
     const fileName = String(fileNameInput ?? "").trim();
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.(apk|hap)$/.test(fileName) || fileName.includes("..")) {
+    if (
+      !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(apk|hap)$/.test(fileName) ||
+      fileName.includes("..")
+    ) {
       throw new NotFoundException("安装包不存在");
     }
     const file = await this.prisma.fileObject.findFirst({
@@ -327,7 +444,9 @@ export class SupportService {
     const storage = await this.storage();
     let result;
     try {
-      result = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }));
+      result = await storage.s3.send(
+        new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }),
+      );
       await markIntegrationVerified(this.prisma, "object_storage");
     } catch {
       throw new ServiceUnavailableException("安装包暂时无法读取，请稍后重试");
@@ -357,7 +476,12 @@ export class SupportService {
   async uploadCommerceEvidence(userId: string, file: Express.Multer.File) {
     const contentType = validateEvidenceImage(file),
       storage = await this.storage();
-    const extension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+    const extension =
+      contentType === "image/png"
+        ? "png"
+        : contentType === "image/webp"
+          ? "webp"
+          : "jpg";
     const objectKey = `${evidencePurpose}/${userId}/${randomUUID()}.${extension}`,
       digest = sha256(file.buffer);
     try {
@@ -403,11 +527,14 @@ export class SupportService {
         status: "ACTIVE",
       },
     });
-    if (!file || !evidenceLimits.contentTypes.includes(file.contentType)) throw new NotFoundException("图片不存在");
+    if (!file || !evidenceLimits.contentTypes.includes(file.contentType))
+      throw new NotFoundException("图片不存在");
     const storage = await this.storage();
     let result;
     try {
-      result = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }));
+      result = await storage.s3.send(
+        new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }),
+      );
     } catch {
       throw new ServiceUnavailableException("图片暂时无法读取，请稍后重试");
     }
@@ -420,9 +547,22 @@ export class SupportService {
     };
   }
 
-  async adminCommerceEvidence(admin: { id: string; role: string; roles?: string[] }, saleId: string, fileId: string, requestId?: string) {
-    if (!canAdminResource(admin.roles?.length ? admin.roles : [admin.role], "commerce-after-sales", "read")) throw new ForbiddenException("无权查看售后图片");
-    if (!evidenceId(saleId) || !evidenceId(fileId)) throw new NotFoundException("售后图片不存在");
+  async adminCommerceEvidence(
+    admin: { id: string; role: string; roles?: string[] },
+    saleId: string,
+    fileId: string,
+    requestId?: string,
+  ) {
+    if (
+      !canAdminResource(
+        admin.roles?.length ? admin.roles : [admin.role],
+        "commerce-after-sales",
+        "read",
+      )
+    )
+      throw new ForbiddenException("无权查看售后图片");
+    if (!evidenceId(saleId) || !evidenceId(fileId))
+      throw new NotFoundException("售后图片不存在");
     const sale = await this.prisma.commerceAfterSale.findFirst({
       where: { id: saleId, evidenceImages: { has: `file:${fileId}` } },
       select: { order: { select: { userId: true } } },
@@ -502,8 +642,16 @@ export class SupportService {
     };
   }
 
-  async uploadEcgArtifact(userId: string, file: Express.Multer.File, expectedSha256Input: string) {
-    const contentTypes = new Set(["application/gzip", "application/x-gzip", "application/octet-stream"]);
+  async uploadEcgArtifact(
+    userId: string,
+    file: Express.Multer.File,
+    expectedSha256Input: string,
+  ) {
+    const contentTypes = new Set([
+      "application/gzip",
+      "application/x-gzip",
+      "application/octet-stream",
+    ]);
     if (!file || !contentTypes.has(file.mimetype)) {
       throw new BadRequestException("请上传 gzip 压缩的心电数据文件");
     }
@@ -555,11 +703,31 @@ export class SupportService {
 
   async publicFile(id: string) {
     const file = await this.prisma.fileObject.findUnique({ where: { id } });
-    if (!file || file.status !== "ACTIVE" || !["avatar", "admin-content"].includes(file.purpose)) {
+    if (
+      !file ||
+      file.status !== "ACTIVE" ||
+      !["avatar", "admin-content"].includes(file.purpose)
+    ) {
       throw new NotFoundException("文件不存在");
     }
+    if (isSayRingLocalAvatarKey(file.objectKey)) {
+      if (file.purpose !== "avatar") throw new NotFoundException("文件不存在");
+      const bytes = await readSayRingAvatar(
+        file.objectKey,
+        file.byteSize,
+        file.sha256,
+      );
+      return {
+        body: Readable.from([bytes]),
+        contentType: file.contentType,
+        byteSize: bytes.length,
+        sha256: file.sha256,
+      };
+    }
     const storage = await this.storage();
-    const result = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }));
+    const result = await storage.s3.send(
+      new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }),
+    );
     await markIntegrationVerified(this.prisma, "object_storage");
     if (!result.Body) throw new NotFoundException("文件不存在");
     return {
@@ -586,16 +754,25 @@ export class SupportService {
       secretAccessKey: "OBJECT_STORAGE_SECRET_KEY",
       forcePathStyle: "OBJECT_STORAGE_FORCE_PATH_STYLE",
     });
-    const endpoint = String(publicConfig.endpoint ?? secrets.endpoint ?? "").trim();
+    const endpoint = String(
+      publicConfig.endpoint ?? secrets.endpoint ?? "",
+    ).trim();
     const bucket = String(publicConfig.bucket ?? secrets.bucket ?? "").trim();
-    const region = String(publicConfig.region ?? secrets.region ?? "us-east-1").trim();
+    const region = String(
+      publicConfig.region ?? secrets.region ?? "us-east-1",
+    ).trim();
     const accessKeyId = secrets.accessKeyId ?? "";
     const secretAccessKey = secrets.secretAccessKey ?? "";
     if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
       throw new ServiceUnavailableException("文件服务暂时无法使用，请稍后再试");
     }
-    const configuredForcePathStyle = publicConfig.forcePathStyle ?? secrets.forcePathStyle;
-    const forcePathStyle = configuredForcePathStyle === true || ["1", "true", "yes"].includes(String(configuredForcePathStyle ?? "").toLowerCase());
+    const configuredForcePathStyle =
+      publicConfig.forcePathStyle ?? secrets.forcePathStyle;
+    const forcePathStyle =
+      configuredForcePathStyle === true ||
+      ["1", "true", "yes"].includes(
+        String(configuredForcePathStyle ?? "").toLowerCase(),
+      );
     return {
       bucket,
       s3: new S3Client({

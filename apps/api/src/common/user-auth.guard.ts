@@ -12,7 +12,7 @@ import { PrismaService } from "./prisma.service";
 import type { RequestWithContext } from "./request-context";
 import { resolveLegacySession } from "./legacy-session-bridge";
 import { requiresVerifiedCommerceMobile } from "./commerce-mobile-policy";
-import { authAudience, authIssuer, isGlobalRealm } from "./deployment-realm";
+import { authAudience, authIssuer } from "./deployment-realm";
 import { AuthService } from "../auth/auth.service";
 import { isH5PhoneTestSession } from "../auth/global-wechat-policy";
 
@@ -36,11 +36,16 @@ function bearerToken(request: RequestWithContext): string {
 
 @Injectable()
 export class UserAuthGuard implements CanActivate {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly auth?: AuthService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly auth?: AuthService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestWithContext>();
-    const path = (request.originalUrl || request.url || request.path).split("?")[0] || request.path;
+    const path =
+      (request.originalUrl || request.url || request.path).split("?")[0] ||
+      request.path;
     const token = bearerToken(request);
     if (!token) throw new UnauthorizedException("请先登录");
     try {
@@ -49,14 +54,28 @@ export class UserAuthGuard implements CanActivate {
         issuer: authIssuer(),
         audience: authAudience(),
       }) as AccessClaims;
-      if (claims.typ !== "access" || !claims.sub || !claims.sid || !claims.jti) {
+      if (
+        claims.typ !== "access" ||
+        !claims.sub ||
+        !claims.sid ||
+        !claims.jti
+      ) {
         throw new Error("invalid claims");
       }
       const temporary = isH5PhoneTestSession(claims.jti);
       let testAppId: string | undefined;
       if (temporary) {
-        if (!(request.method === "GET" && path === "/api/saidian-mall/v1/auth/wechat/h5/account") &&
-            !(request.method === "POST" && path === "/api/saydian-app/v2/auth/logout")) throw new Error("temporary session scope");
+        if (
+          !(
+            request.method === "GET" &&
+            path === "/api/saidian-mall/v1/auth/wechat/h5/account"
+          ) &&
+          !(
+            request.method === "POST" &&
+            path === "/api/saydian-app/v2/auth/logout"
+          )
+        )
+          throw new Error("temporary session scope");
         if (!this.auth) throw new Error("temporary session verifier missing");
         testAppId = await this.auth.phoneTestAppId();
       }
@@ -67,14 +86,20 @@ export class UserAuthGuard implements CanActivate {
           accessJti: claims.jti,
           revokedAt: null,
           expiresAt: { gt: new Date() },
-          user: { status: UserStatus.ACTIVE,
+          user: {
+            status: UserStatus.ACTIVE,
             ...(temporary
               ? { wechatOfficialIdentities: { some: { appId: testAppId! } } }
-              : requiresVerifiedCommerceMobile(path) && !isGlobalRealm()
-                ? { OR: [
-                    { mobile: { not: null }, mobileVerifiedAt: { not: null } },
-                    { email: { not: null }, emailVerifiedAt: { not: null } },
-                  ] }
+              : requiresVerifiedCommerceMobile(path)
+                ? {
+                    OR: [
+                      {
+                        mobile: { not: null },
+                        mobileVerifiedAt: { not: null },
+                      },
+                      { email: { not: null }, emailVerifiedAt: { not: null } },
+                    ],
+                  }
                 : {}),
           },
         },

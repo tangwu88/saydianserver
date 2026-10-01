@@ -87,6 +87,18 @@ export class SupportController {
 export class FilesController {
   constructor(private readonly support: SupportService) {}
 
+  @Post("say-ring-avatar")
+  @UseGuards(UserAuthGuard)
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  uploadSayRingAvatar(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.support.uploadSayRingAvatar(user.id, file);
+  }
+
   @Post()
   @UseGuards(UserAuthGuard)
   @UseInterceptors(

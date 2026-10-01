@@ -1,8 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
 import { isUuid, safeObject } from "../common/crypto";
-import { isGlobalRealm } from "../common/deployment-realm";
+
 import { globalLocale } from "../auth/global-identity";
 
 @Injectable()
@@ -65,22 +69,32 @@ export class NotificationsService {
 
   async registerInstallation(userId: string, input: unknown) {
     const body = safeObject(input);
-    const installationId = String(body.installationId ?? body.installation_id ?? "").trim();
-    const registrationId = String(body.registrationId ?? body.registration_id ?? "").trim();
+    const installationId = String(
+      body.installationId ?? body.installation_id ?? "",
+    ).trim();
+    const registrationId = String(
+      body.registrationId ?? body.registration_id ?? "",
+    ).trim();
     const platform = String(body.platform ?? "").toLowerCase();
     const requestedProvider = String(body.provider ?? "jpush").toLowerCase();
-    const product = String(body.product ?? "").trim().toLowerCase();
-    if (!installationId || !registrationId || !["android", "ios", "harmony"].includes(platform)) {
+    const product = String(body.product ?? "")
+      .trim()
+      .toLowerCase();
+    if (
+      !installationId ||
+      !registrationId ||
+      !["android", "ios", "harmony"].includes(platform)
+    ) {
       throw new BadRequestException("通知设备信息不完整");
     }
     if (!new Set(["jpush", "apns", "disabled"]).has(requestedProvider)) {
       throw new BadRequestException("通知服务类型不正确");
     }
-    if (isGlobalRealm() && product && product !== "say-ring") {
+    if (product && product !== "say-ring") {
       throw new BadRequestException("通知产品标识不正确");
     }
     const provider =
-      isGlobalRealm() && product === "say-ring" && requestedProvider === "jpush"
+      product === "say-ring" && requestedProvider === "jpush"
         ? "jpush_say_ring"
         : requestedProvider;
     const installation = await this.prisma.pushInstallation.upsert({
@@ -95,7 +109,7 @@ export class NotificationsService {
         buildNumber: String(
           body.buildNumber ?? body.build_number ?? body.build ?? "unknown",
         ),
-        locale: isGlobalRealm() ? globalLocale(body.locale) : body.locale ? String(body.locale) : null,
+        locale: globalLocale(body.locale),
       },
       update: {
         userId,
@@ -106,7 +120,7 @@ export class NotificationsService {
         buildNumber: String(
           body.buildNumber ?? body.build_number ?? body.build ?? "unknown",
         ),
-        locale: isGlobalRealm() ? globalLocale(body.locale) : body.locale ? String(body.locale) : null,
+        locale: globalLocale(body.locale),
         enabled: true,
         lastSeenAt: new Date(),
       },
@@ -126,8 +140,12 @@ export class NotificationsService {
   }
 
   async list(userId: string, pageInput = 1, pageSizeInput = 30) {
-    if (!Number.isSafeInteger(Number(pageInput)) || Number(pageInput) < 1
-      || !Number.isSafeInteger(Number(pageSizeInput)) || Number(pageSizeInput) < 1) {
+    if (
+      !Number.isSafeInteger(Number(pageInput)) ||
+      Number(pageInput) < 1 ||
+      !Number.isSafeInteger(Number(pageSizeInput)) ||
+      Number(pageSizeInput) < 1
+    ) {
       throw new BadRequestException("分页参数必须为正整数");
     }
     const page = Number(pageInput);
@@ -153,14 +171,18 @@ export class NotificationsService {
   }
 
   async detail(userId: string, id: string) {
-    const item = await this.prisma.notification.findFirst({ where: { id, userId } });
+    const item = await this.prisma.notification.findFirst({
+      where: { id, userId },
+    });
     if (!item) throw new NotFoundException("消息不存在");
     return this.contract(item);
   }
 
   async unreadCount(userId: string) {
     return {
-      count: await this.prisma.notification.count({ where: { userId, readAt: null } }),
+      count: await this.prisma.notification.count({
+        where: { userId, readAt: null },
+      }),
     };
   }
 
@@ -168,7 +190,10 @@ export class NotificationsService {
     const result = await this.prisma.notification.updateMany({
       where: {
         userId,
-        OR: [...(isUuid(identifier) ? [{ id: identifier }] : []), { eventId: identifier }],
+        OR: [
+          ...(isUuid(identifier) ? [{ id: identifier }] : []),
+          { eventId: identifier },
+        ],
       },
       data: { readAt: new Date() },
     });

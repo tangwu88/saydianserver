@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Gender, UserStatus } from "@prisma/client";
 import { AuthService } from "./auth.service";
 import type { PrismaService } from "../common/prisma.service";
@@ -83,11 +83,13 @@ function input(consentAccepted = true) {
 
 describe("native WeChat account mapping", () => {
   beforeEach(() => {
+    vi.stubEnv("LEGACY_WECHAT_APP_LOGIN_ENABLED", "true");
     process.env.ACCESS_TOKEN_SECRET =
       "test-access-secret-with-at-least-32-characters";
     process.env.REFRESH_TOKEN_PEPPER =
       "test-refresh-pepper-with-at-least-32-chars";
   });
+  afterEach(() => vi.unstubAllEnvs());
 
   it("requires explicit legal consent before provider exchange", async () => {
     const { service, exchange } = fixture();

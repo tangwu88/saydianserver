@@ -84,7 +84,7 @@ describe("public App download manifest", () => {
       { appSetting: { findUnique } } as any,
       {} as any,
     );
-    const manifest = await service.appUpdateConfig();
+    const manifest = await service.appUpdateConfig("saydian-global");
     expect(findUnique).toHaveBeenCalledWith({
       where: { key: "global_app_update" },
     });
@@ -122,7 +122,7 @@ describe("public App download manifest", () => {
       },
     ]) {
       await expect(
-        serviceWith({ public: true, value }).appUpdateConfig(),
+        serviceWith({ public: true, value }).appUpdateConfig("saydian-global"),
       ).rejects.toBeInstanceOf(ServiceUnavailableException);
     }
   });

@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { isGlobalRealm } from "./deployment-realm";
+
 import { internationalPhone } from "../auth/global-identity";
 
 export function sha256(value: string | Buffer): string {
@@ -20,13 +20,14 @@ export function secureEqual(left: string, right: string): boolean {
 }
 
 export function normalizedMobile(value: unknown): string {
-  if (isGlobalRealm()) return internationalPhone(value)?.identifier ?? "";
-  const mobile = String(value ?? "").replace(/\s+/g, "");
-  if (!/^1\d{10}$/.test(mobile)) return "";
-  return mobile;
+  const raw = String(value ?? "").trim();
+  // Legacy China clients omit +86. Normalize only account identifiers, not addresses.
+  return internationalPhone(/^1[3-9]\d{9}$/.test(raw) ? `+86${raw}` : raw)?.identifier ?? "";
 }
 
-export function maskMobile(value: string | null | undefined): string | undefined {
+export function maskMobile(
+  value: string | null | undefined,
+): string | undefined {
   if (!value || value.length < 7) return undefined;
   return `${value.slice(0, 3)}****${value.slice(-4)}`;
 }
@@ -37,5 +38,7 @@ export function safeObject(value: unknown): Record<string, unknown> {
 }
 
 export function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }

@@ -13,44 +13,45 @@ function fixture(input: { mini?: string; official?: string; oauth?: string; conf
   }) };
   const db = { integrationConfig: { findMany: vi.fn().mockResolvedValue(input.configured === false ? [] : [
     { key: "wechat_pay", state: "CONFIGURED", publicConfig: { notifyUrl: "https://demo.example.invalid/notify" } },
-  ]) } };
+  ]) }, commerceBusinessConfig: { findUnique: vi.fn().mockResolvedValue(null) } };
   const configured = input.oauth ? vi.fn().mockResolvedValue({ appId: input.oauth })
     : vi.fn().mockRejectedValue(new Error("Official OAuth unconfigured"));
   const verification = { capabilities: vi.fn().mockResolvedValue({ email: false, sms: false, smsCountries: [] }) };
-  return { service: new CommerceCapabilitiesService(db as any, secrets as any, { configured } as any, verification as any), secrets };
+  return { service: new CommerceCapabilitiesService(db as any, secrets as any, { configured, globalCapabilities: vi.fn().mockResolvedValue({ wechatH5: { enabled: Boolean(input.oauth) } }) } as any, verification as any), secrets };
 }
 const payment = (result: Awaited<ReturnType<CommerceCapabilitiesService["publicCapabilities"]>>, channel: string) =>
-  result.payments.find(item => item.channel === channel)!;
+  result.payments.find(item => item.channel === channel);
 
-describe("mini payment configuration independence", () => {
+describe("retained legacy payment configuration does not activate unused channels", () => {
   beforeEach(() => {
     vi.stubEnv("NODE_ENV", "development"); vi.stubEnv("H5_DEMO_ENABLED", "true"); vi.stubEnv("ALLOW_TEST_OTP", "false");
     vi.stubEnv("MAINTENANCE_READ_ONLY", "false"); vi.stubEnv("BUSINESS_WRITES_PAUSED", "false"); vi.stubEnv("WORKER_OUTBOUND_PAUSED", "false");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Tests forbid provider requests")));
   });
   afterEach(() => { expect(fetch).not.toHaveBeenCalled(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
-  it("advertises configured mini payment when official payment appId and OAuth are absent", async () => {
+  it("does not enable a mini rail merely because an old mini appId is stored", async () => {
     const h = fixture({ mini: miniAppId }), result = await h.service.publicCapabilities();
-    expect(payment(result, "wechat_mini")).toEqual({ channel: "wechat_mini", environments: ["mini"], enabled: true });
+    expect(payment(result, "wechat_mini")).toBeUndefined();
     expect(result.login.wechatH5.enabled).toBe(false);
-    for (const channel of ["wechat_jsapi", "wechat_h5", "wechat_native"]) expect(payment(result, channel).enabled).toBe(false);
-    expect(h.secrets.resolve).toHaveBeenCalledWith("wechat_pay", expect.objectContaining({ appIdMini: "WECHAT_PAY_APP_ID_MINI" }));
+    expect(payment(result, "wechat_jsapi")?.enabled).toBe(false);
+    for (const channel of ["wechat_h5", "wechat_native"]) expect(payment(result, channel)).toBeUndefined();
+    expect(h.secrets.resolve).not.toHaveBeenCalledWith("wechat_pay", expect.objectContaining({ appIdMini: "WECHAT_PAY_APP_ID_MINI" }));
     expect(JSON.stringify(result)).not.toMatch(/appId|merchantId|privateKey|synthetic-merchant/);
   });
   it("does not infer mini payment readiness from a configured official app", async () => {
     const result = await fixture({ official: officialAppId, oauth: officialAppId }).service.publicCapabilities();
-    expect(payment(result, "wechat_mini")).toMatchObject({ enabled: false, environments: ["mini"] });
-    for (const channel of ["wechat_jsapi", "wechat_h5", "wechat_native"]) expect(payment(result, channel).enabled).toBe(true);
+    expect(payment(result, "wechat_mini")).toBeUndefined();
+    expect(payment(result, "wechat_jsapi")?.enabled).toBe(true);
   });
-  it("requires matching official OAuth only for JSAPI, not mini or browser WeChat", async () => {
+  it("requires matching official OAuth and does not activate unused WeChat rails", async () => {
     const result = await fixture({ mini: miniAppId, official: officialAppId, oauth: "wxDifferentOfficial1" }).service.publicCapabilities();
-    expect(payment(result, "wechat_jsapi").enabled).toBe(false);
-    for (const channel of ["wechat_mini", "wechat_h5", "wechat_native"]) expect(payment(result, channel).enabled).toBe(true);
+    expect(payment(result, "wechat_jsapi")?.enabled).toBe(false);
+    for (const channel of ["wechat_mini", "wechat_h5", "wechat_native"]) expect(payment(result, channel)).toBeUndefined();
   });
   it("does not advertise malformed mini appId while a valid official app is configured", async () => {
     const result = await fixture({ mini: "bad", official: officialAppId, oauth: officialAppId }).service.publicCapabilities();
-    expect(payment(result, "wechat_mini").enabled).toBe(false);
-    expect(payment(result, "wechat_jsapi").enabled).toBe(true);
+    expect(payment(result, "wechat_mini")).toBeUndefined();
+    expect(payment(result, "wechat_jsapi")?.enabled).toBe(true);
   });
   it.each([{ configured: false }, { invalidMerchant: true }])("fails closed without shared merchant readiness %j", async options => {
     const result = await fixture({ mini: miniAppId, official: officialAppId, oauth: officialAppId, ...options }).service.publicCapabilities();
@@ -59,7 +60,7 @@ describe("mini payment configuration independence", () => {
   it.each(["WORKER_OUTBOUND_PAUSED", "BUSINESS_WRITES_PAUSED", "MAINTENANCE_READ_ONLY"])("preserves the common write gate %s", async key => {
     vi.stubEnv(key, "true");
     const result = await fixture({ mini: miniAppId, official: officialAppId, oauth: officialAppId }).service.publicCapabilities();
-    expect(payment(result, "wechat_mini")).toMatchObject({ enabled: false, reason: "交易维护中" });
+    expect(payment(result, "wechat_jsapi")).toMatchObject({ enabled: false, reason: "交易维护中" });
     expect(result.payments.every(item => !item.enabled)).toBe(true);
   });
 });

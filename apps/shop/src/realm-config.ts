@@ -1,12 +1,12 @@
 export type MallRealm = "domestic" | "global";
 
 export function resolveMallConfig(env: Record<string, unknown>, miniProgram = false) {
-  const realm: MallRealm = env.VITE_APP_REALM === "global" ? "global" : "domestic";
-  const apiBase = String(env.VITE_API_BASE || (realm === "global" ? "/global/api/saidian-mall/v1" : miniProgram ? "https://stest.saydian.cn/api/saidian-mall/v1" : "/api/saidian-mall/v1")).replace(/\/$/, "");
-  const publicBase = String(env.VITE_PUBLIC_BASE || (realm === "global" ? "/global/saidian-mall/" : "/saidian-mall/"));
-  if (realm === "global" && (miniProgram || apiBase !== "/global/api/saidian-mall/v1" || publicBase !== "/global/saidian-mall/")) {
-    throw new Error("国际商城必须使用独立 H5 入口和国际 API，尚未启用小程序");
-  }
+  // H5 retains its deployed storage namespace; it no longer selects an account domain.
+  const realm: MallRealm = miniProgram ? "domestic" : "global";
+  const apiBase = String(env.VITE_API_BASE || (miniProgram ? "https://app.saydian.cn/api/saidian-mall/v1" : "/api/saidian-mall/v1")).replace(/\/$/, "");
+  const publicBase = String(env.VITE_PUBLIC_BASE || "/saidian-mall/");
+  if (!/^(?:https:\/\/app\.saydian\.cn)?\/(?:global\/)?api\/saidian-mall\/v1$/.test(apiBase)) throw new Error("商城 API 地址不受信任");
+  if (!/^\/(?:global\/)?saidian-mall\/$/.test(publicBase)) throw new Error("商城页面地址不受信任");
   return { realm, apiBase, publicBase };
 }
 

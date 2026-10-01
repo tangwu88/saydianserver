@@ -4,6 +4,7 @@ import { computed, reactive, ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { canAdminResource } from "@saydian/app-contracts";
 import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor } from "./global-download-setting";
+import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "./download-setting";
 
 const envelope = (items: Record<string, unknown>[] = [], total = items.length) => ({ data: { data: { items, total, page: 1, pageSize: 30 } } });
 const member = {
@@ -22,7 +23,7 @@ const member = {
 };
 
 // Exercise the actual SFC logic with controlled network completion order.
-function harness(roles = ["SUPER_ADMIN"]) {
+function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可用，请检查后重试") {
   const sfc = readFileSync(new URL("./views/ResourceView.vue", import.meta.url), "utf8");
   const source = ts.createSourceFile("view.ts", sfc.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1]!, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const printer = ts.createPrinter();
@@ -42,6 +43,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
     get: vi.fn(async (..._args: any[]): Promise<any> => envelope()),
     patch: vi.fn(async () => ({})),
     post: vi.fn(async () => ({})),
+    delete: vi.fn(async () => ({})),
   };
   const messages = { error: vi.fn(), success: vi.fn() };
   const prompt = vi.fn(async (..._args: any[]): Promise<any> => ({
@@ -63,15 +65,17 @@ function harness(roles = ["SUPER_ADMIN"]) {
     ElMessage: messages,
     ElMessageBox: { prompt, confirm },
     responseData: (response: any) => response.data.data,
-    readableError: () => "网络不可用，请检查后重试",
+    readableError: () => readableErrorMessage,
     createGlobalDownloadDraft,
+    originalManifestToEditor,
+    originalEditorToManifest,
     createSayRingDownloadDraft,
     globalDownloadEditorToManifest,
     globalDownloadManifestToEditor,
     sayRingDownloadEditorToManifest,
     sayRingDownloadManifestToEditor,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -115,14 +119,91 @@ describe("international member admin list", () => {
   it("keeps device columns readable when no connection has been reported yet", async () => {
     const h = harness();
     h.route.params.resource = "devices";
-    expect(h.columns.value).toEqual(["memberNo", "memberNickname", "displayName", "vendor", "model", "firmware", "capabilities", "boundAt", "lastSeenAt", "status"]);
+    expect(h.columns.value).toEqual(["memberNo", "memberNickname", "bluetoothName", "model", "deviceIdentifier", "macAddress", "firmware", "lastSeenAt", "status"]);
     await h.load();
-    expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/devices", {
-      params: {},
-    });
-    expect(h.sfc).toContain("原始设备标识仅按会员作用域单向哈希保存");
-    expect(h.sfc).toContain("resource === 'devices' && column === 'capabilities'");
+    expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/devices", { params: {} });
+    expect(h.sfc).toContain("设备标识由 App 上报标识单向生成");
+    expect(h.sfc).toContain("查看详情");
     expect(h.sfc).toContain("resource === 'devices' && column === 'status'");
+  });
+
+  it("loads one device's newest connection history into the detail dialog", async () => {
+    const h = harness();
+    h.api.get.mockResolvedValueOnce({
+      data: {
+        data: {
+          device: {
+            id: "00000000-0000-4000-8000-000000000001",
+            memberNo: "13",
+            memberNickname: "Saydian user",
+            deviceIdentifier: "DEV-00112233-44556677",
+            bluetoothName: "SD-Watch-W9S",
+            model: "W9S",
+            macAddress: "AA:BB:CC:DD:EE:FF",
+          },
+          connections: [
+            {
+              id: "00000000-0000-4000-8000-000000000002",
+              connectedAt: "2026-10-01T03:00:00.000Z",
+              deviceIdentifier: "DEV-00112233-44556677",
+              bluetoothName: "SD-Watch-W9S",
+              model: "W9S",
+              macAddress: "AA:BB:CC:DD:EE:FF",
+              rawPayload: "deviceId=veepoo:WATCH | model=W9S",
+            },
+          ],
+        },
+      },
+    });
+
+    await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+
+    expect(h.api.get).toHaveBeenCalledWith(
+      "/devices/00000000-0000-4000-8000-000000000001/connections",
+    );
+    expect(h.deviceDetailVisible.value).toBe(true);
+    expect(h.deviceDetail.value.memberNo).toBe("13");
+    expect(h.deviceDetail.value.deviceIdentifier).toBe("DEV-00112233-44556677");
+    expect(h.deviceConnections.value).toHaveLength(1);
+    expect(h.deviceConnections.value[0].rawPayload).toContain("deviceId=veepoo:WATCH");
+    expect(h.sfc).toContain("原始上报数据");
+    expect(h.localDateTime("not-a-date")).toBe("—");
+  });
+
+  it("opens the selected member's device list from the member action", async () => {
+    const h = harness();
+    h.api.get.mockResolvedValueOnce({
+      data: {
+        data: {
+          member: { memberNo: "13", memberNickname: "Saydian user" },
+          devices: [
+            {
+              id: "00000000-0000-4000-8000-000000000001",
+              deviceIdentifier: "DEV-00112233-44556677",
+              bluetoothName: "SD-Watch-W9S",
+              model: "W9S",
+              macAddress: null,
+              status: "BOUND",
+            },
+          ],
+        },
+      },
+    });
+
+    await h.openMemberDevices({
+      id: "00000000-0000-4000-8000-000000000010",
+      memberNo: "13",
+      nickname: "Saydian user",
+    });
+
+    expect(h.api.get).toHaveBeenCalledWith(
+      "/members/00000000-0000-4000-8000-000000000010/devices",
+    );
+    expect(h.memberDevicesVisible.value).toBe(true);
+    expect(h.memberDeviceMember.value.memberNo).toBe("13");
+    expect(h.memberDevices.value).toHaveLength(1);
+    expect(h.sfc).toContain("查看设备");
+    expect(h.sfc).toContain("连接记录");
   });
 
   it("searches and pages on the server while preserving zero counts and missing values", async () => {
@@ -524,7 +605,7 @@ describe("international settings first configuration", () => {
     h.route.params.resource = "settings";
     h.api.get.mockResolvedValueOnce({ data: { data: [] } });
     await h.load();
-    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "global_app_update", "say_ring_app_update", "say_ring_app_display", "say_ring_map"]);
+    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "app_update", "global_app_update", "say_ring_app_update", "say_ring_app_display", "say_ring_map"]);
     expect(h.rows.value.filter((row: any) => row.key !== "say_ring_app_display").every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
     expect(h.columns.value).toEqual(["name", "configuration", "public", "updatedAt"]);
     expect(h.api.patch).not.toHaveBeenCalled();
@@ -965,6 +1046,39 @@ describe("administrator commerce and service editor improvements", () => {
       }),
     );
     expect(h.api.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps ERP lookup failures visible inside the product dialog", async () => {
+    const h = harness(["SUPER_ADMIN"], "聚水潭未找到 SKU：sd-watch-w8");
+    h.route.params.resource = "commerce-products";
+    h.api.get.mockResolvedValueOnce({ data: { data: [] } });
+    await h.openCreate();
+    expect(h.erpLookupError.value).toBe("");
+
+    h.form.value._erpLookupSku = "sd-watch-w8";
+    h.api.post.mockRejectedValueOnce(new Error("provider rejected the SKU"));
+    await h.loadCommerceProductBySku();
+
+    expect(h.form.value._erpLookupPending).toBe(true);
+    expect(h.erpLookupError.value).toBe("聚水潭未找到 SKU：sd-watch-w8。请在聚水潭确认完整 SKU 编码后重试。");
+    expect(h.messages.error).toHaveBeenLastCalledWith("聚水潭未找到 SKU：sd-watch-w8。请在聚水潭确认完整 SKU 编码后重试。");
+    expect(h.sfc).toContain('v-if="erpLookupError"');
+    expect(h.sfc).toContain(':title="erpLookupError"');
+    expect(h.sfc).toContain("@input=\"erpLookupError = ''\"");
+  });
+
+  it("confirms and deletes a product before refreshing the list", async () => {
+    const h = harness();
+    h.route.params.resource = "commerce-products";
+    h.api.get.mockResolvedValueOnce(envelope([], 0));
+
+    await h.deleteCommerceProduct({ id: "product-1", displayName: "测试手表" });
+
+    expect(h.confirm).toHaveBeenCalledWith(expect.stringContaining("测试手表"), "删除商品", expect.objectContaining({ confirmButtonText: "确认删除" }));
+    expect(h.api.delete).toHaveBeenCalledWith("/commerce-products/product-1");
+    expect(h.messages.success).toHaveBeenCalledWith("商品已删除");
+    expect(h.api.get).toHaveBeenCalledWith("/commerce-products", { params: { page: 1 } });
+    expect(h.sfc).toContain('@delete-product="deleteCommerceProduct"');
   });
 
   it("opens a new coupon with a valid 30-day period and blocks missing dates before the API call", async () => {

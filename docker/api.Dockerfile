@@ -12,18 +12,18 @@ COPY apps/api apps/api
 RUN pnpm --filter @saydian/app-contracts build \
  && pnpm --filter @saydian/app-api prisma:generate \
  && pnpm --filter @saydian/commerce-domain build \
- && pnpm --filter @saydian/app-api build
+ && pnpm --filter @saydian/app-api build \
+ && pnpm --filter @saydian/app-api deploy --prod --legacy /runtime/api \
+ && cd /runtime/api && ./node_modules/.bin/prisma generate
 
 FROM node:24.8.0-alpine AS runtime
-WORKDIR /workspace
+WORKDIR /workspace/apps/api
 ENV NODE_ENV=production
 RUN apk add --no-cache font-noto-cjk
-COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
-COPY --from=build --chown=node:node /workspace/packages/contracts ./packages/contracts
-COPY --from=build --chown=node:node /workspace/packages/commerce-domain ./packages/commerce-domain
-COPY --from=build --chown=node:node /workspace/apps/api ./apps/api
-COPY --from=build --chown=node:node /workspace/package.json /workspace/pnpm-lock.yaml /workspace/pnpm-workspace.yaml ./
+RUN mkdir -p /var/lib/saydian/say-ring-avatars \
+ && chown node:node /var/lib/saydian/say-ring-avatars \
+ && chmod 0700 /var/lib/saydian/say-ring-avatars
+COPY --from=build --chown=node:node /runtime/api ./
 USER node
-WORKDIR /workspace/apps/api
 EXPOSE 8080
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/tsx prisma/seed.ts && node dist/main.js"]
+CMD ["node", "dist/main.js"]
