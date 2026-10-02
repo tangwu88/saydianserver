@@ -18,7 +18,7 @@ CI 验收成功后上传 `release-<完整 SHA>`，包含三个镜像的 registry
 
 重试使用 `Deploy production`，填写同一最新 main SHA。它查找该提交成功的 CI `verify` job 并复用原 artifact。不要为了重试部署而重跑镜像构建任务。
 
-receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`。Actions 不取消正在执行的生产切换；预拉取总预算为 20 分钟。拉取失败或提交过期时不重启应用。
+receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`。Actions 不取消正在执行的生产切换；预拉取总预算为 60 分钟。拉取失败或提交过期时不重启应用。
 
 只允许 `deploy/compatible-migrations.json` 中逐份 SQL 校验值已审阅的新增迁移自动执行。任何历史 SQL 校验值变化、未完成迁移或未审核待执行迁移均阻止发布。Prisma 单独以已有数据库 owner 执行；应用始终用原 app 用户启动，不运行 seed。
 
@@ -26,7 +26,7 @@ receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`�
 
 离线传输单块不超过 8 MiB，保留 receiver 的 10 MiB 上限；服务器需满足暂存包、镜像及额外 5 GiB 的容量门槛。成功导入后仅清理本次传输产生的包和分块，在 root-only `deploy/unified/offline/<SHA>/<archive hash>` 保留清单、校验值和导入记录。可从 GHCR 或原导出 artifact 重新取得镜像；原业务文件、数据库备份和旧镜像不自动清理。
 
-仓库变量 `PRODUCTION_IMAGE_TRANSPORT=ssh` 可让日常自动发布在 Actions 中拉取原 digest，经受限 receiver 预装后再执行同一部署脚本，预装总超时 20 分钟。缺省 `ghcr` 则由服务器直接拉取；非法取值停止发布。两种传输不改变构建产物、迁移/最新提交检查或首次切换门禁。尚未完成首次验收时保持 `AUTO_DEPLOY_ENABLED=false`。
+仓库变量 `PRODUCTION_IMAGE_TRANSPORT=ssh` 可让日常自动发布在 Actions 中拉取原 digest，经受限 receiver 预装后再执行同一部署脚本，预装总超时 60 分钟。缺省 `ghcr` 则由服务器直接拉取；非法取值停止发布。两种传输不改变构建产物、迁移/最新提交检查或首次切换门禁。尚未完成首次验收时保持 `AUTO_DEPLOY_ENABLED=false`。
 
 安装包与链接通过后台编辑和上传；旧 `package_only` 源码发布入口已删除，已有只读版本化安装包继续保留。
 
