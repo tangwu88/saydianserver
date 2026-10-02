@@ -108,7 +108,7 @@ mode=compose
 node_tool /release/scripts/release-manifest.mjs "$mode" "$revision" /release/release-manifest.json > "$source_dir/images.json"
 compose() { docker compose -f "$base_compose" -f "$source_dir/images.json" "$@"; }
 compose config --quiet
-deadline=$((SECONDS + 1200))
+deadline=$((SECONDS + 3600))
 for name in api worker admin; do
   image=$(jq -r --arg name "$name" '.images[$name].ref' "$manifest")
   expected_id=$(jq -r --arg name "$name" '.images[$name].imageId' "$manifest")

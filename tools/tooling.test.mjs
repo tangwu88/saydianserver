@@ -80,6 +80,11 @@ test("offline image preloading allows the requested 60-minute transfer window", 
   assert.match(step, /timeout-minutes: 60/);
 });
 
+test("production registry pulls allow the requested 60-minute transfer window", () => {
+  const deploy = fs.readFileSync(path.join(root, "deploy/scripts/deploy-unified.sh"), "utf8");
+  assert.match(deploy, /deadline=\$\(\(SECONDS \+ 3600\)\)/);
+});
+
 test("shared gateway rebuild preserves the marked global routes and selected admin upstream", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "saydian-gateway-test-"));
   const bin = path.join(temporary, "bin");
@@ -218,7 +223,7 @@ test("one CI build supplies the deploy job and reviewed migration gate", () => {
   assert.match(script, /unified-preflight.mjs/);
   assert.doesNotMatch(script, /MAINTENANCE_READ_ONLY=false|compose down|docker.*prune|docker build|prisma.*seed/);
   assert.match(script, /trap 'rollback "\$\?" "\$LINENO"' ERR/);
-  assert.match(script, /SECONDS \+ 1200/);
+  assert.match(script, /SECONDS \+ 3600/);
   assert.match(script, /--pull never/);
   assert.match(script, /sha256sum/);
   assert.match(script, /flock -n 9/);

@@ -18,7 +18,7 @@ CI 验收成功后上传 `release-<完整 SHA>`，包含三个镜像的 registry
 
 重试使用 `Deploy production`，填写同一最新 main SHA。它查找该提交成功的 CI `verify` job 并复用原 artifact。不要为了重试部署而重跑镜像构建任务。
 
-receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`。Actions 不取消正在执行的生产切换；预拉取总预算为 60 分钟。拉取失败或提交过期时不重启应用。
+receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`。Actions 不取消正在执行的生产切换；服务器从 GHCR 拉取及 Actions 离线预装的总预算均为 60 分钟。拉取失败或提交过期时不重启应用。
 
 只允许 `deploy/compatible-migrations.json` 中逐份 SQL 校验值已审阅的新增迁移自动执行。任何历史 SQL 校验值变化、未完成迁移或未审核待执行迁移均阻止发布。Prisma 单独以已有数据库 owner 执行；应用始终用原 app 用户启动，不运行 seed。
 
@@ -26,7 +26,7 @@ receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`�
 
 离线传输单块不超过 8 MiB，保留 receiver 的 10 MiB 上限；服务器需满足暂存包、镜像及额外 5 GiB 的容量门槛。成功导入后仅清理本次传输产生的包和分块，在 root-only `deploy/unified/offline/<SHA>/<archive hash>` 保留清单、校验值和导入记录。可从 GHCR 或原导出 artifact 重新取得镜像；原业务文件、数据库备份和旧镜像不自动清理。
 
-仓库变量 `PRODUCTION_IMAGE_TRANSPORT=ssh` 可让日常自动发布在 Actions 中拉取原 digest，经受限 receiver 预装后再执行同一部署脚本，预装总超时 60 分钟。缺省 `ghcr` 则由服务器直接拉取；非法取值停止发布。两种传输不改变构建产物、迁移/最新提交检查或首次切换门禁。尚未完成首次验收时保持 `AUTO_DEPLOY_ENABLED=false`。
+仓库变量 `PRODUCTION_IMAGE_TRANSPORT=ssh` 可让日常自动发布在 Actions 中拉取原 digest，经受限 receiver 预装后再执行同一部署脚本，预装总超时 60 分钟。使用 `ghcr` 时由服务器直接拉取，拉取总预算同为 60 分钟；非法取值停止发布。两种传输不改变构建产物、迁移/最新提交检查或首次切换门禁。尚未完成首次验收时保持 `AUTO_DEPLOY_ENABLED=false`。
 
 安装包与链接通过后台编辑和上传；旧 `package_only` 源码发布入口已删除，已有只读版本化安装包继续保留。
 
@@ -65,6 +65,6 @@ receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`�
 
 两库演练及停写后再次恢复各耗时约 5 秒；本次网关停写窗口约 66 秒（19:07:55–19:09:01 UTC）。全表摘要校验通过，原会员编号、凭据、业务记录、权限与供应商配置保持一致。原四项暂停/维护开关均恢复为 false；旧国内应用停止，旧数据基础设施不删除。该耗时只代表本次现场，不是未来发布时长保证。
 
-仓库已启用 `AUTO_DEPLOY_ENABLED=true`、`PRODUCTION_IMAGE_TRANSPORT=ssh`。日常修改仅推送 main；CI 成功后调用同一部署流程，不再勾选 `first_cutover`。每次发布必须同时核对 Actions、双地址线上 revision 和必要功能回归；首次切换 SHA 不代表永远最新版本。
+仓库已启用 `AUTO_DEPLOY_ENABLED=true`。2026-10-02 的部署实测显示，SSH 离线通道约 5 分钟只能传一个 8 MiB 分片，408 MiB 镜像归档无法在 60 分钟内完成；改回服务器直接从 GHCR 拉取原 digest，并将服务器拉取预算设为 60 分钟。日常修改仅推送 main；CI 成功后调用同一部署流程，不再勾选 `first_cutover`。每次发布必须同时核对 Actions、双地址线上 revision 和必要功能回归；首次切换 SHA 不代表永远最新版本。
 
 首次私有证据目录：`/opt/saydianapp-server/deploy/unified/backups/20261001T190742Z-ee2d7f860d60-14220`。详细验收与未验证项见本轮日志；真实 App 登录、支付及供应商联调需要对应客户端/渠道验收，不能由合成 CI 夹具替代。
