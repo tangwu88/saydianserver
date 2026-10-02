@@ -59,7 +59,10 @@ const deviceDetailVisible = ref(false);
 const deviceDetailLoading = ref(false);
 const deviceDetail = ref<Row>({});
 const deviceConnections = ref<Row[]>([]);
+const deviceHistoryTab = ref("connections");
 const deviceMeasurements = ref<Row[]>([]);
+const deviceMeasurementsLoading = ref(false);
+const deviceMeasurementsLoaded = ref(false);
 const deviceMeasurementsMessage = ref("");
 const deviceMeasurementPage = ref(1);
 const deviceMeasurementTotal = ref(0);
@@ -445,7 +448,10 @@ async function openDeviceDetails(row: Row): Promise<void> {
   deviceDetailLoading.value = true;
   deviceDetail.value = { ...row };
   deviceConnections.value = [];
+  deviceHistoryTab.value = "connections";
   deviceMeasurements.value = [];
+  deviceMeasurementsLoading.value = false;
+  deviceMeasurementsLoaded.value = false;
   deviceMeasurementPage.value = 1;
   deviceMeasurementTotal.value = 0;
   deviceMeasurementReason.value = "";
@@ -456,18 +462,19 @@ async function openDeviceDetails(row: Row): Promise<void> {
     deviceDetail.value = data.device ?? row;
     deviceConnections.value = Array.isArray(data.connections) ? data.connections : [];
   } catch (error) {
-    if (requestId === deviceDetailRequestId) {
-      ElMessage.error(readableError(error));
-      deviceDetailLoading.value = false;
-    }
-    return;
-  }
-  if (!canReadRawHealth.value || requestId !== deviceDetailRequestId || !deviceDetailVisible.value) {
+    if (requestId === deviceDetailRequestId) ElMessage.error(readableError(error));
+  } finally {
     if (requestId === deviceDetailRequestId) deviceDetailLoading.value = false;
-    return;
   }
-  if (!getAdminRoles().includes("SUPER_ADMIN")) {
-    try {
+}
+
+async function changeDeviceHistoryTab(name: string | number): Promise<void> {
+  if (name !== "measurements" || !deviceDetailVisible.value || !canReadRawHealth.value
+    || deviceMeasurementsLoaded.value || deviceMeasurementsLoading.value || deviceDetailLoading.value) return;
+  const requestId = deviceDetailRequestId;
+  deviceMeasurementsLoading.value = true;
+  try {
+    if (!getAdminRoles().includes("SUPER_ADMIN") && !deviceMeasurementReason.value) {
       const response = await ElMessageBox.prompt("设备测量记录属于敏感健康信息。请填写本次查看的具体业务原因，系统将记录操作者、原因和时间。", "敏感数据访问确认", {
         type: "warning",
         confirmButtonText: "确认查看",
@@ -475,17 +482,16 @@ async function openDeviceDetails(row: Row): Promise<void> {
         inputPlaceholder: "例如：处理会员反馈单 #12345",
         inputValidator: (value) => value.trim().length >= 5 || "请填写至少5个字的具体原因",
       });
+      if (requestId !== deviceDetailRequestId || !deviceDetailVisible.value) return;
       deviceMeasurementReason.value = response.value.trim();
-    } catch {
-      if (requestId === deviceDetailRequestId) {
-        deviceMeasurementsMessage.value = "已取消查看测量记录";
-        deviceDetailLoading.value = false;
-      }
-      return;
     }
+    if (requestId !== deviceDetailRequestId || !deviceDetailVisible.value || deviceHistoryTab.value !== "measurements") return;
+    await loadDeviceMeasurements(deviceMeasurementPage.value);
+  } catch {
+    if (requestId === deviceDetailRequestId) deviceMeasurementsMessage.value = "已取消查看测量记录";
+  } finally {
+    if (requestId === deviceDetailRequestId) deviceMeasurementsLoading.value = false;
   }
-  if (requestId !== deviceDetailRequestId || !deviceDetailVisible.value) return;
-  await loadDeviceMeasurements(1);
 }
 
 async function loadDeviceMeasurements(page: number): Promise<void> {
@@ -494,7 +500,7 @@ async function loadDeviceMeasurements(page: number): Promise<void> {
   const requestId = ++deviceMeasurementsRequestId;
   const deviceId = String(deviceDetail.value.id ?? "");
   deviceMeasurementPage.value = page;
-  deviceDetailLoading.value = true;
+  deviceMeasurementsLoading.value = true;
   try {
     const data = responseData<Row>(await api.get(`/devices/${encodeURIComponent(deviceId)}/measurements`, {
       params: {
@@ -507,10 +513,14 @@ async function loadDeviceMeasurements(page: number): Promise<void> {
     deviceMeasurements.value = Array.isArray(data.records) ? data.records : [];
     deviceMeasurementTotal.value = Number(data.total) || 0;
     deviceMeasurementsMessage.value = "";
+    deviceMeasurementsLoaded.value = true;
   } catch (error) {
-    if (requestId === deviceMeasurementsRequestId && detailRequestId === deviceDetailRequestId) deviceMeasurementsMessage.value = readableError(error);
+    if (requestId === deviceMeasurementsRequestId && detailRequestId === deviceDetailRequestId) {
+      deviceMeasurementsLoaded.value = false;
+      deviceMeasurementsMessage.value = readableError(error);
+    }
   } finally {
-    if (requestId === deviceMeasurementsRequestId && detailRequestId === deviceDetailRequestId) deviceDetailLoading.value = false;
+    if (requestId === deviceMeasurementsRequestId && detailRequestId === deviceDetailRequestId) deviceMeasurementsLoading.value = false;
   }
 }
 
@@ -522,6 +532,7 @@ function closeDeviceDetails(): void {
   deviceDetailRequestId += 1;
   deviceMeasurementsRequestId += 1;
   deviceMeasurementReason.value = "";
+  deviceMeasurementsLoading.value = false;
 }
 
 function adjustmentKey(): string {
@@ -1457,9 +1468,8 @@ onBeforeUnmount(() => {
           <el-descriptions-item label="绑定时间">{{ localDateTime(deviceDetail.boundAt) }}</el-descriptions-item>
           <el-descriptions-item label="最近连接">{{ localDateTime(deviceDetail.lastSeenAt) }}</el-descriptions-item>
         </el-descriptions>
-        <div class="device-history-grid">
-          <section class="device-history-panel">
-            <h3>连接记录</h3>
+        <el-tabs v-model="deviceHistoryTab" class="device-history-tabs" @tab-change="changeDeviceHistoryTab">
+          <el-tab-pane label="连接记录" name="connections">
             <el-table :data="deviceConnections" border stripe empty-text="暂无历史；记录从本功能上线后开始">
               <el-table-column type="expand" width="48">
                 <template #default="scope">
@@ -1476,26 +1486,27 @@ onBeforeUnmount(() => {
               <el-table-column prop="macAddress" label="MAC 地址" min-width="160"><template #default="scope">{{ scope.row.macAddress || "未上报" }}</template></el-table-column>
               <el-table-column prop="firmware" label="固件版本" min-width="110" />
             </el-table>
-          </section>
-          <section class="device-history-panel">
-            <h3>测量记录</h3>
-            <el-alert v-if="deviceMeasurementsMessage" :title="deviceMeasurementsMessage" :closable="false" type="info" />
-            <el-table :data="deviceMeasurements" border stripe empty-text="暂无此设备关联的测量记录">
-              <el-table-column type="expand" width="48">
-                <template #default="scope">
-                  <div class="device-raw-payload"><b>记录原始字段</b><pre>{{ healthRawJson(scope.row) }}</pre></div>
-                </template>
-              </el-table-column>
-              <el-table-column label="测量时间" min-width="190"><template #default="scope">{{ healthTime(scope.row.observedAt, scope.row.timezoneOffsetMinutes) }}</template></el-table-column>
-              <el-table-column label="测量类型" min-width="120"><template #default="scope">{{ healthMetricLabel(scope.row.metric) }}</template></el-table-column>
-              <el-table-column label="测量值" min-width="190"><template #default="scope">{{ healthReadings(scope.row).map((item) => `${item.label} ${item.text}`).join("；") }}</template></el-table-column>
-              <el-table-column prop="deviceIdentifier" label="设备标识" min-width="190"><template #default="scope">{{ scope.row.deviceIdentifier || "未上报" }}</template></el-table-column>
-              <el-table-column prop="sourceModel" label="设备型号" min-width="120"><template #default="scope">{{ scope.row.sourceModel || "未上报" }}</template></el-table-column>
-              <el-table-column prop="sourceMeasurementSource" label="测量来源类型" min-width="130"><template #default="scope">{{ scope.row.sourceMeasurementSource || "未上报" }}</template></el-table-column>
-            </el-table>
-            <el-pagination v-if="deviceMeasurementTotal > 50" :current-page="deviceMeasurementPage" :page-size="50" :total="deviceMeasurementTotal" layout="total, prev, pager, next" style="margin-top: 12px" @current-change="changeDeviceMeasurementPage" />
-          </section>
-        </div>
+          </el-tab-pane>
+          <el-tab-pane label="测量记录" name="measurements" :disabled="deviceDetailLoading" lazy>
+            <div v-loading="deviceMeasurementsLoading">
+              <el-alert v-if="deviceMeasurementsMessage" :title="deviceMeasurementsMessage" :closable="false" type="info" />
+              <el-table :data="deviceMeasurements" border stripe empty-text="暂无此设备关联的测量记录">
+                <el-table-column type="expand" width="48">
+                  <template #default="scope">
+                    <div class="device-raw-payload"><b>记录原始字段</b><pre>{{ healthRawJson(scope.row) }}</pre></div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="测量时间" min-width="190"><template #default="scope">{{ healthTime(scope.row.observedAt, scope.row.timezoneOffsetMinutes) }}</template></el-table-column>
+                <el-table-column label="测量类型" min-width="120"><template #default="scope">{{ healthMetricLabel(scope.row.metric) }}</template></el-table-column>
+                <el-table-column label="测量值" min-width="190"><template #default="scope">{{ healthReadings(scope.row).map((item) => `${item.label} ${item.text}`).join("；") }}</template></el-table-column>
+                <el-table-column prop="deviceIdentifier" label="设备标识" min-width="190"><template #default="scope">{{ scope.row.deviceIdentifier || "未上报" }}</template></el-table-column>
+                <el-table-column prop="sourceModel" label="设备型号" min-width="120"><template #default="scope">{{ scope.row.sourceModel || "未上报" }}</template></el-table-column>
+                <el-table-column prop="sourceMeasurementSource" label="测量来源类型" min-width="130"><template #default="scope">{{ scope.row.sourceMeasurementSource || "未上报" }}</template></el-table-column>
+              </el-table>
+              <el-pagination v-if="deviceMeasurementTotal > 50" :current-page="deviceMeasurementPage" :page-size="50" :total="deviceMeasurementTotal" layout="total, prev, pager, next" style="margin-top: 12px" @current-change="changeDeviceMeasurementPage" />
+            </div>
+          </el-tab-pane>
+        </el-tabs>
       </div>
       <template #footer><el-button @click="deviceDetailVisible = false">关闭</el-button></template>
     </el-dialog>
@@ -2012,8 +2023,5 @@ onBeforeUnmount(() => {
   background: #f5f7fa;
   border-radius: 4px;
 }
-.device-history-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
-.device-history-panel { min-width: 0; }
-.device-history-panel h3 { margin: 0 0 12px; }
-@media (max-width: 900px) { .device-history-grid { grid-template-columns: 1fr; } }
+.device-history-tabs { margin-top: 20px; }
 </style>

@@ -88,7 +88,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     healthRawJson,
     healthTime,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceMeasurements, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, changeDeviceHistoryTab, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceHistoryTab, deviceMeasurements, deviceMeasurementsLoading, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -110,6 +110,11 @@ function deferred<T>() {
     reject = no;
   });
   return { promise, resolve, reject };
+}
+
+async function selectDeviceHistoryTab(h: ReturnType<typeof harness>, name: string) {
+  h.deviceHistoryTab.value = name;
+  await h.changeDeviceHistoryTab(name);
 }
 
 describe("international member admin list", () => {
@@ -171,13 +176,11 @@ describe("international member admin list", () => {
 
     await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
 
-    expect(h.api.get).toHaveBeenCalledWith(
+    expect(h.api.get).toHaveBeenCalledExactlyOnceWith(
       "/devices/00000000-0000-4000-8000-000000000001/connections",
     );
-    expect(h.api.get).toHaveBeenCalledWith(
-      "/devices/00000000-0000-4000-8000-000000000001/measurements",
-      { params: { page: 1, pageSize: 50 } },
-    );
+    expect(h.deviceHistoryTab.value).toBe("connections");
+    expect(h.prompt).not.toHaveBeenCalled();
     expect(h.deviceDetailVisible.value).toBe(true);
     expect(h.deviceDetail.value.memberNo).toBe("13");
     expect(h.deviceDetail.value.deviceIdentifier).toBe("DEV-00112233-44556677");
@@ -198,6 +201,10 @@ describe("international member admin list", () => {
 
     await h.openDeviceDetails({ id });
 
+    expect(h.prompt).not.toHaveBeenCalled();
+    expect(h.api.get).toHaveBeenCalledOnce();
+    await selectDeviceHistoryTab(h, "measurements");
+
     expect(h.prompt).toHaveBeenCalledOnce();
     expect(h.api.get).toHaveBeenLastCalledWith(`/devices/${id}/measurements`, {
       params: { page: 1, pageSize: 50, reason: "合成会员反馈核对" },
@@ -210,6 +217,7 @@ describe("international member admin list", () => {
     const h = harness(["READ_ONLY"]);
 
     await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+    await selectDeviceHistoryTab(h, "measurements");
 
     expect(h.api.get).toHaveBeenCalledOnce();
     expect(h.deviceMeasurements.value).toEqual([]);
@@ -222,11 +230,12 @@ describe("international member admin list", () => {
     h.prompt.mockRejectedValueOnce(new Error("cancelled"));
 
     await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+    await selectDeviceHistoryTab(h, "measurements");
 
     expect(h.deviceConnections.value).toEqual([{ id: "connection-1" }]);
     expect(h.api.get).toHaveBeenCalledOnce();
     expect(h.deviceMeasurementsMessage.value).toBe("已取消查看测量记录");
-    expect(h.deviceDetailLoading.value).toBe(false);
+    expect(h.deviceMeasurementsLoading.value).toBe(false);
   });
 
   it("shows measurement-read failures without discarding connection history", async () => {
@@ -235,6 +244,7 @@ describe("international member admin list", () => {
       .mockRejectedValueOnce(new Error("request failed"));
 
     await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+    await selectDeviceHistoryTab(h, "measurements");
 
     expect(h.deviceConnections.value).toEqual([{ id: "connection-1" }]);
     expect(h.deviceMeasurements.value).toEqual([]);
@@ -248,6 +258,7 @@ describe("international member admin list", () => {
       .mockResolvedValueOnce({ data: { data: { records: [{ id: "older-record" }], total: 130 } } });
 
     await h.openDeviceDetails({ id });
+    await selectDeviceHistoryTab(h, "measurements");
     h.changeDeviceMeasurementPage(2);
     await vi.waitFor(() => expect(h.deviceMeasurements.value).toEqual([{ id: "older-record" }]));
 
@@ -256,6 +267,94 @@ describe("international member admin list", () => {
     expect(h.api.get).toHaveBeenLastCalledWith(`/devices/${id}/measurements`, {
       params: { page: 2, pageSize: 50, reason: "合成会员反馈核对" },
     });
+  });
+
+  it("reuses a loaded measurement tab and resets it when another device opens", async () => {
+    const h = harness();
+    const first = "00000000-0000-4000-8000-000000000001";
+    const second = "00000000-0000-4000-8000-000000000002";
+    h.api.get.mockResolvedValueOnce(envelope()).mockResolvedValueOnce({ data: { data: { records: [], total: 0 } } })
+      .mockResolvedValueOnce(envelope()).mockResolvedValueOnce({ data: { data: { records: [{ id: "second-device-record" }], total: 1 } } });
+
+    await h.openDeviceDetails({ id: first });
+    await selectDeviceHistoryTab(h, "measurements");
+    await selectDeviceHistoryTab(h, "connections");
+    await selectDeviceHistoryTab(h, "measurements");
+    expect(h.api.get).toHaveBeenCalledTimes(2);
+
+    await h.openDeviceDetails({ id: second });
+    expect(h.deviceHistoryTab.value).toBe("connections");
+    expect(h.deviceMeasurements.value).toEqual([]);
+    expect(h.api.get).toHaveBeenCalledTimes(3);
+    await selectDeviceHistoryTab(h, "measurements");
+    expect(h.api.get).toHaveBeenLastCalledWith(`/devices/${second}/measurements`, { params: { page: 1, pageSize: 50 } });
+    expect(h.deviceMeasurements.value).toEqual([{ id: "second-device-record" }]);
+  });
+
+  it("ignores an old measurement response after a different device opens", async () => {
+    const h = harness();
+    const pending = deferred<any>();
+    h.api.get.mockResolvedValueOnce(envelope()).mockReturnValueOnce(pending.promise).mockResolvedValueOnce(envelope());
+
+    await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+    const read = selectDeviceHistoryTab(h, "measurements");
+    await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000002" });
+    pending.resolve({ data: { data: { records: [{ id: "old-device-record" }], total: 1 } } });
+    await read;
+
+    expect(h.deviceHistoryTab.value).toBe("connections");
+    expect(h.deviceMeasurements.value).toEqual([]);
+    expect(h.deviceMeasurementsLoading.value).toBe(false);
+  });
+
+  it("does not duplicate a measurement request while its tab is loading", async () => {
+    const h = harness();
+    const pending = deferred<any>();
+    h.api.get.mockResolvedValueOnce(envelope()).mockReturnValueOnce(pending.promise);
+
+    await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+    const read = selectDeviceHistoryTab(h, "measurements");
+    await selectDeviceHistoryTab(h, "connections");
+    await selectDeviceHistoryTab(h, "measurements");
+    expect(h.api.get).toHaveBeenCalledTimes(2);
+    expect(h.deviceMeasurementsLoading.value).toBe(true);
+    pending.resolve({ data: { data: { records: [], total: 0 } } });
+    await read;
+    expect(h.deviceMeasurementsLoading.value).toBe(false);
+  });
+
+  it("retries a failed measurement read when its tab is selected again", async () => {
+    const h = harness();
+    h.api.get.mockResolvedValueOnce(envelope()).mockRejectedValueOnce(new Error("request failed"))
+      .mockResolvedValueOnce({ data: { data: { records: [{ id: "retry-record" }], total: 1 } } });
+
+    await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+    await selectDeviceHistoryTab(h, "measurements");
+    await selectDeviceHistoryTab(h, "connections");
+    await selectDeviceHistoryTab(h, "measurements");
+    expect(h.api.get).toHaveBeenCalledTimes(3);
+    expect(h.deviceMeasurements.value).toEqual([{ id: "retry-record" }]);
+    expect(h.deviceMeasurementsMessage.value).toBe("");
+  });
+
+  it("retries the failed later page when the measurement tab is selected again", async () => {
+    const h = harness();
+    const id = "00000000-0000-4000-8000-000000000001";
+    h.api.get.mockResolvedValueOnce(envelope())
+      .mockResolvedValueOnce({ data: { data: { records: [{ id: "first-page" }], total: 130 } } })
+      .mockRejectedValueOnce(new Error("page failed"))
+      .mockResolvedValueOnce({ data: { data: { records: [{ id: "second-page" }], total: 130 } } });
+
+    await h.openDeviceDetails({ id });
+    await selectDeviceHistoryTab(h, "measurements");
+    await h.loadDeviceMeasurements(2);
+    expect(h.deviceMeasurementsMessage.value).toContain("网络不可用");
+    await selectDeviceHistoryTab(h, "connections");
+    await selectDeviceHistoryTab(h, "measurements");
+    expect(h.api.get).toHaveBeenCalledTimes(4);
+    expect(h.api.get).toHaveBeenLastCalledWith(`/devices/${id}/measurements`, { params: { page: 2, pageSize: 50 } });
+    expect(h.deviceMeasurements.value).toEqual([{ id: "second-page" }]);
+    expect(h.deviceMeasurementPage.value).toBe(2);
   });
 
   it("opens the selected member's device list from the member action", async () => {
