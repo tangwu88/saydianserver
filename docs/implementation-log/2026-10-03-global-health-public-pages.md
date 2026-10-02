@@ -20,6 +20,7 @@
 - `pnpm typecheck`、`pnpm test`、`pnpm build`：通过。首次类型检查因新工作树尚未生成 Prisma Client 报错；运行 `pnpm db:generate` 后重试通过。构建仅有既有 Sass 弃用及后台 bundle 体积提示。
 - 下载页专项 typecheck、11 项测试和 Vite build 通过；`apps/download-web/dist/global/` 含 4 个 HTML 页面与 3 个静态资源。
 - `node deploy/global/check.mjs`：12 项通过；`node --check` 及 `git diff --check` 通过。
+- Docker CLI 存在但本机 daemon 未运行（`failed to connect to the Docker API ... docker.sock`）；未做本地容器级 Nginx 解析或镜像启动验收。
 - 只读线上核对：国际能力接口及 Health 英文协议正文均返回 200，当前协议版本为 `global-appstore-2026-10-02`；客服公开配置返回 200。新增页面公网路径当前仍为 404，线上 `/global/health` revision 为 `e9670670f752485ee187dd6da0946e948cb5f92c`。
 
 ## 未完成
