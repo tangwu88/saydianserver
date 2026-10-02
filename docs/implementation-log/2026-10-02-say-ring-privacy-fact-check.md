@@ -2,6 +2,8 @@
 
 Read-only review of `origin/main`/the merged service tree and the live public API. This note is operational evidence, not legal advice.
 
+The source task has since saved a new paired v2 in the admin as `reviewed=false` and `active=false`; v1 remains unchanged and active. The static v2 copy in this branch is explicitly marked as an unreviewed preview. Do not merge/deploy it as an effective policy until the authorized review/publishing decision is complete.
+
 ## Confirmed implementation
 
 - `say-ring` selects its own `say_ring_user_agreement` and `say_ring_privacy_policy`, but it uses the shared `User`, `UserSession`, `ConsentRecord`, and global-auth service. It is not a separate member database. Do not imply Say Ring and Health have separate accounts.
