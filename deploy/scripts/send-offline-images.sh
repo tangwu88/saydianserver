@@ -25,6 +25,7 @@ payload="$scratch/payload/deploy"
 cp "$export_dir/release-manifest.json" "$payload/release-manifest.json"
 cp deploy/scripts/receive-offline-images.sh "$payload/scripts/deploy-ci.sh"
 cp deploy/scripts/offline-image-transfer.mjs deploy/scripts/release-manifest.mjs "$payload/scripts/"
+cp deploy/scripts/ci-registry-login.sh "$payload/scripts/"
 node deploy/scripts/offline-image-transfer.mjs create "$revision" "$payload/release-manifest.json" "$payload/offline-transfer.json" "$archive" "$scratch/chunks"
 for chunk in "$scratch"/chunks/chunk-*; do
   cp "$chunk" "$payload/image-chunk"
