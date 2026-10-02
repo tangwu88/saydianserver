@@ -337,6 +337,26 @@ describe("international member admin list", () => {
     expect(h.deviceMeasurementsMessage.value).toBe("");
   });
 
+  it("retries the failed later page when the measurement tab is selected again", async () => {
+    const h = harness();
+    const id = "00000000-0000-4000-8000-000000000001";
+    h.api.get.mockResolvedValueOnce(envelope())
+      .mockResolvedValueOnce({ data: { data: { records: [{ id: "first-page" }], total: 130 } } })
+      .mockRejectedValueOnce(new Error("page failed"))
+      .mockResolvedValueOnce({ data: { data: { records: [{ id: "second-page" }], total: 130 } } });
+
+    await h.openDeviceDetails({ id });
+    await selectDeviceHistoryTab(h, "measurements");
+    await h.loadDeviceMeasurements(2);
+    expect(h.deviceMeasurementsMessage.value).toContain("网络不可用");
+    await selectDeviceHistoryTab(h, "connections");
+    await selectDeviceHistoryTab(h, "measurements");
+    expect(h.api.get).toHaveBeenCalledTimes(4);
+    expect(h.api.get).toHaveBeenLastCalledWith(`/devices/${id}/measurements`, { params: { page: 2, pageSize: 50 } });
+    expect(h.deviceMeasurements.value).toEqual([{ id: "second-page" }]);
+    expect(h.deviceMeasurementPage.value).toBe(2);
+  });
+
   it("opens the selected member's device list from the member action", async () => {
     const h = harness();
     h.api.get.mockResolvedValueOnce({

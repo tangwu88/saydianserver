@@ -486,7 +486,7 @@ async function changeDeviceHistoryTab(name: string | number): Promise<void> {
       deviceMeasurementReason.value = response.value.trim();
     }
     if (requestId !== deviceDetailRequestId || !deviceDetailVisible.value || deviceHistoryTab.value !== "measurements") return;
-    await loadDeviceMeasurements(1);
+    await loadDeviceMeasurements(deviceMeasurementPage.value);
   } catch {
     if (requestId === deviceDetailRequestId) deviceMeasurementsMessage.value = "已取消查看测量记录";
   } finally {
@@ -515,7 +515,10 @@ async function loadDeviceMeasurements(page: number): Promise<void> {
     deviceMeasurementsMessage.value = "";
     deviceMeasurementsLoaded.value = true;
   } catch (error) {
-    if (requestId === deviceMeasurementsRequestId && detailRequestId === deviceDetailRequestId) deviceMeasurementsMessage.value = readableError(error);
+    if (requestId === deviceMeasurementsRequestId && detailRequestId === deviceDetailRequestId) {
+      deviceMeasurementsLoaded.value = false;
+      deviceMeasurementsMessage.value = readableError(error);
+    }
   } finally {
     if (requestId === deviceMeasurementsRequestId && detailRequestId === deviceDetailRequestId) deviceMeasurementsLoading.value = false;
   }

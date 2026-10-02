@@ -11,12 +11,13 @@
 - `ResourceView.vue` 使用两个有序选项卡，默认连接记录；测量面板惰性渲染，首次点击才请求测量接口。
 - 测量加载状态独立于设备详情，保持权限审计、业务原因、50 条分页及展开原始字段。
 - 同一详情内缓存成功读取结果（包括空结果），避免重复点击请求；换设备重置缓存，过期响应不能覆盖新设备。
-- 请求失败或取消审计后，可切回连接记录再选择测量记录重试。
+- 请求失败或取消审计后，可切回连接记录再选择测量记录重试；后续分页失败重试原页，不退回第一页。
 - 移除被选项卡替代的双列布局、标题及响应式样式，复用原表格，不新增平行实现。
 
 ## 验证
 
-- `pnpm --filter @saydian/app-admin-web exec vitest run src/member-resource-view.test.ts`：56 项通过。
+- 独立代码复核发现后续分页失败后的缓存会阻止重试，已让失败失效缓存并保留目标页，新增回归测试。
+- `pnpm --filter @saydian/app-admin-web exec vitest run src/member-resource-view.test.ts`：57 项通过。
 - `pnpm db:generate`、`pnpm typecheck`、`pnpm test`、`pnpm build`：全部通过；API 单测 885 项通过，4 项数据库测试按原策略跳过，CI 使用真实 PostgreSQL 补验。
 - `node tools/generate-api-reference.mjs --check`：369 条接口全部有文档。
 - `TMPDIR=/private/tmp pnpm tools:test`：通过，包含网关、生产部署失败回退、镜像传输及 H5 契约检查。
