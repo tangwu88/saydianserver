@@ -18,3 +18,10 @@
 - `node --test deploy/scripts/ci-registry-login.test.mjs`：2/2 通过。
 - `node --test tools/tooling.test.mjs`：34/34 通过。
 - `bash -n` 检查三个相关 shell 脚本通过；`git diff --check` 通过。
+
+## 复测与处置
+
+- 2026-10-02 再次部署确认仓库代码已修复，但服务器 `/usr/local/sbin/saydianapp-ci-receiver` 仍是旧脚本，仍在每个 8 MiB 分片接收后登录 GHCR；三个分片约耗时 19 分钟后，Actions 预加载步骤达到原 20 分钟上限，未进入部署阶段。
+- 已停止该超时作业残留的精确 `head -c 10485761` 接收进程并确认发布锁释放；未切换应用，线上 revision 保持原值。
+- 通过服务器登录终端从公开仓库 immutable commit `a853cff2c863abac2474ed14b5fa5c93fb98553e` 下载接收器，SHA-256 与仓库文件一致（`30aa413891ba2b17f2b89c1b1bc0d881d6e2ab4fcc2c156c44ad59f8b1d8f785`），通过 `bash -n` 后安装；安装前保留 root-owned 备份 `saydianapp-ci-receiver.bak-20261002`。
+- Actions 离线预加载时限按用户要求由 20 分钟提高至 60 分钟，并加入配置回归测试。后续应复用同一已构建产物重试；超时放宽不会改变服务切换门禁。

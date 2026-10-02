@@ -73,6 +73,13 @@ test("deployment shell syntax and receiver rejection", () => {
   assert.match(denied.output, /Only release SHA or status/);
 });
 
+test("offline image preloading allows the requested 60-minute transfer window", () => {
+  const workflow = fs.readFileSync(path.join(root, ".github/workflows/deploy-production.yml"), "utf8");
+  const step = workflow.match(/- name: Preload original images through constrained receiver([\s\S]*?)(?=\n      - name:)/)?.[1];
+  assert.ok(step, "offline image preload step exists");
+  assert.match(step, /timeout-minutes: 60/);
+});
+
 test("shared gateway rebuild preserves the marked global routes and selected admin upstream", () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "saydian-gateway-test-"));
   const bin = path.join(temporary, "bin");

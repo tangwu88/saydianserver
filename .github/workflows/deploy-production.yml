@@ -93,7 +93,7 @@ jobs:
           node deploy/scripts/release-manifest.mjs verify '${{ needs.resolve.outputs.revision }}' verified-release/release-manifest.json
       - name: Preload original images through constrained receiver
         if: vars.PRODUCTION_IMAGE_TRANSPORT == 'ssh' && !inputs.offline_images
-        timeout-minutes: 20
+        timeout-minutes: 60
         env:
           REVISION: ${{ needs.resolve.outputs.revision }}
           GH_TOKEN: ${{ github.token }}
