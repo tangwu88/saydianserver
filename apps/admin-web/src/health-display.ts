@@ -134,6 +134,19 @@ export function healthSource(row: HealthDisplayRow): string {
   return visible.length ? visible.join(" · ") : [origin, measurement, platform].some(provided) ? "来源待识别（见原始数据）" : "未提供";
 }
 
+export function healthDeviceSource(row: HealthDisplayRow): string {
+  const typeLabels: Record<string, string> = { wearable: "可穿戴设备", manual: "手动录入", imported: "导入记录" };
+  const identifier = row.deviceIdentifier;
+  const model = row.sourceModel;
+  const type = row.sourceMeasurementSource;
+  const parts = [
+    provided(identifier) ? `设备 ${String(identifier)}` : "",
+    provided(model) ? `型号 ${String(model)}` : "",
+    provided(type) ? `类型 ${typeLabels[String(type)] ?? String(type)}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "设备信息未上报";
+}
+
 export function healthRawJson(row: HealthDisplayRow): string {
   return JSON.stringify(row, null, 2);
 }

@@ -12,6 +12,8 @@ import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
 import ContentImageField from "../components/ContentImageField.vue";
 import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor, type DownloadManifestEditor } from "../global-download-setting";
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "../download-setting";
+import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "../legal-document-editor";
+import { healthMetricLabel, healthRawJson, healthReadings, healthTime } from "../health-display";
 
 type Row = Record<string, any>;
 const memberColumns = ["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "referrerProfile", "pointBalanceCents", "status", "createdAt"];
@@ -57,6 +59,11 @@ const deviceDetailVisible = ref(false);
 const deviceDetailLoading = ref(false);
 const deviceDetail = ref<Row>({});
 const deviceConnections = ref<Row[]>([]);
+const deviceMeasurements = ref<Row[]>([]);
+const deviceMeasurementsMessage = ref("");
+const deviceMeasurementPage = ref(1);
+const deviceMeasurementTotal = ref(0);
+const deviceMeasurementReason = ref("");
 const memberDevicesVisible = ref(false);
 const memberDevicesLoading = ref(false);
 const memberDeviceMember = ref<Row>({});
@@ -160,6 +167,10 @@ const fieldLabels: Record<string, string> = {
   summary: "摘要",
   version: "版本",
   documentType: "协议类型",
+  legalProduct: "所属 App",
+  locale: "语言",
+  reviewed: "已审核",
+  publishedAt: "发布时间",
   active: "启用",
   category: "分类",
   content: "内容",
@@ -213,7 +224,6 @@ const fieldLabels: Record<string, string> = {
   configuration: "配置状态",
   public: "公开",
   categoryNo: "分类编号",
-  locale: "语言",
   sort: "排序",
 };
 const resource = computed(() => String(route.params.resource || ""));
@@ -252,6 +262,7 @@ const columns = computed(() => {
   if (resource.value === "health-reports") return ["memberNo", "memberNickname", "status", "distinctDays", "validRecordCount", "generatedAt", "createdAt"];
   if (resource.value === "feedback") return ["memberNo", "memberNickname", "category", "content", "status", "replyContent", "createdAt"];
   if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
+  if (resource.value === "legal-documents") return ["legalProduct", "documentType", "locale", "version", "reviewed", "active", "publishedAt"];
   if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
   if (resource.value === "devices") return ["memberNo", "memberNickname", "bluetoothName", "model", "deviceIdentifier", "macAddress", "firmware", "lastSeenAt", "status"];
   const first = rows.value[0];
@@ -407,6 +418,7 @@ function localDateTime(value: unknown): string {
 }
 
 let deviceDetailRequestId = 0;
+let deviceMeasurementsRequestId = 0;
 let memberDevicesRequestId = 0;
 
 async function openMemberDevices(row: Row): Promise<void> {
@@ -433,16 +445,83 @@ async function openDeviceDetails(row: Row): Promise<void> {
   deviceDetailLoading.value = true;
   deviceDetail.value = { ...row };
   deviceConnections.value = [];
+  deviceMeasurements.value = [];
+  deviceMeasurementPage.value = 1;
+  deviceMeasurementTotal.value = 0;
+  deviceMeasurementReason.value = "";
+  deviceMeasurementsMessage.value = canReadRawHealth.value ? "" : "当前账号无权查看健康测量记录";
   try {
     const data = responseData<Row>(await api.get(`/devices/${encodeURIComponent(String(row.id))}/connections`));
     if (requestId !== deviceDetailRequestId || !deviceDetailVisible.value) return;
     deviceDetail.value = data.device ?? row;
     deviceConnections.value = Array.isArray(data.connections) ? data.connections : [];
   } catch (error) {
-    if (requestId === deviceDetailRequestId) ElMessage.error(readableError(error));
-  } finally {
-    if (requestId === deviceDetailRequestId) deviceDetailLoading.value = false;
+    if (requestId === deviceDetailRequestId) {
+      ElMessage.error(readableError(error));
+      deviceDetailLoading.value = false;
+    }
+    return;
   }
+  if (!canReadRawHealth.value || requestId !== deviceDetailRequestId || !deviceDetailVisible.value) {
+    if (requestId === deviceDetailRequestId) deviceDetailLoading.value = false;
+    return;
+  }
+  if (!getAdminRoles().includes("SUPER_ADMIN")) {
+    try {
+      const response = await ElMessageBox.prompt("设备测量记录属于敏感健康信息。请填写本次查看的具体业务原因，系统将记录操作者、原因和时间。", "敏感数据访问确认", {
+        type: "warning",
+        confirmButtonText: "确认查看",
+        cancelButtonText: "取消",
+        inputPlaceholder: "例如：处理会员反馈单 #12345",
+        inputValidator: (value) => value.trim().length >= 5 || "请填写至少5个字的具体原因",
+      });
+      deviceMeasurementReason.value = response.value.trim();
+    } catch {
+      if (requestId === deviceDetailRequestId) {
+        deviceMeasurementsMessage.value = "已取消查看测量记录";
+        deviceDetailLoading.value = false;
+      }
+      return;
+    }
+  }
+  if (requestId !== deviceDetailRequestId || !deviceDetailVisible.value) return;
+  await loadDeviceMeasurements(1);
+}
+
+async function loadDeviceMeasurements(page: number): Promise<void> {
+  if (!canReadRawHealth.value || !deviceDetailVisible.value) return;
+  const detailRequestId = deviceDetailRequestId;
+  const requestId = ++deviceMeasurementsRequestId;
+  const deviceId = String(deviceDetail.value.id ?? "");
+  deviceMeasurementPage.value = page;
+  deviceDetailLoading.value = true;
+  try {
+    const data = responseData<Row>(await api.get(`/devices/${encodeURIComponent(deviceId)}/measurements`, {
+      params: {
+        page,
+        pageSize: 50,
+        ...(deviceMeasurementReason.value ? { reason: deviceMeasurementReason.value } : {}),
+      },
+    }));
+    if (requestId !== deviceMeasurementsRequestId || detailRequestId !== deviceDetailRequestId || !deviceDetailVisible.value) return;
+    deviceMeasurements.value = Array.isArray(data.records) ? data.records : [];
+    deviceMeasurementTotal.value = Number(data.total) || 0;
+    deviceMeasurementsMessage.value = "";
+  } catch (error) {
+    if (requestId === deviceMeasurementsRequestId && detailRequestId === deviceDetailRequestId) deviceMeasurementsMessage.value = readableError(error);
+  } finally {
+    if (requestId === deviceMeasurementsRequestId && detailRequestId === deviceDetailRequestId) deviceDetailLoading.value = false;
+  }
+}
+
+function changeDeviceMeasurementPage(page: number): void {
+  void loadDeviceMeasurements(page);
+}
+
+function closeDeviceDetails(): void {
+  deviceDetailRequestId += 1;
+  deviceMeasurementsRequestId += 1;
+  deviceMeasurementReason.value = "";
 }
 
 function adjustmentKey(): string {
@@ -503,6 +582,7 @@ async function openCreate(): Promise<void> {
   const defaults: Record<string, Row> = {
     articles: { status: "DRAFT", categoryId: null },
     "article-categories": { enabled: true, sort: 0, parentId: null },
+    "legal-documents": createLegalDocumentDraft("saydian-global"),
     "admin-users": { role: "READ_ONLY", roles: ["READ_ONLY"], active: true },
     "commerce-products": {
       source: "ERP",
@@ -620,6 +700,7 @@ async function openEdit(row: Row): Promise<void> {
     audienceAllActive: row.audience?.allActive === true,
     audienceUserIds: Array.isArray(row.audience?.userIds) ? row.audience.userIds.join("\n") : "",
   };
+  if (requestedResource === "legal-documents") Object.assign(nextForm, legalDocumentEditorFromRow(row));
   if (isAppDisplaySetting(row.key)) nextForm.hideAi = row.value?.hideAi === true;
   if (isGlobalSupportSetting(row.key)) nextForm.supportEditor = supportEditorFromValue(row.value);
   if (isAppUpdateSetting(row.key)) {
@@ -632,6 +713,14 @@ async function openEdit(row: Row): Promise<void> {
   }
   form.value = nextForm;
   dialogVisible.value = true;
+}
+
+function changeLegalDocumentProduct(product: "saydian-global" | "say-ring"): void {
+  form.value = selectLegalDocumentProduct(form.value as any, product);
+}
+
+function changeLegalDocumentType(documentType: string): void {
+  form.value = selectLegalDocumentType(form.value as any, documentType);
 }
 
 async function loadArticleCategories(requestedResource: string, requestId: number): Promise<boolean> {
@@ -769,6 +858,13 @@ async function save(): Promise<void> {
     const id = String(form.value.id ?? "");
     if (resource.value === "commerce-coupons") validateCouponPeriod(form.value);
     let payload: Row = payloadForResource(resource.value, form.value);
+    if (resource.value === "legal-documents" && form.value.active === true) {
+      await ElMessageBox.confirm(
+        `确认启用 ${form.value.legalProduct === "say-ring" ? "Say Ring" : "Saydian Health"} 的「${legalDocumentTypeLabel(form.value.documentType)}」${form.value.version ? `（${form.value.version}）` : ""}？只有此 App 会读取该文档。`,
+        "确认发布法律文档",
+        { type: "warning", confirmButtonText: "确认启用", cancelButtonText: "取消" },
+      );
+    }
     if (resource.value === "members") {
       if (!canManageMemberVerification.value || !id) throw new Error("当前账号无权编辑会员资料");
       const manuallyConfirmed: string[] = [];
@@ -933,6 +1029,7 @@ async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event
 }
 
 function payloadForResource(current: string, source: Row): Row {
+  if (current === "legal-documents") return legalDocumentPayload(source as any);
   const fields: Record<string, string[]> = {
     articles: ["title", "summary", "categoryId", "coverUrl", "contentHtml", "status", "locale", "publishedAt"],
     "article-categories": ["name", "parentId", "locale", "sort", "enabled"],
@@ -1295,6 +1392,9 @@ onBeforeUnmount(() => {
                 <span v-if="!deviceCapabilities(scope.row[column]).length" class="muted">未上报</span>
               </div>
               <el-tag v-else-if="resource === 'devices' && column === 'status'" size="small" :type="scope.row.status === 'BOUND' ? 'success' : 'info'">{{ scope.row.status === "BOUND" ? "已绑定" : scope.row.status === "UNBOUND" ? "已解绑" : render(scope.row.status) }}</el-tag>
+              <el-tag v-else-if="resource === 'legal-documents' && column === 'legalProduct'" size="small" :type="legalProductForDocumentType(scope.row.documentType) === 'say-ring' ? 'warning' : 'primary'">{{ legalProductForDocumentType(scope.row.documentType) === "say-ring" ? "Say Ring" : "Saydian Health" }}</el-tag>
+              <span v-else-if="resource === 'legal-documents' && column === 'documentType'">{{ legalDocumentTypeLabel(scope.row.documentType) }}</span>
+              <el-tag v-else-if="resource === 'legal-documents' && ['active', 'reviewed'].includes(column)" size="small" :type="scope.row[column] ? 'success' : 'info'">{{ scope.row[column] ? "是" : "否" }}</el-tag>
               <template v-else>{{ render(scope.row[column]) }}</template>
             </template>
           </el-table-column>
@@ -1344,7 +1444,7 @@ onBeforeUnmount(() => {
       <template #footer><el-button @click="memberDevicesVisible = false">关闭</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="deviceDetailVisible" title="设备连接详情" width="min(920px, 94vw)" destroy-on-close @closed="++deviceDetailRequestId">
+    <el-dialog v-model="deviceDetailVisible" title="设备连接详情" width="min(920px, 94vw)" destroy-on-close @closed="closeDeviceDetails">
       <div v-loading="deviceDetailLoading">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="会员">{{ deviceDetail.memberNo || "—" }} · {{ deviceDetail.memberNickname || "未填写昵称" }}</el-descriptions-item>
@@ -1357,23 +1457,45 @@ onBeforeUnmount(() => {
           <el-descriptions-item label="绑定时间">{{ localDateTime(deviceDetail.boundAt) }}</el-descriptions-item>
           <el-descriptions-item label="最近连接">{{ localDateTime(deviceDetail.lastSeenAt) }}</el-descriptions-item>
         </el-descriptions>
-        <h3>连接记录</h3>
-        <el-table :data="deviceConnections" border stripe empty-text="暂无历史；记录从本功能上线后开始">
-          <el-table-column type="expand" width="48">
-            <template #default="scope">
-              <div class="device-raw-payload">
-                <b>原始上报数据</b>
-                <pre>{{ scope.row.rawPayload || "历史记录未保存原始数据" }}</pre>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="连接时间" min-width="190"><template #default="scope">{{ localDateTime(scope.row.connectedAt) }}</template></el-table-column>
-          <el-table-column prop="bluetoothName" label="蓝牙名称" min-width="150" />
-          <el-table-column prop="model" label="设备型号" min-width="120" />
-          <el-table-column prop="deviceIdentifier" label="设备标识" min-width="190" />
-          <el-table-column prop="macAddress" label="MAC 地址" min-width="160"><template #default="scope">{{ scope.row.macAddress || "未上报" }}</template></el-table-column>
-          <el-table-column prop="firmware" label="固件版本" min-width="110" />
-        </el-table>
+        <div class="device-history-grid">
+          <section class="device-history-panel">
+            <h3>连接记录</h3>
+            <el-table :data="deviceConnections" border stripe empty-text="暂无历史；记录从本功能上线后开始">
+              <el-table-column type="expand" width="48">
+                <template #default="scope">
+                  <div class="device-raw-payload">
+                    <b>原始上报数据</b>
+                    <pre>{{ scope.row.rawPayload || "历史记录未保存原始数据" }}</pre>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="连接时间" min-width="190"><template #default="scope">{{ localDateTime(scope.row.connectedAt) }}</template></el-table-column>
+              <el-table-column prop="bluetoothName" label="蓝牙名称" min-width="150" />
+              <el-table-column prop="model" label="设备型号" min-width="120" />
+              <el-table-column prop="deviceIdentifier" label="设备标识" min-width="190" />
+              <el-table-column prop="macAddress" label="MAC 地址" min-width="160"><template #default="scope">{{ scope.row.macAddress || "未上报" }}</template></el-table-column>
+              <el-table-column prop="firmware" label="固件版本" min-width="110" />
+            </el-table>
+          </section>
+          <section class="device-history-panel">
+            <h3>测量记录</h3>
+            <el-alert v-if="deviceMeasurementsMessage" :title="deviceMeasurementsMessage" :closable="false" type="info" />
+            <el-table :data="deviceMeasurements" border stripe empty-text="暂无此设备关联的测量记录">
+              <el-table-column type="expand" width="48">
+                <template #default="scope">
+                  <div class="device-raw-payload"><b>记录原始字段</b><pre>{{ healthRawJson(scope.row) }}</pre></div>
+                </template>
+              </el-table-column>
+              <el-table-column label="测量时间" min-width="190"><template #default="scope">{{ healthTime(scope.row.observedAt, scope.row.timezoneOffsetMinutes) }}</template></el-table-column>
+              <el-table-column label="测量类型" min-width="120"><template #default="scope">{{ healthMetricLabel(scope.row.metric) }}</template></el-table-column>
+              <el-table-column label="测量值" min-width="190"><template #default="scope">{{ healthReadings(scope.row).map((item) => `${item.label} ${item.text}`).join("；") }}</template></el-table-column>
+              <el-table-column prop="deviceIdentifier" label="设备标识" min-width="190"><template #default="scope">{{ scope.row.deviceIdentifier || "未上报" }}</template></el-table-column>
+              <el-table-column prop="sourceModel" label="设备型号" min-width="120"><template #default="scope">{{ scope.row.sourceModel || "未上报" }}</template></el-table-column>
+              <el-table-column prop="sourceMeasurementSource" label="测量来源类型" min-width="130"><template #default="scope">{{ scope.row.sourceMeasurementSource || "未上报" }}</template></el-table-column>
+            </el-table>
+            <el-pagination v-if="deviceMeasurementTotal > 50" :current-page="deviceMeasurementPage" :page-size="50" :total="deviceMeasurementTotal" layout="total, prev, pager, next" style="margin-top: 12px" @current-change="changeDeviceMeasurementPage" />
+          </section>
+        </div>
       </div>
       <template #footer><el-button @click="deviceDetailVisible = false">关闭</el-button></template>
     </el-dialog>
@@ -1524,12 +1646,20 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
         </template>
         <template v-else-if="resource === 'legal-documents'">
-          <el-alert title="协议正文支持在线排版和插图；保存时会移除脚本、事件属性和不安全链接。" type="info" :closable="false" show-icon />
-          <el-form-item label="协议类型"><el-input v-model="form.documentType" /></el-form-item>
-          <el-form-item label="版本"><el-input v-model="form.version" /></el-form-item>
-          <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
-          <el-form-item label="正文"><RichTextEditor v-model="form.contentHtml" /></el-form-item>
-          <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
+          <el-alert title="Saydian Health 与 Say Ring 的协议独立保存、独立调用。新版本需完成法律审核后才能启用；已审核版本不可原地修改。" type="info" :closable="false" show-icon />
+          <el-form-item label="所属 App"><el-select :model-value="form.legalProduct" :disabled="Boolean(form._reviewedSnapshot)" @change="changeLegalDocumentProduct"><el-option label="Saydian Health" value="saydian-global" /><el-option label="Say Ring" value="say-ring" /></el-select></el-form-item>
+          <el-form-item label="协议类型">
+            <el-select :model-value="form.documentType" :disabled="Boolean(form._reviewedSnapshot)" @change="changeLegalDocumentType">
+              <template v-if="form.legalProduct === 'say-ring'"><el-option label="Say Ring 用户协议" value="say_ring_user_agreement" /><el-option label="Say Ring 隐私政策" value="say_ring_privacy_policy" /></template>
+              <template v-else><el-option label="用户协议" value="user_agreement" /><el-option label="隐私政策" value="privacy_policy" /><el-option label="健康 AI 分析说明" value="health_ai_analysis" /></template>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="语言"><el-select v-model="form.locale" :disabled="Boolean(form._reviewedSnapshot)"><el-option label="English" value="en" /><el-option label="简体中文" value="zh-Hans" /><el-option label="繁體中文" value="zh-Hant" /></el-select></el-form-item>
+          <el-form-item label="版本"><el-input v-model="form.version" :disabled="Boolean(form._reviewedSnapshot)" /></el-form-item>
+          <el-form-item label="标题"><el-input v-model="form.title" :disabled="Boolean(form._reviewedSnapshot)" /></el-form-item>
+          <el-form-item label="正文"><RichTextEditor v-model="form.contentHtml" :readonly="Boolean(form._reviewedSnapshot)" /></el-form-item>
+          <el-form-item label="法律审核完成"><el-switch v-model="form.reviewed" :disabled="Boolean(form._reviewedSnapshot)" /></el-form-item>
+          <el-form-item label="启用"><el-switch v-model="form.active" :disabled="form.reviewed !== true" /></el-form-item>
         </template>
         <template v-else-if="resource === 'commerce-products'">
           <template v-if="form._erpLookupPending">
@@ -1882,4 +2012,8 @@ onBeforeUnmount(() => {
   background: #f5f7fa;
   border-radius: 4px;
 }
+.device-history-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+.device-history-panel { min-width: 0; }
+.device-history-panel h3 { margin: 0 0 12px; }
+@media (max-width: 900px) { .device-history-grid { grid-template-columns: 1fr; } }
 </style>

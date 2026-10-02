@@ -232,6 +232,7 @@ export const notes = {
   "AdminController.care": entry("后台关爱关系", undefined, "最多500条，双方昵称和指标权限；尚无分页"),
   "AdminController.devices": entry("后台设备快照", undefined, "最多500条；含会员编号、昵称、蓝牙名称、型号、稳定脱敏设备标识和客户端确认的 MAC；尚无分页"),
   "AdminController.deviceConnections": entry("设备连接详情", "id=设备绑定 UUID", "当前设备快照与最新200条成功连接上报；设备标识由会员范围的单向哈希生成；每条新记录含以 ` | ` 分隔的完整请求体字符串，不含请求头或登录令牌；历史从本功能上线后开始"),
+  "AdminController.deviceMeasurements": entry("授权查看指定设备的测量记录", "page默认1；pageSize默认50最大100；HEALTH_AUDITOR需提供5至300字业务原因，SUPER_ADMIN可免填", "返回该设备绑定或会员范围设备指纹关联的健康记录，含测量值和实际上报的设备标识、型号、类型及来源，并返回total/page/pageSize；每页读取均审计操作者、原因和记录数；哈希设备标识不还原MAC"),
   "AdminController.uploadContentImage": entry("上传后台文章或协议图片", "multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR", "{id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥", "已配置对象存储"),
   "AdminController.uploadAppPackage": entry("上传 Say Ring 安装包", "platform=android/harmonyos；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS", "{fileName,url,sizeBytes,sha256}；上传成功后仍需保存版本配置才发布", "已配置对象存储"),
   "AdminController.feedback": entry("反馈工单", "status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选", "最多500条；含会员编号、昵称、问题内容、处理状态以及已发送给会员的客服回复"),

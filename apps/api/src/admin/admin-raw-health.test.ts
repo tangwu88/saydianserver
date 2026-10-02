@@ -37,6 +37,19 @@ describe("raw health access without a manual super-admin reason", () => {
     }
   });
 
+  it("adds the admin pseudonym for an uploaded device fingerprint on each measurement", async () => {
+    const h = harness();
+    h.healthRecord.findMany.mockResolvedValueOnce([{
+      id: "record-id",
+      sourceDeviceKey: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      sourceModel: "W9S",
+    }] as any);
+
+    const records = await h.service.rawHealth(superAdmin, "member-id", "request-id", "");
+    expect(records).toMatchObject([{ id: "record-id", deviceIdentifier: "DEV-00112233-44556677", sourceModel: "W9S" }]);
+    expect(records[0]).not.toHaveProperty("sourceDeviceKey");
+  });
+
   it("does not treat an obsolete primary role as super-admin when current roles are restricted", async () => {
     const h = harness();
     await expect(h.service.rawHealth({ ...superAdmin, roles: ["HEALTH_AUDITOR"] }, "member-id", "r", "")).rejects.toThrow("5至300字");

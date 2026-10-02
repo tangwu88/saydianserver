@@ -3,7 +3,7 @@ import { nextTick, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, readableError, responseData } from "../api";
 
-const props = defineProps<{ modelValue: string }>();
+const props = defineProps<{ modelValue: string; readonly?: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 const editor = ref<HTMLElement | null>(null);
 const savedRange = ref<Range | null>(null);
@@ -114,6 +114,7 @@ function normalizeEditor(): void {
 }
 
 function runCommand(command: string, value?: string): void {
+  if (props.readonly) return;
   if (!restoreSelection()) {
     ElMessage.warning("请先在正文中放置光标或选中要编辑的文字");
     return;
@@ -124,6 +125,7 @@ function runCommand(command: string, value?: string): void {
 }
 
 async function insertLink(): Promise<void> {
+  if (props.readonly) return;
   if (!savedRange.value || savedRange.value.collapsed) {
     ElMessage.warning("请先选中要添加链接的文字");
     return;
@@ -147,6 +149,7 @@ async function insertLink(): Promise<void> {
 }
 
 function chooseImage(): void {
+  if (props.readonly) return;
   captureSelection();
   fileInput.value?.click();
 }
@@ -214,7 +217,7 @@ watch(() => props.modelValue, async (value) => {
 
 <template>
   <section class="rich-text-editor">
-    <div class="editor-toolbar" role="toolbar" aria-label="正文格式工具">
+    <div v-if="!readonly" class="editor-toolbar" role="toolbar" aria-label="正文格式工具">
       <el-button size="small" @mousedown.prevent="runCommand('formatBlock', '<p>')">正文</el-button>
       <el-button size="small" @mousedown.prevent="runCommand('formatBlock', '<h2>')">标题 2</el-button>
       <el-button size="small" @mousedown.prevent="runCommand('formatBlock', '<h3>')">标题 3</el-button>
@@ -234,17 +237,17 @@ watch(() => props.modelValue, async (value) => {
     <div
       ref="editor"
       class="editor-content"
-      contenteditable="true"
+      :contenteditable="!readonly"
       role="textbox"
       aria-multiline="true"
       spellcheck="true"
       data-placeholder="输入正文；可设置标题、重点、列表、链接并上传图片"
-      @input="emitHtml"
-      @blur="normalizeEditor"
+      @input="!readonly && emitHtml()"
+      @blur="!readonly && normalizeEditor()"
       @keyup="captureSelection"
       @mouseup="captureSelection"
     />
-    <p class="editor-help">支持 JPG、PNG、WebP 图片（单张不超过10MB）；编辑器会移除脚本、事件属性和不安全地址。</p>
+    <p v-if="!readonly" class="editor-help">支持 JPG、PNG、WebP 图片（单张不超过10MB）；编辑器会移除脚本、事件属性和不安全地址。</p>
   </section>
 </template>
 

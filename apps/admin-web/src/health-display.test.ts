@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { healthMetrics } from "@saydian/app-contracts";
-import { healthMetricLabel, healthRawJson, healthReadings, healthScalar, healthSource, healthTime } from "./health-display";
+import { healthDeviceSource, healthMetricLabel, healthRawJson, healthReadings, healthScalar, healthSource, healthTime } from "./health-display";
 
 describe("health data presentation", () => {
   it("covers all contract metrics and uppercase database metrics with Chinese names", () => {
@@ -102,6 +102,12 @@ describe("health data presentation", () => {
     expect(healthSource({ source: { platform: "ios", origin: "manual_entry", measurementSource: "manual" } })).toBe("手动录入 · iOS");
     expect(healthSource({})).toBe("未提供");
     expect(healthSource({ sourcePlatform: "unrecognized" })).toBe("来源待识别（见原始数据）");
+  });
+
+  it("shows the actual device pseudonym, model, and measurement-source type when reported", () => {
+    expect(healthDeviceSource({ deviceIdentifier: "DEV-00112233-44556677", sourceModel: "W9S", sourceMeasurementSource: "wearable" }))
+      .toBe("设备 DEV-00112233-44556677 · 型号 W9S · 类型 可穿戴设备");
+    expect(healthDeviceSource({})).toBe("设备信息未上报");
   });
 
   it("keeps every original identifier, value and metadata field unchanged for the collapsed detail", () => {
