@@ -2,7 +2,7 @@
 
 Read-only review of `origin/main`/the merged service tree and the live public API. This note is operational evidence, not legal advice.
 
-The source task has since saved a new paired v2 in the admin as `reviewed=false` and `active=false`; v1 remains unchanged and active. The static v2 copy in this branch is explicitly marked as an unreviewed preview. Do not merge/deploy it as an effective policy until the authorized review/publishing decision is complete.
+The live public API was reread at 2026-10-02 14:46 UTC: paired v2 (`say-ring-cn-2026-10-02-v2`) is `reviewed=true`, `active=true`; both documents state 14+ and that session/account deletion is pending without an automatic completion promise. The user later directed a 13+ policy. This branch now contains only a v3 static preview marked not effective; v2 is not modified. Do not deploy v3 or mark it reviewed/active until the runtime age gate and required guardian-consent flow are reconciled and review is complete.
 
 ## Confirmed implementation
 
@@ -14,7 +14,7 @@ The source task has since saved a new paired v2 in the admin as `reviewed=false`
 - Say Ring avatar upload is an authenticated endpoint, validates and normalizes an image (up to 10 MiB input and 1024 px), then writes it under a private persistent Docker volume at `/var/lib/saydian/say-ring-avatars`. A daily separate avatar archive is configured to retain seven days. The production compose default for `SAY_RING_LOCAL_AVATAR_WRITE_ENABLED` is false; the live override was not verified, so do not promise upload availability until confirmed.
 - Database dump cleanup is configured for files older than 30 days. This is a backup retention setting, not proof that a deletion request removes live data.
 - Account deletion request immediately marks the account `DELETION_PENDING`, revokes sessions and disables push installations; it records an `executeAfter` seven days later. No execution/erasure worker for that request exists in this code tree. Do not promise that the account or its data is automatically deleted in seven days. It is accurate to say the request is queued and access is disabled; a human process must complete and verify erasure.
-- The code records the terms/privacy version and a Say Ring minimum-age confirmation (14+). No separate health-data-consent flow was found. Current health upload/sync can happen in the signed-in path; therefore remove the existing draft's promise that health data is only cloud-processed after a separate consent until the client actually implements that gate.
+- The code currently records the terms/privacy version and requires a Say Ring age confirmation of 14+. No separate health-data-consent flow was found. Current health upload/sync can happen in the signed-in path; therefore do not promise that health data is only cloud-processed after a separate consent until the client actually implements that gate.
 - The current public pages are `/say-ring/terms` and `/say-ring/privacy`; `/terms` currently returns 404. Both existing static pages incorrectly describe an iOS local-only/no-account/no-cloud-sync build.
 
 ## Public-copy recommendations
@@ -33,3 +33,8 @@ The source task has since saved a new paired v2 in the admin as `reviewed=false`
 2. Confirm the new-account verification path and live delivery-provider configuration separately from password login. An existing-account duplicate-registration response does not prove a new account is properly verified.
 3. Implement an actual deletion executor and verify the user-data deletion/backup behavior, or explain the present manual workflow and response timeline without suggesting automatic erasure.
 4. Add the missing separate health-data consent before enabling cloud health sync.
+
+## Age-policy change requested after v2 publication
+
+- The user now sets the proposed threshold to 13+, with prior guardian consent and guidance for ages 13–17. This differs from live v2 and current client/server validation (14+).
+- A v3 static preview was updated to the requested age wording, but remains unreviewed and not effective. Do not activate it or change v2 until legal review and runtime age/guardian-consent controls are aligned.
