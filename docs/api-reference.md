@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **368 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **369 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -284,7 +284,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（107）
+## 管理后台接口（108）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -309,6 +309,7 @@
 | `GET /api/saydian-app/admin/v1/care` | 后台关爱关系 | admin | 无请求体 | 最多500条，双方昵称和指标权限；尚无分页 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/devices` | 后台设备快照 | admin | 无请求体 | 最多500条；含会员编号、昵称、蓝牙名称、型号、稳定脱敏设备标识和客户端确认的 MAC；尚无分页 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/devices/:id/connections` | 设备连接详情 | admin | path:id；id=设备绑定 UUID | 当前设备快照与最新200条成功连接上报；设备标识由会员范围的单向哈希生成；每条新记录含以 ` \| ` 分隔的完整请求体字符串，不含请求头或登录令牌；历史从本功能上线后开始 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/devices/:id/measurements` | 授权查看指定设备的测量记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:reason?，query:page?，query:pageSize?；page默认1；pageSize默认50最大100；HEALTH_AUDITOR需提供5至300字业务原因，SUPER_ADMIN可免填 | 返回该设备绑定或会员范围设备指纹关联的健康记录，含测量值和实际上报的设备标识、型号、类型及来源，并返回total/page/pageSize；每页读取均审计操作者、原因和记录数；哈希设备标识不还原MAC | 核心服务 |
 | `GET /api/saydian-app/admin/v1/feedback` | 反馈工单 | admin | query:status?；status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选 | 最多500条；含会员编号、昵称、问题内容、处理状态以及已发送给会员的客服回复 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/feedback/:id` | 更新反馈状态并回复会员 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；{status,assignedTo?,replyContent?:2–2000字}；回复内容非空时记录当前管理员和回复时间 | 反馈记录；会员端只可读取自己的反馈及回复，不返回后台管理员身份 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/articles` | 后台文章含草稿 | admin | 无请求体 | 最多500条，含分类 | 核心服务 |

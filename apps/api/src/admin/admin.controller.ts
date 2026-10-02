@@ -216,6 +216,26 @@ export class AdminController {
     return this.admin.deviceConnections(id);
   }
 
+  @Get("devices/:id/measurements")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.HEALTH_AUDITOR)
+  deviceMeasurements(
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Param("id") id: string,
+    @Req() request: RequestWithContext,
+    @Query("reason") reason?: string,
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+  ) {
+    return this.admin.deviceMeasurements(
+      current,
+      id,
+      request.requestId,
+      String(reason ?? ""),
+      Number(page ?? 1),
+      Number(pageSize ?? 50),
+    );
+  }
+
   @Get("feedback")
   feedback(@Query("status") status?: string) {
     return this.admin.feedback(status);

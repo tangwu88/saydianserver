@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { healthMetricLabel, healthRawJson, healthReadings, healthScalar, healthSource, healthTime, type HealthDisplayRow } from "../health-display";
+import { healthDeviceSource, healthMetricLabel, healthRawJson, healthReadings, healthScalar, healthSource, healthTime, type HealthDisplayRow } from "../health-display";
 
 const props = defineProps<{ mode: "summary" | "raw"; rows: HealthDisplayRow[]; memberNo?: string | number }>();
 const records = computed(() => props.rows.map((row, index) => ({
@@ -33,13 +33,14 @@ const records = computed(() => props.rows.map((row, index) => ({
       </article>
     </template>
     <template v-else>
-      <div class="raw-head" aria-hidden="true"><span>测量类型</span><span>测量时间</span><span>测量值</span><span>来源</span></div>
+      <div class="raw-head" aria-hidden="true"><span>测量类型</span><span>测量时间</span><span>测量值</span><span>来源</span><span>设备信息</span></div>
       <article v-for="record in records" :key="record.key" class="raw-record">
         <div class="raw-main">
           <h3><small>测量类型</small>{{ healthMetricLabel(record.row.metric) }}</h3>
           <div><small>测量时间</small><time>{{ healthTime(record.row.observedAt, record.row.timezoneOffsetMinutes) }}</time></div>
           <div><small>测量值</small><ul class="reading-list"><li v-for="(item, index) in record.readings.slice(0, 4)" :key="index"><span>{{ item.label }}</span><strong>{{ item.text }}</strong></li></ul><span v-if="record.readings.length > 4" class="extra-values">另 {{ record.readings.length - 4 }} 项见详情</span></div>
           <div><small>来源</small>{{ healthSource(record.row) }}</div>
+          <div><small>设备信息</small>{{ healthDeviceSource(record.row) }}</div>
         </div>
         <details class="technical-details">
           <summary>查看记录详情与原始数据</summary>
@@ -64,7 +65,7 @@ h3 { margin: 0; font-size: 15px; font-weight: 650; }
 .summary-row dl { display: grid; grid-template-columns: minmax(70px, .5fr) repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0 0; }
 dt { font-size: 12px; color: #657387; margin-bottom: 5px; }
 dd { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
-.raw-head, .raw-main { display: grid; grid-template-columns: minmax(80px, .7fr) minmax(120px, 1.1fr) minmax(160px, 1.3fr) minmax(100px, 1fr); gap: 16px; }
+.raw-head, .raw-main { display: grid; grid-template-columns: minmax(80px, .7fr) minmax(120px, 1.1fr) minmax(160px, 1.3fr) minmax(100px, 1fr) minmax(150px, 1.1fr); gap: 16px; }
 .raw-head { padding: 8px 14px; color: #657387; font-size: 12px; }
 .raw-main { font-size: 13px; line-height: 1.6; }
 .raw-main > * { min-width: 0; overflow-wrap: anywhere; }

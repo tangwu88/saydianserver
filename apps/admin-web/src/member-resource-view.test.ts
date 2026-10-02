@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import { canAdminResource } from "@saydian/app-contracts";
 import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor } from "./global-download-setting";
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "./download-setting";
+import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "./legal-document-editor";
+import { healthDeviceSource, healthMetricLabel, healthRawJson, healthTime } from "./health-display";
 
 const envelope = (items: Record<string, unknown>[] = [], total = items.length) => ({ data: { data: { items, total, page: 1, pageSize: 30 } } });
 const member = {
@@ -74,8 +76,19 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     globalDownloadManifestToEditor,
     sayRingDownloadEditorToManifest,
     sayRingDownloadManifestToEditor,
+    createLegalDocumentDraft,
+    legalDocumentEditorFromRow,
+    legalDocumentPayload,
+    legalDocumentTypeLabel,
+    legalProductForDocumentType,
+    selectLegalDocumentProduct,
+    selectLegalDocumentType,
+    healthDeviceSource,
+    healthMetricLabel,
+    healthRawJson,
+    healthTime,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceMeasurements, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -161,13 +174,88 @@ describe("international member admin list", () => {
     expect(h.api.get).toHaveBeenCalledWith(
       "/devices/00000000-0000-4000-8000-000000000001/connections",
     );
+    expect(h.api.get).toHaveBeenCalledWith(
+      "/devices/00000000-0000-4000-8000-000000000001/measurements",
+      { params: { page: 1, pageSize: 50 } },
+    );
     expect(h.deviceDetailVisible.value).toBe(true);
     expect(h.deviceDetail.value.memberNo).toBe("13");
     expect(h.deviceDetail.value.deviceIdentifier).toBe("DEV-00112233-44556677");
     expect(h.deviceConnections.value).toHaveLength(1);
     expect(h.deviceConnections.value[0].rawPayload).toContain("deviceId=veepoo:WATCH");
+    expect(h.deviceMeasurements.value).toEqual([]);
     expect(h.sfc).toContain("原始上报数据");
+    expect(h.sfc).toContain("测量记录");
     expect(h.localDateTime("not-a-date")).toBe("—");
+  });
+
+  it("requires a reason before a health auditor reads a device's measurement history", async () => {
+    const h = harness(["HEALTH_AUDITOR"]);
+    const id = "00000000-0000-4000-8000-000000000001";
+    h.api.get.mockResolvedValueOnce(envelope()).mockResolvedValueOnce({
+      data: { data: { records: [{ id: "record-1", metric: "heart_rate", observedAt: "2026-10-01T03:00:00.000Z", timezoneOffsetMinutes: 480, values: { bpm: 60 }, deviceIdentifier: "DEV-00112233-44556677", sourceModel: "W9S", sourceMeasurementSource: "wearable" }] } },
+    });
+
+    await h.openDeviceDetails({ id });
+
+    expect(h.prompt).toHaveBeenCalledOnce();
+    expect(h.api.get).toHaveBeenLastCalledWith(`/devices/${id}/measurements`, {
+      params: { page: 1, pageSize: 50, reason: "合成会员反馈核对" },
+    });
+    expect(h.deviceMeasurements.value[0].deviceIdentifier).toBe("DEV-00112233-44556677");
+    expect(h.deviceMeasurementsMessage.value).toBe("");
+  });
+
+  it("does not request device measurements for admins without raw-health access", async () => {
+    const h = harness(["READ_ONLY"]);
+
+    await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+
+    expect(h.api.get).toHaveBeenCalledOnce();
+    expect(h.deviceMeasurements.value).toEqual([]);
+    expect(h.deviceMeasurementsMessage.value).toContain("无权查看");
+  });
+
+  it("keeps connection history available when an auditor cancels sensitive measurement access", async () => {
+    const h = harness(["HEALTH_AUDITOR"]);
+    h.api.get.mockResolvedValueOnce({ data: { data: { connections: [{ id: "connection-1" }] } } });
+    h.prompt.mockRejectedValueOnce(new Error("cancelled"));
+
+    await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+
+    expect(h.deviceConnections.value).toEqual([{ id: "connection-1" }]);
+    expect(h.api.get).toHaveBeenCalledOnce();
+    expect(h.deviceMeasurementsMessage.value).toBe("已取消查看测量记录");
+    expect(h.deviceDetailLoading.value).toBe(false);
+  });
+
+  it("shows measurement-read failures without discarding connection history", async () => {
+    const h = harness(["SUPER_ADMIN"], "健康记录读取失败");
+    h.api.get.mockResolvedValueOnce({ data: { data: { connections: [{ id: "connection-1" }] } } })
+      .mockRejectedValueOnce(new Error("request failed"));
+
+    await h.openDeviceDetails({ id: "00000000-0000-4000-8000-000000000001" });
+
+    expect(h.deviceConnections.value).toEqual([{ id: "connection-1" }]);
+    expect(h.deviceMeasurements.value).toEqual([]);
+    expect(h.deviceMeasurementsMessage.value).toBe("健康记录读取失败");
+  });
+
+  it("loads later measurement pages with the same audited reason", async () => {
+    const h = harness(["HEALTH_AUDITOR"]);
+    const id = "00000000-0000-4000-8000-000000000001";
+    h.api.get.mockResolvedValueOnce(envelope()).mockResolvedValueOnce({ data: { data: { records: [], total: 130 } } })
+      .mockResolvedValueOnce({ data: { data: { records: [{ id: "older-record" }], total: 130 } } });
+
+    await h.openDeviceDetails({ id });
+    h.changeDeviceMeasurementPage(2);
+    await vi.waitFor(() => expect(h.deviceMeasurements.value).toEqual([{ id: "older-record" }]));
+
+    expect(h.deviceMeasurementPage.value).toBe(2);
+    expect(h.deviceMeasurementTotal.value).toBe(130);
+    expect(h.api.get).toHaveBeenLastCalledWith(`/devices/${id}/measurements`, {
+      params: { page: 2, pageSize: 50, reason: "合成会员反馈核对" },
+    });
   });
 
   it("opens the selected member's device list from the member action", async () => {
@@ -596,6 +684,71 @@ describe("international member admin list", () => {
     await pending;
     expect(h.dialogVisible.value).toBe(false);
     expect(h.detailRows.value).toEqual([]);
+  });
+});
+
+describe("product-scoped legal document admin", () => {
+  it("shows app and review status columns and defaults new documents to an unpublished Health draft", async () => {
+    const h = harness();
+    h.route.params.resource = "legal-documents";
+    expect(h.columns.value).toEqual(["legalProduct", "documentType", "locale", "version", "reviewed", "active", "publishedAt"]);
+    await h.openCreate();
+    expect(h.form.value).toMatchObject({ legalProduct: "saydian-global", documentType: "user_agreement", active: false, reviewed: false });
+    expect(h.sfc).toContain("Saydian Health 与 Say Ring 的协议独立保存、独立调用");
+    expect(h.sfc).toContain("已审核版本不可原地修改");
+  });
+
+  it("opens Say Ring rows as Say Ring records and saves only their own document type", async () => {
+    const h = harness();
+    h.route.params.resource = "legal-documents";
+    await h.openEdit({
+      id: "ring-privacy-v1",
+      documentType: "say_ring_privacy_policy",
+      locale: "en",
+      version: "ring-v1",
+      title: "Ring privacy",
+      contentHtml: "<p>Ring-specific terms</p>",
+      reviewed: true,
+      active: false,
+    });
+    expect(h.form.value.legalProduct).toBe("say-ring");
+    expect(h.payloadForResource("legal-documents", h.form.value)).toMatchObject({
+      documentType: "say_ring_privacy_policy",
+      locale: "en",
+      version: "ring-v1",
+    });
+    expect(h.payloadForResource("legal-documents", h.form.value)).not.toHaveProperty("legalProduct");
+    expect(h.sfc).toContain(":disabled=\"Boolean(form._reviewedSnapshot)\"");
+  });
+
+  it("publishes a reviewed Say Ring document only after explicit confirmation", async () => {
+    const h = harness();
+    h.route.params.resource = "legal-documents";
+    await h.openCreate();
+    h.form.value = {
+      ...h.form.value,
+      legalProduct: "say-ring",
+      documentType: "say_ring_privacy_policy",
+      locale: "en",
+      version: "ring-v2",
+      title: "Ring privacy",
+      contentHtml: "<p>Ring-only policy</p>",
+      reviewed: true,
+      active: true,
+    };
+
+    await h.save();
+
+    expect(h.confirm).toHaveBeenCalledWith(expect.stringContaining("只有此 App 会读取该文档"), "确认发布法律文档", expect.any(Object));
+    expect(h.api.post).toHaveBeenCalledWith("/legal-documents", {
+      documentType: "say_ring_privacy_policy",
+      locale: "en",
+      version: "ring-v2",
+      title: "Ring privacy",
+      contentHtml: "<p>Ring-only policy</p>",
+      active: true,
+      reviewed: true,
+    });
   });
 });
 

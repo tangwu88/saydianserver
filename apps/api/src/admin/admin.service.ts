@@ -150,6 +150,22 @@ function adminDeviceIdentifier(hardwareKey: string) {
   return `DEV-${shortKey.slice(0, 8)}-${shortKey.slice(8)}`;
 }
 
+function auditedRawHealthReason(current: { role: string; roles?: string[] }, reason: string) {
+  const roles = current.roles?.length ? current.roles : [current.role];
+  if (!roles.some((role) => role === AdminRole.SUPER_ADMIN || role === AdminRole.HEALTH_AUDITOR)) {
+    throw new ForbiddenException("当前账号无权查看原始健康记录");
+  }
+  const normalized = reason.trim();
+  const exempt = roles.includes(AdminRole.SUPER_ADMIN) && !normalized;
+  if (!exempt && (normalized.length < 5 || normalized.length > 300)) {
+    throw new BadRequestException("查看原始健康记录前请填写5至300字的业务原因");
+  }
+  return {
+    reason: exempt ? "超级管理员直接查看（免填原因）" : normalized,
+    reasonSource: exempt ? "SUPER_ADMIN_EXEMPTION" : "PROVIDED",
+  };
+}
+
 function adminDeviceSnapshot(
   row: AdminDeviceRow,
   member: { compatibilityId: number; nickname: string | null },
@@ -1055,27 +1071,7 @@ export class AdminService {
     reason: string,
     limitInput = 100,
   ) {
-    // Roles come from AdminAuthGuard's current database session, never query params.
-    const roles = current.roles?.length ? current.roles : [current.role];
-    if (
-      !roles.some(
-        (role) =>
-          role === AdminRole.SUPER_ADMIN || role === AdminRole.HEALTH_AUDITOR,
-      )
-    ) {
-      throw new ForbiddenException("当前账号无权查看原始健康记录");
-    }
-    const normalizedReason = reason.trim();
-    const reasonExempt =
-      roles.includes(AdminRole.SUPER_ADMIN) && !normalizedReason;
-    if (
-      !reasonExempt &&
-      (normalizedReason.length < 5 || normalizedReason.length > 300)
-    ) {
-      throw new BadRequestException(
-        "查看原始健康记录前请填写5至300字的业务原因",
-      );
-    }
+    const auditReason = auditedRawHealthReason(current, reason);
     const limit = Math.min(Math.max(Number(limitInput) || 100, 1), 500);
     const records = await this.prisma.healthRecord.findMany({
       where: { userId },
@@ -1092,16 +1088,85 @@ export class AdminService {
         requestId,
         afterJson: {
           recordCount: records.length,
-          reason: reasonExempt
-            ? "超级管理员直接查看（免填原因）"
-            : normalizedReason,
-          ...{
-            reasonSource: reasonExempt ? "SUPER_ADMIN_EXEMPTION" : "PROVIDED",
-          },
+          ...auditReason,
         },
       },
     });
-    return records;
+    return records.map(({ sourceDeviceKey, ...record }) => ({
+      ...record,
+      ...(sourceDeviceKey ? { deviceIdentifier: adminDeviceIdentifier(sourceDeviceKey) } : {}),
+    }));
+  }
+
+  async deviceMeasurements(
+    current: { id: string; role: string; roles?: string[] },
+    id: string,
+    requestId: string,
+    reason: string,
+    pageInput = 1,
+    pageSizeInput = 50,
+  ) {
+    const auditReason = auditedRawHealthReason(current, reason);
+    if (!isUuid(id)) throw new BadRequestException("设备编号无效");
+    const device = await this.prisma.deviceBinding.findUnique({
+      where: { id },
+      select: { id: true, userId: true, hardwareKey: true, model: true },
+    });
+    if (!device) throw new NotFoundException("设备不存在");
+    const page = Math.max(Math.trunc(Number(pageInput) || 1), 1);
+    const pageSize = Math.min(Math.max(Math.trunc(Number(pageSizeInput) || 50), 1), 100);
+    const where = {
+      userId: device.userId,
+      OR: [{ deviceBindingId: id }, { sourceDeviceKey: device.hardwareKey }],
+    };
+    const [total, records] = await Promise.all([
+      this.prisma.healthRecord.count({ where }),
+      this.prisma.healthRecord.findMany({
+        where,
+        orderBy: { observedAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          clientRecordId: true,
+          metric: true,
+          observedAt: true,
+          timezoneOffsetMinutes: true,
+          values: true,
+          unit: true,
+          quality: true,
+          sourcePlatform: true,
+          sourceModel: true,
+          sourceFirmware: true,
+          sourceOrigin: true,
+          sourceMeasurementSource: true,
+          sourceRawVersion: true,
+          sourceDeviceKey: true,
+        },
+      }),
+    ]);
+    await this.prisma.auditLog.create({
+      data: {
+        actorType: "ADMIN",
+        actorId: current.id,
+        action: "HEALTH_RAW_READ",
+        entityType: "DEVICE",
+        entityId: id,
+        requestId,
+        afterJson: { recordCount: records.length, totalCount: total, page, pageSize, ...auditReason },
+      },
+    });
+    return {
+      device: { id: device.id, deviceIdentifier: adminDeviceIdentifier(device.hardwareKey), model: device.model },
+      records: records.map(({ sourceDeviceKey, metric, ...record }) => ({
+        ...record,
+        metric: String(metric).toLowerCase(),
+        deviceIdentifier: adminDeviceIdentifier(sourceDeviceKey ?? device.hardwareKey),
+      })),
+      total,
+      page,
+      pageSize,
+    };
   }
 
   care() {

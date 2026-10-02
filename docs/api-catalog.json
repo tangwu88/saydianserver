@@ -721,6 +721,59 @@
       }
     },
     {
+      "key": "AdminController.deviceMeasurements",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/devices/:id/measurements",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "reason",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "pageSize",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "授权查看指定设备的测量记录",
+      "request": "page默认1；pageSize默认50最大100；HEALTH_AUDITOR需提供5至300字业务原因，SUPER_ADMIN可免填",
+      "response": "返回该设备绑定或会员范围设备指纹关联的健康记录，含测量值和实际上报的设备标识、型号、类型及来源，并返回total/page/pageSize；每页读取均审计操作者、原因和记录数；哈希设备标识不还原MAC",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.feedback",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/feedback",
