@@ -1661,11 +1661,11 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
         </template>
         <template v-else-if="resource === 'legal-documents'">
-          <el-alert title="Saydian Health 与 Say Ring 的协议独立保存、独立调用。新版本需完成法律审核后才能启用；已审核版本不可原地修改。" type="info" :closable="false" show-icon />
+          <el-alert :title="form.documentType === 'say_ring_sleep_analysis' ? '睡眠 AI 分析说明只用于 Say Ring。启用前核对供应商、上传范围与撤回方式；已发布内容不可原地修改。此核对不代表外部法律意见。' : 'Saydian Health 与 Say Ring 的协议独立保存、独立调用。新版本需完成法律审核后才能启用；已审核版本不可原地修改。'" type="info" :closable="false" show-icon />
           <el-form-item label="所属 App"><el-select :model-value="form.legalProduct" :disabled="Boolean(form._reviewedSnapshot)" @change="changeLegalDocumentProduct"><el-option label="Saydian Health" value="saydian-global" /><el-option label="Say Ring" value="say-ring" /></el-select></el-form-item>
           <el-form-item label="协议类型">
             <el-select :model-value="form.documentType" :disabled="Boolean(form._reviewedSnapshot)" @change="changeLegalDocumentType">
-              <template v-if="form.legalProduct === 'say-ring'"><el-option label="Say Ring 用户协议" value="say_ring_user_agreement" /><el-option label="Say Ring 隐私政策" value="say_ring_privacy_policy" /></template>
+              <template v-if="form.legalProduct === 'say-ring'"><el-option label="Say Ring 用户协议" value="say_ring_user_agreement" /><el-option label="Say Ring 隐私政策" value="say_ring_privacy_policy" /><el-option label="Say Ring 睡眠 AI 分析说明" value="say_ring_sleep_analysis" /></template>
               <template v-else><el-option label="用户协议" value="user_agreement" /><el-option label="隐私政策" value="privacy_policy" /><el-option label="健康 AI 分析说明" value="health_ai_analysis" /></template>
             </el-select>
           </el-form-item>
@@ -1673,7 +1673,7 @@ onBeforeUnmount(() => {
           <el-form-item label="版本"><el-input v-model="form.version" :disabled="Boolean(form._reviewedSnapshot)" /></el-form-item>
           <el-form-item label="标题"><el-input v-model="form.title" :disabled="Boolean(form._reviewedSnapshot)" /></el-form-item>
           <el-form-item label="正文"><RichTextEditor v-model="form.contentHtml" :readonly="Boolean(form._reviewedSnapshot)" /></el-form-item>
-          <el-form-item label="法律审核完成"><el-switch v-model="form.reviewed" :disabled="Boolean(form._reviewedSnapshot)" /></el-form-item>
+          <el-form-item :label="form.documentType === 'say_ring_sleep_analysis' ? '说明内容已核对' : '法律审核完成'"><el-switch v-model="form.reviewed" :disabled="Boolean(form._reviewedSnapshot)" /></el-form-item>
           <el-form-item label="启用"><el-switch v-model="form.active" :disabled="form.reviewed !== true" /></el-form-item>
         </template>
         <template v-else-if="resource === 'commerce-products'">

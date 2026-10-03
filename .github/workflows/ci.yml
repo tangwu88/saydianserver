@@ -87,7 +87,7 @@ jobs:
           pnpm db:deploy
           pnpm db:seed
       - name: Real PostgreSQL order and refund concurrency tests
-        run: RUN_LOCAL_DATABASE_TESTS=1 pnpm --filter @saydian/app-api exec vitest run src/commerce/commerce-database.test.ts --testTimeout=15000
+        run: RUN_LOCAL_DATABASE_TESTS=1 pnpm --filter @saydian/app-api exec vitest run src/commerce/commerce-database.test.ts src/reports/sleep-consent-database.test.ts --testTimeout=15000
       - name: API smoke test
         run: |
           node apps/api/dist/main.js > api-smoke.log 2>&1 &

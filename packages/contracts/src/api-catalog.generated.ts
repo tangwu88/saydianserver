@@ -23918,8 +23918,8 @@ export const apiCatalog = {
       "source": "apps/api/src/reports/health-reports.controller.ts",
       "summary": "检查 Say Ring 睡眠AI分析是否可用",
       "request": "本人登录",
-      "response": "独立sleepAiEnabled开关、已配置AI、Worker与已审分析说明共同决定available；返回当前analysisConsent，不回显凭据",
-      "dependency": "既有AI与已审说明；未真实调用不代表供应商联调通过",
+      "response": "独立sleepAiEnabled开关、已配置且匹配告知供应商的AI、Worker与专属说明共同决定available；checks及unavailableReasons区分各项条件；返回say_ring_sleep_analysis授权，不读取HealthProfile或回显凭据",
+      "dependency": "既有AI与已核对说明；未真实调用不代表供应商联调通过",
       "successStatus": 200,
       "contract": {
         "status": "request-reviewed",
@@ -23936,6 +23936,31 @@ export const apiCatalog = {
                 "string",
                 "null"
               ]
+            },
+            "unavailableReasons": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "checks": {
+              "type": "object",
+              "properties": {
+                "featureEnabled": {
+                  "type": "boolean"
+                },
+                "providerReady": {
+                  "type": "boolean"
+                },
+                "workerReady": {
+                  "type": "boolean"
+                },
+                "noticeReady": {
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
             },
             "analysisConsent": {
               "type": "object",
@@ -23998,7 +24023,16 @@ export const apiCatalog = {
         },
         "responseExample": {
           "available": false,
-          "reason": "睡眠 AI 分析暂未开启",
+          "reason": "Say Ring 睡眠 AI 分析说明尚未发布，请稍后重试",
+          "unavailableReasons": [
+            "sleep_analysis_notice_unavailable"
+          ],
+          "checks": {
+            "featureEnabled": true,
+            "providerReady": true,
+            "workerReady": true,
+            "noticeReady": false
+          },
           "analysisConsent": {
             "granted": false,
             "availableVersion": null,
@@ -24007,6 +24041,89 @@ export const apiCatalog = {
         },
         "contentType": "application/json",
         "source": "packages/contracts/src/sleep-report.ts; apps/api/src/reports/sleep-reports.service.ts; apps/api/src/reports/sleep-reports.test.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "HealthReportsController.sleepAnalysisConsent",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/sleep-reports/analysis-consent",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/reports/health-reports.controller.ts",
+      "summary": "单独同意或撤回 Say Ring 睡眠 AI 分析",
+      "request": "granted:boolean；同意时version须匹配当前已发布say_ring_sleep_analysis；本人登录",
+      "response": "返回当前analysisConsent；只修改本人的Say Ring睡眠ConsentRecord，不改Health App的HealthProfile授权；撤回后禁止新生成和生成中结果发布，不删除既有报告",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "granted": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "granted"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": {
+          "granted": true,
+          "version": "<PUBLISHED_SLEEP_NOTICE_VERSION>"
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "granted": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "grantedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "withdrawnAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "granted"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "granted": false,
+          "version": null,
+          "grantedAt": null,
+          "withdrawnAt": null
+        },
+        "contentType": "application/json",
+        "source": "packages/contracts/src/sleep-report.ts; apps/api/src/reports/sleep-reports.service.ts; apps/api/src/reports/sleep-reports.test.ts; apps/api/src/reports/sleep-analysis-consent.ts",
         "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
       }
     },
@@ -24129,7 +24246,7 @@ export const apiCatalog = {
       "summary": "上传已同意的睡眠汇总并创建AI睡眠报告",
       "request": "SleepReportInput：sdkDate、timezone、sourceKey、totalSeconds、可选阶段/清醒/未知/未佩戴秒数、deviceScore、wakeCount、sessions[{kind,startAt,endAt,asleepSeconds}]；严格字段白名单，不接收原始分段或联系方式",
       "response": "reportType=sleep的报告，重复快照复用；本功能不扣普通健康报告次数，不创建付款；无数据/阶段合计不一致/未授权/未配置明确失败",
-      "dependency": "健康AI当前单独同意；第三方收到去标识化汇总，AI评分非临床量表；生产验收独立记录",
+      "dependency": "Say Ring睡眠AI当前单独同意；第三方收到去标识化汇总，AI评分非临床量表；生产验收独立记录",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",

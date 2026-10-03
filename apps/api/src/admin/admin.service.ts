@@ -1581,6 +1581,7 @@ export class AdminService {
           "say_ring_user_agreement",
           "say_ring_privacy_policy",
           "health_ai_analysis",
+          "say_ring_sleep_analysis",
         ].includes(data.documentType)
       )
         throw new BadRequestException(

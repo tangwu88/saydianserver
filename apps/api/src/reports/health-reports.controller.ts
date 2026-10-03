@@ -33,6 +33,11 @@ export class HealthReportsController {
     return this.sleepReports.availability(user.id);
   }
 
+  @Post("sleep-reports/analysis-consent")
+  sleepAnalysisConsent(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.sleepReports.setAnalysisConsent(user.id, body);
+  }
+
   @Get("sleep-reports")
   sleepReport(
     @CurrentUser() user: AuthenticatedUser,

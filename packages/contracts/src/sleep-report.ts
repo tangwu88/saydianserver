@@ -1,4 +1,22 @@
 export const SLEEP_REPORT_TEMPLATE = "sleep-report-v1";
+export const SLEEP_ANALYSIS_NOTICE = "say_ring_sleep_analysis";
+
+/** The published sleep notice names this provider; a different recipient needs a new rollout. */
+export function sleepAiProviderMatchesNotice(baseUrl: unknown): boolean {
+  try {
+    const url = new URL(String(baseUrl ?? ""));
+    return (
+      url.origin === "https://open.bigmodel.cn" &&
+      url.pathname.replace(/\/$/, "") === "/api/paas/v4" &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
 
 export interface SleepReportInput {
   sdkDate: string;

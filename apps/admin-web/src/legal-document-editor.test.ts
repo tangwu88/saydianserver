@@ -5,9 +5,36 @@ import {
   legalDocumentPayload,
   selectLegalDocumentProduct,
   selectLegalDocumentType,
+  legalProductForDocumentType,
+  legalDocumentTypeLabel,
 } from "./legal-document-editor";
 
 describe("product-scoped legal document editor", () => {
+  it("assigns sleep analysis only to Say Ring and preserves independent notice publication", () => {
+    expect(legalProductForDocumentType("say_ring_sleep_analysis")).toBe(
+      "say-ring",
+    );
+    expect(legalDocumentTypeLabel("say_ring_sleep_analysis")).toBe(
+      "Say Ring 睡眠 AI 分析说明",
+    );
+    const draft = selectLegalDocumentType(
+      createLegalDocumentDraft("say-ring", "zh-Hans"),
+      "say_ring_sleep_analysis",
+    );
+    expect(() =>
+      selectLegalDocumentType(
+        createLegalDocumentDraft("saydian-global"),
+        "say_ring_sleep_analysis",
+      ),
+    ).toThrow();
+    expect(() => legalDocumentPayload({ ...draft, active: true })).toThrow(
+      "说明内容核对完成后才能启用",
+    );
+    expect(
+      legalDocumentPayload({ ...draft, reviewed: true, active: true })
+        .documentType,
+    ).toBe("say_ring_sleep_analysis");
+  });
   it("starts separate app documents as unpublished drafts with their own document types", () => {
     expect(createLegalDocumentDraft("saydian-global")).toMatchObject({
       legalProduct: "saydian-global",
@@ -26,14 +53,16 @@ describe("product-scoped legal document editor", () => {
   });
 
   it("opens existing records in the product selected by their stored document type", () => {
-    expect(legalDocumentEditorFromRow({
-      id: "ring-policy",
-      documentType: "say_ring_privacy_policy",
-      locale: "zh-Hans",
-      version: "ring-v1",
-      reviewed: true,
-      active: false,
-    })).toMatchObject({
+    expect(
+      legalDocumentEditorFromRow({
+        id: "ring-policy",
+        documentType: "say_ring_privacy_policy",
+        locale: "zh-Hans",
+        version: "ring-v1",
+        reviewed: true,
+        active: false,
+      }),
+    ).toMatchObject({
       id: "ring-policy",
       legalProduct: "say-ring",
       documentType: "say_ring_privacy_policy",
@@ -42,8 +71,10 @@ describe("product-scoped legal document editor", () => {
       reviewed: true,
       active: false,
     });
-    expect(legalDocumentEditorFromRow({ documentType: "privacy_policy" }).legalProduct)
-      .toBe("saydian-global");
+    expect(
+      legalDocumentEditorFromRow({ documentType: "privacy_policy" })
+        .legalProduct,
+    ).toBe("saydian-global");
   });
 
   it("clears a draft when its app or document type changes instead of copying policy text across", () => {
@@ -64,8 +95,12 @@ describe("product-scoped legal document editor", () => {
       active: false,
       reviewed: false,
     });
-    expect(selectLegalDocumentProduct(globalDraft, "say-ring")).not.toHaveProperty("id");
-    expect(selectLegalDocumentType(globalDraft, "privacy_policy")).toMatchObject({
+    expect(
+      selectLegalDocumentProduct(globalDraft, "say-ring"),
+    ).not.toHaveProperty("id");
+    expect(
+      selectLegalDocumentType(globalDraft, "privacy_policy"),
+    ).toMatchObject({
       legalProduct: "saydian-global",
       documentType: "privacy_policy",
       version: "",
@@ -94,10 +129,12 @@ describe("product-scoped legal document editor", () => {
       active: true,
       reviewed: true,
     });
-    expect(() => legalDocumentPayload({ ...draft, documentType: "privacy_policy" }))
-      .toThrow("文档类型与所选 App 不匹配");
-    expect(() => legalDocumentPayload({ ...draft, reviewed: false }))
-      .toThrow("法律审核完成后才能启用协议");
+    expect(() =>
+      legalDocumentPayload({ ...draft, documentType: "privacy_policy" }),
+    ).toThrow("文档类型与所选 App 不匹配");
+    expect(() => legalDocumentPayload({ ...draft, reviewed: false })).toThrow(
+      "法律审核完成后才能启用协议",
+    );
   });
 
   it("keeps reviewed version content immutable so new wording is stored as a new version", () => {
@@ -112,9 +149,11 @@ describe("product-scoped legal document editor", () => {
       active: true,
     });
     expect(legalDocumentPayload(reviewed).active).toBe(true);
-    expect(() => legalDocumentPayload({
-      ...reviewed,
-      contentHtml: "<p>Changed text</p>",
-    })).toThrow("已审核版本不可修改，请新增版本");
+    expect(() =>
+      legalDocumentPayload({
+        ...reviewed,
+        contentHtml: "<p>Changed text</p>",
+      }),
+    ).toThrow("已审核版本不可修改，请新增版本");
   });
 });
