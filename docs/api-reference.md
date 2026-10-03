@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **372 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **373 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -163,7 +163,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（119）
+## V2 App 接口（120）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -263,9 +263,10 @@
 | `POST /api/saydian-app/v2/notifications/:id/read` | 标记消息已读 | member | path:id；id=消息 UUID/eventId | {read:true}；仅本人消息 | 核心服务 |
 | `POST /api/saydian-app/v2/notifications/push-installations` | 登记推送安装 | member | PushInstallation：installationId、platform、registrationId、appVersion、buildNumber；字段别名见调用手册 | 安装记录；登记不等于推送成功 | 推送供应商（登记可独立使用） |
 | `DELETE /api/saydian-app/v2/notifications/push-installations/:installationId` | 撤销本人推送安装 | member | path:installationId；installationId=安装标识 | 撤销结果 | 核心服务 |
-| `GET /api/saydian-app/v2/health/sleep-reports/availability` | 检查 Say Ring 睡眠AI分析是否可用 | member | 本人登录 | 独立sleepAiEnabled开关、已配置AI、Worker与已审分析说明共同决定available；返回当前analysisConsent，不回显凭据 | 既有AI与已审说明；未真实调用不代表供应商联调通过 |
+| `GET /api/saydian-app/v2/health/sleep-reports/availability` | 检查 Say Ring 睡眠AI分析是否可用 | member | 本人登录 | 独立sleepAiEnabled开关、已配置且匹配告知供应商的AI、Worker与专属说明共同决定available；checks及unavailableReasons区分各项条件；返回say_ring_sleep_analysis授权，不读取HealthProfile或回显凭据 | 既有AI与已核对说明；未真实调用不代表供应商联调通过 |
+| `POST /api/saydian-app/v2/health/sleep-reports/analysis-consent` | 单独同意或撤回 Say Ring 睡眠 AI 分析 | member | granted:boolean；同意时version须匹配当前已发布say_ring_sleep_analysis；本人登录 | 返回当前analysisConsent；只修改本人的Say Ring睡眠ConsentRecord，不改Health App的HealthProfile授权；撤回后禁止新生成和生成中结果发布，不删除既有报告 | 核心服务 |
 | `GET /api/saydian-app/v2/health/sleep-reports` | 查询精确睡眠快照的AI报告 | member | query:sdkDate，query:sourceKey，query:sourceHash；sdkDate、sourceKey和sourceHash；后两者为64位SHA256 | {report:睡眠报告或null}；只返回本人同日期/设备来源/内容快照，READY且真实生成时才有AI sleepScore；不将设备评分替换为AI评分 | 核心服务 |
-| `POST /api/saydian-app/v2/health/sleep-reports` | 上传已同意的睡眠汇总并创建AI睡眠报告 | member | SleepReportInput：sdkDate、timezone、sourceKey、totalSeconds、可选阶段/清醒/未知/未佩戴秒数、deviceScore、wakeCount、sessions[{kind,startAt,endAt,asleepSeconds}]；严格字段白名单，不接收原始分段或联系方式 | reportType=sleep的报告，重复快照复用；本功能不扣普通健康报告次数，不创建付款；无数据/阶段合计不一致/未授权/未配置明确失败 | 健康AI当前单独同意；第三方收到去标识化汇总，AI评分非临床量表；生产验收独立记录 |
+| `POST /api/saydian-app/v2/health/sleep-reports` | 上传已同意的睡眠汇总并创建AI睡眠报告 | member | SleepReportInput：sdkDate、timezone、sourceKey、totalSeconds、可选阶段/清醒/未知/未佩戴秒数、deviceScore、wakeCount、sessions[{kind,startAt,endAt,asleepSeconds}]；严格字段白名单，不接收原始分段或联系方式 | reportType=sleep的报告，重复快照复用；本功能不扣普通健康报告次数，不创建付款；无数据/阶段合计不一致/未授权/未配置明确失败 | Say Ring睡眠AI当前单独同意；第三方收到去标识化汇总，AI评分非临床量表；生产验收独立记录 |
 | `GET /api/saydian-app/v2/health/profile` | 会员健康档案 | member | 无请求体；默认汇总近30天有效记录 | 健康数据完整度、指标摘要、设备、预警数和分析同意状态；国际analysisConsent含availableVersion/document，均可为null | 核心服务 |
 | `POST /api/saydian-app/v2/health/profile/analysis-consent` | 设置健康AI分析单独同意 | member | {granted:boolean,version:string,locale?}；国际version必须匹配当前已审health_ai_analysis文档；撤回时granted=false | 同意或撤回状态；缺文档不授予，撤回后不能新生成AI报告 | 核心服务 |
 | `GET /api/saydian-app/v2/health/reports/eligibility` | 检查详细报告生成条件 | member | 无请求体；默认近30天 | 至少3个自然日的有效记录、缺失说明、可用次数和同意要求 | 核心服务 |

@@ -13,7 +13,11 @@ import {
   markWorkerIntegrationVerified,
   resolveWorkerSecrets,
 } from "./integration-secrets";
-import { SLEEP_REPORT_TEMPLATE } from "@saydian/app-contracts";
+import {
+  SLEEP_ANALYSIS_NOTICE,
+  SLEEP_REPORT_TEMPLATE,
+  sleepAiProviderMatchesNotice,
+} from "@saydian/app-contracts";
 
 export class PermanentTaskError extends Error {}
 
@@ -65,11 +69,20 @@ export class HealthReportWorker {
     // the worker still rejects inactive members and any changed snapshot.
     const adminConsentBypass = report.adminConsentBypass === true;
     const sleepReport = report.templateVersion === SLEEP_REPORT_TEMPLATE;
+    if (
+      sleepReport &&
+      !sleepAiProviderMatchesNotice(providerSettings.baseUrl)
+    ) {
+      throw new PermanentTaskError(
+        "Sleep AI provider does not match the published analysis notice",
+      );
+    }
     if (sleepReport) await assertSleepReportEnabled(this.prisma);
     const consent = await assertGlobalAnalysisAllowed(
       this.prisma,
       report.userId,
       adminConsentBypass,
+      sleepReport,
     );
     const startData = {
       status: ReportStatus.GENERATING,
@@ -91,6 +104,7 @@ export class HealthReportWorker {
           this.prisma,
           report.userId,
           adminConsentBypass,
+          sleepReport,
         )) !== consent
       ) {
         throw new PermanentTaskError(
@@ -115,7 +129,7 @@ export class HealthReportWorker {
     const eventId = `health-report-ready:${report.id}`;
     await this.prisma.$transaction(async (tx) => {
       {
-        await lockGlobalReport(tx, report.userId, report.id);
+        await lockGlobalReport(tx, report.userId, report.id, sleepReport);
         const current = await tx.healthReport.findUnique({
           where: { id: report.id },
         });
@@ -128,6 +142,7 @@ export class HealthReportWorker {
             tx,
             report.userId,
             adminConsentBypass,
+            sleepReport,
           )) !== consent
         ) {
           throw new PermanentTaskError(
@@ -284,20 +299,26 @@ async function lockGlobalReport(
   tx: Prisma.TransactionClient,
   userId: string,
   reportId: string,
+  sleep = false,
 ): Promise<void> {
   // Always acquire member before profile and report. No lock spans AI I/O.
   await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId}::uuid FOR UPDATE`;
-  await tx.$queryRaw`SELECT "id" FROM "HealthProfile" WHERE "userId" = ${userId}::uuid FOR UPDATE`;
+  if (sleep) {
+    await tx.$queryRaw`SELECT "id" FROM "ConsentRecord" WHERE "userId" = ${userId}::uuid AND "documentType" = ${SLEEP_ANALYSIS_NOTICE} FOR UPDATE`;
+  } else {
+    await tx.$queryRaw`SELECT "id" FROM "HealthProfile" WHERE "userId" = ${userId}::uuid FOR UPDATE`;
+  }
   await tx.$queryRaw`SELECT "id" FROM "HealthReport" WHERE "id" = ${reportId}::uuid FOR UPDATE`;
 }
 
 async function assertGlobalAnalysisAllowed(
   prisma: Pick<
     Prisma.TransactionClient,
-    "user" | "healthProfile" | "globalLegalDocument"
+    "user" | "healthProfile" | "globalLegalDocument" | "consentRecord"
   >,
   userId: string,
   adminConsentBypass = false,
+  sleep = false,
 ): Promise<string> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -306,8 +327,24 @@ async function assertGlobalAnalysisAllowed(
   if (!user || user.status !== UserStatus.ACTIVE) {
     throw new PermanentTaskError("Health report member is inactive");
   }
+  if (sleep && adminConsentBypass)
+    throw new PermanentTaskError(
+      "Sleep reports require the member's product-scoped consent",
+    );
   if (adminConsentBypass) return "super-admin-audited-bypass-v1";
-  const profile = await prisma.healthProfile.findUnique({ where: { userId } });
+  const record = sleep
+    ? await prisma.consentRecord.findFirst({
+        where: { userId, documentType: SLEEP_ANALYSIS_NOTICE },
+        orderBy: { acceptedAt: "desc" },
+      })
+    : null;
+  const profile = sleep
+    ? record && {
+        analysisConsentedAt: record.acceptedAt,
+        analysisConsentWithdrawn: record.withdrawnAt,
+        analysisConsentVersion: record.version,
+      }
+    : await prisma.healthProfile.findUnique({ where: { userId } });
   if (!profile?.analysisConsentedAt || profile.analysisConsentWithdrawn) {
     throw new PermanentTaskError(
       "Health AI analysis consent is missing or withdrawn",
@@ -334,7 +371,7 @@ async function assertGlobalAnalysisAllowed(
   const locales = preferred === "en" ? ["en"] : [preferred, "en"];
   const documents = await prisma.globalLegalDocument.findMany({
     where: {
-      documentType: "health_ai_analysis",
+      documentType: sleep ? SLEEP_ANALYSIS_NOTICE : "health_ai_analysis",
       locale: { in: locales },
       active: true,
       reviewed: true,

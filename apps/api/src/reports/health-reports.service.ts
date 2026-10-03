@@ -27,6 +27,7 @@ import PDFDocument from "pdfkit";
 
 import { globalError } from "../auth/global-identity";
 import { globalLegalReference } from "../auth/global-legal";
+import { readSleepAnalysisConsent } from "./sleep-analysis-consent";
 import {
   buildHealthEvidence,
   type EvidenceRecord,
@@ -577,7 +578,10 @@ export class HealthReportsService {
     if (report.status !== PrismaReportStatus.FAILED) {
       throw new ConflictException("当前报告不需要重试");
     }
-    {
+    if (report.templateVersion === SLEEP_REPORT_TEMPLATE) {
+      const consent = await readSleepAnalysisConsent(this.prisma, userId);
+      if (!consent.granted) throw new ForbiddenException("请先阅读并同意当前 Say Ring 睡眠 AI 分析说明");
+    } else {
       const profile = await this.prisma.healthProfile.findUnique({
         where: { userId },
       });

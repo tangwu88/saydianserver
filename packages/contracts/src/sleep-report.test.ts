@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { canonicalSleepInput, normalizeSleepReportInput } from "./sleep-report";
+import { canonicalSleepInput, normalizeSleepReportInput, sleepAiProviderMatchesNotice } from "./sleep-report";
 import { createHash } from "node:crypto";
 
 // Synthetic input only. Not actual wearable evidence or a provider response.
 export const sleepFixture = () => ({ sdkDate: "2026-08-04", timezone: "+08:00", sourceKey: "a".repeat(64), totalSeconds: 25200, deepSeconds: 7200, lightSeconds: 14400, remSeconds: 3600, awakeSeconds: 1200, sessions: [{ kind: "night", startAt: "2026-08-03T16:00:00.000Z", endAt: "2026-08-04T00:00:00.000Z", asleepSeconds: 25200 }] });
 
 describe("sleep upload aggregate contract", () => {
+  it("only sends sleep data to the recipient named in the published notice", () => {
+    expect(sleepAiProviderMatchesNotice("https://open.bigmodel.cn/api/paas/v4/")).toBe(true);
+    for (const url of [undefined, "http://open.bigmodel.cn/api/paas/v4", "https://open.bigmodel.cn.evil.invalid/api/paas/v4", "https://other.example.invalid/api/paas/v4", "https://secret@open.bigmodel.cn/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4?redirect=1", "https://open.bigmodel.cn/other"]) expect(sleepAiProviderMatchesNotice(url)).toBe(false);
+  });
   it("matches Flutter's cross-language snapshot digest", () => expect(createHash("sha256").update(canonicalSleepInput(normalizeSleepReportInput(sleepFixture()))).digest("hex")).toBe("5a84ec3eff249db62cbf543968d138bbaa2f0452e03f81bbbb00847066356dce"));
   it("keeps cross-midnight absolute times and exact seconds", () => expect(normalizeSleepReportInput(sleepFixture())).toEqual(sleepFixture()));
   it("does not fill missing stages or score with zero", () => { const input = { sdkDate: "2026-08-04", timezone: "+08:00", sourceKey: "a".repeat(64), totalSeconds: 25200, sessions: [] }; expect(normalizeSleepReportInput(input)).toEqual(input); });
