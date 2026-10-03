@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **373 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **374 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -163,7 +163,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（120）
+## V2 App 接口（121）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -276,6 +276,7 @@
 | `GET /api/saydian-app/v2/health/reports/:id/full` | 查看已解锁详细健康报告 | member | path:id；id=报告UUID | AI标识、证据索引、局限及详细内容；非诊断 | 核心服务 |
 | `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
 | `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本 | 重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还 | AI供应商 |
+| `GET /api/saydian-app/v2/support/weather` | 手机当前位置天气预报 | public | query:lat?，query:lon?；公开 GET；query lat=-90..90、lon=-180..180；服务端按两位小数网格取预报，不接收会员标识 | {source,sourceUrl,licenseUrl,updatedAt,timeseries}；MET Norway 预报及来源/CC BY 4.0 标注；无有效数据返回503，不生成虚构天气 | 固定 MET Norway Locationforecast HTTPS；按 Expires 缓存并以 Last-Modified 条件刷新 |
 | `GET /api/saydian-app/v2/support/config` | 客服配置 | public | 无请求体 | 客服配置或未配置状态 | 核心服务 |
 | `GET /api/saydian-app/v2/support/app-display` | 读取 Say Ring AI 内容显示开关 | public | query:product?；query product=say-ring；公开接口，禁止其他产品标识 | {product:'say-ring',hideAi:boolean}；true隐藏AI入口与内容；未配置默认false；仅读取已公开的say_ring_app_display并返回白名单字段；Cache-Control:no-store | 当前部署独立AppSetting；不读取AI密钥，不调用AI供应商 |
 | `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | query:product?；国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单 | DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无配置404 | 核心服务 |

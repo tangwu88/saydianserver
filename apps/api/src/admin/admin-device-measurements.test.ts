@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AdminController } from "./admin.controller";
 import { AdminService } from "./admin.service";
+import { sha256 } from "../common/crypto";
 
 const deviceId = "00000000-0000-4000-8000-000000000001";
 const hardwareKey = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
@@ -8,7 +9,7 @@ const superAdmin = { id: "admin-id", role: "SUPER_ADMIN", roles: ["SUPER_ADMIN"]
 const auditor = { id: "auditor-id", role: "HEALTH_AUDITOR", roles: ["HEALTH_AUDITOR"] };
 
 function setup() {
-  const deviceBinding = { findUnique: vi.fn().mockResolvedValue({ id: deviceId, userId: "member-id", hardwareKey, model: "W9S" }) };
+  const deviceBinding = { findUnique: vi.fn().mockResolvedValue({ id: deviceId, userId: "member-id", hardwareKey, model: "W9S", connectionEvents: [] }) };
   const healthRecord = { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([{
     id: "00000000-0000-4000-8000-000000000002",
     metric: "HEART_RATE",
@@ -29,6 +30,71 @@ function setup() {
 }
 
 describe("audited per-device measurement history", () => {
+  it("joins routed W8 connections to actual native measurement identifiers without changing records", async () => {
+    const h = setup();
+    const nativeId = "07:43:00:00:12:34";
+    const routedId = `yucheng:${nativeId}`;
+    const routedKey = sha256(`member-id:${routedId}`);
+    const nativeKey = sha256(`member-id:${nativeId}`);
+    h.deviceBinding.findUnique.mockResolvedValueOnce({
+      id: deviceId, userId: "member-id", hardwareKey: routedKey, model: "W8",
+      connectionEvents: [{ rawPayload: `deviceId=${routedId} | vendor=Yucheng | model=W8` }],
+    });
+    const stored = { id: "original-native-record", sourceDeviceKey: nativeKey, metric: "HEART_RATE", sourceModel: null, values: { bpm: 72 } };
+    h.healthRecord.findMany.mockResolvedValueOnce([stored] as any);
+
+    const result = await h.service.deviceMeasurements(superAdmin, deviceId, "request-1", "");
+
+    const expectedWhere = {
+      userId: "member-id",
+      OR: [{ deviceBindingId: deviceId }, { sourceDeviceKey: routedKey }, { sourceDeviceKey: nativeKey }],
+    };
+    expect(h.healthRecord.count).toHaveBeenCalledWith({ where: expectedWhere });
+    expect(h.healthRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expectedWhere }));
+    expect(result.records[0]).toMatchObject({
+      id: stored.id, sourceModel: null, values: stored.values, deviceIdentifier: result.device.deviceIdentifier,
+    });
+    expect(result.records[0]).not.toHaveProperty("sourceDeviceKey");
+    expect(stored.sourceDeviceKey).toBe(nativeKey);
+    expect(h.auditLog.create).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    "deviceId=yucheng:different-native-id | vendor=Yucheng",
+    "displayName=yucheng:fixture-native | vendor=Yucheng",
+    "deviceId=unknown:fixture-native | vendor=Yucheng",
+    "deviceId=yucheng:fixture\\|native | vendor=Yucheng",
+  ])("does not derive a legacy alias from unrelated or ambiguous connection data: %s", async (rawPayload) => {
+    const h = setup();
+    const reportedId = rawPayload.startsWith("deviceId=unknown:") ? "unknown:fixture-native" : "yucheng:fixture-native";
+    const scopedKey = sha256(`member-id:${reportedId}`);
+    h.deviceBinding.findUnique.mockResolvedValueOnce({
+      id: deviceId, userId: "member-id", hardwareKey: scopedKey, model: "W8", connectionEvents: [{ rawPayload }],
+    });
+
+    await h.service.deviceMeasurements(superAdmin, deviceId, "request-1", "");
+
+    expect(h.healthRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: "member-id", OR: [{ deviceBindingId: deviceId }, { sourceDeviceKey: scopedKey }] },
+    }));
+  });
+
+  it("scopes a verified native alias to the selected member rather than another member", async () => {
+    const h = setup();
+    const routedId = "yucheng:fixture-native";
+    const foreignKey = sha256(`other-member:${routedId}`);
+    h.deviceBinding.findUnique.mockResolvedValueOnce({
+      id: deviceId, userId: "member-id", hardwareKey: foreignKey, model: "W8",
+      connectionEvents: [{ rawPayload: `deviceId=${routedId}` }],
+    });
+
+    await h.service.deviceMeasurements(superAdmin, deviceId, "request-1", "");
+
+    expect(h.healthRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: "member-id", OR: [{ deviceBindingId: deviceId }, { sourceDeviceKey: foreignKey }] },
+    }));
+  });
+
   it("returns this device's measurements with a pseudonymous identifier and audits the read", async () => {
     const h = setup();
 

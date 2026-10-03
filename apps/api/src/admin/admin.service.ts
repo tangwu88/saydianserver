@@ -150,6 +150,17 @@ function adminDeviceIdentifier(hardwareKey: string) {
   return `DEV-${shortKey.slice(0, 8)}-${shortKey.slice(8)}`;
 }
 
+function legacyNativeDeviceKey(userId: string, hardwareKey: string, rawPayload: string): string | null {
+  for (const field of ["deviceId", "hardwareId"]) {
+    // Escaped/ambiguous identifiers are not interpreted as legacy aliases.
+    const reportedId = rawPayload.match(new RegExp(`(?:^| \\| )${field}=([^\\\\|]*?)(?= \\| |$)`))?.[1]?.trim();
+    if (!reportedId || sha256(`${userId}:${reportedId}`) !== hardwareKey) continue;
+    const nativeId = reportedId.match(/^(?:veepoo|yucheng|urion):(.+)$/)?.[1];
+    if (nativeId) return sha256(`${userId}:${nativeId}`);
+  }
+  return null;
+}
+
 function auditedRawHealthReason(current: { role: string; roles?: string[] }, reason: string) {
   const roles = current.roles?.length ? current.roles : [current.role];
   if (!roles.some((role) => role === AdminRole.SUPER_ADMIN || role === AdminRole.HEALTH_AUDITOR)) {
@@ -1110,14 +1121,23 @@ export class AdminService {
     if (!isUuid(id)) throw new BadRequestException("设备编号无效");
     const device = await this.prisma.deviceBinding.findUnique({
       where: { id },
-      select: { id: true, userId: true, hardwareKey: true, model: true },
+      select: {
+        id: true, userId: true, hardwareKey: true, model: true,
+        connectionEvents: { orderBy: { connectedAt: "desc" }, take: 1, select: { rawPayload: true } },
+      },
     });
     if (!device) throw new NotFoundException("设备不存在");
+    const legacyDeviceKey = legacyNativeDeviceKey(
+      device.userId, device.hardwareKey, device.connectionEvents[0]?.rawPayload ?? "",
+    );
     const page = Math.max(Math.trunc(Number(pageInput) || 1), 1);
     const pageSize = Math.min(Math.max(Math.trunc(Number(pageSizeInput) || 50), 1), 100);
     const where = {
       userId: device.userId,
-      OR: [{ deviceBindingId: id }, { sourceDeviceKey: device.hardwareKey }],
+      OR: [
+        { deviceBindingId: id }, { sourceDeviceKey: device.hardwareKey },
+        ...(legacyDeviceKey ? [{ sourceDeviceKey: legacyDeviceKey }] : []),
+      ],
     };
     const [total, records] = await Promise.all([
       this.prisma.healthRecord.count({ where }),
@@ -1161,7 +1181,9 @@ export class AdminService {
       records: records.map(({ sourceDeviceKey, metric, ...record }) => ({
         ...record,
         metric: String(metric).toLowerCase(),
-        deviceIdentifier: adminDeviceIdentifier(sourceDeviceKey ?? device.hardwareKey),
+        deviceIdentifier: adminDeviceIdentifier(
+          sourceDeviceKey === legacyDeviceKey ? device.hardwareKey : sourceDeviceKey ?? device.hardwareKey,
+        ),
       })),
       total,
       page,

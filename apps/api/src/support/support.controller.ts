@@ -18,11 +18,17 @@ import { UserAuthGuard } from "../common/user-auth.guard";
 import { CurrentUser, type AuthenticatedUser } from "../common/request-context";
 import { RawResponse } from "../common/raw-response.decorator";
 import { SupportService } from "./support.service";
+import { WeatherForecastService } from "./weather-forecast.service";
 
 @ApiTags("support")
 @Controller("api/saydian-app/v2/support")
 export class SupportController {
-  constructor(private readonly support: SupportService) {}
+  constructor(private readonly support: SupportService, private readonly weather: WeatherForecastService) {}
+
+  @Get("weather")
+  weatherForecast(@Query("lat") latitude?: string, @Query("lon") longitude?: string) {
+    return this.weather.forecast(latitude, longitude);
+  }
 
   @Get("config")
   config() {

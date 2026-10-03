@@ -24729,6 +24729,44 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "SupportController.weatherForecast",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/weather",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "lat",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "lon",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "手机当前位置天气预报",
+      "request": "公开 GET；query lat=-90..90、lon=-180..180；服务端按两位小数网格取预报，不接收会员标识",
+      "response": "{source,sourceUrl,licenseUrl,updatedAt,timeseries}；MET Norway 预报及来源/CC BY 4.0 标注；无有效数据返回503，不生成虚构天气",
+      "dependency": "固定 MET Norway Locationforecast HTTPS；按 Expires 缓存并以 Last-Modified 条件刷新",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "SupportController.config",
       "method": "GET",
       "path": "/api/saydian-app/v2/support/config",

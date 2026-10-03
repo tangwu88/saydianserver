@@ -103,6 +103,7 @@ export const notes = {
   "AiController.history": entry("本人 AI 历史", "sessionId 可选客户端会话标识", "最近 20 个会话及消息"),
   "AiController.send": entry("AI 提问", "{content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en", "{id,conversationId,role,content,createdAt}", "AI 供应商；未配置返回 503；语言指令不改变健康安全边界"),
   "SupportController.config": entry("客服配置", undefined, "客服配置或未配置状态"),
+  "SupportController.weatherForecast": entry("手机当前位置天气预报", "公开 GET；query lat=-90..90、lon=-180..180；服务端按两位小数网格取预报，不接收会员标识", "{source,sourceUrl,licenseUrl,updatedAt,timeseries}；MET Norway 预报及来源/CC BY 4.0 标注；无有效数据返回503，不生成虚构天气", "固定 MET Norway Locationforecast HTTPS；按 Expires 缓存并以 Last-Modified 条件刷新"),
   "SupportController.sportMapConfig": entry("Say Ring 运动地图状态", "无请求体；不返回高德密钥", "{provider:'amap',configured:boolean}；仅国际 Say Ring 地图已公开、启用且密钥存在时为 true"),
   "SupportController.sportRouteMap": entry("Say Ring 高德运动轨迹图", "会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点", "高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图", "高德 Web 服务坐标转换与静态地图 API"),
   "SupportController.appUpdate": entry("App 下载与更新配置", "国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单", "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无配置404"),
