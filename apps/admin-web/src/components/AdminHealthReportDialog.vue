@@ -5,8 +5,9 @@ import { api, readableError, responseData } from "../api";
 import { healthMetricLabel, healthTime } from "../health-display";
 
 type Trend = { metric: string; text: string };
-type Content = { overview: string; trends: Trend[]; suggestions: string[]; limitations: string[] };
+type Content = { overview: string; trends: Trend[]; suggestions: string[]; limitations: string[]; sleepScore?: { value: number | null; explanation: string; confidence: string } };
 type Report = {
+  reportType?: string;
   id: string;
   memberId: string;
   member?: { memberNo?: string; nickname?: string };
@@ -115,7 +116,7 @@ watch(() => [props.modelValue, props.row?.id], ([open]) => {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="健康报告" width="min(900px, 94vw)" top="4vh" destroy-on-close :close-on-click-modal="false">
+  <el-dialog v-model="visible" :title="report?.reportType === 'sleep' ? 'AI 睡眠分析报告' : '健康报告'" width="min(900px, 94vw)" top="4vh" destroy-on-close :close-on-click-modal="false">
     <div v-loading="loading" class="health-report-dialog">
       <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" show-icon />
       <template v-if="report">
@@ -128,6 +129,7 @@ watch(() => [props.modelValue, props.row?.id], ([open]) => {
         </div>
 
         <template v-if="report.status === 'ready' && report.content">
+          <section v-if="report.content.sleepScore" class="document-section"><h3>AI 睡眠参考评分：{{ report.content.sleepScore.value ?? '证据不足，未评分' }}<template v-if="report.content.sleepScore.value != null"> / 100</template></h3><p>{{ report.content.sleepScore.explanation }}</p><p>不是设备评分或临床验证量表，仅基于本报告记录。</p></section>
           <section class="document-section">
             <h3>健康概览</h3>
             <el-input v-if="editing" v-model="draft.overview" type="textarea" :rows="5" maxlength="2000" show-word-limit />

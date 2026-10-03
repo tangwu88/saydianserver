@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { validateReportContent } from "./health-report-worker";
+import { validateReportContent, validateSleepReportContent } from "./health-report-worker";
+
+describe("sleep AI reference score", () => {
+  const metrics = [{ metric: "sleep", totalSeconds: 25200 }];
+  const evidence = { byMetric: [{ metric: "sleep", recordIds: ["synthetic-snapshot"] }] };
+  const report = () => ({ overview: "仅分析本次睡眠记录。", trends: [{ metric: "sleep", text: "本次睡眠总时长可用于日常观察。" }], suggestions: ["保持规律作息。"], limitations: ["单日记录及设备阶段估计可能存在误差。"], sleepScore: { value: 70, scale: 100, confidence: "low", explanation: "仅根据已提供的睡眠时长和阶段作参考评价，非临床量表。" } });
+  it("keeps AI score distinct and evidence-linked", () => expect(validateSleepReportContent(report(), metrics, evidence)).toMatchObject({ aiLabel: "AI生成的睡眠管理参考", sleepScore: { value: 70, scale: 100 }, trends: [{ metric: "sleep", evidenceRecordIds: ["synthetic-snapshot"] }] }));
+  it("retains null rather than inventing a score for insufficient evidence", () => { const value = report(); value.sleepScore.value = null as any; expect(validateSleepReportContent(value, metrics, evidence)).toHaveProperty("sleepScore.value", null); });
+  it.each([101, -1, 42.5, "90", undefined])("rejects invalid score %s", score => { const value = report(); value.sleepScore.value = score as any; expect(() => validateSleepReportContent(value, metrics, evidence)).toThrow(); });
+  it("rejects a fabricated metric and medical claims in score rationale", () => { const value = report(); value.sleepScore.explanation = "已确诊疾病。"; expect(() => validateSleepReportContent(value, metrics, evidence)).toThrow(); value.sleepScore.explanation = "参考数据。"; value.trends[0]!.metric = "blood_glucose"; expect(() => validateSleepReportContent(value, metrics, evidence)).toThrow(); });
+});
 
 describe("health report AI output", () => {
   it("keeps a wellness-only structured report", () => {

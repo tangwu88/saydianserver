@@ -451,11 +451,16 @@ function editableReportContent(
   }
   return {
     aiLabel: "AI生成并经管理员复核的健康管理参考",
+    ...(existing.sleepScore
+      ? { sleepScore: existing.sleepScore as Prisma.InputJsonValue }
+      : {}),
     overview,
     trends,
     suggestions,
     limitations,
-    safetyNotice: "本报告不用于诊断或治疗；如有明显不适，请及时就医。",
+    safetyNotice: existing.sleepScore
+      ? "AI评分非设备评分、非临床评估；本报告不用于诊断或治疗。如有明显不适，请及时就医。"
+      : "本报告不用于诊断或治疗；如有明显不适，请及时就医。",
   };
 }
 

@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Res,
   UseGuards,
 } from "@nestjs/common";
@@ -16,12 +17,39 @@ import {
   type AuthenticatedUser,
 } from "../common/request-context";
 import { HealthReportsService } from "./health-reports.service";
+import { SleepReportsService } from "./sleep-reports.service";
 
 @ApiTags("health-reports")
 @Controller("api/saydian-app/v2/health")
 @UseGuards(UserAuthGuard)
 export class HealthReportsController {
-  constructor(private readonly reports: HealthReportsService) {}
+  constructor(
+    private readonly reports: HealthReportsService,
+    private readonly sleepReports: SleepReportsService,
+  ) {}
+
+  @Get("sleep-reports/availability")
+  sleepAvailability(@CurrentUser() user: AuthenticatedUser) {
+    return this.sleepReports.availability(user.id);
+  }
+
+  @Get("sleep-reports")
+  sleepReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("sdkDate") sdkDate: string,
+    @Query("sourceKey") sourceKey: string,
+    @Query("sourceHash") sourceHash: string,
+  ) {
+    return this.sleepReports.find(user.id, sdkDate, sourceKey, sourceHash);
+  }
+
+  @Post("sleep-reports")
+  createSleepReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+  ) {
+    return this.sleepReports.create(user.id, body);
+  }
 
   @Get("profile")
   profile(@CurrentUser() user: AuthenticatedUser) {

@@ -13,6 +13,7 @@ import {
   markWorkerIntegrationVerified,
   resolveWorkerSecrets,
 } from "./integration-secrets";
+import { SLEEP_REPORT_TEMPLATE } from "@saydian/app-contracts";
 
 export class PermanentTaskError extends Error {}
 
@@ -63,6 +64,8 @@ export class HealthReportWorker {
     // SUPER_ADMIN requests persist a separate audited authorization snapshot;
     // the worker still rejects inactive members and any changed snapshot.
     const adminConsentBypass = report.adminConsentBypass === true;
+    const sleepReport = report.templateVersion === SLEEP_REPORT_TEMPLATE;
+    if (sleepReport) await assertSleepReportEnabled(this.prisma);
     const consent = await assertGlobalAnalysisAllowed(
       this.prisma,
       report.userId,
@@ -95,6 +98,7 @@ export class HealthReportWorker {
         );
       }
     }
+    if (sleepReport) await assertSleepReportEnabled(this.prisma);
     const content = await callAiProvider(
       report.metricSummary,
       report.evidenceIndex,
@@ -105,6 +109,7 @@ export class HealthReportWorker {
         validRecordCount: report.validRecordCount,
       },
       providerSettings,
+      sleepReport,
     );
     await markWorkerIntegrationVerified(this.prisma, "ai");
     const eventId = `health-report-ready:${report.id}`;
@@ -115,6 +120,7 @@ export class HealthReportWorker {
           where: { id: report.id },
         });
         if (!current || current.status !== ReportStatus.GENERATING) return;
+        if (sleepReport) await assertSleepReportEnabled(tx);
         // Keep the authorization rows locked until READY and its notification commit.
         if (
           current.adminConsentBypass !== adminConsentBypass ||
@@ -148,7 +154,10 @@ export class HealthReportWorker {
           userId: report.userId,
           eventId,
           type: NotificationType.SYSTEM,
-          title: "健康报告已生成",
+          title:
+            report.templateVersion === SLEEP_REPORT_TEMPLATE
+              ? "睡眠报告已生成"
+              : "健康报告已生成",
           body: "你的健康管理参考报告已准备好，点击即可查看。",
           deepLink: `/health/reports/${report.id}`,
           metadata: { reportId: report.id },
@@ -261,6 +270,16 @@ export class HealthReportWorker {
   }
 }
 
+async function assertSleepReportEnabled(
+  prisma: PrismaClient | Prisma.TransactionClient,
+) {
+  const setting = await prisma.appSetting.findFirst({
+    where: { key: "say_ring_app_display", public: true },
+  });
+  if (asObject(setting?.value).sleepAiEnabled !== true)
+    throw new PermanentTaskError("Sleep AI reports have been disabled");
+}
+
 async function lockGlobalReport(
   tx: Prisma.TransactionClient,
   userId: string,
@@ -348,6 +367,7 @@ async function callAiProvider(
     validRecordCount: number;
   },
   settings: { baseUrl: string; apiKey: string; model: string },
+  sleep = false,
 ) {
   const evidence = asObject(evidenceIndex);
   const response = await fetch(`${settings.baseUrl}/chat/completions`, {
@@ -363,8 +383,9 @@ async function callAiProvider(
       messages: [
         {
           role: "system",
-          content:
-            "你是赛电健康报告表达助手。输入是去标识化的会员基础资料、活动目标、设备概况、预警汇总和近30天多指标统计。请先检查数据量、单位、时间覆盖和异常值，再做谨慎的趋势说明。输出JSON对象：overview为字符串；trends为对象数组，每项只能包含metric和text，metric必须逐字使用输入中的已有metric；suggestions和limitations为字符串数组。建议应具体、低风险、日常可执行，并结合年龄、性别、身高体重、目标和实际趋势；资料缺失或样本稀疏时明确说未获取或证据不足。不得诊断、不得给出处方/治疗方案/药物或补充剂剂量、不得承诺准确性、不得补造未提供的指标或因果关系。必须注明这是AI生成的健康管理参考，并建议明显不适或持续异常及时就医。不要生成或猜测姓名、联系方式、账号、设备硬件标识或记录编号。",
+          content: sleep
+            ? "你是 Say Ring 睡眠管理参考助手。输入仅是单日戒指睡眠汇总和夜睡/小睡会话起止；所有时长单位为秒，timezone 是记录时区。清醒、未知、未佩戴和缺口不计入有效睡眠；缺失字段保持未知，设备评分与AI评分不同。输出 JSON：overview 为详细概览；trends 为数组，每项只有 metric 和 text，metric 固定 sleep，分别结合实际数据说明睡眠时长、阶段结构、清醒/连续性、作息时间和小睡（未提供则明确无法分析）。suggestions 和 limitations 为字符串数组。sleepScore 为 {value:0到100的整数或null,scale:100,confidence:low或moderate,explanation:评分依据及限制}。评分仅是基于本次记录的AI综合参考，不是临床验证量表，不把设备阶段当诊断。证据不足时 value 必须 null，并解释缺项；单日不能声称长期改善、疾病或睡眠效率，不能推算缺失阶段、入睡潜伏期、觉醒次数或用户年龄。建议具体、低风险、可执行；保留单日、佩戴、设备估计误差和AI局限。不得诊断、处方、治疗或药物/补充剂剂量，不输出准确性承诺，不猜个人身份。"
+            : "你是赛电健康报告表达助手。输入是去标识化的会员基础资料、活动目标、设备概况、预警汇总和近30天多指标统计。请先检查数据量、单位、时间覆盖和异常值，再做谨慎的趋势说明。输出JSON对象：overview为字符串；trends为对象数组，每项只能包含metric和text，metric必须逐字使用输入中的已有metric；suggestions和limitations为字符串数组。建议应具体、低风险、日常可执行，并结合年龄、性别、身高体重、目标和实际趋势；资料缺失或样本稀疏时明确说未获取或证据不足。不得诊断、不得给出处方/治疗方案/药物或补充剂剂量、不得承诺准确性、不得补造未提供的指标或因果关系。必须注明这是AI生成的健康管理参考，并建议明显不适或持续异常及时就医。不要生成或猜测姓名、联系方式、账号、设备硬件标识或记录编号。",
         },
         {
           role: "user",
@@ -392,7 +413,44 @@ async function callAiProvider(
   } catch {
     throw new Error("AI report provider returned invalid JSON");
   }
-  return validateReportContent(parsed, metricSummary, evidenceIndex);
+  return sleep
+    ? validateSleepReportContent(parsed, metricSummary, evidenceIndex)
+    : validateReportContent(parsed, metricSummary, evidenceIndex);
+}
+
+export function validateSleepReportContent(
+  value: unknown,
+  metricSummary: unknown,
+  evidenceIndex: unknown,
+): Record<string, unknown> {
+  const content = validateReportContent(value, metricSummary, evidenceIndex);
+  const score = asObject(asObject(value).sleepScore);
+  const explanation = plainText(score.explanation, 1500);
+  if (
+    score.scale !== 100 ||
+    !["low", "moderate"].includes(String(score.confidence)) ||
+    !explanation ||
+    (score.value !== null &&
+      (typeof score.value !== "number" ||
+        !Number.isInteger(score.value) ||
+        score.value < 0 ||
+        score.value > 100))
+  )
+    throw new Error("AI sleep score is invalid or incomplete");
+  if (/确诊|处方|治愈|100%准确|医疗级|替代医生/.test(explanation))
+    throw new Error("AI sleep score violates wellness-only policy");
+  return {
+    ...content,
+    aiLabel: "AI生成的睡眠管理参考",
+    sleepScore: {
+      value: score.value,
+      scale: 100,
+      confidence: score.confidence,
+      explanation,
+    },
+    safetyNotice:
+      "AI评分非设备评分、非临床评估；本报告不用于诊断或治疗。如有明显不适或持续睡眠困扰，请咨询专业医务人员。",
+  };
 }
 
 export function validateReportContent(

@@ -19,6 +19,7 @@ import type {
   HealthReportContract,
   HealthReportEligibilityContract,
 } from "@saydian/app-contracts";
+import { SLEEP_REPORT_TEMPLATE } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
 import { safeObject, sha256 } from "../common/crypto";
 import { existsSync } from "node:fs";
@@ -1112,8 +1113,26 @@ export function serializeReport(report: {
   aiGenerated: boolean;
   generatedAt: Date | null;
   createdAt: Date;
+  templateVersion?: string;
+  fullContent?: unknown;
 }): HealthReportContract {
+  const sleep = report.templateVersion === SLEEP_REPORT_TEMPLATE;
+  const score = safeObject(safeObject(report.fullContent).sleepScore).value;
   return {
+    ...(sleep
+      ? {
+          reportType: "sleep" as const,
+          sleepScore:
+            report.status === PrismaReportStatus.READY &&
+            report.aiGenerated &&
+            typeof score === "number" &&
+            Number.isInteger(score) &&
+            score >= 0 &&
+            score <= 100
+              ? score
+              : null,
+        }
+      : {}),
     id: report.id,
     status: report.status.toLowerCase() as HealthReportContract["status"],
     period: {
