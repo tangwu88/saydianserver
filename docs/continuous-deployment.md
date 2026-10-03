@@ -32,13 +32,14 @@ pwsh -NoProfile -File tools/Start-Change.ps1
 
 ## 发布链路
 
-`main push → CI verify → SHA 镜像 → 受限 SSH 接收器 → 备份/检查 → 更新 API、Worker、Admin+商城 H5 → 外网版本验收`
+`main push → CI verify → GHCR digest 镜像 → 短 SSH 发布指令 → 服务器拉取镜像 → 备份/检查 → 更新 API、Worker、Admin+商城 H5 → 外网版本验收`
 
 - 仅 `AUTO_DEPLOY_ENABLED=true` 时自动发布；当前仓库已开启。新环境或密钥轮换时重新执行下方一次性接入。
 - CI 包含真实 PostgreSQL/Redis、HTTP 兼容/权限测试、生产 Compose 校验和三镜像构建。本机无 Docker 不影响前置检查，但不能宣称本地容器已通过。
 - 固定使用通过 CI 且仍是 main 最新提交的完整 SHA；旧的排队版本不会主动覆盖新 main。
 - GitHub `production` 环境如设有审核规则，仍会等待审核；本流程不移除审批规则。
 - 镜像私有保存于 GHCR。接收器用本次 Actions 的短期 GITHUB_TOKEN 拉取；不在服务器永久保存个人 Token。
+- 日常发布不通过 SSH 发送镜像归档，旧 transport 变量不再选择该路径。只在人工灾备恢复时导出同一批原始镜像；详细门禁见统一生产手册。
 - 服务器保存当前环境、Compose、运行中镜像 ID 和数据库备份后更新三项应用；商城 H5 已打入 Admin 镜像并发布到 `/saidian-mall/`。不启动或重建原商城、旧库或其他应用。
 - 保持原有 MAINTENANCE_READ_ONLY；出现待执行/失败的数据库迁移时停止，不自动变更结构。
 - 已审 migration 仅能由 `Deploy production` 的手工运行显式启用 `apply_migrations`；工作流会先验证目标为当前 main 且该 SHA 已有成功 CI，再由发布脚本生成生产备份后应用。main 自动发布和安装包单独发布都不能启用该开关。

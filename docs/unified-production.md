@@ -2,7 +2,7 @@
 
 ## 发布结构
 
-`main → CI 检查 → API / Worker / Admin 各构建一次 → 实际镜像启动验收 → GHCR → digest 清单 → 受限 receiver → 数据验收`
+`main → CI 检查 → API / Worker / Admin 各构建一次 → 实际镜像启动验收 → GHCR → digest 清单 → 短 SSH 发布指令 → 服务器拉取镜像 → 数据验收`
 
 仓库为 `tangwu88/saydianserver`。生产使用原 `saydian-global` 数据库、Redis、对象存储和密钥；保留 Compose 项目、服务与卷的物理名称，避免误建空库。名称中的 `global` 不再选择账号系统。
 
@@ -18,15 +18,19 @@ CI 验收成功后上传 `release-<完整 SHA>`，包含三个镜像的 registry
 
 重试使用 `Deploy production`，填写同一最新 main SHA。它查找该提交成功的 CI `verify` job 并复用原 artifact。不要为了重试部署而重跑镜像构建任务。
 
-receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`。Actions 不取消正在执行的生产切换；服务器从 GHCR 拉取及 Actions 离线预装的总预算均为 60 分钟。拉取失败或提交过期时不重启应用。
+receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`。Actions 不取消正在执行的生产切换；服务器从 GHCR 拉取的总预算为 60 分钟。拉取失败或提交过期时不重启应用。SSH 只发送短期认证及小型发布配置，不传运行镜像、不编译源码。
 
 只允许 `deploy/compatible-migrations.json` 中逐份 SQL 校验值已审阅的新增迁移自动执行。任何历史 SQL 校验值变化、未完成迁移或未审核待执行迁移均阻止发布。Prisma 单独以已有数据库 owner 执行；应用始终用原 app 用户启动，不运行 seed。
 
 若 GHCR 网络失败，可使用 `Export runtime images` 导出同一 CI 清单的镜像，勾选 `upload_to_server` 后通过既有受限 receiver 分块传输。传输与发布共用锁；每块、完整压缩包、原清单及导入后的 image ID/revision 均验证，不重启应用。随后同 SHA 手动部署勾选 `offline_images`（首次切换仍需 `first_cutover`）。不能用重新构建的同名 tag 代替。
 
+无新增云权限的 HTTPS 恢复入口：先只导出原镜像（`upload_to_server=false`），记录 `runtime-images-<SHA>` 的 artifact ID；再次运行该 workflow，填 `existing_artifact_id` 并选择 `artifact_action=probe` 测速，或显式 `import` 下载和导入。SSH 只送小配置，服务器使用现有 job token 获取 HTTPS 短期地址，Token 不发给 CDN；整 ZIP 和内层归档全量校验后复用原导入门禁，不重启应用。共享锁、5 GiB 余量和 60 分钟预算不变；导入成功后才允许同 SHA 的 `offline_images=true` 部署。小样本测速不能代表全量导入完成。
+
 离线传输单块不超过 8 MiB，保留 receiver 的 10 MiB 上限；服务器需满足暂存包、镜像及额外 5 GiB 的容量门槛。成功导入后仅清理本次传输产生的包和分块，在 root-only `deploy/unified/offline/<SHA>/<archive hash>` 保留清单、校验值和导入记录。可从 GHCR 或原导出 artifact 重新取得镜像；原业务文件、数据库备份和旧镜像不自动清理。
 
-仓库变量 `PRODUCTION_IMAGE_TRANSPORT=ssh` 可让日常自动发布在 Actions 中拉取原 digest，经受限 receiver 预装后再执行同一部署脚本，预装总超时 60 分钟。使用 `ghcr` 时由服务器直接拉取，拉取总预算同为 60 分钟；非法取值停止发布。两种传输不改变构建产物、迁移/最新提交检查或首次切换门禁。尚未完成首次验收时保持 `AUTO_DEPLOY_ENABLED=false`。
+日常自动发布固定使用 GHCR，由服务器按原 digest 拉取所需镜像层；不再读取 `PRODUCTION_IMAGE_TRANSPORT` 变量，也不自动导出或发送镜像归档。离线恢复只允许人工运行 `Export runtime images`，再以同一 SHA 手动部署 `offline_images=true`；它不是日常更新路径。两种路径不改变构建产物、迁移/最新提交检查或首次切换门禁。尚未完成首次验收时保持 `AUTO_DEPLOY_ENABLED=false`。
+
+API/Worker 的依赖和编译代码独立成层；三个 CI 镜像采用独立 scope 的 GHA v2 缓存，继续各构建一次、验收同一产物。首次建立缓存、依赖或基础镜像升级仍可能传输大层；是否命中及实际增量必须看当次 CI/拉取证据，不保证每次都只传几 MiB。
 
 安装包与链接通过后台编辑和上传；旧 `package_only` 源码发布入口已删除，已有只读版本化安装包继续保留。
 
@@ -65,6 +69,6 @@ receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`�
 
 两库演练及停写后再次恢复各耗时约 5 秒；本次网关停写窗口约 66 秒（19:07:55–19:09:01 UTC）。全表摘要校验通过，原会员编号、凭据、业务记录、权限与供应商配置保持一致。原四项暂停/维护开关均恢复为 false；旧国内应用停止，旧数据基础设施不删除。该耗时只代表本次现场，不是未来发布时长保证。
 
-仓库已启用 `AUTO_DEPLOY_ENABLED=true`。2026-10-02 的部署实测显示，SSH 离线通道约 5 分钟只能传一个 8 MiB 分片，408 MiB 镜像归档无法在 60 分钟内完成；改回服务器直接从 GHCR 拉取原 digest，并将服务器拉取预算设为 60 分钟。日常修改仅推送 main；CI 成功后调用同一部署流程，不再勾选 `first_cutover`。每次发布必须同时核对 Actions、双地址线上 revision 和必要功能回归；首次切换 SHA 不代表永远最新版本。
+仓库已启用 `AUTO_DEPLOY_ENABLED=true`。2026-10-02 的部署实测显示，SSH 离线通道过慢，镜像归档无法在 60 分钟内完成；2026-10-03 检查发现变量又被设回 `ssh`，已改回 `ghcr`，本轮代码直接移除自动预装分支，防止再次误用。网络探针可达不等于真实镜像拉取验收；以本轮 Actions 与线上版本为准。日常修改仅推送 main；CI 成功后调用同一部署流程，不再勾选 `first_cutover`。每次发布必须同时核对 Actions、双地址线上 revision 和必要功能回归；首次切换 SHA 不代表永远最新版本。
 
 首次私有证据目录：`/opt/saydianapp-server/deploy/unified/backups/20261001T190742Z-ee2d7f860d60-14220`。详细验收与未验证项见本轮日志；真实 App 登录、支付及供应商联调需要对应客户端/渠道验收，不能由合成 CI 夹具替代。

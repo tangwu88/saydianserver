@@ -21,6 +21,8 @@ RUN pnpm --filter @saydian/app-contracts build \
 FROM node:24.8.0-alpine AS runtime
 WORKDIR /workspace/apps/worker
 ENV NODE_ENV=production
-COPY --from=build --chown=node:node /runtime/worker ./
+COPY --from=build --chown=node:node /runtime/worker/node_modules ./node_modules
+COPY --from=build --chown=node:node /runtime/worker/package.json ./package.json
+COPY --from=build --chown=node:node /runtime/worker/dist ./dist
 USER node
 CMD ["node", "dist/main.js"]

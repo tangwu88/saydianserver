@@ -12,6 +12,7 @@ import "../deploy/scripts/unified-deployment.test.mjs";
 import "../deploy/scripts/deploy-failure.test.mjs";
 import "../deploy/scripts/offline-image-transfer.test.mjs";
 import "../deploy/scripts/ci-registry-login.test.mjs";
+import "../deploy/scripts/runtime-artifact.test.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bash = process.env.SAYDIAN_BASH || (process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash");
@@ -64,25 +65,62 @@ test("HTTP fixture registers members only after test OTP verification", () => {
   assert.doesNotMatch(fixture, /const a = \(await request\(v2 \+ "\/auth\/register"/);
 });
 test("deployment shell syntax and receiver rejection", () => {
-  for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh", "configure-shared-gateway.sh"]) {
+  for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh", "configure-shared-gateway.sh", "send-runtime-artifact.sh", "receive-runtime-artifact.sh"]) {
     const result = run(bash, ["-n", `deploy/scripts/${script}`]);
     assert.equal(result.status, 0, result.output);
   }
   const denied = run(bash, ["deploy/scripts/ci-receiver.sh", "release ../not-a-sha"]);
   assert.notEqual(denied.status, 0);
   assert.match(denied.output, /Only release SHA or status/);
+  const receiver = fs.readFileSync(path.join(root, "deploy/scripts/ci-receiver.sh"), "utf8");
+  assert.match(receiver, /timeout --signal=TERM --kill-after=5s 600 head -c 10485761/);
 });
 
-test("offline image preloading allows the requested 60-minute transfer window", () => {
+test("automatic production deploy pulls registry images; offline recovery requires explicit dispatch", () => {
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/deploy-production.yml"), "utf8");
-  const step = workflow.match(/- name: Preload original images through constrained receiver([\s\S]*?)(?=\n      - name:)/)?.[1];
-  assert.ok(step, "offline image preload step exists");
-  assert.match(step, /timeout-minutes: 60/);
+  assert.doesNotMatch(workflow, /PRODUCTION_IMAGE_TRANSPORT|send-offline-images|export-runtime-images|setup-runtime-docker/);
+  assert.match(workflow, /OFFLINE_IMAGES: \$\{\{ inputs\.offline_images \}\}/);
+  assert.match(workflow, /if \[\[ "\$OFFLINE_IMAGES" == true \]\]; then\s*\[\[ "\$EVENT_NAME" == workflow_dispatch \]\]/);
+  assert.match(workflow, /cancel-in-progress: false/);
+  assert.match(workflow, /name: release-\$\{\{ needs\.resolve\.outputs\.revision \}\}/);
+  assert.match(workflow, /run-id: \$\{\{ needs\.resolve\.outputs\.build_run_id \}\}/);
+  const exportWorkflow = fs.readFileSync(path.join(root, ".github/workflows/export-runtime-images.yml"), "utf8");
+  assert.match(exportWorkflow, /timeout-minutes: 60/);
+});
+
+test("HTTPS probe and explicit import share the production lock but never restart apps", () => {
+  const workflow = fs.readFileSync(path.join(root, ".github/workflows/export-runtime-images.yml"), "utf8");
+  assert.match(workflow, /inputs\.existing_artifact_id != ''\) && 'saydianapp-production'/);
+  assert.match(workflow, /if: inputs\.existing_artifact_id == ''/);
+  assert.match(workflow, /default: probe/);
+  const receiver = fs.readFileSync(path.join(root, "deploy/scripts/receive-runtime-artifact.sh"), "utf8");
+  assert.match(receiver, /flock -n 9/);
+  assert.match(receiver, /--read-only/);
+  assert.match(receiver, /--cap-drop ALL/);
+  assert.doesNotMatch(receiver, /docker (pull|load|compose)|docker\.sock|deploy-unified/);
+  assert.match(receiver, /if \[\[ "\$action" == probe \]\]/);
+  assert.match(receiver, /verify-runtime-artifact\.py/);
+  assert.match(receiver, /receive-offline-images\.sh/);
 });
 
 test("production registry pulls allow the requested 60-minute transfer window", () => {
   const deploy = fs.readFileSync(path.join(root, "deploy/scripts/deploy-unified.sh"), "utf8");
   assert.match(deploy, /deadline=\$\(\(SECONDS \+ 3600\)\)/);
+});
+
+test("runtime code and dependencies use separate cached layers without another image build", () => {
+  const workflow = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  assert.equal((workflow.match(/uses: docker\/build-push-action/g) ?? []).length, 3);
+  for (const component of ["api", "worker", "admin"]) {
+    assert(workflow.includes(`cache-from: type=gha,scope=saydian-${component},version=2,timeout=3m`));
+    assert(workflow.includes(`cache-to: type=gha,scope=saydian-${component},version=2,mode=max,ignore-error=true,timeout=3m`));
+  }
+  for (const component of ["api", "worker"]) {
+    const dockerfile = fs.readFileSync(path.join(root, `docker/${component}.Dockerfile`), "utf8");
+    assert(dockerfile.includes(`/runtime/${component}/node_modules ./node_modules`));
+    assert(dockerfile.includes(`/runtime/${component}/dist ./dist`));
+    assert(!dockerfile.includes(`/runtime/${component} ./`));
+  }
 });
 
 test("shared gateway rebuild preserves the marked global routes and selected admin upstream", () => {

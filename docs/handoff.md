@@ -5,7 +5,7 @@
 统一服务端首次切换已验收，基线 `ee2d7f860d602b717a4230453b6fc8a77abba1da`；[CI](https://github.com/tangwu88/saydianserver/actions/runs/36909952400) 与[生产切换](https://github.com/tangwu88/saydianserver/actions/runs/36911336372)均成功。`/health/ready`、`/global/health/ready` 同时返回该 revision。后续文档提交也会发布，接手时须重新核对最新 main、Actions 和线上 revision。
 
 - 一个 main、一套原有账号数据库、一套 `/admin/` 后台；新旧 API 地址内部代理到同一服务，不要求旧 App 同时升级。容器名称中的 `global` 仅为保留物理资源名。
-- `AUTO_DEPLOY_ENABLED=true`，`PRODUCTION_IMAGE_TRANSPORT=ssh`。main 经完整 CI 后，三个原始 digest 镜像自动通过既有受限 receiver 部署；服务器不编译、不运行 seed。失败重试复用同一 SHA 的清单与镜像。
+- `AUTO_DEPLOY_ENABLED=true`。main 经完整 CI 后，受限 receiver 接收短发布指令，服务器从 GHCR 按原始 digest 拉取三个镜像；不编译、不运行 seed。日常自动路径不再读取旧 `PRODUCTION_IMAGE_TRANSPORT` 变量或通过 SSH 传输镜像归档。失败重试复用同一 SHA 的清单与镜像；离线导出仅作人工灾备恢复。
 - 两库新备份和四次隔离恢复均成功。切换快照保留 24 个会员、3,323 条健康记录、3 个设备绑定、28 笔订单、26 条支付意向及 1 个文件记录；全表摘要验证通过，未重建会员或恢复旧备份覆盖数据。
 - 原维护、业务停写、Worker 暂停、回调暂停四项值均为 false，已原样恢复。未启用供应商能力仍保持原状态。旧国内 API/Worker/Admin 已停止；旧库、Redis、对象存储、卷和备份均保留。
 - 生产私有验收记录为 `/opt/saydianapp-server/deploy/unified/accepted.json`，实际运行版本清单为同目录 `release-manifest.json`。含密钥的 compose、数据库和文件备份不得上传 Git 或聊天。
