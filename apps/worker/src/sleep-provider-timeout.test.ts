@@ -33,13 +33,13 @@ const content = {
     explanation: "基于测试记录的参考评价。",
   },
 };
-const result = (finish = "stop") =>
+const result = (finish = "stop", value: unknown = content) =>
   new Response(
     JSON.stringify({
       choices: [
         {
           finish_reason: finish,
-          message: { content: JSON.stringify(content) },
+          message: { content: JSON.stringify(value) },
         },
       ],
     }),
@@ -145,4 +145,159 @@ describe("sleep-only provider timeout and bounded retry", () => {
       delayMs: 120_000,
     });
   });
+});
+
+describe("sleep-only fixed-category content diagnostics", () => {
+  const sentinel = "SYNTHETIC_SECRET_MUST_NOT_LEAK";
+  it.each([
+    {
+      category: "response_json",
+      response: () => new Response(sentinel),
+    },
+    {
+      category: "empty_message",
+      response: () => new Response(JSON.stringify({ choices: [] })),
+    },
+    {
+      category: "content_json",
+      response: () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: sentinel } }],
+          }),
+        ),
+    },
+    {
+      category: "unavailable_metric",
+      response: () =>
+        result("stop", {
+          ...content,
+          trends: [{ metric: sentinel, text: sentinel }],
+        }),
+    },
+    {
+      category: "missing_evidence",
+      response: () => result(),
+      evidence: { byMetric: [] },
+    },
+    {
+      category: "content_shape",
+      response: () => result("stop", { ...content, overview: "" }),
+    },
+    {
+      category: "sleep_score_shape",
+      response: () =>
+        result("stop", {
+          ...content,
+          sleepScore: { ...content.sleepScore, value: 101 },
+        }),
+    },
+    {
+      category: "wellness_policy",
+      response: () =>
+        result("stop", { ...content, overview: `确诊 ${sentinel}` }),
+    },
+    {
+      category: "wellness_policy",
+      response: () =>
+        result("stop", {
+          ...content,
+          sleepScore: {
+            ...content.sleepScore,
+            explanation: `医疗级 ${sentinel}`,
+          },
+        }),
+    },
+    {
+      category: "provider_response",
+      response: () => {
+        throw new Error(sentinel);
+      },
+    },
+  ])("logs only the fixed $category category", async (fixture) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => fixture.response()),
+    );
+    await expect(
+      callAiProvider(
+        metrics,
+        fixture.evidence ?? evidence,
+        period,
+        settings,
+        true,
+      ),
+    ).rejects.toMatchObject({
+      code: "invalid_content",
+      message: "sleep_ai:invalid_content",
+    });
+    expect(warn.mock.calls).toEqual([
+      ["sleep_ai_content_rejected", fixture.category],
+    ]);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(sentinel);
+  });
+
+  it("does not log accepted sleep content or shared Health validation failures", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => result()),
+    );
+    await callAiProvider(metrics, evidence, period, settings, true);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => result("stop", { ...content, overview: "" })),
+    );
+    await expect(
+      callAiProvider(metrics, evidence, period, settings, false),
+    ).rejects.toThrow("AI report content is incomplete");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("uses a fixed fallback for unknown validation errors without their message", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => result()),
+    );
+    await expect(
+      callAiProvider(
+        metrics,
+        {
+          get byMetric() {
+            throw new Error(sentinel);
+          },
+        },
+        period,
+        settings,
+        true,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_content" });
+    expect(warn.mock.calls).toEqual([
+      ["sleep_ai_content_rejected", "validation_unknown"],
+    ]);
+  });
+
+  it.each(["truncated", "timeout", "network", "provider_busy"])(
+    "keeps %s out of content rejection diagnostics",
+    async (code) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          if (code === "timeout")
+            throw new DOMException(sentinel, "TimeoutError");
+          if (code === "network") throw new TypeError(sentinel);
+          return code === "truncated"
+            ? result("length")
+            : new Response(sentinel, { status: 503 });
+        }),
+      );
+      await expect(
+        callAiProvider(metrics, evidence, period, settings, true),
+      ).rejects.toMatchObject({ code });
+      expect(warn).not.toHaveBeenCalled();
+    },
+  );
 });
