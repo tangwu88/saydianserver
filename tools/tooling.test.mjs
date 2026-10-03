@@ -12,7 +12,7 @@ import "../deploy/scripts/unified-deployment.test.mjs";
 import "../deploy/scripts/deploy-failure.test.mjs";
 import "../deploy/scripts/offline-image-transfer.test.mjs";
 import "../deploy/scripts/ci-registry-login.test.mjs";
-import "../deploy/scripts/probe-runtime-artifact.test.mjs";
+import "../deploy/scripts/runtime-artifact.test.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bash = process.env.SAYDIAN_BASH || (process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash");
@@ -65,7 +65,7 @@ test("HTTP fixture registers members only after test OTP verification", () => {
   assert.doesNotMatch(fixture, /const a = \(await request\(v2 \+ "\/auth\/register"/);
 });
 test("deployment shell syntax and receiver rejection", () => {
-  for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh", "configure-shared-gateway.sh", "send-artifact-probe.sh", "receive-artifact-probe.sh"]) {
+  for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh", "configure-shared-gateway.sh", "send-runtime-artifact.sh", "receive-runtime-artifact.sh"]) {
     const result = run(bash, ["-n", `deploy/scripts/${script}`]);
     assert.equal(result.status, 0, result.output);
   }
@@ -88,21 +88,39 @@ test("automatic production deploy pulls registry images; offline recovery requir
   assert.match(exportWorkflow, /timeout-minutes: 60/);
 });
 
-test("HTTPS artifact probe shares the production lock but cannot import or restart apps", () => {
+test("HTTPS probe and explicit import share the production lock but never restart apps", () => {
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/export-runtime-images.yml"), "utf8");
-  assert.match(workflow, /inputs\.probe_artifact_id != ''\) && 'saydianapp-production'/);
-  assert.match(workflow, /if: inputs\.probe_artifact_id == ''/);
-  assert.match(workflow, /timeout-minutes: 5/);
-  const receiver = fs.readFileSync(path.join(root, "deploy/scripts/receive-artifact-probe.sh"), "utf8");
+  assert.match(workflow, /inputs\.existing_artifact_id != ''\) && 'saydianapp-production'/);
+  assert.match(workflow, /if: inputs\.existing_artifact_id == ''/);
+  assert.match(workflow, /default: probe/);
+  const receiver = fs.readFileSync(path.join(root, "deploy/scripts/receive-runtime-artifact.sh"), "utf8");
   assert.match(receiver, /flock -n 9/);
   assert.match(receiver, /--read-only/);
   assert.match(receiver, /--cap-drop ALL/);
   assert.doesNotMatch(receiver, /docker (pull|load|compose)|docker\.sock|deploy-unified/);
+  assert.match(receiver, /if \[\[ "\$action" == probe \]\]/);
+  assert.match(receiver, /verify-runtime-artifact\.py/);
+  assert.match(receiver, /receive-offline-images\.sh/);
 });
 
 test("production registry pulls allow the requested 60-minute transfer window", () => {
   const deploy = fs.readFileSync(path.join(root, "deploy/scripts/deploy-unified.sh"), "utf8");
   assert.match(deploy, /deadline=\$\(\(SECONDS \+ 3600\)\)/);
+});
+
+test("runtime code and dependencies use separate cached layers without another image build", () => {
+  const workflow = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  assert.equal((workflow.match(/uses: docker\/build-push-action/g) ?? []).length, 3);
+  for (const component of ["api", "worker", "admin"]) {
+    assert(workflow.includes(`cache-from: type=gha,scope=saydian-${component},version=2,timeout=3m`));
+    assert(workflow.includes(`cache-to: type=gha,scope=saydian-${component},version=2,mode=max,ignore-error=true,timeout=3m`));
+  }
+  for (const component of ["api", "worker"]) {
+    const dockerfile = fs.readFileSync(path.join(root, `docker/${component}.Dockerfile`), "utf8");
+    assert(dockerfile.includes(`/runtime/${component}/node_modules ./node_modules`));
+    assert(dockerfile.includes(`/runtime/${component}/dist ./dist`));
+    assert(!dockerfile.includes(`/runtime/${component} ./`));
+  }
 });
 
 test("shared gateway rebuild preserves the marked global routes and selected admin upstream", () => {

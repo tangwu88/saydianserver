@@ -36,7 +36,15 @@
 - 探针复用生产并发组和实际共享锁；验证原 CI、main、发布清单、产物名称/有效期/哈希格式、HTTPS 存储域名、精确范围和大小。GitHub token 不转发给签名下载 URL，输出只含样本吞吐与样本哈希，不能冒充全文件校验或部署成功。
 - 新增无网络单测覆盖异常元数据、过期、错误哈希、恶意重定向、凭据转发、错误范围、过小/过大响应及请求取消。实际吞吐、全量下载和部署仍未验收；不因探针存在自动切换到归档路径。
 - 新探针修改后，串行接口文档检查（374）、工具测试（44 + 61 + 38）、类型、全量测试、构建、global 部署检查（12）和 `git diff --check` 均退出 0；保留既有 Sass/chunk 警告。共享锁实际探测为 0，三个生产容器均运行原 revision；根盘可用 26 GB。未安装本轮新版 root receiver。
+- HTTPS 探针 `37136424766` 成功：8,388,608 字节 / 55.087 秒，0.145 MiB/s，imported=false。没有使用这个样本哈希替代完整 ZIP 校验；约 349 MiB 归档按此速率估算仍需约 40 分钟，因此不设为日常自动默认。
+- 只读检查现有 API：dist 约 2,940 KiB，node_modules 452,476 KiB。原 Dockerfile 整包 COPY 让代码与依赖处于同一层；改为独立依赖、package.json、Prisma 与 dist 层，Worker 同理。三个镜像使用各自 GitHub Actions cache v2 scope，现有 job token 自动认证，不加 Secret/IAM；缓存导出失败不作为镜像验收成功依据。
+- 拆层后的实际镜像启动、缓存命中及两次发布之间增量字节仍需 CI 和上线验证；不承诺镜像总大小已变小，不额外构建同一提交的第二套生产镜像。
+- 拆层修改后的本地全量检查均通过。新增手工 HTTPS 恢复模式，与探针共用下载模块和短 SSH 入口；8 路 bounded Range、每范围更新短期签名 URL、60 分钟下载总上限。整 ZIP 大小/哈希、精确三文件 allowlist、原清单逐字节、内层 gzip 哈希通过后，复用已演练的离线分块导入器，验证每块和三个 OCI ID/revision；不启动应用、不改数据库。
+- HTTPS 恢复保留 5 GiB 余量及原清单磁盘门槛，不将 Token 发给 CDN 或落盘，不下载或运行外来脚本。Python 初测发现本机版本没有 hashlib.file_digest，改为兼容的流式 SHA-256；暂存 ZIP 的提取限制支持 GitHub level-0 DEFLATE，不按任意 ZIP 路径解压。完整生产下载/导入仍未验收。
+- 恢复流程发现三个原 OCI ID/revision 已存在时直接复核后退出，避免重复下载。下载容器最多 55 分钟，为 60 分钟 Actions job 留出归档校验与导入时间；成功后只删除本次生成的下载副本，保留清单和导入证据，失败不操作生产服务。
+- 最新串行本地接口文档、工具（46 + 61 + 38）、Python ZIP 检查（3）、类型、全量测试、构建、global 检查（12）均通过；API 实库专项本地 7 项跳过，交由 CI 验证。新版 Docker/恢复脚本的 PR CI 与完整服务器流程仍待验收。
 
 ## 官方依据
 
 - [GitHub 官方镜像发布流程](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)：构建并推送仓库；本项目继续先验收原镜像再发布，部署不构建第二次。
+- [Docker 官方 GHA 缓存](https://docs.docker.com/build/cache/backends/gha/)：每个镜像独立 scope，复用 Actions 自带认证；这里只优化现有三次构建，不新增仓库或云权限。

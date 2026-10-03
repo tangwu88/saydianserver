@@ -23,7 +23,10 @@ RUN apk add --no-cache font-noto-cjk
 RUN mkdir -p /var/lib/saydian/say-ring-avatars \
  && chown node:node /var/lib/saydian/say-ring-avatars \
  && chmod 0700 /var/lib/saydian/say-ring-avatars
-COPY --from=build --chown=node:node /runtime/api ./
+COPY --from=build --chown=node:node /runtime/api/node_modules ./node_modules
+COPY --from=build --chown=node:node /runtime/api/package.json ./package.json
+COPY --from=build --chown=node:node /runtime/api/prisma ./prisma
+COPY --from=build --chown=node:node /runtime/api/dist ./dist
 USER node
 EXPOSE 8080
 CMD ["node", "dist/main.js"]

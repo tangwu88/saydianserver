@@ -24,9 +24,13 @@ receiver 与首次切换共用 `/opt/saydianapp-server/deploy/.ci-release.lock`�
 
 若 GHCR 网络失败，可使用 `Export runtime images` 导出同一 CI 清单的镜像，勾选 `upload_to_server` 后通过既有受限 receiver 分块传输。传输与发布共用锁；每块、完整压缩包、原清单及导入后的 image ID/revision 均验证，不重启应用。随后同 SHA 手动部署勾选 `offline_images`（首次切换仍需 `first_cutover`）。不能用重新构建的同名 tag 代替。
 
+无新增云权限的 HTTPS 恢复入口：先只导出原镜像（`upload_to_server=false`），记录 `runtime-images-<SHA>` 的 artifact ID；再次运行该 workflow，填 `existing_artifact_id` 并选择 `artifact_action=probe` 测速，或显式 `import` 下载和导入。SSH 只送小配置，服务器使用现有 job token 获取 HTTPS 短期地址，Token 不发给 CDN；整 ZIP 和内层归档全量校验后复用原导入门禁，不重启应用。共享锁、5 GiB 余量和 60 分钟预算不变；导入成功后才允许同 SHA 的 `offline_images=true` 部署。小样本测速不能代表全量导入完成。
+
 离线传输单块不超过 8 MiB，保留 receiver 的 10 MiB 上限；服务器需满足暂存包、镜像及额外 5 GiB 的容量门槛。成功导入后仅清理本次传输产生的包和分块，在 root-only `deploy/unified/offline/<SHA>/<archive hash>` 保留清单、校验值和导入记录。可从 GHCR 或原导出 artifact 重新取得镜像；原业务文件、数据库备份和旧镜像不自动清理。
 
 日常自动发布固定使用 GHCR，由服务器按原 digest 拉取所需镜像层；不再读取 `PRODUCTION_IMAGE_TRANSPORT` 变量，也不自动导出或发送镜像归档。离线恢复只允许人工运行 `Export runtime images`，再以同一 SHA 手动部署 `offline_images=true`；它不是日常更新路径。两种路径不改变构建产物、迁移/最新提交检查或首次切换门禁。尚未完成首次验收时保持 `AUTO_DEPLOY_ENABLED=false`。
+
+API/Worker 的依赖和编译代码独立成层；三个 CI 镜像采用独立 scope 的 GHA v2 缓存，继续各构建一次、验收同一产物。首次建立缓存、依赖或基础镜像升级仍可能传输大层；是否命中及实际增量必须看当次 CI/拉取证据，不保证每次都只传几 MiB。
 
 安装包与链接通过后台编辑和上传；旧 `package_only` 源码发布入口已删除，已有只读版本化安装包继续保留。
 
