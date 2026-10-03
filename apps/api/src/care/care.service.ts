@@ -238,17 +238,10 @@ export class CareService {
     return this.contract(updated, []);
   }
 
-  async preview(
-    viewerId: string,
-    relationshipId: string,
-    metricInput: string,
-    fromInput?: string,
-    toInput?: string,
-    requestId = "unknown",
-    page?: number,
+  async authorizedSubject(
+    viewerId: string, relationshipId: string,
+    metric: PrismaHealthMetric, requestId = "unknown",
   ) {
-    const metric = metricMap[metricInput as HealthMetric];
-    if (!metric) throw new BadRequestException("健康指标不正确");
     const relationship = await this.prisma.careRelationship.findUnique({
       where: { id: relationshipId },
       include: { permissions: true },
@@ -280,6 +273,42 @@ export class CareService {
     if (!allowed || !relationship) {
       throw new ForbiddenException("对方尚未授权查看这项健康数据");
     }
+    return relationship.recipientId;
+  }
+
+  async summary(viewerId: string, relationshipId: string, requestId = "unknown") {
+    const relationship = await this.prisma.careRelationship.findUnique({
+      where: { id: relationshipId }, include: { permissions: true },
+    });
+    if (!relationship || relationship.inviterId !== viewerId ||
+        relationship.status !== CareStatus.ACTIVE ||
+        (relationship.expiresAt && relationship.expiresAt <= new Date())) {
+      throw new ForbiddenException("对方尚未授权查看健康数据");
+    }
+    const metrics = relationship.permissions.filter(p => p.enabled &&
+      (!p.expiresAt || p.expiresAt > new Date())).map(p => metricReverse[p.metric]);
+    const records = [];
+    for (const metric of metrics) {
+      const rows = await this.preview(viewerId, relationshipId, metric,
+        undefined, undefined, requestId, 1);
+      if (rows[0]) records.push(rows[0]);
+    }
+    return { metrics, records };
+  }
+
+  async preview(
+    viewerId: string,
+    relationshipId: string,
+    metricInput: string,
+    fromInput?: string,
+    toInput?: string,
+    requestId = "unknown",
+    page?: number,
+  ) {
+    const metric = metricMap[metricInput as HealthMetric];
+    if (!metric) throw new BadRequestException("健康指标不正确");
+    const subjectUserId = await this.authorizedSubject(viewerId, relationshipId, metric, requestId);
+    const now = new Date();
     const from = fromInput
       ? new Date(fromInput)
       : page
@@ -295,7 +324,7 @@ export class CareService {
     }
     const records = await this.prisma.healthRecord.findMany({
       where: {
-        userId: relationship.recipientId,
+        userId: subjectUserId,
         metric,
         // A historical summary belongs to aggregationLocalDate even when it
         // was read from the watch and uploaded much later.
@@ -304,6 +333,7 @@ export class CareService {
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
       skip: page ? (page - 1) * 30 : 0,
       take: page ? 30 : 20_001,
+      include: { ecgArtifact: true },
     });
     if (records.length > 20_000)
       throw new BadRequestException("记录较多，请缩小查询时间范围");
@@ -315,6 +345,11 @@ export class CareService {
       values: record.values,
       unit: record.unit,
       quality: record.quality.toLowerCase(),
+      ecgArtifact: record.ecgArtifact ? {
+        sampleRateHz: record.ecgArtifact.sampleRateHz,
+        sampleCount: record.ecgArtifact.sampleCount,
+        sha256: record.ecgArtifact.sha256,
+      } : null,
       ...(healthAggregationContract(record)
         ? { aggregation: healthAggregationContract(record) }
         : {}),

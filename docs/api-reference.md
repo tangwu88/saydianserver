@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **374 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **377 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -163,7 +163,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（121）
+## V2 App 接口（124）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -194,6 +194,8 @@
 | `POST /api/saydian-app/v2/billing/payments/wechat/app/notify` | App 微信支付验签通知 | public | header:*；微信支付V3原始JSON及Wechatpay签名头；仅接受绑定 wechat_pay_app 的支付单 | 微信要求的SUCCESS响应；事件幂等 | App 微信支付V3 |
 | `POST /api/saydian-app/v2/billing/payments/alipay/notify` | 支付宝验签通知 | public | 支付宝form通知字段 | 支付宝要求的success文本；事件幂等 | 支付宝开放平台 |
 | `POST /api/saydian-app/v2/billing/payments/alipay/app/notify` | App 支付宝验签通知 | public | 支付宝form通知字段；仅接受绑定 alipay_app 的支付单 | 支付宝要求的success文本；事件幂等 | App 支付宝 |
+| `GET /api/saydian-app/v2/care/relationships/:id/summary` | 成员健康概览 | member | path:id；id=生效关爱关系UUID | {metrics,records}；仅有效授权指标的最新记录；关系或权限失效403；读取审计 | 核心服务 |
+| `GET /api/saydian-app/v2/care/relationships/:id/health/:recordId/ecg` | 读取授权成员私有心电波形 | member | path:id，path:recordId；id=生效关爱关系UUID；recordId=数据所属成员clientRecordId | gzip JSON数值数组；每次复核关系、ECG权限和记录归属；响应头x-content-sha256、x-ecg-sample-rate、x-ecg-sample-count；失权403 | 私有文件存储 |
 | `GET /api/saydian-app/v2/care/relationships` | 关爱关系列表 | member | 无请求体 | CareRelationship[]，含 direction、双方昵称、授权指标 | 核心服务 |
 | `POST /api/saydian-app/v2/care/invitations` | 邀请查看对方健康数据 | member | 国内{mobile}；国际{identifier:email/E.164}；仅同部署账号域；不能自邀；已生效返回 409 | CareRelationship；UUID；逐指标授权不变 | 核心服务 |
 | `POST /api/saydian-app/v2/care/relationships/:id/respond` | 接受或拒绝邀请 | member | path:id；id=关系 UUID；{accepted:boolean}；仅收件人可操作 | CareRelationship；接受后仍需逐指标授权 | 核心服务 |
@@ -245,6 +247,7 @@
 | `POST /api/saydian-app/v2/devices` | 上报设备连接 | member | {deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?}；macAddress仅接受标准 MAC，iOS UUID 不可冒充 | Device；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 \| 字段=值` 字符串；不是服务端蓝牙连接 | 核心服务 |
 | `PATCH /api/saydian-app/v2/devices/:id/capabilities` | 更新设备能力及游标 | member | path:id；{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID | Device | 核心服务 |
 | `DELETE /api/saydian-app/v2/devices/:id` | 解绑设备 | member | path:id；id=绑定记录 UUID | {unbound:true}；保留历史健康数据 | 核心服务 |
+| `GET /api/saydian-app/v2/health/records/:recordId/ecg` | 读取本人私有心电波形 | member | path:recordId；recordId=本人clientRecordId | gzip JSON数值数组；响应头x-content-sha256、x-ecg-sample-rate、x-ecg-sample-count；无公开存储地址；不存在404 | 私有文件存储 |
 | `GET /api/saydian-app/v2/health/capabilities` | 健康同步能力 | member | 无请求体 | {dailySummaryVersions:true,dailySummaryVersion:1}；只表示服务端支持日汇总版本折叠，与普通设备能力无关 | 核心服务 |
 | `POST /api/saydian-app/v2/health/records/batch` | 健康批量同步 | member | header:idempotency-key；HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
 | `GET /api/saydian-app/v2/health/records` | 本人健康历史 | member | query:metric?，query:limit?，query:before?；metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间 | {items,nextCursor}；逐条记录保持原样；同会员/指标/设备/本地日期的日汇总只返回最新版本并回显aggregation | 核心服务 |
