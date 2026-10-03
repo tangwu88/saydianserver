@@ -1379,7 +1379,7 @@ describe("administrator commerce and service editor improvements", () => {
       replyContent: "已为您核对订单，请重试",
     });
     expect(h.api.get).toHaveBeenCalledWith("/feedback", { params: {} });
-    expect(h.messages.success).toHaveBeenCalledWith("回复已保存，会员可在客服中心查看");
+    expect(h.messages.success).toHaveBeenCalledWith("回复已保存，会员可在 App 通知中心和客服中心查看");
     expect(h.feedbackVisible.value).toBe(false);
   });
 
@@ -1392,6 +1392,35 @@ describe("administrator commerce and service editor improvements", () => {
     const sfc = readFileSync(new URL("./views/ResourceView.vue", import.meta.url), "utf8");
     expect(sfc).toContain('<ContentImageField v-model="form.coverUrl"');
     expect(sfc.match(/<RichTextEditor v-model="form\.contentHtml"/g)).toHaveLength(2);
-    expect(sfc).toContain("填写后，会员可在 H5 客服中心查看回复");
+    expect(sfc).toContain("保存后发送 App 站内通知，会员也可在客服中心查看回复");
+  });
+});
+
+describe("admin account editor validation", () => {
+  it("shows the actual password rule and rejects a short initial password before requesting creation", async () => {
+    const h = harness(["SUPER_ADMIN"], "请求失败，请稍后重试");
+    h.route.params.resource = "admin-users";
+    await h.openCreate();
+    Object.assign(h.form.value, { username: "support.test", displayName: "测试客服", password: "12345678" });
+    await h.save();
+    expect(h.api.post).not.toHaveBeenCalled();
+    expect(h.messages.error).toHaveBeenCalledWith("初始密码至少需要12位");
+    expect(h.dialogVisible.value).toBe(true);
+    expect(h.sfc).toContain('placeholder="至少12位"');
+  });
+  it("trims account identifiers, includes selected roles/active and prevents a duplicate in-flight submission", async () => {
+    const h = harness();
+    h.route.params.resource = "admin-users";
+    await h.openCreate();
+    Object.assign(h.form.value, { username: " support.test ", displayName: " 测试客服 ", password: "synthetic-password-12", roles: ["CUSTOMER_SERVICE"], active: false });
+    const pending = deferred<any>();
+    h.api.post.mockImplementationOnce(() => pending.promise);
+    const saving = h.save();
+    await h.save();
+    expect(h.api.post).toHaveBeenCalledOnce();
+    expect(h.api.post).toHaveBeenCalledWith("/admin-users", { username: "support.test", displayName: "测试客服", password: "synthetic-password-12", roles: ["CUSTOMER_SERVICE"], active: false });
+    pending.resolve({});
+    await saving;
+    expect(h.dialogVisible.value).toBe(false);
   });
 });

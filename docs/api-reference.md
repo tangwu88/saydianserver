@@ -316,7 +316,7 @@
 | `GET /api/saydian-app/admin/v1/devices/:id/connections` | 设备连接详情 | admin | path:id；id=设备绑定 UUID | 当前设备快照与最新200条成功连接上报；设备标识由会员范围的单向哈希生成；每条新记录含以 ` \| ` 分隔的完整请求体字符串，不含请求头或登录令牌；历史从本功能上线后开始 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/devices/:id/measurements` | 授权查看指定设备的测量记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:reason?，query:page?，query:pageSize?；page默认1；pageSize默认50最大100；HEALTH_AUDITOR需提供5至300字业务原因，SUPER_ADMIN可免填 | 返回该设备绑定或会员范围设备指纹关联的健康记录，含测量值和实际上报的设备标识、型号、类型及来源，并返回total/page/pageSize；每页读取均审计操作者、原因和记录数；哈希设备标识不还原MAC | 核心服务 |
 | `GET /api/saydian-app/admin/v1/feedback` | 反馈工单 | admin | query:status?；status=OPEN/IN_PROGRESS/RESOLVED/CLOSED，可选 | 最多500条；含会员编号、昵称、问题内容、处理状态以及已发送给会员的客服回复 | 核心服务 |
-| `PATCH /api/saydian-app/admin/v1/feedback/:id` | 更新反馈状态并回复会员 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；{status,assignedTo?,replyContent?:2–2000字}；回复内容非空时记录当前管理员和回复时间 | 反馈记录；会员端只可读取自己的反馈及回复，不返回后台管理员身份 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/feedback/:id` | 更新反馈状态并回复会员 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；{status,assignedTo?,replyContent?:2–2000字}；新回复原子保存处理人、时间、会员站内通知和推送任务；相同回复不重复发送 | 反馈记录；会员可在 App 通知中心或客服中心读取自己的回复；系统推送不含回复正文并尊重事务通知设置 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/articles` | 后台文章含草稿 | admin | 无请求体 | 最多500条，含分类 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/article-categories` | 后台文章分类 | admin | 无请求体 | 分类数组；国际版含固定数字字符串categoryNo（如12），id/parentId仍为UUID，编号不随排序变化 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/article-categories` | 新增分类 | admin: SUPER_ADMIN, CONTENT_EDITOR | {name,parentId?,sort?,enabled?}；parentId 使用分类 UUID | 分类记录；国际版含只读categoryNo，数据库自动分配，不接收客户端自选号 | 核心服务 |
@@ -332,7 +332,7 @@
 | `POST /api/saydian-app/admin/v1/legal-documents` | 新增协议版本 | admin: SUPER_ADMIN, CONTENT_EDITOR | {documentType,version,title,contentHtml,active,publishedAt?}；同类型仅一个激活版本 | LegalDocument | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/legal-documents/:id` | 编辑协议版本 | admin: SUPER_ADMIN, CONTENT_EDITOR | path:id；{documentType,version,title,contentHtml,active,publishedAt?}；同类型仅一个激活版本 | LegalDocument | 核心服务 |
 | `GET /api/saydian-app/admin/v1/admin-users` | 后台账号列表 | admin: SUPER_ADMIN | 无请求体 | 账号、角色、状态，不返回密码散列 | 核心服务 |
-| `POST /api/saydian-app/admin/v1/admin-users` | 新建后台账号 | admin: SUPER_ADMIN | {username,displayName,password:至少12字符,role}；角色见调用手册 | 无密码账号信息 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/admin-users` | 新建后台账号 | admin: SUPER_ADMIN | {username:3–50位字母数字_.-,displayName:1–50字,password:至少12字符,roles?,role?,active?}；角色见调用手册；至少一角色，默认只读 | 无密码账号信息；400 返回字段校验 errorKey，409 admin_username_exists 表示账号重复 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/admin-users/:id` | 编辑后台账号 | admin: SUPER_ADMIN | path:id；{displayName?,role?,active?}；当前不支持修改密码 | 无密码账号信息 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/account-deletions` | 注销任务列表 | admin: SUPER_ADMIN, CUSTOMER_SERVICE | 无请求体 | 注销任务及遮蔽会员资料；非手动执行删除接口 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/settings` | 客服、更新与 Say Ring 显示设置 | admin | 无请求体 | 按当前部署返回客服/更新设置，含独立say_ring_app_display显示开关 | 核心服务 |

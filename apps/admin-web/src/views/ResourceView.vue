@@ -855,6 +855,7 @@ async function deleteCommerceProduct(row: Row): Promise<void> {
 }
 
 async function save(): Promise<void> {
+  if (saving.value) return;
   if (needsArticleCategories.value && (!articleCategoriesReady.value || articleCategoryEditorResource.value !== resource.value)) {
     ElMessage.error("请重新打开编辑窗口，等待分类加载成功后保存");
     return;
@@ -872,6 +873,14 @@ async function save(): Promise<void> {
     const id = String(form.value.id ?? "");
     if (resource.value === "commerce-coupons") validateCouponPeriod(form.value);
     let payload: Row = payloadForResource(resource.value, form.value);
+    if (resource.value === "admin-users") {
+      payload.username = String(form.value.username ?? "").trim();
+      payload.displayName = String(form.value.displayName ?? "").trim();
+      if (!id && !/^[a-zA-Z0-9_.-]{3,50}$/.test(payload.username)) throw new Error("账号需为3至50位字母、数字、下划线、点或短横线");
+      if (!payload.displayName || payload.displayName.length > 50) throw new Error("显示名称需为1至50个字");
+      if (!Array.isArray(payload.roles) || !payload.roles.length) throw new Error("至少选择一个后台角色");
+      if (!id && String(payload.password ?? "").length < 12) throw new Error("初始密码至少需要12位");
+    }
     if (resource.value === "legal-documents" && form.value.active === true) {
       await ElMessageBox.confirm(
         `确认启用 ${form.value.legalProduct === "say-ring" ? "Say Ring" : "Saydian Health"} 的「${legalDocumentTypeLabel(form.value.documentType)}」${form.value.version ? `（${form.value.version}）` : ""}？只有此 App 会读取该文档。`,
@@ -1045,6 +1054,7 @@ async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event
 function payloadForResource(current: string, source: Row): Row {
   if (current === "legal-documents") return legalDocumentPayload(source as any);
   const fields: Record<string, string[]> = {
+    "admin-users": ["username", "displayName", "password", "roles", "active"],
     articles: ["title", "summary", "categoryId", "coverUrl", "contentHtml", "status", "locale", "publishedAt"],
     "article-categories": ["name", "parentId", "locale", "sort", "enabled"],
     "commerce-products": ["displayName", "subtitle", "brand", "categoryId", "coverImage", "detailHtml", "status", "featured", "sort", "localArchived"],
@@ -1131,7 +1141,7 @@ async function saveFeedback(): Promise<void> {
       status: feedbackForm.value.status,
       ...(replyContent ? { replyContent } : {}),
     });
-    ElMessage.success(replyContent ? "回复已保存，会员可在客服中心查看" : "反馈状态已更新");
+    ElMessage.success(replyContent ? "回复已保存，会员可在 App 通知中心和客服中心查看" : "反馈状态已更新");
     feedbackVisible.value = false;
     await load();
   } catch (error) {
@@ -1557,7 +1567,7 @@ onBeforeUnmount(() => {
         <el-form-item label="处理状态"
           ><el-select v-model="feedbackForm.status" style="width: 100%"><el-option label="待处理" value="OPEN" /><el-option label="处理中" value="IN_PROGRESS" /><el-option label="已解决" value="RESOLVED" /><el-option label="已关闭" value="CLOSED" /></el-select
         ></el-form-item>
-        <el-form-item label="回复会员"><el-input v-model="feedbackForm.replyContent" type="textarea" :rows="6" maxlength="2000" show-word-limit placeholder="填写后，会员可在 H5 客服中心查看回复" /></el-form-item>
+        <el-form-item label="回复会员"><el-input v-model="feedbackForm.replyContent" type="textarea" :rows="6" maxlength="2000" show-word-limit placeholder="保存后发送 App 站内通知，会员也可在客服中心查看回复" /></el-form-item>
       </el-form>
       <template #footer><el-button :disabled="feedbackSaving" @click="feedbackVisible = false">关闭</el-button><el-button type="primary" :loading="feedbackSaving" @click="saveFeedback">保存处理结果</el-button></template>
     </el-dialog>
@@ -1983,9 +1993,9 @@ onBeforeUnmount(() => {
           <el-form-item v-else label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="12" /></el-form-item>
         </template>
         <template v-else-if="resource === 'admin-users'">
-          <el-form-item label="账号"><el-input v-model="form.username" :disabled="Boolean(form.id)" /></el-form-item>
-          <el-form-item label="显示名称"><el-input v-model="form.displayName" /></el-form-item>
-          <el-form-item v-if="!form.id" label="初始密码"><el-input v-model="form.password" type="password" show-password /></el-form-item>
+          <el-form-item label="账号" required><el-input v-model="form.username" :disabled="Boolean(form.id)" maxlength="50" placeholder="3至50位字母、数字、下划线、点或短横线" /></el-form-item>
+          <el-form-item label="显示名称" required><el-input v-model="form.displayName" maxlength="50" /></el-form-item>
+          <el-form-item v-if="!form.id" label="初始密码" required><el-input v-model="form.password" type="password" show-password autocomplete="new-password" placeholder="至少12位" /></el-form-item>
           <el-form-item label="角色"
             ><el-select v-model="form.roles" multiple><el-option label="超级管理员" value="SUPER_ADMIN" /><el-option label="App 运营" value="APP_OPERATIONS" /><el-option label="商城运营" value="COMMERCE_OPERATIONS" /><el-option label="财务" value="FINANCE" /><el-option label="内容编辑" value="CONTENT_EDITOR" /><el-option label="客服" value="CUSTOMER_SERVICE" /><el-option label="健康数据审计员" value="HEALTH_AUDITOR" /><el-option label="集成管理员" value="INTEGRATION_ADMIN" /><el-option label="接口文档编辑" value="API_DOC_EDITOR" /><el-option label="只读" value="READ_ONLY" /></el-select
           ></el-form-item>

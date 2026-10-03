@@ -188,6 +188,10 @@ export class OutboxWorker {
     const payload = asObject(event.payload);
     const userId = String(payload.userId ?? "");
     if (!userId) throw new Error("Outbox event has no target user");
+    if (event.aggregateType === "feedback" && event.eventType === "system") {
+      const preference = await this.prisma.userNotificationPreference.findUnique({ where: { userId } });
+      if (preference?.transactionalEnabled === false) return;
+    }
     const installations = await this.prisma.pushInstallation.findMany({
       where: { userId, enabled: true },
     });

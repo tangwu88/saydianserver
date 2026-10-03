@@ -832,8 +832,8 @@
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "更新反馈状态并回复会员",
-      "request": "{status,assignedTo?,replyContent?:2–2000字}；回复内容非空时记录当前管理员和回复时间",
-      "response": "反馈记录；会员端只可读取自己的反馈及回复，不返回后台管理员身份",
+      "request": "{status,assignedTo?,replyContent?:2–2000字}；新回复原子保存处理人、时间、会员站内通知和推送任务；相同回复不重复发送",
+      "response": "反馈记录；会员可在 App 通知中心或客服中心读取自己的回复；系统推送不含回复正文并尊重事务通知设置",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -1362,8 +1362,8 @@
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "新建后台账号",
-      "request": "{username,displayName,password:至少12字符,role}；角色见调用手册",
-      "response": "无密码账号信息",
+      "request": "{username:3–50位字母数字_.-,displayName:1–50字,password:至少12字符,roles?,role?,active?}；角色见调用手册；至少一角色，默认只读",
+      "response": "无密码账号信息；400 返回字段校验 errorKey，409 admin_username_exists 表示账号重复",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
