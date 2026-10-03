@@ -504,6 +504,30 @@ async function assertGlobalAnalysisAllowed(
   return `${current.version}:${profile.analysisConsentedAt.toISOString()}`;
 }
 
+type SleepContentFailureCategory =
+  | "provider_response"
+  | "response_json"
+  | "empty_message"
+  | "content_json"
+  | "unavailable_metric"
+  | "missing_evidence"
+  | "content_shape"
+  | "sleep_score_shape"
+  | "wellness_policy"
+  | "validation_unknown";
+
+const sleepContentFailureCategories: ReadonlyMap<
+  string,
+  SleepContentFailureCategory
+> = new Map([
+  ["AI report trend references an unavailable metric", "unavailable_metric"],
+  ["AI report trend is missing evidence records", "missing_evidence"],
+  ["AI report content is incomplete", "content_shape"],
+  ["AI sleep score is invalid or incomplete", "sleep_score_shape"],
+  ["AI sleep score violates wellness-only policy", "wellness_policy"],
+  ["AI report content violates wellness-only policy", "wellness_policy"],
+]);
+
 export async function callAiProvider(
   metricSummary: unknown,
   evidenceIndex: unknown,
@@ -517,6 +541,7 @@ export async function callAiProvider(
   sleep = false,
 ) {
   const evidence = asObject(evidenceIndex);
+  let failureStage: SleepContentFailureCategory = "provider_response";
   try {
     const response = await fetch(`${settings.baseUrl}/chat/completions`, {
       method: "POST",
@@ -561,19 +586,23 @@ export async function callAiProvider(
         );
       throw new Error(`AI report provider returned ${response.status}`);
     }
+    failureStage = "response_json";
     const payload = asObject(await response.json());
     const choices = Array.isArray(payload.choices) ? payload.choices : [];
     if (sleep && asObject(choices[0]).finish_reason === "length")
       throw new SleepProviderError("truncated");
     const message = asObject(asObject(choices[0]).message);
     const raw = String(message.content ?? "").trim();
+    failureStage = "empty_message";
     if (!raw) throw new Error("AI report provider returned empty content");
     let parsed: unknown;
+    failureStage = "content_json";
     try {
       parsed = JSON.parse(raw);
     } catch {
       throw new Error("AI report provider returned invalid JSON");
     }
+    failureStage = "validation_unknown";
     return sleep
       ? validateSleepReportContent(parsed, metricSummary, evidenceIndex)
       : validateReportContent(parsed, metricSummary, evidenceIndex);
@@ -585,6 +614,12 @@ export async function callAiProvider(
     )
       throw new SleepProviderError("timeout");
     if (error instanceof TypeError) throw new SleepProviderError("network");
+    // Only fixed categories leave this catch; never log provider data or errors.
+    const category =
+      error instanceof Error && failureStage === "validation_unknown"
+        ? (sleepContentFailureCategories.get(error.message) ?? failureStage)
+        : failureStage;
+    console.warn("sleep_ai_content_rejected", category);
     throw new SleepProviderError("invalid_content");
   }
 }
