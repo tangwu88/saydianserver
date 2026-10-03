@@ -224,6 +224,8 @@ export interface HealthReportEligibilityContract {
 export interface HealthReportContract {
   reportType?: "health" | "sleep";
   sleepScore?: number | null;
+  generationAttempts?: number;
+  progressMessage?: string;
   id: string;
   status: ReportStatus;
   period: { from: string; to: string };

@@ -1,8 +1,4 @@
-import {
-  OutboxStatus,
-  PrismaClient,
-  type OutboxEvent,
-} from "@prisma/client";
+import { OutboxStatus, PrismaClient, type OutboxEvent } from "@prisma/client";
 import {
   buildSafePushPayload,
   businessWritesPaused,
@@ -16,6 +12,7 @@ import type { PushProvider } from "./push-provider";
 import {
   HealthReportWorker,
   PermanentTaskError,
+  SleepProviderError,
 } from "./health-report-worker";
 import {
   NotificationCampaignWorker,
@@ -41,6 +38,12 @@ export class OutboxWorker {
   }
 
   async run(): Promise<void> {
+    if (
+      !businessWritesPaused(process.env) &&
+      healthReportWorkerEnabled(process.env)
+    ) {
+      await this.healthReports?.recoverTimedOutSleepReports();
+    }
     while (!this.stopping) {
       const processed = await this.runOnce();
       if (!processed) await delay(1000);
@@ -54,14 +57,17 @@ export class OutboxWorker {
     const commerceEnabled = jushuitanWorkerEnabled(process.env);
     if (!generalEnabled && !reportsEnabled && !commerceEnabled) return false;
     if (generalEnabled || reportsEnabled) {
-      await this.recoverStaleClaims(generalEnabled ? undefined : "health_report_generate");
+      await this.recoverStaleClaims(
+        generalEnabled ? undefined : "health_report_generate",
+      );
     }
     const deletionProcessed = generalEnabled
       ? await this.accountDeletions?.runOnce()
       : false;
-    const commerceProcessed = generalEnabled || commerceEnabled
-      ? await this.commerceJobs?.runOnce()
-      : false;
+    const commerceProcessed =
+      generalEnabled || commerceEnabled
+        ? await this.commerceJobs?.runOnce()
+        : false;
     if (!generalEnabled && !reportsEnabled) {
       return Boolean(deletionProcessed || commerceProcessed);
     }
@@ -117,15 +123,35 @@ export class OutboxWorker {
       });
     } catch (error) {
       const attempts = candidate.attempts + 1;
+      const policy =
+        candidate.eventType === "health_report_generate" && this.healthReports
+          ? await this.healthReports.retryPolicy(
+              candidate.aggregateId,
+              attempts,
+            )
+          : {
+              maximumAttempts: 10,
+              delayMs: Math.min(2 ** attempts * 30_000, 6 * 3600_000),
+            };
       const deadLetter =
-        attempts >= 10 ||
+        attempts >= policy.maximumAttempts ||
         error instanceof PermanentTaskError ||
+        (error instanceof SleepProviderError && !error.retryable) ||
         error instanceof PermanentCampaignError;
       if (deadLetter && candidate.eventType === "health_report_generate") {
         await this.healthReports?.failPermanently(candidate.aggregateId, error);
       }
-      if (deadLetter && candidate.eventType === "notification_campaign_dispatch") {
+      if (
+        deadLetter &&
+        candidate.eventType === "notification_campaign_dispatch"
+      ) {
         await this.notificationCampaigns?.failPermanently(
+          candidate.aggregateId,
+          error,
+        );
+      }
+      if (!deadLetter && candidate.eventType === "health_report_generate") {
+        await this.healthReports?.markWaitingForRetry(
           candidate.aggregateId,
           error,
         );
@@ -135,9 +161,7 @@ export class OutboxWorker {
         data: {
           attempts,
           status: deadLetter ? OutboxStatus.DEAD_LETTER : OutboxStatus.PENDING,
-          nextAttemptAt: new Date(
-            Date.now() + Math.min(2 ** attempts * 30_000, 6 * 3600_000),
-          ),
+          nextAttemptAt: new Date(Date.now() + policy.delayMs),
           lockedAt: null,
           lastError: sanitizeError(error),
         },
@@ -149,7 +173,8 @@ export class OutboxWorker {
 
   private async deliver(event: OutboxEvent): Promise<void> {
     if (event.eventType === "health_report_generate") {
-      if (!this.healthReports) throw new Error("Health report worker is unavailable");
+      if (!this.healthReports)
+        throw new Error("Health report worker is unavailable");
       await this.healthReports.generate(event.aggregateId);
       return;
     }
@@ -172,7 +197,8 @@ export class OutboxWorker {
       buildSafePushPayload({
         eventId: event.eventId,
         type: event.eventType,
-        deepLink: typeof payload.deepLink === "string" ? payload.deepLink : null,
+        deepLink:
+          typeof payload.deepLink === "string" ? payload.deepLink : null,
       }),
     );
   }

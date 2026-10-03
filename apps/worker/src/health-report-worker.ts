@@ -21,8 +21,115 @@ import {
 
 export class PermanentTaskError extends Error {}
 
+export class SleepProviderError extends Error {
+  constructor(
+    readonly code:
+      | "timeout"
+      | "provider_rejected"
+      | "provider_busy"
+      | "truncated"
+      | "invalid_content"
+      | "network",
+    readonly retryable = true,
+  ) {
+    super(`sleep_ai:${code}`);
+  }
+}
+
+export function reportRetryPolicy(
+  template: string | undefined,
+  attempts: number,
+) {
+  return template === SLEEP_REPORT_TEMPLATE
+    ? {
+        maximumAttempts: 3,
+        delayMs: Math.min(Math.max(attempts, 1) * 15_000, 30_000),
+      }
+    : {
+        maximumAttempts: 10,
+        delayMs: Math.min(2 ** attempts * 30_000, 6 * 3600_000),
+      };
+}
+
 export class HealthReportWorker {
   constructor(private readonly prisma: PrismaClient) {}
+
+  async retryPolicy(reportId: string, attempts: number) {
+    const report = await this.prisma.healthReport.findUnique({
+      where: { id: reportId },
+      select: { templateVersion: true },
+    });
+    return reportRetryPolicy(report?.templateVersion, attempts);
+  }
+
+  async markWaitingForRetry(reportId: string, error: unknown): Promise<void> {
+    await this.prisma.healthReport.updateMany({
+      where: {
+        id: reportId,
+        templateVersion: SLEEP_REPORT_TEMPLATE,
+        status: { in: [ReportStatus.QUEUED, ReportStatus.GENERATING] },
+      },
+      data: {
+        status: ReportStatus.QUEUED,
+        failureReason: sleepFailureReason(error),
+      },
+    });
+  }
+
+  /** Recover only already queued timeout jobs; generate still rechecks current consent. */
+  async recoverTimedOutSleepReports(): Promise<void> {
+    const dueBy = new Date(Date.now() + 15_000);
+    const events = await this.prisma.outboxEvent.findMany({
+      where: {
+        eventType: "health_report_generate",
+        status: OutboxStatus.PENDING,
+        nextAttemptAt: { gt: dueBy },
+        OR: [
+          { lastError: { contains: "timeout", mode: "insensitive" } },
+          { lastError: { contains: "timed out", mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, aggregateId: true },
+      orderBy: { createdAt: "asc" },
+      take: 100,
+    });
+    for (const event of events) {
+      await this.prisma.$transaction(async (tx) => {
+        const report = await tx.healthReport.findUnique({
+          where: { id: event.aggregateId },
+          select: { templateVersion: true, status: true },
+        });
+        if (
+          report?.templateVersion !== SLEEP_REPORT_TEMPLATE ||
+          (report.status !== ReportStatus.QUEUED &&
+            report.status !== ReportStatus.GENERATING)
+        )
+          return;
+        const claimed = await tx.outboxEvent.updateMany({
+          where: {
+            id: event.id,
+            aggregateId: event.aggregateId,
+            eventType: "health_report_generate",
+            status: OutboxStatus.PENDING,
+            nextAttemptAt: { gt: dueBy },
+          },
+          data: { nextAttemptAt: dueBy },
+        });
+        if (claimed.count !== 1) return;
+        await tx.healthReport.updateMany({
+          where: {
+            id: event.aggregateId,
+            templateVersion: SLEEP_REPORT_TEMPLATE,
+            status: { in: [ReportStatus.QUEUED, ReportStatus.GENERATING] },
+          },
+          data: {
+            status: ReportStatus.QUEUED,
+            failureReason: "sleep_ai:timeout",
+          },
+        });
+      });
+    }
+  }
 
   async generate(reportId: string): Promise<void> {
     const report = await this.prisma.healthReport.findUnique({
@@ -278,7 +385,10 @@ export class HealthReportWorker {
         where: { id: report.id },
         data: {
           status: ReportStatus.FAILED,
-          failureReason: sanitizeError(error),
+          failureReason:
+            report.templateVersion === SLEEP_REPORT_TEMPLATE
+              ? sleepFailureReason(error)
+              : sanitizeError(error),
         },
       });
     });
@@ -394,7 +504,7 @@ async function assertGlobalAnalysisAllowed(
   return `${current.version}:${profile.analysisConsentedAt.toISOString()}`;
 }
 
-async function callAiProvider(
+export async function callAiProvider(
   metricSummary: unknown,
   evidenceIndex: unknown,
   period: {
@@ -407,52 +517,81 @@ async function callAiProvider(
   sleep = false,
 ) {
   const evidence = asObject(evidenceIndex);
-  const response = await fetch(`${settings.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${settings.apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: settings.model,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: sleep
-            ? "你是 Say Ring 睡眠管理参考助手。输入仅是单日戒指睡眠汇总和夜睡/小睡会话起止；所有时长单位为秒，timezone 是记录时区。清醒、未知、未佩戴和缺口不计入有效睡眠；缺失字段保持未知，设备评分与AI评分不同。输出 JSON：overview 为详细概览；trends 为数组，每项只有 metric 和 text，metric 固定 sleep，分别结合实际数据说明睡眠时长、阶段结构、清醒/连续性、作息时间和小睡（未提供则明确无法分析）。suggestions 和 limitations 为字符串数组。sleepScore 为 {value:0到100的整数或null,scale:100,confidence:low或moderate,explanation:评分依据及限制}。评分仅是基于本次记录的AI综合参考，不是临床验证量表，不把设备阶段当诊断。证据不足时 value 必须 null，并解释缺项；单日不能声称长期改善、疾病或睡眠效率，不能推算缺失阶段、入睡潜伏期、觉醒次数或用户年龄。建议具体、低风险、可执行；保留单日、佩戴、设备估计误差和AI局限。不得诊断、处方、治疗或药物/补充剂剂量，不输出准确性承诺，不猜个人身份。"
-            : "你是赛电健康报告表达助手。输入是去标识化的会员基础资料、活动目标、设备概况、预警汇总和近30天多指标统计。请先检查数据量、单位、时间覆盖和异常值，再做谨慎的趋势说明。输出JSON对象：overview为字符串；trends为对象数组，每项只能包含metric和text，metric必须逐字使用输入中的已有metric；suggestions和limitations为字符串数组。建议应具体、低风险、日常可执行，并结合年龄、性别、身高体重、目标和实际趋势；资料缺失或样本稀疏时明确说未获取或证据不足。不得诊断、不得给出处方/治疗方案/药物或补充剂剂量、不得承诺准确性、不得补造未提供的指标或因果关系。必须注明这是AI生成的健康管理参考，并建议明显不适或持续异常及时就医。不要生成或猜测姓名、联系方式、账号、设备硬件标识或记录编号。",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            period,
-            memberContext: asObject(evidence.memberContext),
-            dataQuality: asObject(evidence.dataQuality),
-            metrics: metricSummary,
-          }),
-        },
-      ],
-    }),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok)
-    throw new Error(`AI report provider returned ${response.status}`);
-  const payload = asObject(await response.json());
-  const choices = Array.isArray(payload.choices) ? payload.choices : [];
-  const message = asObject(asObject(choices[0]).message);
-  const raw = String(message.content ?? "").trim();
-  if (!raw) throw new Error("AI report provider returned empty content");
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("AI report provider returned invalid JSON");
+    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${settings.apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: settings.model,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        ...(sleep && /^glm-5\.3(?:-flashx?)?$/i.test(settings.model.trim())
+          ? { reasoning_effort: "low", max_tokens: 4096 }
+          : {}),
+        messages: [
+          {
+            role: "system",
+            content: sleep
+              ? "你是 Say Ring 睡眠管理参考助手。输入仅是单日戒指睡眠汇总和夜睡/小睡会话起止；所有时长单位为秒，timezone 是记录时区。清醒、未知、未佩戴和缺口不计入有效睡眠；缺失字段保持未知，设备评分与AI评分不同。输出 JSON：overview 为详细概览；trends 为数组，每项只有 metric 和 text，metric 固定 sleep，分别结合实际数据说明睡眠时长、阶段结构、清醒/连续性、作息时间和小睡（未提供则明确无法分析）。suggestions 和 limitations 为字符串数组。sleepScore 为 {value:0到100的整数或null,scale:100,confidence:low或moderate,explanation:评分依据及限制}。评分仅是基于本次记录的AI综合参考，不是临床验证量表，不把设备阶段当诊断。证据不足时 value 必须 null，并解释缺项；单日不能声称长期改善、疾病或睡眠效率，不能推算缺失阶段、入睡潜伏期、觉醒次数或用户年龄。建议具体、低风险、可执行；保留单日、佩戴、设备估计误差和AI局限。不得诊断、处方、治疗或药物/补充剂剂量，不输出准确性承诺，不猜个人身份。"
+              : "你是赛电健康报告表达助手。输入是去标识化的会员基础资料、活动目标、设备概况、预警汇总和近30天多指标统计。请先检查数据量、单位、时间覆盖和异常值，再做谨慎的趋势说明。输出JSON对象：overview为字符串；trends为对象数组，每项只能包含metric和text，metric必须逐字使用输入中的已有metric；suggestions和limitations为字符串数组。建议应具体、低风险、日常可执行，并结合年龄、性别、身高体重、目标和实际趋势；资料缺失或样本稀疏时明确说未获取或证据不足。不得诊断、不得给出处方/治疗方案/药物或补充剂剂量、不得承诺准确性、不得补造未提供的指标或因果关系。必须注明这是AI生成的健康管理参考，并建议明显不适或持续异常及时就医。不要生成或猜测姓名、联系方式、账号、设备硬件标识或记录编号。",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              period,
+              memberContext: asObject(evidence.memberContext),
+              dataQuality: asObject(evidence.dataQuality),
+              metrics: metricSummary,
+            }),
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(sleep ? 120_000 : 60_000),
+    });
+    if (!response.ok) {
+      if (sleep)
+        throw new SleepProviderError(
+          response.status === 429 || response.status >= 500
+            ? "provider_busy"
+            : "provider_rejected",
+          response.status === 429 || response.status >= 500,
+        );
+      throw new Error(`AI report provider returned ${response.status}`);
+    }
+    const payload = asObject(await response.json());
+    const choices = Array.isArray(payload.choices) ? payload.choices : [];
+    if (sleep && asObject(choices[0]).finish_reason === "length")
+      throw new SleepProviderError("truncated");
+    const message = asObject(asObject(choices[0]).message);
+    const raw = String(message.content ?? "").trim();
+    if (!raw) throw new Error("AI report provider returned empty content");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error("AI report provider returned invalid JSON");
+    }
+    return sleep
+      ? validateSleepReportContent(parsed, metricSummary, evidenceIndex)
+      : validateReportContent(parsed, metricSummary, evidenceIndex);
+  } catch (error) {
+    if (!sleep || error instanceof SleepProviderError) throw error;
+    if (
+      error instanceof Error &&
+      ["TimeoutError", "AbortError"].includes(error.name)
+    )
+      throw new SleepProviderError("timeout");
+    if (error instanceof TypeError) throw new SleepProviderError("network");
+    throw new SleepProviderError("invalid_content");
   }
-  return sleep
-    ? validateSleepReportContent(parsed, metricSummary, evidenceIndex)
-    : validateReportContent(parsed, metricSummary, evidenceIndex);
+}
+
+function sleepFailureReason(error: unknown): string {
+  if (error instanceof SleepProviderError) return error.message;
+  return "sleep_ai:unavailable";
 }
 
 export function validateSleepReportContent(

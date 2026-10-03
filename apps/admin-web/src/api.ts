@@ -54,6 +54,11 @@ export function hasAdminToken(): boolean {
   return Boolean(sessionStorage.getItem(tokenKey));
 }
 
+/** In-memory request ownership only; never persist or display this value. */
+export function adminSessionKey(): string | null {
+  return sessionStorage.getItem(tokenKey);
+}
+
 export function responseData<T>(response: { data: unknown }): T {
   const envelope = response.data as { data?: T };
   return envelope.data as T;

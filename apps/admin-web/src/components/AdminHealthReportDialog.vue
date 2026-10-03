@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { api, readableError, responseData } from "../api";
+import { adminSessionKey, api, readableError, responseData } from "../api";
 import { healthMetricLabel, healthTime } from "../health-display";
 
 type Trend = { metric: string; text: string };
@@ -18,6 +18,8 @@ type Report = {
   content?: Content;
   limitations?: string[];
   failureReason?: string | null;
+  generationAttempts?: number;
+  progressMessage?: string;
 };
 
 const props = defineProps<{ modelValue: boolean; row: Record<string, unknown> | null; canEdit: boolean }>();
@@ -28,8 +30,14 @@ const loading = ref(false);
 const saving = ref(false);
 const editing = ref(false);
 const errorMessage = ref("");
+const pausedPolling = ref(false);
+let poll: ReturnType<typeof setTimeout> | undefined;
+let request = 0;
+let polls = 0;
+let closed = false;
+let owner = adminSessionKey();
 const visible = computed({ get: () => props.modelValue, set: value => emit("update:modelValue", value) });
-const statusLabel = computed(() => ({ awaiting_payment: "待获取报告次数", queued: "已排队", generating: "AI 分析中", ready: "已生成", failed: "生成失败", revoked: "已撤销" }[report.value?.status ?? ""] ?? "状态待确认"));
+const statusLabel = computed(() => report.value?.reportType === "sleep" && report.value.status === "queued" && (report.value.generationAttempts ?? 0) > 0 ? "等待自动重试" : ({ awaiting_payment: "待获取报告次数", queued: "已排队", generating: "AI 分析中", ready: "已生成", failed: "生成失败", revoked: "已撤销" }[report.value?.status ?? ""] ?? "状态待确认"));
 const displayLimitations = computed(() => Array.from(new Set([
   ...(report.value?.content?.limitations ?? []),
   ...(report.value?.limitations ?? []),
@@ -44,28 +52,52 @@ function copyContent(content: Content): Content {
   };
 }
 
-async function load(): Promise<void> {
+function reset(): void {
+  request++;
+  clearTimeout(poll);
+  polls = 0;
+  pausedPolling.value = false;
+  loading.value = false;
+  report.value = null;
+  editing.value = false;
+  errorMessage.value = "";
+  owner = adminSessionKey();
+}
+
+async function load(manual = false): Promise<void> {
   const id = String(props.row?.id ?? "");
-  if (!id || loading.value) return;
+  if (closed || !props.modelValue || !id || loading.value || editing.value) return;
+  if (owner !== adminSessionKey() || !owner) { reset(); return; }
+  clearTimeout(poll);
+  if (manual) { polls = 0; pausedPolling.value = false; }
+  const current = ++request;
+  const isCurrent = () => !closed && props.modelValue && current === request && String(props.row?.id ?? "") === id && owner === adminSessionKey();
   loading.value = true;
   errorMessage.value = "";
   editing.value = false;
   try {
     const result = responseData<Report>(await api.get(`/health-reports/${encodeURIComponent(id)}`));
+    if (!isCurrent()) return;
     if (!result?.id || result.id !== id) throw new Error("报告返回不完整，请刷新后重试");
     report.value = result;
     if (result.content) draft.value = copyContent(result.content);
+    if (result.reportType === "sleep" && ["queued", "generating"].includes(result.status)) {
+      if (polls++ < 90) poll = setTimeout(() => { void load(); }, 5_000);
+      else pausedPolling.value = true;
+    }
   } catch (error) {
-    report.value = null;
+    if (!isCurrent()) return;
     errorMessage.value = readableError(error);
   } finally {
-    loading.value = false;
+    if (current === request) loading.value = false;
+    if (owner !== adminSessionKey()) reset();
   }
 }
 
 function beginEdit(): void {
   if (!props.canEdit || report.value?.status !== "ready" || !report.value.content) return;
   draft.value = copyContent(report.value.content);
+  clearTimeout(poll);
   editing.value = true;
 }
 
@@ -110,9 +142,10 @@ async function save(): Promise<void> {
 }
 
 watch(() => [props.modelValue, props.row?.id], ([open]) => {
+  reset();
   if (open) void load();
-  else { report.value = null; editing.value = false; errorMessage.value = ""; }
-});
+}, { immediate: true });
+onBeforeUnmount(() => { closed = true; reset(); });
 </script>
 
 <template>
@@ -121,6 +154,7 @@ watch(() => [props.modelValue, props.row?.id], ([open]) => {
       <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" show-icon />
       <template v-if="report">
         <el-alert title="健康报告包含敏感健康信息，查看和修改均会写入审计记录；内容仅供日常健康管理参考。" type="warning" :closable="false" show-icon />
+        <el-alert v-if="pausedPolling" title="自动刷新已暂停；请点击刷新状态查看最新结果。" type="info" :closable="false" />
         <div class="report-meta">
           <div><span>会员</span><strong>{{ report.member?.nickname || "未填写昵称" }} · {{ report.member?.memberNo ? `会员 ${report.member.memberNo}` : "会员编号未获取" }}</strong></div>
           <div><span>状态</span><strong>{{ statusLabel }}</strong></div>
@@ -159,11 +193,12 @@ watch(() => [props.modelValue, props.row?.id], ([open]) => {
             <ul v-else><li v-for="(item, index) in displayLimitations" :key="index">{{ item }}</li></ul>
           </section>
         </template>
-        <el-empty v-else :description="report.failureReason || `报告当前为“${statusLabel}”，暂无可查看正文`" :image-size="72" />
+        <el-empty v-else :description="report.progressMessage || report.failureReason || `报告当前为“${statusLabel}”，暂无可查看正文`" :image-size="72" />
       </template>
     </div>
     <template #footer>
       <el-button @click="visible = false">关闭</el-button>
+      <el-button :loading="loading" :disabled="editing || saving" @click="load(true)">刷新状态</el-button>
       <el-button v-if="report?.status === 'ready' && report.content && canEdit && !editing" type="primary" @click="beginEdit">编辑报告</el-button>
       <template v-if="editing"><el-button :disabled="saving" @click="editing = false">取消编辑</el-button><el-button type="primary" :loading="saving" @click="save">保存修改</el-button></template>
     </template>

@@ -1,6 +1,31 @@
 export const SLEEP_REPORT_TEMPLATE = "sleep-report-v1";
 export const SLEEP_ANALYSIS_NOTICE = "say_ring_sleep_analysis";
 
+/** Public progress is fixed text, never an upstream response or internal error. */
+export function sleepReportProgress(
+  status: string,
+  attempts = 0,
+  failureReason?: string | null,
+): string | undefined {
+  if (status.toLowerCase() === "queued")
+    return attempts > 0
+      ? "上次分析未完成，正在等待自动重试。"
+      : "报告已排队，等待 AI 分析。";
+  if (status.toLowerCase() === "generating")
+    return "AI 正在分析，单次请求最长约 2 分钟。";
+  if (status.toLowerCase() !== "failed") return undefined;
+  if (failureReason === "sleep_ai:timeout")
+    return "AI 分析超时，自动尝试已结束；可稍后手动重试。";
+  if (failureReason === "sleep_ai:provider_rejected")
+    return "AI 服务暂不可用，报告未生成；请稍后再试。";
+  if (
+    failureReason === "sleep_ai:truncated" ||
+    failureReason === "sleep_ai:invalid_content"
+  )
+    return "AI 返回内容不完整或未通过校验，未生成评分；可稍后重试。";
+  return "本次 AI 分析未完成，未生成评分；请稍后重试。";
+}
+
 /** The published sleep notice names this provider; a different recipient needs a new rollout. */
 export function sleepAiProviderMatchesNotice(baseUrl: unknown): boolean {
   try {
