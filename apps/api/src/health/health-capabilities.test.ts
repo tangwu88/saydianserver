@@ -31,7 +31,7 @@ describe("global V2 health daily summary capability", () => {
   });
 
   it("advertises the exact contract consumed by the international App", () => {
-    const controller = new HealthController({} as never);
+    const controller = new HealthController({} as never, {} as never);
     expect(controller.capabilities()).toEqual({
       dailySummaryVersions: true,
       dailySummaryVersion: 1,

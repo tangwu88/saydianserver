@@ -96,8 +96,31 @@ try {
   check((await request(`${v1}/daily-date/preview?type=heartReat&selectMemberId=${memberB.id}`, { token: tokenA })).json.data[0].heartReat, 75);
   check((await request(`${v1}/daily-date/preview?type=bloodPressure&selectmember=${memberB.id}`, { token: tokenA })).json.code, 403);
   const relation = (await request(v2 + "/care/relationships", { token: tokenB })).json.data[0];
+  for (const prefix of [v2, "/global" + v2]) {
+    const carePath = `${prefix}/care/relationships/${relation.id}`;
+    const summary = await request(carePath + "/summary", { token: tokenA });
+    check(summary.status, 200);
+    check(summary.json.data.metrics, ["heart_rate"]);
+    check(summary.json.data.records[0].values.value, 75);
+    check((await request(carePath + "/summary", { token: tokenB })).status, 403);
+    check((await request(carePath + "/summary")).status, 401);
+    check((await request(carePath + "/health?metric=heart_rate&from=2000-01-01&to=2000-02-01", { token: tokenA })).json.data, []);
+    check((await request(carePath + "/health/missing-fixture-record/ecg", { token: tokenA })).status, 403);
+    check((await request(prefix + "/health/records/missing-fixture-record/ecg")).status, 401);
+    check((await request(prefix + "/health/records/missing-fixture-record/ecg", { token: tokenA })).status, 404);
+  }
+  check((await request(v2 + "/care/relationships/" + relation.id + "/permissions", {
+    method: "POST", token: tokenB, body: { metrics: ["heart_rate", "ecg"] },
+  })).json.code, 200);
+  check((await request(v2 + "/care/relationships/" + relation.id + "/health/missing-fixture-record/ecg", { token: tokenA })).status, 404);
+  check((await request(v2 + "/care/relationships/" + relation.id + "/permissions", {
+    method: "POST", token: tokenB, body: { metrics: ["heart_rate"] },
+  })).json.code, 200);
+  check((await request(v2 + "/care/relationships/" + relation.id + "/health/missing-fixture-record/ecg", { token: tokenA })).status, 403);
   check((await request(v2 + "/care/relationships/" + relation.id, { method: "DELETE", token: tokenB })).json.code, 200);
   check((await request(v2 + "/care/relationships/" + relation.id + "/health?metric=heart_rate", { token: tokenA })).json.code, 403);
+  check((await request(v2 + "/care/relationships/" + relation.id + "/summary", { token: tokenA })).status, 403);
+  check((await request(v2 + "/care/relationships/" + relation.id + "/health/missing-fixture-record/ecg", { token: tokenA })).status, 403);
   const notice = await prisma.notification.create({ data: { userId: a.data.member.id, eventId: "fixture-message", type: "SYSTEM", title: "fixture", body: "fixture only" } });
   check((await request(v1 + "/notify/statistics", { token: tokenA })).json.data.announce_count, 1);
   check((await request(v1 + "/notify/" + notice.compatibilityId, { token: tokenB })).json.code, 404);

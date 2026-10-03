@@ -707,6 +707,33 @@ export class SupportService implements OnModuleInit {
     };
   }
 
+  async privateEcgArtifact(ownerUserId: string, clientRecordId: string) {
+    const record = await this.prisma.healthRecord.findUnique({
+      where: { userId_clientRecordId: { userId: ownerUserId, clientRecordId } },
+      include: { ecgArtifact: true },
+    });
+    const artifact = record?.ecgArtifact;
+    if (!record || record.metric !== "ECG" || !artifact) {
+      throw new NotFoundException("暂无心电波形");
+    }
+    const file = await this.prisma.fileObject.findUnique({ where: { objectKey: artifact.objectKey } });
+    if (!file || file.status !== "ACTIVE" || file.purpose !== "ecg" ||
+        file.ownerUserId !== ownerUserId || file.sha256 !== artifact.sha256) {
+      throw new NotFoundException("暂无心电波形");
+    }
+    const storage = await this.storage();
+    let object;
+    try {
+      object = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }));
+    } catch {
+      throw new ServiceUnavailableException("波形加载失败，请重试");
+    }
+    if (!object.Body) throw new NotFoundException("暂无心电波形");
+    return { body: object.Body as NodeJS.ReadableStream,
+      byteSize: file.byteSize, sha256: artifact.sha256,
+      sampleRateHz: artifact.sampleRateHz, sampleCount: artifact.sampleCount };
+  }
+
   async publicFile(id: string) {
     const file = await this.prisma.fileObject.findUnique({ where: { id } });
     if (
