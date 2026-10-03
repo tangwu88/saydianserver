@@ -7,8 +7,9 @@ const push = "PushInstallation：installationId、platform、registrationId、ap
 const address = "Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册";
 const order = "Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key";
 const mall = "主库商城；支付操作还依赖已验收的支付渠道配置";
-const category = "{name,parentId?,sort?,enabled?}；parentId 使用分类 UUID";
-const article = "{title,contentHtml,summary?,coverUrl?,categoryId?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID";
+const contentLanguage = "locale可选：en/zh-Hans/zh-Hant/de/fr/es/ja/ko；兼容zh-CN等地区别名；新增缺省zh-Hans，编辑缺省保留原语言；关联分类须同语言";
+const category = "{name,parentId?,locale?,sort?,enabled?}；parentId 使用分类 UUID；" + contentLanguage + "；有不同语言文章或子分类时禁止修改分类语言";
+const article = "{title,contentHtml,summary?,coverUrl?,categoryId?,locale?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID；" + contentLanguage;
 const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；同类型仅一个激活版本";
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";

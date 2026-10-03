@@ -233,6 +233,12 @@ const fieldLabels: Record<string, string> = {
 };
 const resource = computed(() => String(route.params.resource || ""));
 const needsArticleCategories = computed(() => ["articles", "article-categories"].includes(resource.value));
+const contentLocales = [
+  { value: "zh-Hans", label: "简体中文" }, { value: "zh-Hant", label: "繁體中文" },
+  { value: "en", label: "English" }, { value: "de", label: "Deutsch" },
+  { value: "fr", label: "Français" }, { value: "es", label: "Español" },
+  { value: "ja", label: "日本語" }, { value: "ko", label: "한국어" },
+];
 const selectableArticleCategories = computed(() => {
   const forbidden = new Set<string>();
   if (resource.value === "article-categories" && form.value.id) {
@@ -248,7 +254,7 @@ const selectableArticleCategories = computed(() => {
       }
     }
   }
-  return articleCategoryOptions.value.filter((item) => !forbidden.has(String(item.id)));
+  return articleCategoryOptions.value.filter((item) => !forbidden.has(String(item.id)) && item.locale === form.value.locale);
 });
 const title = computed(() => titles[resource.value] || resource.value);
 const commerceResources = ["commerce-products", "commerce-categories", "commerce-banners", "commerce-business-configs", "commerce-orders", "commerce-after-sales", "commerce-reviews", "commerce-coupons", "commerce-employees", "commerce-commissions", "commerce-jobs", "payments"];
@@ -266,6 +272,7 @@ const columns = computed(() => {
   if (resource.value === "members") return memberColumns;
   if (resource.value === "health-reports") return ["memberNo", "memberNickname", "reportType", "status", "distinctDays", "validRecordCount", "generatedAt", "createdAt"];
   if (resource.value === "feedback") return ["memberNo", "memberNickname", "category", "content", "status", "replyContent", "createdAt"];
+  if (resource.value === "articles") return ["title", "locale", "categoryId", "status", "publishedAt", "updatedAt"];
   if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
   if (resource.value === "legal-documents") return ["legalProduct", "documentType", "locale", "version", "reviewed", "active", "publishedAt"];
   if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
@@ -594,8 +601,8 @@ async function openCreate(): Promise<void> {
   dialogMode.value = "edit";
   dialogTitle.value = `新增${title.value}`;
   const defaults: Record<string, Row> = {
-    articles: { status: "DRAFT", categoryId: null },
-    "article-categories": { enabled: true, sort: 0, parentId: null },
+    articles: { status: "DRAFT", categoryId: null, locale: "zh-Hans" },
+    "article-categories": { enabled: true, sort: 0, parentId: null, locale: "zh-Hans" },
     "legal-documents": createLegalDocumentDraft("saydian-global"),
     "admin-users": { role: "READ_ONLY", roles: ["READ_ONLY"], active: true },
     "commerce-products": {
@@ -768,6 +775,12 @@ function articleCategoryLabel(item: Row): string {
   return `${item.name}（编号 ${item.categoryNo ?? "未获取"}）${item.enabled === false ? " · 已停用" : ""}`;
 }
 
+function changeContentLocale(locale: string): void {
+  form.value.locale = locale;
+  const relation = resource.value === "articles" ? "categoryId" : "parentId";
+  if (!selectableArticleCategories.value.some((item) => item.id === form.value[relation])) form.value[relation] = null;
+}
+
 function articleCategorySelectionValid(): boolean {
   const selectedId = form.value[resource.value === "articles" ? "categoryId" : "parentId"];
   if (!selectedId) return true;
@@ -861,7 +874,7 @@ async function save(): Promise<void> {
     return;
   }
   if (needsArticleCategories.value && !articleCategorySelectionValid()) {
-    ElMessage.error("请选择可用分类；上级分类不能是自身或下级分类");
+    ElMessage.error("请选择同语言的可用分类；上级分类不能是自身或下级分类");
     return;
   }
   if (resource.value === "commerce-products" && form.value._erpLookupPending) {
@@ -1416,6 +1429,7 @@ onBeforeUnmount(() => {
                 <el-tag v-for="capability in deviceCapabilities(scope.row[column])" :key="capability" size="small" effect="plain">{{ deviceCapabilityLabel(capability) }}</el-tag>
                 <span v-if="!deviceCapabilities(scope.row[column]).length" class="muted">未上报</span>
               </div>
+              <span v-else-if="needsArticleCategories && column === 'locale'">{{ contentLocales.find((item) => item.value === scope.row.locale)?.label ?? scope.row.locale ?? '未标注' }}</span>
               <el-tag v-else-if="resource === 'devices' && column === 'status'" size="small" :type="scope.row.status === 'BOUND' ? 'success' : 'info'">{{ scope.row.status === "BOUND" ? "已绑定" : scope.row.status === "UNBOUND" ? "已解绑" : render(scope.row.status) }}</el-tag>
               <el-tag v-else-if="resource === 'legal-documents' && column === 'legalProduct'" size="small" :type="legalProductForDocumentType(scope.row.documentType) === 'say-ring' ? 'warning' : 'primary'">{{ legalProductForDocumentType(scope.row.documentType) === "say-ring" ? "Say Ring" : "Saydian Health" }}</el-tag>
               <span v-else-if="resource === 'legal-documents' && column === 'documentType'">{{ legalDocumentTypeLabel(scope.row.documentType) }}</span>
@@ -1577,6 +1591,11 @@ onBeforeUnmount(() => {
         <MemberHealthReportPanel v-if="dialogVisible && healthMode === 'summary' && canReadRawHealth" :key="healthMember.id" :member-id="healthMember.id" />
       </div>
       <el-form v-else label-width="110px">
+        <el-form-item v-if="needsArticleCategories" label="语言">
+          <el-select :model-value="form.locale" placeholder="请选择语言" @change="changeContentLocale">
+            <el-option v-for="item in contentLocales" :key="item.value" :value="item.value" :label="item.label" />
+          </el-select>
+        </el-form-item>
         <template v-if="resource === 'members'">
           <el-alert title="手机号、邮箱、密码或验证状态变更后，系统会注销该会员现有会话，会员需重新登录。联系方式发生变化时验证开关会自动关闭；请在确实完成人工核实后再开启。" type="warning" :closable="false" show-icon />
           <el-form-item label="会员编号"><el-input v-model="form.memberNo" disabled /></el-form-item>

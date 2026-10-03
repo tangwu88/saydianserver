@@ -10,10 +10,11 @@ function harness() {
   };
   const articleCategory = {
     findMany: vi.fn().mockResolvedValue([category]),
+    findUnique: vi.fn().mockResolvedValue(category),
     update: vi.fn(async ({ where, data }: any) => ({ ...category, ...data, id: where.id })),
     create: vi.fn(async ({ data }: any) => ({ ...category, ...data })),
   };
-  const tx = { compatibilityId, articleCategory };
+  const tx = { compatibilityId, articleCategory, $executeRaw: vi.fn().mockResolvedValue(1) };
   const prisma = { ...tx, $transaction: vi.fn(async (callback: any) => callback(tx)) };
   return { ...tx, prisma, service: new AdminService(prisma as any, {} as any) };
 }
@@ -71,7 +72,7 @@ describe("international category display numbers", () => {
 
   it.each([undefined, category.id])("saves category %s with its number in one transaction and ignores a forged display ID", async id => {
     const h = harness(); vi.stubEnv("APP_REALM", "global");
-    const saved = await h.service.saveArticleCategory(id, { name: "Edited", categoryNo: "999", id: "forged", parentId: "parent-uuid" });
+    const saved = await h.service.saveArticleCategory(id, { name: "Edited", locale: "en", categoryNo: "999", id: "forged", parentId: "parent-uuid" });
     expect(saved).toMatchObject({ id: category.id, categoryNo: "12", name: "Edited", parentId: "parent-uuid" });
     const write = id ? h.articleCategory.update : h.articleCategory.create;
     expect(write.mock.calls[0]?.[0].data).not.toHaveProperty("categoryNo");

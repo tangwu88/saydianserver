@@ -115,6 +115,28 @@ try {
   const adminLogin = await request(admin + "/auth/login", { method: "POST", body: { username: process.env.ADMIN_BOOTSTRAP_USERNAME, password: process.env.ADMIN_BOOTSTRAP_PASSWORD } });
   check(adminLogin.json.code, 200);
   const adminToken = adminLogin.json.data.token;
+  const zhCategory = await request(admin + "/article-categories", { method: "POST", token: adminToken, body: { name: "Chinese fixture" } });
+  check(zhCategory.json.code, 200); check(zhCategory.json.data.locale, "zh-Hans");
+  const contentInput = { title: "Chinese fixture", contentHtml: "<p>Synthetic only</p>", categoryId: zhCategory.json.data.id, status: "PUBLISHED" };
+  const zhArticle = await request(admin + "/articles", { method: "POST", token: adminToken, body: contentInput });
+  check(zhArticle.json.code, 200); check(zhArticle.json.data.locale, "zh-Hans");
+  check((await request(admin + "/articles/" + zhArticle.json.data.id, { method: "PATCH", token: adminToken, body: contentInput })).json.data.locale, "zh-Hans");
+  check((await request(admin + "/article-categories/" + zhCategory.json.data.id, { method: "PATCH", token: adminToken, body: { name: "Renamed Chinese fixture" } })).json.data.locale, "zh-Hans");
+  for (const prefix of [v2, "/global" + v2]) {
+    const list = await request(prefix + "/content/articles?locale=zh-CN&categoryId=" + zhCategory.json.data.id);
+    check(list.json.data.total, 1); check(list.json.data.items[0].id, zhArticle.json.data.id);
+    check((await request(prefix + "/content/articles/" + zhArticle.json.data.id + "?locale=zh-Hans")).json.data.contentHtml, contentInput.contentHtml);
+    check((await request(prefix + "/content/articles/" + zhArticle.json.data.id + "?locale=en")).status, 404);
+  }
+  check((await request(admin + "/articles", { method: "POST", token: adminToken, body: { ...contentInput, categoryId: category.id } })).json.errorKey, "content_article_locale_mismatch");
+  check((await request(admin + "/article-categories/" + zhCategory.json.data.id, { method: "PATCH", token: adminToken, body: { name: "Conflict", locale: "en" } })).json.errorKey, "content_category_locale_conflict");
+  const raceCategory = (await request(admin + "/article-categories", { method: "POST", token: adminToken, body: { name: "Race fixture" } })).json.data;
+  const race = await Promise.all([
+    request(admin + "/articles", { method: "POST", token: adminToken, body: { ...contentInput, categoryId: raceCategory.id } }),
+    request(admin + "/article-categories/" + raceCategory.id, { method: "PATCH", token: adminToken, body: { name: "Race fixture", locale: "en" } }),
+  ]);
+  check(race.filter(result => result.json.code === 200).length, 1);
+  check(race.filter(result => result.json.code === 400).length, 1);
   const account = { username: "fixture-feedback-support", displayName: "Fixture support", password, roles: ["CUSTOMER_SERVICE"], active: true };
   const shortPassword = await request(admin + "/admin-users", { method: "POST", token: adminToken, body: { ...account, password: "12345678" } });
   check(shortPassword.status, 400); check(shortPassword.json.errorKey, "admin_password_invalid");
