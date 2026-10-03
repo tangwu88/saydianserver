@@ -104,3 +104,18 @@ test("global public routes are restored idempotently without changing API forwar
     /location \^~ \/global\/api\/[^}]*return 30[1278]/s,
   );
 });
+
+test("Health package alias shares existing read-only downloads and is restored without API redirects", () => {
+  const admin = read("../../docker/admin-nginx.conf");
+  assert.match(admin, /location \^~ \/global\/down\/files\/ \{\s*rewrite \^\/global\/down\/files\/\(\.\*\)\$ \/down\/files\/\$1 last;/);
+  const full = read("../nginx/app-https.conf.template")
+    .replaceAll("__APP_DOMAIN__", "app.saydian.cn")
+    .replace("__SAYDIAN_GLOBAL_ROUTES__", read("./nginx.locations.conf"));
+  const legacy = full.replace(/location \^~ \/global\/down\/files\/ \{[^}]*\}\n\n/, "");
+  const result = unifyGateway(legacy);
+  assert.equal((result.match(/location \^~ \/global\/down\/files\//g) ?? []).length, 1);
+  assert.match(result, /location \^~ \/global\/down\/files\/ \{\s*proxy_pass http:\/\/global-admin:8080;/);
+  assert.equal(unifyGateway(result), result);
+  assert.throws(() => unifyGateway(result.replace(/(location \^~ \/global\/down\/files\/ \{\s*)proxy_pass http:\/\/global-admin:8080;/, "$1proxy_pass http://unexpected:8080;")));
+  assert.throws(() => unifyGateway(result.replace("location ^~ /global/down/files/ {", "location ^~ /global/down/files/ {}\n  location ^~ /global/down/files/ {")));
+});

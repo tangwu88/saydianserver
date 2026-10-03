@@ -52,22 +52,23 @@ export function unifyGateway(source) {
 ${marker}`);
     }
     // Older managed gateways need these public pages before their generic /global fallback.
-    const routes = ["location = /global/privacy-policy", "location = /global/terms", "location = /global/support", "location = /global/account-deletion", "location ^~ /global/public-assets/"];
+    const routes = ["location = /global/privacy-policy", "location = /global/terms", "location = /global/support", "location = /global/account-deletion", "location ^~ /global/public-assets/", "location ^~ /global/down/files/"];
     for (const [index, marker] of routes.entries()) {
       const count = block.split(marker).length - 1;
       if (count > 1) throw new Error(`Duplicate public route: ${marker}`);
       if (count === 1) {
-        const start = block.indexOf(marker), end = block.indexOf("\n  }", start);
+        const start = block.indexOf(marker), end = block.indexOf("}", start);
         if (end < 0 || !block.slice(start, end).includes("proxy_pass http://global-admin:8080;"))
           throw new Error(`Public route must use the global static upstream: ${marker}`);
         continue;
       }
-      const next = routes.slice(index + 1).find(route => block.includes(`  ${route}`)) ?? "location = /global {";
-      const nextStart = block.indexOf(`  ${next}`);
-      if (nextStart < 0 || block.indexOf(`  ${next}`, nextStart + 1) >= 0)
+      const next = routes.slice(index + 1).find(route => block.includes(route)) ?? "location = /global {";
+      const nextStart = block.indexOf(next);
+      if (nextStart < 0 || block.indexOf(next, nextStart + 1) >= 0)
         throw new Error(`Expected one insertion point for ${marker}`);
+      const insertionStart = block.lastIndexOf("\n", nextStart) + 1;
       const route = `  ${marker} {\n    proxy_pass http://global-admin:8080;\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-Proto https;\n  }\n\n`;
-      block = block.slice(0, nextStart) + route + block.slice(nextStart);
+      block = block.slice(0, insertionStart) + route + block.slice(insertionStart);
     }
     return block;
   });

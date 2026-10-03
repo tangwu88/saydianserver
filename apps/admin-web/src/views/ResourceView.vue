@@ -357,7 +357,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
   const definitions = [
     { key: "global_support", name: "客服设置" },
     { key: "app_update", name: "赛电 App 更新" },
-    { key: "global_app_update", name: "旧客户端更新（兼容）" },
+    { key: "global_app_update", name: "Saydian Health 更新" },
     { key: "say_ring_app_update", name: "Say Ring App 更新" },
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
     { key: "say_ring_map", name: "Say Ring 运动地图" },

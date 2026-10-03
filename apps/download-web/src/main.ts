@@ -1,11 +1,14 @@
 import QRCode from "qrcode";
 import type { ApiEnvelope } from "@saydian/app-contracts";
 import {
-  type DownloadManifestContract,
+  downloadPlatforms,
   type DownloadPlatform,
   type DownloadReleaseContract,
 } from "@saydian/app-contracts/download";
-import { manifestFromApiData } from "./manifest";
+import {
+  healthAndroidManifestFromApiData,
+  manifestFromApiData,
+} from "./manifest";
 import { detectVisitorPlatform, formatPackageSize } from "./platform";
 import "./styles.css";
 
@@ -21,6 +24,8 @@ const pagePath = isSayRing ? "/say-ring" : "/down";
 const manifestEndpoint = isSayRing
   ? "/api/saydian-app/v2/support/app-update?product=say-ring"
   : "/api/saydian-app/v2/support/app-update";
+const healthManifestEndpoint =
+  "/api/saydian-app/v2/support/app-update?product=saydian-global";
 
 configurePage();
 
@@ -32,33 +37,57 @@ const visitorPlatform = detectVisitorPlatform(
 
 highlightVisitorPlatform();
 void renderQrCode();
-void loadManifest();
+void loadManifest(
+  manifestEndpoint,
+  isSayRing ? downloadPlatforms : ["ios", "harmonyos"],
+  isSayRing,
+);
+if (!isSayRing) void loadManifest(healthManifestEndpoint, ["android"], true);
 
-async function loadManifest(): Promise<void> {
+async function loadManifest(
+  endpoint: string,
+  platforms: readonly DownloadPlatform[],
+  showPublishedAt: boolean,
+): Promise<void> {
   const status = requiredElement<HTMLElement>("#manifest-status");
   try {
-    const response = await fetch(manifestEndpoint, {
+    const response = await fetch(endpoint, {
       cache: "no-store",
       headers: { Accept: "application/json" },
     });
     if (!response.ok) throw new Error("暂未发布可用版本");
     const envelope = (await response.json()) as ApiEnvelope<unknown>;
-    const manifest = manifestFromApiData(envelope.data);
-    renderManifest(manifest);
-    status.textContent = `发布于 ${formatPublishedAt(manifest.publishedAt)}`;
+    const manifest =
+      endpoint === healthManifestEndpoint
+        ? healthAndroidManifestFromApiData(envelope.data)
+        : manifestFromApiData(envelope.data);
+    for (const release of manifest.releases) {
+      if (platforms.includes(release.platform)) renderRelease(release);
+    }
+    if (showPublishedAt)
+      status.textContent = `发布于 ${formatPublishedAt(manifest.publishedAt)}`;
   } catch (error) {
-    status.textContent =
-      error instanceof Error ? error.message : "下载信息暂时不可用";
-    status.classList.add("is-error");
-    document.querySelectorAll<HTMLElement>(".status-badge").forEach((badge) => {
+    if (showPublishedAt) {
+      status.textContent =
+        error instanceof Error ? error.message : "下载信息暂时不可用";
+      status.classList.add("is-error");
+    }
+    for (const platform of platforms) {
+      const card = requiredElement<HTMLElement>(
+        `[data-platform="${platform}"]`,
+      );
+      const badge = requiredChild<HTMLElement>(card, ".status-badge");
       badge.textContent = "暂不可用";
       badge.classList.add("status-badge--muted");
-    });
+      const action = requiredChild<HTMLAnchorElement>(
+        card,
+        '[data-field="action"]',
+      );
+      action.removeAttribute("href");
+      action.setAttribute("aria-disabled", "true");
+      action.classList.add("is-disabled");
+    }
   }
-}
-
-function renderManifest(manifest: DownloadManifestContract): void {
-  for (const release of manifest.releases) renderRelease(release);
 }
 
 function renderRelease(release: DownloadReleaseContract): void {
@@ -144,7 +173,11 @@ async function renderQrCode(): Promise<void> {
 }
 
 function configurePage(): void {
-  if (!isSayRing) return;
+  if (!isSayRing) {
+    requiredElement<HTMLElement>('[data-platform="android"] h3').textContent =
+      "Saydian Health 安卓版";
+    return;
+  }
   document.title = "Say Ring App 下载";
   requiredElement<HTMLElement>("#page-title").innerHTML =
     "下载 <strong>Say Ring App</strong>";

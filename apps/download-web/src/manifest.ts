@@ -4,7 +4,7 @@ import {
 } from "@saydian/app-contracts/download";
 
 export function manifestFromApiData(data: unknown): DownloadManifestContract {
-  const candidate = isRecord(data) && "value" in data ? data.value : data;
+  const candidate = manifestSource(data);
   if (
     isRecord(candidate) &&
     candidate.realm === "global" &&
@@ -46,6 +46,31 @@ export function manifestFromApiData(data: unknown): DownloadManifestContract {
     };
   }
   return parseDownloadManifest(candidate);
+}
+
+export function healthAndroidManifestFromApiData(
+  data: unknown,
+): DownloadManifestContract {
+  const candidate = manifestSource(data);
+  const android =
+    isRecord(candidate) && Array.isArray(candidate.releases)
+      ? candidate.releases.find(
+          (release) => isRecord(release) && release.platform === "android",
+        )
+      : undefined;
+  if (
+    !isRecord(candidate) ||
+    candidate.realm !== "global" ||
+    !isRecord(android) ||
+    android.packageId !== "cn.saydian.app.global"
+  ) {
+    throw new Error("Saydian Health 安卓下载信息无效");
+  }
+  return manifestFromApiData(data);
+}
+
+function manifestSource(data: unknown): unknown {
+  return isRecord(data) && "value" in data ? data.value : data;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

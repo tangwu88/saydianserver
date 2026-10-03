@@ -8,8 +8,11 @@ worker_container=saydian-ci-worker-$revision
 admin_container=saydian-ci-admin-$revision
 gateway_container=saydian-ci-gateway-$revision
 gateway_config=$(mktemp)
-cleanup() { docker rm -f "$api_container" "$worker_container" "$admin_container" "$gateway_container" >/dev/null 2>&1 || true; rm -f -- "$gateway_config"; }
+download_fixture=$(mktemp)
+cleanup() { docker rm -f "$api_container" "$worker_container" "$admin_container" "$gateway_container" >/dev/null 2>&1 || true; rm -f -- "$gateway_config" "$download_fixture"; }
 trap cleanup EXIT
+node -e 'require("node:fs").writeFileSync(process.argv[1], Buffer.alloc(4096, "x"))' "$download_fixture"
+chmod 644 "$download_fixture"
 docker run -d --name "$api_container" --network host \
   -e NODE_ENV=production -e PORT=18080 -e PUBLIC_BASE_URL=https://app.saydian.cn \
   -e DATABASE_URL -e REDIS_URL -e ACCESS_TOKEN_SECRET -e REFRESH_TOKEN_PEPPER \
@@ -18,7 +21,8 @@ docker run -d --name "$api_container" --network host \
 docker run -d --name "$worker_container" --network host \
   -e DATABASE_URL -e REDIS_URL -e WORKER_OUTBOUND_PAUSED=true \
   "$prefix-worker:sha-$revision"
-docker run -d --name "$admin_container" -p 18081:8080 "$prefix-admin:sha-$revision"
+docker run -d --name "$admin_container" -p 18081:8080 \
+  -v "$download_fixture:/usr/share/nginx/html/down/files/health-ci.apk:ro" "$prefix-admin:sha-$revision"
 ready=false
 for _attempt in {1..45}; do
   if curl -fsS http://127.0.0.1:18080/health/ready | jq -e --arg revision "$revision" '.revision == $revision' >/dev/null; then ready=true; break; fi
@@ -55,6 +59,12 @@ NODE
 for path in /admin/ /down /say-ring /saidian-mall/ /global/saidian-mall/; do
   curl -fsS "http://127.0.0.1:18081$path" | grep -qi '<html'
 done
+for path in /down/files/health-ci.apk /global/down/files/health-ci.apk; do
+  [[ $(curl -fsS "http://127.0.0.1:18081$path" | wc -c) -eq 4096 ]]
+  [[ $(curl -sS -r 0-1023 -o /dev/null -w '%{http_code}' "http://127.0.0.1:18081$path") == 206 ]]
+  [[ $(curl -sS -X POST -o /dev/null -w '%{http_code}' "http://127.0.0.1:18081$path") == 403 ]]
+done
+[[ $(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/global/down/files/missing.apk) == 404 ]]
 # Exercise the temporary gateway freeze in real Nginx, with a synthetic handler
 # instead of any business service or payment provider.
 node --input-type=module - "$gateway_config" <<'NODE'

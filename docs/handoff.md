@@ -13,6 +13,12 @@
 
 日常操作、兼容迁移审核与恢复写入后的回退边界，以[统一生产手册](unified-production.md)为准；故障、修复和上线证据见[实施记录](implementation-log/2026-10-02-unified-build-once.md)。更新前运行 `tools/Start-Change.ps1`，全量验证后显式提交，不覆盖脏工作区。
 
+## 下载页 Android 更新（2026-10-04）
+
+`/down` 的 Android 卡片改为 Saydian Health，读取 `product=saydian-global` 对应的 `global_app_update`；后台“客服与更新 → Saydian Health 更新”可编辑版本和文件信息。当前目标为内部 QA 包 `1.0.0（1012）`，并非商店正式签名。
+
+本轮不更新鸿蒙。`/down` 的 HarmonyOS、iPhone 继续读取原 `app_update`，该配置与旧 App 更新接口不改动；`/say-ring` 继续独立读取 Say Ring 配置。文件不提交 Git，发布验收、校验值与未完成边界见[本轮实施记录](implementation-log/2026-10-04-health-android-download.md)，不要仅凭提交认定上线。
+
 ## 历史交接基线（仅作追溯）
 
 以下独立国际发布、旧 SHA、容量、只读开关和迁移门禁描述均为历史记录，不是当前操作指令；不得据此恢复旧发布入口、覆盖原数据或重复执行首次切换。
