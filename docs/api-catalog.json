@@ -24156,7 +24156,7 @@
       "source": "apps/api/src/reports/health-reports.controller.ts",
       "summary": "查询精确睡眠快照的AI报告",
       "request": "sdkDate、sourceKey和sourceHash；后两者为64位SHA256",
-      "response": "{report:睡眠报告或null}；只返回本人同日期/设备来源/内容快照，READY且真实生成时才有AI sleepScore；不将设备评分替换为AI评分",
+      "response": "{report:睡眠报告或null}；只返回本人同日期/设备来源/内容快照，READY且真实生成时才有AI sleepScore；不将设备评分替换为AI评分；兼容可选 generationAttempts 和 progressMessage，等待重试仍为 queued，失败为 failed；只读刷新不触发上传或重试",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
