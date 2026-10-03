@@ -4,6 +4,15 @@ import { ContentService } from "./content.service";
 
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe("global localized content", () => {
+  it.each(["zh-CN", "zh_CN", "zh", "zh-Hans"])("uses the same Chinese category/list/detail locale for %s", async locale => {
+    const articleCategory = { findMany: vi.fn().mockResolvedValue([]) };
+    const article = { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0), findFirst: vi.fn().mockResolvedValue({ id: "test", locale: "zh-Hans" }) };
+    const service = new ContentService({ articleCategory, article, $transaction: (values: any[]) => Promise.all(values) } as any, {} as any);
+    await service.categories(undefined, locale);
+    await service.articles(undefined, 1, 20, locale);
+    await service.article("test", locale);
+    for (const read of [articleCategory.findMany, article.findMany, article.findFirst]) expect(read).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ locale: "zh-Hans" }) }));
+  });
   it("keeps wellness boundaries while selecting one of the eight languages", () => {
     expect(globalAiSystemPrompt("ja")).toContain("Japanese (ja)"); expect(globalAiSystemPrompt("xx")).toContain("English (en)");
     expect(globalAiSystemPrompt("de")).toContain("Do not make diagnoses"); expect(globalAiSystemPrompt("de")).toContain("Never invent health measurements");

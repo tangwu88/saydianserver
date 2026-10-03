@@ -88,7 +88,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     healthRawJson,
     healthTime,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, changeDeviceHistoryTab, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceHistoryTab, deviceMeasurements, deviceMeasurementsLoading, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, changeDeviceHistoryTab, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, changeContentLocale, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceHistoryTab, deviceMeasurements, deviceMeasurementsLoading, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -1074,6 +1074,38 @@ const contentCategories = [
 ];
 
 describe("content category number and association editor", () => {
+  it.each(["articles", "article-categories"])("defaults new %s to Chinese and filters associations when changing language", async resource => {
+    const h = harness();
+    h.route.params.resource = resource;
+    h.api.get.mockResolvedValueOnce({ data: { data: [...contentCategories, { id: "chinese", name: "中文", locale: "zh-Hans", enabled: true }] } });
+    await h.openCreate();
+    expect(h.form.value.locale).toBe("zh-Hans");
+    expect(h.columns.value).toContain("locale");
+    expect(h.selectableArticleCategories.value.map((item: any) => item.id)).toEqual(["chinese"]);
+    const relation = resource === "articles" ? "categoryId" : "parentId";
+    h.form.value[relation] = "chinese";
+    h.changeContentLocale("en");
+    expect(h.form.value[relation]).toBeNull();
+    expect(h.selectableArticleCategories.value).toHaveLength(5);
+    h.form.value[relation] = "root-uuid";
+    h.changeContentLocale("en");
+    expect(h.form.value[relation]).toBe("root-uuid");
+    h.form.value[relation] = "chinese";
+    await h.save();
+    expect(h.api.post).not.toHaveBeenCalled();
+    expect(h.messages.error).toHaveBeenCalledWith(expect.stringContaining("同语言"));
+    expect(h.sfc).toContain('@change="changeContentLocale"');
+  });
+
+  it.each(["en", "zh-Hans", "zh-Hant", null])("retains existing article locale %s without resetting it in edit payloads", async locale => {
+    const h = harness();
+    h.route.params.resource = "articles";
+    h.api.get.mockResolvedValueOnce({ data: { data: [] } });
+    await h.openEdit({ id: "existing", title: "Fixture", contentHtml: "<p>Fixture</p>", locale });
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledWith("/articles/existing", expect.objectContaining({ locale }));
+  });
+
   it("shows fixed readable category columns without exposing UUID or legacy fields", () => {
     const h = harness();
     h.route.params.resource = "article-categories";

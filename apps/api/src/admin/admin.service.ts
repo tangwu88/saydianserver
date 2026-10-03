@@ -38,6 +38,7 @@ import {
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 
 import {
+  globalError,
   globalLocale,
   internationalPhone,
   maskedIdentifier,
@@ -70,6 +71,14 @@ import { cancelCommerceOrderInTransaction } from "../commerce/commerce-order-can
 import { memberPromoterExternalId } from "../common/member-promoter-identity";
 import { importJushuitanProductBySku } from "./jushuitan-product-import";
 import { foldedHealthRecordWhere } from "../health/health-record-scope";
+
+function contentLocale(value: unknown, fallback: string | null): string | null {
+  if (value == null) return fallback;
+  if (typeof value !== "string" || !/^(en|zh|de|fr|es|ja|ko)(?:[-_][a-z0-9]+)*$/i.test(value.trim())) {
+    throw globalError(400, "content_locale_invalid", "请选择支持的内容语言");
+  }
+  return globalLocale(value);
+}
 
 const adminOrderPaymentSelect = {
   id: true,
@@ -1410,7 +1419,6 @@ export class AdminService {
     }
     const data = {
       name,
-      ...{ locale: globalLocale(body.locale) },
       parentId: body.parentId ? String(body.parentId) : null,
       sort: Math.trunc(Number(body.sort ?? 0)) || 0,
       enabled: body.enabled !== false,
@@ -1418,14 +1426,30 @@ export class AdminService {
     if (id && data.parentId === id) {
       throw new BadRequestException("分类不能作为自己的上级");
     }
-    {
-      return this.prisma.$transaction(async (tx) => {
-        const category = id
-          ? await tx.articleCategory.update({ where: { id }, data })
-          : await tx.articleCategory.create({ data });
-        return (await withCategoryNumbers(tx, [category]))[0]!;
-      });
-    }
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize both content editors so concurrent category edits cannot invalidate an article.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('content:locale', 0))`;
+      const previous = id ? await tx.articleCategory.findUnique({ where: { id } }) : null;
+      if (id && !previous) throw globalError(404, "content_category_not_found", "分类不存在");
+      const locale = contentLocale(body.locale, previous ? previous.locale : "zh-Hans");
+      if (data.parentId) {
+        const parent = await tx.articleCategory.findUnique({ where: { id: data.parentId } });
+        if (!parent) throw globalError(404, "content_category_not_found", "分类不存在");
+        if (parent.locale !== locale) throw globalError(400, "content_category_locale_mismatch", "分类与上级分类的语言必须一致");
+      }
+      if (previous && previous.locale !== locale) {
+        const different = locale === null ? { locale: { not: null } } : { OR: [{ locale: { not: locale } }, { locale: null }] };
+        const [article, child] = await Promise.all([
+          tx.article.findFirst({ where: { categoryId: previous.id, ...different }, select: { id: true } }),
+          tx.articleCategory.findFirst({ where: { parentId: previous.id, ...different }, select: { id: true } }),
+        ]);
+        if (article || child) throw globalError(400, "content_category_locale_conflict", "请先处理分类下不同语言的文章或子分类");
+      }
+      const category = id
+        ? await tx.articleCategory.update({ where: { id }, data: { ...data, locale } })
+        : await tx.articleCategory.create({ data: { ...data, locale } });
+      return (await withCategoryNumbers(tx, [category]))[0]!;
+    });
   }
 
   async saveArticle(id: string | undefined, input: unknown) {
@@ -1437,7 +1461,6 @@ export class AdminService {
     const data = {
       title,
       contentHtml,
-      ...{ locale: globalLocale(body.locale) },
       summary: body.summary ? String(body.summary) : null,
       coverUrl: body.coverUrl ? String(body.coverUrl) : null,
       categoryId: body.categoryId ? String(body.categoryId) : null,
@@ -1450,9 +1473,20 @@ export class AdminService {
     if (data.status === "PUBLISHED" && !data.publishedAt) {
       data.publishedAt = new Date();
     }
-    return id
-      ? this.prisma.article.update({ where: { id }, data })
-      : this.prisma.article.create({ data });
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('content:locale', 0))`;
+      const previous = id ? await tx.article.findUnique({ where: { id } }) : null;
+      if (id && !previous) throw globalError(404, "content_article_not_found", "文章不存在");
+      const locale = contentLocale(body.locale, previous ? previous.locale : "zh-Hans");
+      if (data.categoryId) {
+        const category = await tx.articleCategory.findUnique({ where: { id: data.categoryId } });
+        if (!category) throw globalError(404, "content_category_not_found", "分类不存在");
+        if (category.locale !== locale) throw globalError(400, "content_article_locale_mismatch", "文章与分类的语言必须一致");
+      }
+      return id
+        ? tx.article.update({ where: { id }, data: { ...data, locale } })
+        : tx.article.create({ data: { ...data, locale } });
+    });
   }
 
   async integrations() {
