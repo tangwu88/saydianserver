@@ -23,3 +23,7 @@
 - 发布脚本仅允许主 checkout 的 main。为保留原脏主工作树，本轮用独立分支显式暂存与 PR 集成，同等执行所有串行检查，不覆盖主工作树或强推。
 - 最终补充数据库测试后的 `pnpm typecheck`、`pnpm test`、`pnpm build`、373 路由文档检查、Actions 语法及 `git diff --check` 全部退出码 0；API 909 通过、7 个实际 PostgreSQL 用例在本机跳过。日志为 `/private/tmp/saydian-sleep-consent-*-final-v2.log`；后台既有大 bundle 警告保留。工具/H5 全量检查在本轮已完成，工具源码未改。
 - 提交前再次 fetch；独立工作树 HEAD 与 origin/main 均为 `50dd2abbbcad82323b7d6fef7310a4aa33a26713`，未发生远端业务变化。说明文件只作为候选内容随源码保存，不由部署脚本自动激活，也不代替用户单独同意。
+- 首轮 PR #17 的 `8fc5f41da7a5a9da38d8eb344735e9eb2f9a54a4` 在 Actions `37101815467` 完成全量 CI（7 分 35 秒）；真实 PostgreSQL 测试为睡眠授权 3 项加商城并发 4 项，7/7 通过。镜像、HTTP 授权、备份恢复及离线镜像传输演练通过；PR 不自动部署，没有把 PR CI 通过写成上线。
+- 合入前再次 fetch 发现主线推进到 `c93eeb27a64f1f9c70ceba8aebcc1d564e2e43e5`（同事的国际公开页面 PR #16）。暂停合入，审阅 14 个差异文件，全部属于公开页面/网关及记录，与本轮睡眠源码无重叠。干净独立分支用普通 `git merge --no-edit origin/main` 安全合并，未冲突、未覆盖或强推；继续串行重跑合并后的工具、文档、静态、全量测试、构建及 Actions 检查，再推进发布。
+- 合并基线 `1bd9ddf7b5bf4f0b62eef64d3a7dd515dcb18465` 的 `pnpm tools:test`、`pnpm api:docs:check`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`actionlint`、`git diff --check` 串行全部通过；API 909 通过、7 个数据库用例仍按本机环境跳过，其他套件计数不变。日志为 `/private/tmp/saydian-sleep-consent-integrated-*.log`；随后的真实数据库和镜像验收继续以更新后的 CI 结果为准。
+- 额外 `node deploy/global/check.mjs` 12/12 通过，包含新公开页面国际限定路由与幂等网关契约。发布前再 fetch，主线仍为 `c93eeb27a64f1f9c70ceba8aebcc1d564e2e43e5`，其同事改动保留。
