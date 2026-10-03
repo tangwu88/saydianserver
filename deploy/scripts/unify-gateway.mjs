@@ -14,15 +14,15 @@ function replaceManagedBlock(source, transform) {
 
 export function unifyGateway(source) {
   return replaceManagedBlock(source, initial => {
-  let block = initial;
-  assert(block.includes("location ^~ /global/api/") && block.includes("location /admin/"), "Required existing routes missing");
-  block = block.replace(/proxy_pass http:\/\/(?:saydianapp-api|global-api|unified-api):8080[^;]*;/g, "proxy_pass http://unified-api:8080;")
-    .replaceAll("proxy_pass http://saydianapp-admin:8080;", "proxy_pass http://global-admin:8080;")
-    .replace(/(location = \/global\/api\s*\{)\s*return 308 \/global\/api\/;/, "$1\n    proxy_pass http://unified-api:8080;");
-  assert(!/proxy_pass http:\/\/(?:saydianapp-api|global-api):/.test(block));
-  assert(!/location[^\n]*\/global\/api[^}]*return 30[1278]/s.test(block), "API redirects are not allowed");
-  if (!block.includes("location = /api/saydian-app/admin/v1/app-packages")) {
-    block = block.replace("  location /admin/ {", `  location = /api/saydian-app/admin/v1/app-packages {
+    let block = initial;
+    assert(block.includes("location ^~ /global/api/") && block.includes("location /admin/"), "Required existing routes missing");
+    block = block.replace(/proxy_pass http:\/\/(?:saydianapp-api|global-api|unified-api):8080[^;]*;/g, "proxy_pass http://unified-api:8080;")
+      .replaceAll("proxy_pass http://saydianapp-admin:8080;", "proxy_pass http://global-admin:8080;")
+      .replace(/(location = \/global\/api\s*\{)\s*return 308 \/global\/api\//, "$1\n    proxy_pass http://unified-api:8080;");
+    assert(!/proxy_pass http:\/\/(?:saydianapp-api|global-api):/.test(block));
+    assert(!/location[^\n]*\/global\/api[^}]*return 30[1278]/s.test(block), "API redirects are not allowed");
+    if (!block.includes("location = /api/saydian-app/admin/v1/app-packages")) {
+      block = block.replace("  location /admin/ {", `  location = /api/saydian-app/admin/v1/app-packages {
     client_max_body_size 130m;
     proxy_pass http://unified-api:8080;
     proxy_set_header Host $host;
@@ -32,17 +32,12 @@ export function unifyGateway(source) {
   }
 
   location /admin/ {`);
-  }
-  // Routine releases retain the existing shared-gateway file. Reconcile the
-  // public legal routes too, so older managed blocks cannot fall through to
-  // the API when the iOS consent links are opened.
-  if (!block.includes("location = /say-ring/privacy")) {
-    const marker = "  location /saidian-mall/ {";
-    assert(
-      block.split(marker).length === 2,
-      "Expected exactly one mall route for Say Ring legal-route insertion"
-    );
-    block = block.replace(marker, `  location = /say-ring/privacy {
+    }
+    // Reconcile Say Ring's existing public routes without changing its documents.
+    if (!block.includes("location = /say-ring/privacy")) {
+      const marker = "  location /saidian-mall/ {";
+      assert(block.split(marker).length === 2, "Expected exactly one mall route for Say Ring legal-route insertion");
+      block = block.replace(marker, `  location = /say-ring/privacy {
     proxy_pass http://global-admin:8080;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto https;
@@ -55,8 +50,26 @@ export function unifyGateway(source) {
   }
 
 ${marker}`);
-  }
-  return block;
+    }
+    // Older managed gateways need these public pages before their generic /global fallback.
+    const routes = ["location = /global/privacy-policy", "location = /global/terms", "location = /global/support", "location = /global/account-deletion", "location ^~ /global/public-assets/"];
+    for (const [index, marker] of routes.entries()) {
+      const count = block.split(marker).length - 1;
+      if (count > 1) throw new Error(`Duplicate public route: ${marker}`);
+      if (count === 1) {
+        const start = block.indexOf(marker), end = block.indexOf("\n  }", start);
+        if (end < 0 || !block.slice(start, end).includes("proxy_pass http://global-admin:8080;"))
+          throw new Error(`Public route must use the global static upstream: ${marker}`);
+        continue;
+      }
+      const next = routes.slice(index + 1).find(route => block.includes(`  ${route}`)) ?? "location = /global {";
+      const nextStart = block.indexOf(`  ${next}`);
+      if (nextStart < 0 || block.indexOf(`  ${next}`, nextStart + 1) >= 0)
+        throw new Error(`Expected one insertion point for ${marker}`);
+      const route = `  ${marker} {\n    proxy_pass http://global-admin:8080;\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-Proto https;\n  }\n\n`;
+      block = block.slice(0, nextStart) + route + block.slice(nextStart);
+    }
+    return block;
   });
 }
 

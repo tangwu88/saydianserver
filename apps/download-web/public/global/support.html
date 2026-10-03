@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f8f7" />
+    <title>SAYDIAN Health Support</title>
+    <link rel="stylesheet" href="/global/public-assets/global-health.css" />
+    <script
+      type="module"
+      src="/global/public-assets/global-support.js"
+    ></script>
+  </head>
+  <body>
+    <main class="page-shell">
+      <a class="brand" href="/global/saidian-mall/">SAYDIAN Health</a>
+      <h1>Support</h1>
+      <p>
+        For help with your SAYDIAN Health account or app, use Help and feedback
+        in the app or contact the published support channels below.
+      </p>
+      <p id="page-status" class="notice" role="status" aria-live="polite">
+        Loading support channels…
+      </p>
+      <section id="support-details" class="card" aria-live="polite" hidden>
+        <h2>Contact options</h2>
+        <p id="support-message"></p>
+        <p id="support-phone-row" hidden>
+          <strong>Phone:</strong> <a id="support-phone"></a>
+        </p>
+        <p id="support-account-row" hidden>
+          <strong>Official account:</strong> <span id="support-account"></span>
+        </p>
+        <p id="support-hours-row" hidden>
+          <strong>Service hours:</strong> <span id="support-hours"></span>
+        </p>
+      </section>
+      <p class="muted">
+        If no contact channel is shown, please use Help and feedback in the app.
+        Additional public contact details will appear here when provided.
+      </p>
+      <footer>
+        <a href="/global/privacy-policy">Privacy Notice</a>
+        <a href="/global/account-deletion">Request account deletion</a>
+      </footer>
+    </main>
+  </body>
+</html>

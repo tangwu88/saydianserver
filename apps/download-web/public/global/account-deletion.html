@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f8f7" />
+    <title>Request SAYDIAN Health Account Deletion</title>
+    <link rel="stylesheet" href="/global/public-assets/global-health.css" />
+    <script
+      type="module"
+      src="/global/public-assets/global-account-deletion.js"
+    ></script>
+  </head>
+  <body>
+    <main class="page-shell">
+      <a class="brand" href="/global/saidian-mall/">SAYDIAN Health</a>
+      <h1>Request account deletion</h1>
+      <p>
+        This page lets you sign in and submit a request to delete your SAYDIAN
+        Health account and associated data.
+      </p>
+      <p class="notice">
+        Submitting the request immediately disables account access and push
+        notifications. Processing is scheduled no earlier than seven days after
+        the request. Some records may be retained where required by law.
+      </p>
+      <p id="page-status" class="muted" role="status" aria-live="polite">
+        Loading the current sign-in requirements…
+      </p>
+
+      <section id="login-panel" class="card" hidden>
+        <h2>1. Verify your account</h2>
+        <div class="method-switch" role="tablist" aria-label="Sign-in method">
+          <button
+            type="button"
+            class="secondary-button"
+            data-method="password"
+            aria-selected="true"
+          >
+            Password
+          </button>
+          <button
+            type="button"
+            class="secondary-button"
+            data-method="sms"
+            aria-selected="false"
+            hidden
+          >
+            SMS code
+          </button>
+        </div>
+        <form id="password-form" novalidate>
+          <label for="password-identifier">Email or phone number</label>
+          <input
+            id="password-identifier"
+            name="identifier"
+            autocomplete="username"
+            required
+            maxlength="254"
+          />
+          <label for="password-value">Password</label>
+          <input
+            id="password-value"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            maxlength="72"
+          />
+          <button class="primary-button" type="submit">Sign in securely</button>
+        </form>
+        <form id="sms-form" hidden novalidate>
+          <label for="sms-identifier">Phone number with country code</label>
+          <input
+            id="sms-identifier"
+            name="identifier"
+            autocomplete="tel"
+            placeholder="+8613800000000"
+            required
+            maxlength="32"
+          />
+          <div class="inline-field">
+            <label for="sms-code">Verification code</label>
+            <button id="request-code" class="secondary-button" type="button">
+              Send code
+            </button>
+          </div>
+          <input
+            id="sms-code"
+            name="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9]{6}"
+            required
+            maxlength="6"
+          />
+          <label class="check-row"
+            ><input id="sms-consent" type="checkbox" required /> I have read and
+            agree to the current
+            <a href="/global/terms" target="_blank" rel="noopener noreferrer"
+              >User Agreement</a
+            >
+            and
+            <a
+              href="/global/privacy-policy"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Privacy Notice</a
+            >.</label
+          >
+          <button class="primary-button" type="submit">
+            Verify and continue
+          </button>
+        </form>
+        <p id="login-error" class="error" role="alert" hidden></p>
+        <p class="muted">
+          If you cannot sign in, contact support or submit the request in the
+          app’s account settings.
+        </p>
+        <a href="/global/support">Support options</a>
+      </section>
+
+      <section id="request-panel" class="card" hidden>
+        <h2>2. Confirm your request</h2>
+        <p>
+          Your sign-in is held only in this page’s memory. Continuing will
+          disable access to this account and revoke its active sessions.
+        </p>
+        <label class="check-row"
+          ><input id="delete-confirm" type="checkbox" required /> I understand
+          that this action signs me out and starts account deletion
+          processing.</label
+        >
+        <button id="submit-deletion" class="danger-button" type="button">
+          Submit deletion request
+        </button>
+        <button id="cancel-session" class="secondary-button" type="button">
+          Sign out and cancel
+        </button>
+        <p id="delete-error" class="error" role="alert" hidden></p>
+      </section>
+
+      <section
+        id="success-panel"
+        class="card success"
+        role="status"
+        aria-live="polite"
+        hidden
+      >
+        <h2>Request received</h2>
+        <p id="success-message"></p>
+        <p>
+          Deletion may take longer if processing fails or information must be
+          retained by law. Contact support if you need help.
+        </p>
+        <a href="/global/support">Support options</a>
+      </section>
+
+      <footer>
+        <a href="/global/privacy-policy">Privacy Notice</a>
+        <a href="/global/terms">User Agreement</a>
+      </footer>
+    </main>
+  </body>
+</html>
