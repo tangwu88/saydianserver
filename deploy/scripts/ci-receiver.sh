@@ -25,7 +25,8 @@ cleanup() {
 trap cleanup EXIT
 IFS= read -r registry_token
 [[ -n "$registry_token" && ${#registry_token} -le 1024 ]]
-head -c 10485761 > "$stage/bundle.tgz"
+# A disconnected sender must not leave the shared lock held indefinitely.
+timeout --signal=TERM --kill-after=5s 600 head -c 10485761 > "$stage/bundle.tgz"
 [[ "$(stat -c %s "$stage/bundle.tgz")" -le 10485760 ]]
 tar -tzf "$stage/bundle.tgz" > "$stage/entries.txt"
 while IFS= read -r file; do

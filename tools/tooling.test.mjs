@@ -71,13 +71,20 @@ test("deployment shell syntax and receiver rejection", () => {
   const denied = run(bash, ["deploy/scripts/ci-receiver.sh", "release ../not-a-sha"]);
   assert.notEqual(denied.status, 0);
   assert.match(denied.output, /Only release SHA or status/);
+  const receiver = fs.readFileSync(path.join(root, "deploy/scripts/ci-receiver.sh"), "utf8");
+  assert.match(receiver, /timeout --signal=TERM --kill-after=5s 600 head -c 10485761/);
 });
 
-test("offline image preloading allows the requested 60-minute transfer window", () => {
+test("automatic production deploy pulls registry images; offline recovery requires explicit dispatch", () => {
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/deploy-production.yml"), "utf8");
-  const step = workflow.match(/- name: Preload original images through constrained receiver([\s\S]*?)(?=\n      - name:)/)?.[1];
-  assert.ok(step, "offline image preload step exists");
-  assert.match(step, /timeout-minutes: 60/);
+  assert.doesNotMatch(workflow, /PRODUCTION_IMAGE_TRANSPORT|send-offline-images|export-runtime-images|setup-runtime-docker/);
+  assert.match(workflow, /OFFLINE_IMAGES: \$\{\{ inputs\.offline_images \}\}/);
+  assert.match(workflow, /if \[\[ "\$OFFLINE_IMAGES" == true \]\]; then\s*\[\[ "\$EVENT_NAME" == workflow_dispatch \]\]/);
+  assert.match(workflow, /cancel-in-progress: false/);
+  assert.match(workflow, /name: release-\$\{\{ needs\.resolve\.outputs\.revision \}\}/);
+  assert.match(workflow, /run-id: \$\{\{ needs\.resolve\.outputs\.build_run_id \}\}/);
+  const exportWorkflow = fs.readFileSync(path.join(root, ".github/workflows/export-runtime-images.yml"), "utf8");
+  assert.match(exportWorkflow, /timeout-minutes: 60/);
 });
 
 test("production registry pulls allow the requested 60-minute transfer window", () => {
