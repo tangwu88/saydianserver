@@ -34,6 +34,7 @@ const originalArticleCategoryId = ref<string | null>(null);
 const memberReferralOptions = ref<Row[]>([]);
 const search = ref("");
 const commerceStatus = ref("");
+const reportType = ref("");
 const currentPage = ref(1);
 const dialogVisible = ref(false);
 const dialogTitle = ref("");
@@ -180,6 +181,7 @@ const fieldLabels: Record<string, string> = {
   memberNickname: "会员昵称",
   distinctDays: "覆盖天数",
   validRecordCount: "有效记录数",
+  reportType: "报告类型",
   generatedAt: "生成时间",
   replyContent: "客服回复",
   repliedAt: "回复时间",
@@ -262,7 +264,7 @@ const paginatedResources = ["members", "commerce-products", "commerce-orders", "
 const serverStatusResources = ["commerce-products", "commerce-orders", "commerce-after-sales", "commerce-jobs", "payments"];
 const columns = computed(() => {
   if (resource.value === "members") return memberColumns;
-  if (resource.value === "health-reports") return ["memberNo", "memberNickname", "status", "distinctDays", "validRecordCount", "generatedAt", "createdAt"];
+  if (resource.value === "health-reports") return ["memberNo", "memberNickname", "reportType", "status", "distinctDays", "validRecordCount", "generatedAt", "createdAt"];
   if (resource.value === "feedback") return ["memberNo", "memberNickname", "category", "content", "status", "replyContent", "createdAt"];
   if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
   if (resource.value === "legal-documents") return ["legalProduct", "documentType", "locale", "version", "reviewed", "active", "publishedAt"];
@@ -288,6 +290,7 @@ async function load(): Promise<void> {
   loadError.value = "";
   try {
     const params: Row = {
+      ...(requestedResource === "health-reports" && reportType.value ? { reportType: reportType.value } : {}),
       ...(searchable.value && search.value ? { search: search.value } : {}),
       ...(paginatedResources.includes(requestedResource) ? { page: currentPage.value } : {}),
       ...(requestedResource === "members" ? { pageSize: memberPageSize } : {}),
@@ -712,7 +715,7 @@ async function openEdit(row: Row): Promise<void> {
     audienceUserIds: Array.isArray(row.audience?.userIds) ? row.audience.userIds.join("\n") : "",
   };
   if (requestedResource === "legal-documents") Object.assign(nextForm, legalDocumentEditorFromRow(row));
-  if (isAppDisplaySetting(row.key)) nextForm.hideAi = row.value?.hideAi === true;
+  if (isAppDisplaySetting(row.key)) { nextForm.hideAi = row.value?.hideAi === true; nextForm.sleepAiEnabled = row.value?.sleepAiEnabled === true; }
   if (isGlobalSupportSetting(row.key)) nextForm.supportEditor = supportEditorFromValue(row.value);
   if (isAppUpdateSetting(row.key)) {
     try {
@@ -955,7 +958,7 @@ async function save(): Promise<void> {
               configured: form.value.value?.configured === true,
             }
           : isAppDisplaySetting(form.value.key)
-            ? { hideAi: form.value.hideAi === true }
+            ? { hideAi: form.value.hideAi === true, sleepAiEnabled: form.value.sleepAiEnabled === true }
             : isAppUpdateSetting(form.value.key)
               ? downloadEditorToManifest(form.value.key, form.value.downloadEditor as DownloadManifestEditor)
               : JSON.parse(String(form.value.valueText || "{}"));
@@ -1365,6 +1368,7 @@ onBeforeUnmount(() => {
       <CommerceWorkspace v-if="isCommerceResource" v-model:search="search" :resource="resource" :rows="rows" :meta="resourceMeta" :loading="loading" :createable="createable" @refresh="refreshCommerce" @page-change="changeCommercePage" @status-change="changeCommerceStatus" @create="openCreate" @edit="openEdit" @delete-product="deleteCommerceProduct" @refund="refundAfterSale" @ship="openShipment" @shipping-refund="requestShippingRefund" @run-action="runAction" @batch-products="batchProducts" />
       <template v-else>
         <div class="toolbar">
+          <el-select v-if="resource === 'health-reports'" v-model="reportType" placeholder="全部报告" clearable style="width: 180px" @change="load"><el-option label="健康报告" value="health" /><el-option label="睡眠报告" value="sleep" /></el-select>
           <el-input v-if="searchable" v-model="search" placeholder="邮箱、会员编号、手机号、昵称或推广码" clearable style="width: 340px" @keyup.enter="searchMembers" @clear="searchMembers" />
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
@@ -1880,7 +1884,9 @@ onBeforeUnmount(() => {
           <el-form-item v-if="!isAppDisplaySetting(form.key)" label="公开"><el-switch v-model="form.public" /></el-form-item>
           <template v-if="isAppDisplaySetting(form.key)">
             <el-form-item label="隐藏 AI 内容"><el-switch v-model="form.hideAi" active-text="隐藏" inactive-text="显示" /></el-form-item>
-            <el-alert title="开启后，Say Ring App 隐藏 AI 问答、AI 健康报告及 AI 相关入口；关闭后恢复显示。保存后 App 会在重新打开或回到前台时刷新设置。" type="info" :closable="false" show-icon />
+            <el-form-item label="AI 睡眠报告"><el-switch v-model="form.sleepAiEnabled" active-text="开启睡眠评分与报告" inactive-text="关闭" /></el-form-item>
+            <el-alert title="睡眠 AI 由独立开关控制；开启后仍须会员在 App 主动确认上传及第三方分析。不会同时开启其他 AI 入口。" type="info" :closable="false" />
+            <el-alert title="隐藏开关控制 AI 问答和综合健康报告，不影响独立的睡眠报告开关。保存后 App 会在重新打开或回到前台时刷新设置。" type="info" :closable="false" show-icon />
           </template>
           <template v-else-if="isGlobalSupportSetting(form.key) && form.supportEditor">
             <el-alert title="Say Ring 与国际版 App 的“联系客服”页面读取这里的客服电话和微信公众号。旧版误填在 configured 字段里的手机号会自动带入，保存后将转换为正确格式。" type="info" :closable="false" show-icon />

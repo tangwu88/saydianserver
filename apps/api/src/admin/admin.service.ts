@@ -1763,7 +1763,17 @@ export class AdminService {
       if (body.public === false) {
         throw new BadRequestException("显示设置必须公开后才能在 App 生效");
       }
-      value = { hideAi: value.hideAi };
+      if (
+        value.sleepAiEnabled !== undefined &&
+        typeof value.sleepAiEnabled !== "boolean"
+      )
+        throw new BadRequestException("睡眠 AI 分析必须为开启或关闭");
+      value = {
+        hideAi: value.hideAi,
+        ...(typeof value.sleepAiEnabled === "boolean"
+          ? { sleepAiEnabled: value.sleepAiEnabled }
+          : {}),
+      };
     }
     if (key === "global_support") {
       try {
@@ -3328,12 +3338,21 @@ export class AdminService {
     });
   }
 
-  async healthReports(statusInput?: string) {
+  async healthReports(statusInput?: string, reportType?: string) {
+    if (reportType && !["health", "sleep"].includes(reportType))
+      throw new BadRequestException("报告类型无效");
     const status = statusInput
       ? enumValue(ReportStatus, statusInput, "报告状态")
       : undefined;
     const rows = await this.prisma.healthReport.findMany({
-      where: status ? { status } : {},
+      where: {
+        ...(status ? { status } : {}),
+        ...(reportType === "sleep"
+          ? { templateVersion: "sleep-report-v1" }
+          : reportType === "health"
+            ? { templateVersion: { not: "sleep-report-v1" } }
+            : {}),
+      },
       select: {
         id: true,
         userId: true,
@@ -3357,6 +3376,8 @@ export class AdminService {
     });
     return rows.map(({ user, ...report }) => ({
       ...report,
+      reportType:
+        report.templateVersion === "sleep-report-v1" ? "睡眠报告" : "健康报告",
       memberNo: String(user.compatibilityId),
       memberNickname: user.nickname,
     }));

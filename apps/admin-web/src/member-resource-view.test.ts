@@ -973,6 +973,17 @@ describe("Say Ring AI display setting", () => {
     expect(h.sfc).toContain('v-if="!isAppDisplaySetting(form.key)" label="公开"');
   });
 
+  it("preserves an independent enabled sleep report setting while hiding other AI", async () => {
+    const h = harness();
+    h.route.params.resource = "settings";
+    const initialRows = await h.withDownloadSetting([{ key: "say_ring_app_display", public: true, value: { hideAi: true, sleepAiEnabled: true } }]);
+    await h.openEdit(initialRows.find((item: any) => item.key === "say_ring_app_display"));
+    expect(h.form.value.sleepAiEnabled).toBe(true);
+    h.api.get.mockResolvedValueOnce({ data: { data: [] } });
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/settings/say_ring_app_display", { value: { hideAi: true, sleepAiEnabled: true }, public: true });
+  });
+
   it.each([true, false])("saves hideAi=%s as a public boolean and reopens the persisted value", async (hideAi) => {
     const h = harness();
     h.route.params.resource = "settings";
@@ -990,7 +1001,7 @@ describe("Say Ring AI display setting", () => {
     };
     h.api.get.mockResolvedValueOnce({ data: { data: [savedRow] } });
     await h.save();
-    expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/settings/say_ring_app_display", { value: { hideAi }, public: true });
+    expect(h.api.patch).toHaveBeenCalledExactlyOnceWith("/settings/say_ring_app_display", { value: { hideAi, sleepAiEnabled: false }, public: true });
     expect(h.dialogVisible.value).toBe(false);
     const row = h.rows.value.find((item: any) => item.key === "say_ring_app_display");
     expect(row.configuration).toBe(hideAi ? "AI已隐藏" : "AI已显示");

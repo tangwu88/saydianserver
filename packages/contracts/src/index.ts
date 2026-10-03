@@ -222,6 +222,8 @@ export interface HealthReportEligibilityContract {
 }
 
 export interface HealthReportContract {
+  reportType?: "health" | "sleep";
+  sleepScore?: number | null;
   id: string;
   status: ReportStatus;
   period: { from: string; to: string };
@@ -364,3 +366,4 @@ export function isBusinessType(value: string): value is BusinessType {
 export { apiCatalog } from "./api-catalog.generated";
 export * from "./download";
 export * from "./cutover";
+export * from "./sleep-report";

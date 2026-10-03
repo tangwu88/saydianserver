@@ -294,6 +294,16 @@ describe("global admin support and download configuration", () => {
 });
 
 describe("Say Ring AI visibility administration", () => {
+  it("publishes sleep AI separately without revealing unrelated fields", async () => {
+    const h = harness();
+    const result = await h.service.updateSetting("say_ring_app_display", { value: { hideAi: true, sleepAiEnabled: true, privateNote: "discard" }, public: true });
+    expect(result.value).toEqual({ hideAi: true, sleepAiEnabled: true });
+  });
+  it("rejects non-boolean sleep AI flag", () => {
+    const h = harness();
+    expect(() => h.service.updateSetting("say_ring_app_display", { value: { hideAi: true, sleepAiEnabled: "true" } })).toThrow();
+    expect(h.appSetting.upsert).not.toHaveBeenCalled();
+  });
   it.each(["global", "domestic"])(
     "publishes the explicit flag in the %s realm",
     async (realm) => {

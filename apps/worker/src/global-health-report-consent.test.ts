@@ -22,6 +22,8 @@ function harness() {
       windowStart: new Date("2026-08-01T00:00:00Z"), windowEnd: new Date("2026-08-31T00:00:00Z"), distinctDays: 3, validRecordCount: 3,
     },
     user: { status: "ACTIVE", locale: "en" },
+    sleepEnabled: true,
+    aiContent: null,
     profile: { analysisConsentedAt: new Date("2026-08-01T00:00:00Z"), analysisConsentWithdrawn: null, analysisConsentVersion: "reviewed-v1" },
     documents: [{ locale: "en", version: "reviewed-v1", contentHtml: "Synthetic reviewed notice" }],
     consumed: { membershipId: null }, restored: null, membership: null,
@@ -41,6 +43,7 @@ function harness() {
       }),
     },
     integrationConfig: { findUnique: vi.fn(async () => ({ state: "CONFIGURED", publicConfig: { provider: "synthetic" } })) },
+    appSetting: { findFirst: vi.fn(async () => ({ value: { sleepAiEnabled: state.sleepEnabled } })) },
     notification: { upsert: vi.fn(async () => ({ id: "synthetic-notification" })) },
     outboxEvent: { upsert: vi.fn(async () => ({})) },
     reportCreditLedger: {
@@ -60,7 +63,7 @@ function harness() {
     beforeResponse();
     return {
       ok: true,
-      json: async () => ({ choices: [{ message: { content: JSON.stringify({
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(state.aiContent ?? {
         overview: "仅基于已获取的记录。", trends: [{ metric: "heart_rate", text: "继续观察个人趋势。" }],
         suggestions: ["保持规律作息。"], limitations: ["不用于诊断或治疗。"],
       }) } }] }),
@@ -71,6 +74,55 @@ function harness() {
 }
 
 describe("global health report execution consent", () => {
+  function sleepHarness() {
+    const h = harness();
+    h.state.report.templateVersion = "sleep-report-v1";
+    h.state.report.metricSummary = [{ metric: "sleep", unit: "seconds", sdkDate: "2026-08-04", timezone: "+08:00", totalSeconds: 25200, deepSeconds: 7200, lightSeconds: 14400, remSeconds: 3600, awakeSeconds: 1200, sessions: [] }];
+    h.state.report.evidenceIndex = { byMetric: [{ metric: "sleep", recordIds: ["synthetic-private-source"] }], dataQuality: { distinctDays: 1 } };
+    h.state.aiContent = { overview: "本次合成睡眠说明。", trends: [{ metric: "sleep", text: "仅分析已提供的阶段。" }], suggestions: ["保持规律作息。"], limitations: ["仅单日记录。"], sleepScore: { value: 78, scale: 100, confidence: "low", explanation: "仅为合成测试参考分。" } };
+    return h;
+  }
+
+  it("sleep worker uses aggregate seconds, a separate AI score and no hardware/member identities", async () => {
+    const h = sleepHarness();
+    await h.worker.generate(h.state.report.id);
+    const request = (h.fetch.mock.calls as unknown as Array<[unknown, { body: string }]>)[0]![1];
+    const prompt = JSON.parse(request.body).messages;
+    expect(prompt[0].content).toContain("sleepScore");
+    expect(prompt[0].content).toContain("所有时长单位为秒");
+    expect(prompt[1].content).toContain('"totalSeconds":25200');
+    expect(prompt[1].content).not.toContain("synthetic-private-source");
+    expect(prompt[1].content).not.toContain("synthetic-member");
+    expect(h.state.report.fullContent.sleepScore.value).toBe(78);
+    expect(h.prisma.notification.upsert.mock.calls[0][0].create.title).toBe("睡眠报告已生成");
+    expect(h.prisma.appSetting.findFirst).toHaveBeenCalledTimes(3);
+  });
+
+  it("disabled sleep AI does not send queued data even when overall AI remains configured", async () => {
+    const h = sleepHarness();
+    h.state.sleepEnabled = false;
+    await expect(h.worker.generate(h.state.report.id)).rejects.toBeInstanceOf(PermanentTaskError);
+    expect(h.fetch).not.toHaveBeenCalled();
+  });
+
+  it("sleep AI disabled during generation does not publish a stale result", async () => {
+    const h = sleepHarness();
+    h.beforeResponse.mockImplementation(() => { h.state.sleepEnabled = false; });
+    await expect(h.worker.generate(h.state.report.id)).rejects.toBeInstanceOf(PermanentTaskError);
+    expect(h.state.report.fullContent).toBeNull();
+    expect(h.prisma.notification.upsert).not.toHaveBeenCalled();
+  });
+
+  it("sleep analysis consent withdrawn during generation does not publish or charge", async () => {
+    const h = sleepHarness();
+    h.state.consumed = null;
+    h.beforeResponse.mockImplementation(() => { h.state.profile.analysisConsentWithdrawn = new Date(); });
+    const error = await h.worker.generate(h.state.report.id).catch(error => error);
+    expect(error).toBeInstanceOf(PermanentTaskError);
+    await h.worker.failPermanently(h.state.report.id, error);
+    expect(h.prisma.reportCreditLedger.create).not.toHaveBeenCalled();
+    expect(h.prisma.notification.upsert).not.toHaveBeenCalled();
+  });
   it("checks current reviewed consent before transmission and again under locks before publishing", async () => {
     const h = harness();
     await h.worker.generate(h.state.report.id);

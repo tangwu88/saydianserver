@@ -740,8 +740,11 @@ export class AdminController {
     AdminRole.CUSTOMER_SERVICE,
     AdminRole.READ_ONLY,
   )
-  healthReports(@Query("status") status?: string) {
-    return this.admin.healthReports(status);
+  healthReports(
+    @Query("status") status?: string,
+    @Query("reportType") reportType?: string,
+  ) {
+    return this.admin.healthReports(status, reportType);
   }
 
   @Post("health-reports/:id/retry")

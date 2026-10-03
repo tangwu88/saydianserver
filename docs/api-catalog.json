@@ -3658,6 +3658,12 @@
           "name": "status",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "reportType",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -23898,6 +23904,400 @@
         "contentType": "application/json",
         "source": "apps/api/src/notifications/notifications.controller.ts",
         "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "HealthReportsController.sleepAvailability",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/sleep-reports/availability",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/reports/health-reports.controller.ts",
+      "summary": "检查 Say Ring 睡眠AI分析是否可用",
+      "request": "本人登录",
+      "response": "独立sleepAiEnabled开关、已配置AI、Worker与已审分析说明共同决定available；返回当前analysisConsent，不回显凭据",
+      "dependency": "既有AI与已审说明；未真实调用不代表供应商联调通过",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "analysisConsent": {
+              "type": "object",
+              "properties": {
+                "granted": {
+                  "type": "boolean"
+                },
+                "availableVersion": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "document": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "locale": {
+                          "enum": [
+                            "en",
+                            "zh-Hans",
+                            "zh-Hant",
+                            "de",
+                            "fr",
+                            "es",
+                            "ja",
+                            "ko"
+                          ]
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "locale",
+                        "version"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "available",
+            "analysisConsent"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "available": false,
+          "reason": "睡眠 AI 分析暂未开启",
+          "analysisConsent": {
+            "granted": false,
+            "availableVersion": null,
+            "document": null
+          }
+        },
+        "contentType": "application/json",
+        "source": "packages/contracts/src/sleep-report.ts; apps/api/src/reports/sleep-reports.service.ts; apps/api/src/reports/sleep-reports.test.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "HealthReportsController.sleepReport",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/sleep-reports",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "sdkDate",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "sourceKey",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "sourceHash",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/reports/health-reports.controller.ts",
+      "summary": "查询精确睡眠快照的AI报告",
+      "request": "sdkDate、sourceKey和sourceHash；后两者为64位SHA256",
+      "response": "{report:睡眠报告或null}；只返回本人同日期/设备来源/内容快照，READY且真实生成时才有AI sleepScore；不将设备评分替换为AI评分",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "report": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "reportType": {
+                      "const": "sleep"
+                    },
+                    "status": {
+                      "enum": [
+                        "queued",
+                        "generating",
+                        "ready",
+                        "failed",
+                        "revoked"
+                      ]
+                    },
+                    "aiGenerated": {
+                      "type": "boolean"
+                    },
+                    "sleepScore": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "reportType",
+                    "status",
+                    "aiGenerated"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "report"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "report": null
+        },
+        "contentType": "application/json",
+        "source": "packages/contracts/src/sleep-report.ts; apps/api/src/reports/sleep-reports.service.ts; apps/api/src/reports/sleep-reports.test.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "HealthReportsController.createSleepReport",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/sleep-reports",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/reports/health-reports.controller.ts",
+      "summary": "上传已同意的睡眠汇总并创建AI睡眠报告",
+      "request": "SleepReportInput：sdkDate、timezone、sourceKey、totalSeconds、可选阶段/清醒/未知/未佩戴秒数、deviceScore、wakeCount、sessions[{kind,startAt,endAt,asleepSeconds}]；严格字段白名单，不接收原始分段或联系方式",
+      "response": "reportType=sleep的报告，重复快照复用；本功能不扣普通健康报告次数，不创建付款；无数据/阶段合计不一致/未授权/未配置明确失败",
+      "dependency": "健康AI当前单独同意；第三方收到去标识化汇总，AI评分非临床量表；生产验收独立记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "sdkDate": {
+              "type": "string",
+              "format": "date"
+            },
+            "timezone": {
+              "type": "string",
+              "pattern": "^[+-][0-9]{2}:[0-9]{2}$"
+            },
+            "sourceKey": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "totalSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
+            },
+            "deepSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "lightSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "remSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "awakeSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "unknownSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "notWornSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "deviceScore": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "wakeCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1440
+            },
+            "sessions": {
+              "type": "array",
+              "maxItems": 24,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "night",
+                      "nap",
+                      "unknown"
+                    ]
+                  },
+                  "startAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "endAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "asleepSeconds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 86400
+                  }
+                },
+                "required": [
+                  "kind",
+                  "startAt",
+                  "endAt",
+                  "asleepSeconds"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "sdkDate",
+            "timezone",
+            "sourceKey",
+            "totalSeconds",
+            "sessions"
+          ],
+          "additionalProperties": false
+        },
+        "requestExample": {
+          "sdkDate": "2026-08-04",
+          "timezone": "+08:00",
+          "sourceKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "totalSeconds": 25200,
+          "deepSeconds": 7200,
+          "lightSeconds": 14400,
+          "remSeconds": 3600,
+          "awakeSeconds": 1200,
+          "sessions": []
+        },
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "reportType": {
+              "const": "sleep"
+            },
+            "status": {
+              "enum": [
+                "queued",
+                "generating",
+                "ready",
+                "failed",
+                "revoked"
+              ]
+            },
+            "aiGenerated": {
+              "type": "boolean"
+            },
+            "sleepScore": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "id",
+            "reportType",
+            "status",
+            "aiGenerated"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "reportType": "sleep",
+          "status": "queued",
+          "aiGenerated": false,
+          "sleepScore": null
+        },
+        "contentType": "application/json",
+        "source": "packages/contracts/src/sleep-report.ts; apps/api/src/reports/sleep-reports.service.ts; apps/api/src/reports/sleep-reports.test.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
       }
     },
     {

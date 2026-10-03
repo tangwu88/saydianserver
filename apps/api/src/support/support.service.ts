@@ -137,7 +137,13 @@ export class SupportService implements OnModuleInit {
       throw new ServiceUnavailableException("应用显示设置暂时无法读取");
     }
     // Whitelist the public display flag instead of returning arbitrary JSON.
-    return { product: "say-ring", hideAi: value.hideAi };
+    return {
+      product: "say-ring",
+      hideAi: value.hideAi,
+      ...(typeof value.sleepAiEnabled === "boolean"
+        ? { sleepAiEnabled: value.sleepAiEnabled }
+        : {}),
+    };
   }
 
   async sportMapConfig() {
