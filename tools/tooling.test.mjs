@@ -12,6 +12,7 @@ import "../deploy/scripts/unified-deployment.test.mjs";
 import "../deploy/scripts/deploy-failure.test.mjs";
 import "../deploy/scripts/offline-image-transfer.test.mjs";
 import "../deploy/scripts/ci-registry-login.test.mjs";
+import "../deploy/scripts/probe-runtime-artifact.test.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bash = process.env.SAYDIAN_BASH || (process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash");
@@ -64,7 +65,7 @@ test("HTTP fixture registers members only after test OTP verification", () => {
   assert.doesNotMatch(fixture, /const a = \(await request\(v2 \+ "\/auth\/register"/);
 });
 test("deployment shell syntax and receiver rejection", () => {
-  for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh", "configure-shared-gateway.sh"]) {
+  for (const script of ["deploy-ci.sh", "ci-receiver.sh", "install-ci-receiver.sh", "configure-shared-gateway.sh", "send-artifact-probe.sh", "receive-artifact-probe.sh"]) {
     const result = run(bash, ["-n", `deploy/scripts/${script}`]);
     assert.equal(result.status, 0, result.output);
   }
@@ -85,6 +86,18 @@ test("automatic production deploy pulls registry images; offline recovery requir
   assert.match(workflow, /run-id: \$\{\{ needs\.resolve\.outputs\.build_run_id \}\}/);
   const exportWorkflow = fs.readFileSync(path.join(root, ".github/workflows/export-runtime-images.yml"), "utf8");
   assert.match(exportWorkflow, /timeout-minutes: 60/);
+});
+
+test("HTTPS artifact probe shares the production lock but cannot import or restart apps", () => {
+  const workflow = fs.readFileSync(path.join(root, ".github/workflows/export-runtime-images.yml"), "utf8");
+  assert.match(workflow, /inputs\.probe_artifact_id != ''\) && 'saydianapp-production'/);
+  assert.match(workflow, /if: inputs\.probe_artifact_id == ''/);
+  assert.match(workflow, /timeout-minutes: 5/);
+  const receiver = fs.readFileSync(path.join(root, "deploy/scripts/receive-artifact-probe.sh"), "utf8");
+  assert.match(receiver, /flock -n 9/);
+  assert.match(receiver, /--read-only/);
+  assert.match(receiver, /--cap-drop ALL/);
+  assert.doesNotMatch(receiver, /docker (pull|load|compose)|docker\.sock|deploy-unified/);
 });
 
 test("production registry pulls allow the requested 60-minute transfer window", () => {

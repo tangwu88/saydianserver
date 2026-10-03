@@ -43,3 +43,8 @@ test("normal deployment bundles still log in to GHCR", () => {
   assert.equal(result.status, 0, result.output);
   assert.match(result.calls, /^login ghcr\.io -u tangwu88 --password-stdin\n$/);
 });
+
+test("HTTPS probe skips registry auth only with its release manifest", () => {
+  assert.equal(run(["artifact-probe.json", "release-manifest.json"]).calls, "");
+  assert.match(run(["artifact-probe.json"]).calls, /^login ghcr\.io /);
+});
