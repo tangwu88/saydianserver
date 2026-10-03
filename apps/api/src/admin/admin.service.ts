@@ -1341,17 +1341,49 @@ export class AdminService {
     if (hasReply && (replyContent.length < 2 || replyContent.length > 2_000)) {
       throw new BadRequestException("回复内容需为2至2000字");
     }
-    return this.prisma.feedback.update({
-      where: { id },
-      data: {
-        status,
-        ...(Object.prototype.hasOwnProperty.call(body, "assignedTo")
-          ? { assignedTo: body.assignedTo ? String(body.assignedTo) : null }
-          : {}),
-        ...(hasReply
-          ? { replyContent, repliedAt: new Date(), repliedBy: current.id }
-          : {}),
-      },
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize saves so retried/concurrent identical replies notify only once.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`feedback:${id}`}, 0))`;
+      const previous = await tx.feedback.findUnique({ where: { id } });
+      if (!previous) throw new NotFoundException("反馈不存在");
+      const newReply = hasReply && previous.replyContent !== replyContent;
+      const saved = await tx.feedback.update({
+        where: { id },
+        data: {
+          status,
+          ...(Object.prototype.hasOwnProperty.call(body, "assignedTo")
+            ? { assignedTo: body.assignedTo ? String(body.assignedTo) : null }
+            : {}),
+          ...(newReply
+            ? { replyContent, repliedAt: new Date(), repliedBy: current.id }
+            : {}),
+        },
+      });
+      if (newReply && previous.userId) {
+        const eventId = `feedback-reply:${id}:${randomUUID()}`;
+        const notification = await tx.notification.create({
+          data: {
+            userId: previous.userId,
+            eventId,
+            type: NotificationType.SYSTEM,
+            title: "您的反馈有新回复",
+            body: replyContent,
+            deepLink: "/notifications",
+            metadata: { feedbackId: id },
+          },
+        });
+        await tx.outboxEvent.create({
+          data: {
+            eventId,
+            eventType: "system",
+            aggregateType: "feedback",
+            aggregateId: id,
+            // The push is only a hint; private reply text stays in the authenticated inbox.
+            payload: { userId: previous.userId, notificationId: notification.id, deepLink: "/notifications" },
+          },
+        });
+      }
+      return saved;
     });
   }
 
@@ -1655,31 +1687,42 @@ export class AdminService {
     const roles = normalizeAdminRoles(body.roles ?? [body.role ?? "READ_ONLY"]);
     const role = roles[0]!;
     if (!/^[a-zA-Z0-9_.-]{3,50}$/.test(username)) {
-      throw new BadRequestException("后台账号格式不正确");
+      throw new BadRequestException({ errorKey: "admin_username_invalid", message: "账号需为3至50位字母、数字、下划线、点或短横线" });
     }
-    if (!displayName || displayName.length > 50 || password.length < 12) {
-      throw new BadRequestException("显示名称或密码不正确");
+    if (!displayName || displayName.length > 50) {
+      throw new BadRequestException({ errorKey: "admin_display_name_invalid", message: "显示名称需为1至50个字" });
     }
-    if (!Object.values(AdminRole).includes(role)) {
-      throw new BadRequestException("后台角色不正确");
+    if (password.length < 12) {
+      throw new BadRequestException({ errorKey: "admin_password_invalid", message: "初始密码至少需要12位" });
     }
-    return this.prisma.adminUser.create({
-      data: {
-        username,
-        displayName,
-        passwordHash: await hash(password, 12),
-        role,
-        roles,
-      },
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        role: true,
-        roles: true,
-        active: true,
-      },
-    });
+    if (body.active !== undefined && typeof body.active !== "boolean") {
+      throw new BadRequestException({ errorKey: "admin_active_invalid", message: "启用状态必须为布尔值" });
+    }
+    try {
+      return await this.prisma.adminUser.create({
+        data: {
+          username,
+          displayName,
+          passwordHash: await hash(password, 12),
+          role,
+          roles,
+          active: body.active !== false,
+        },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          role: true,
+          roles: true,
+          active: true,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ConflictException({ errorKey: "admin_username_exists", message: "后台账号已存在，请换一个账号" });
+      }
+      throw error;
+    }
   }
 
   async updateAdmin(id: string, input: unknown) {
@@ -3697,12 +3740,12 @@ function requireShippingFinance(current?: {
 
 function normalizeAdminRoles(value: unknown): AdminRole[] {
   if (!Array.isArray(value) || !value.length)
-    throw new BadRequestException("至少选择一个后台角色");
+    throw new BadRequestException({ errorKey: "admin_roles_invalid", message: "至少选择一个后台角色" });
   const roles = [...new Set(value.map((role) => String(role).toUpperCase()))];
   if (
     roles.some((role) => !Object.values(AdminRole).includes(role as AdminRole))
   ) {
-    throw new BadRequestException("后台角色不正确");
+    throw new BadRequestException({ errorKey: "admin_roles_invalid", message: "后台角色不正确" });
   }
   return roles as AdminRole[];
 }
