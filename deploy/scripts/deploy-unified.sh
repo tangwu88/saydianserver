@@ -63,7 +63,7 @@ public_checks() {
     jq -c '{status,revision}' <<< "$response" >&2 2>/dev/null || true
     return 1
   fi
-  for path in /admin/ /down /down/ /down/legacy /down/legacy/ /global/down /global/down/ /say-ring /say-ring/privacy /say-ring/terms /saidian-mall/ /global/saidian-mall/; do
+  for path in /admin/ /down /down/ /down/legacy /down/legacy/ /global/down /global/down/ /down2 /down2/ /say-ring /say-ring/privacy /say-ring/terms /saidian-mall/ /global/saidian-mall/; do
     curl --fail --silent --show-error --max-time 30 "https://app.saydian.cn$path" > "$source_dir/page.html"
     grep -qi '<html' "$source_dir/page.html" || { echo "Expected HTML: $path" >&2; return 1; }
     case "$path" in

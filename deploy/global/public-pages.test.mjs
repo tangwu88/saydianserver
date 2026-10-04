@@ -5,6 +5,12 @@ import { unifyGateway } from "../scripts/unify-gateway.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
+test("Say Ring download aliases serve the dedicated product page with no-store", () => {
+  for (const source of ["../../docker/admin-nginx.conf", "../nginx/download-static.conf"])
+    for (const path of ["/down2", "/down2/"])
+      assert.match(read(source), new RegExp(`location = ${path} \\{\\s*try_files /down/index.html =404;\\s*add_header Cache-Control "no-store" always;`));
+});
+
 test("Health public pages are international-only and use the published server contracts", () => {
   const routes = read("./nginx.locations.conf");
   const admin = read("../../docker/admin-nginx.conf");

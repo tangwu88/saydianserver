@@ -413,6 +413,9 @@ footer {
   color: #92959d;
   font-size: 11px;
 }
+.release-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .is-hidden {
   display: none !important;
 }

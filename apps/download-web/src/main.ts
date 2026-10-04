@@ -16,7 +16,12 @@ const labels: Record<DownloadPlatform, string> = {
 };
 const path = window.location.pathname.replace(/\/$/, "");
 const product =
-  path === "/say-ring" ? "ring" : path === "/down/legacy" ? "legacy" : "health";
+  ["/down2", "/say-ring"].includes(path)
+    ? "ring"
+    : path === "/down/legacy" ? "legacy" : "health";
+const visiblePlatforms: readonly DownloadPlatform[] = product === "ring"
+  ? downloadPlatforms.filter(platform => platform !== "harmonyos")
+  : downloadPlatforms;
 const pages = {
   health: {
     name: "SAYDIAN Health",
@@ -24,7 +29,7 @@ const pages = {
     query: "?product=saydian-global",
   },
   legacy: { name: "原赛电 App", path: "/down/legacy", query: "" },
-  ring: { name: "Say Ring App", path: "/say-ring", query: "?product=say-ring" },
+  ring: { name: "Say Ring App", path: "/down2", query: "?product=say-ring" },
 } as const;
 const currentPage = pages[product];
 
@@ -56,13 +61,14 @@ async function loadManifest(): Promise<void> {
       product === "legacy"
         ? manifestFromApiData(envelope.data)
         : productManifestFromApiData(envelope.data, product);
-    for (const release of manifest.releases) renderRelease(release);
+    for (const release of manifest.releases)
+      if (visiblePlatforms.includes(release.platform)) renderRelease(release);
     status.textContent = `发布于 ${formatPublishedAt(manifest.publishedAt)}`;
   } catch (error) {
     status.textContent =
       error instanceof Error ? error.message : "下载信息暂时不可用";
     status.classList.add("is-error");
-    for (const platform of downloadPlatforms) {
+    for (const platform of visiblePlatforms) {
       const card = requiredElement<HTMLElement>(
         `[data-platform="${platform}"]`,
       );
@@ -184,6 +190,10 @@ function highlightVisitorPlatform(): void {
     notice.textContent = "电脑访问：请使用手机扫码。";
     return;
   }
+  if (!visiblePlatforms.includes(visitorPlatform)) {
+    notice.textContent = "本页仅提供 Android 和 iPhone 版本。";
+    return;
+  }
   notice.textContent = `已识别 ${labels[visitorPlatform]} 设备`;
   requiredElement<HTMLElement>(
     `[data-platform="${visitorPlatform}"]`,
@@ -227,6 +237,13 @@ function configurePage(): void {
   );
   if (product !== "health")
     requiredElement<HTMLElement>("#health-links").classList.add("is-hidden");
+  if (product === "ring") {
+    requiredElement<HTMLElement>("#product-nav").classList.add("is-hidden");
+    requiredElement<HTMLElement>("#ring-links").classList.remove("is-hidden");
+    requiredElement<HTMLElement>("#release-grid").classList.add("release-grid--two");
+    requiredElement<HTMLElement>('[data-platform="harmonyos"]').setAttribute("hidden", "");
+    requiredElement<HTMLElement>('[data-platform="harmonyos"]').classList.add("is-hidden");
+  }
 }
 
 async function copyHash(

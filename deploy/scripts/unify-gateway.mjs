@@ -52,7 +52,7 @@ export function unifyGateway(source) {
 ${marker}`);
     }
     // Older managed gateways need these public pages before their generic /global fallback.
-    const routes = ["location = /global/privacy-policy", "location = /global/terms", "location = /global/support", "location = /global/account-deletion", "location ^~ /global/public-assets/", "location ^~ /global/down/files/", "location = /global/down {", "location = /global/down/ {"];
+    const routes = ["location = /down2 {", "location = /down2/ {", "location = /global/privacy-policy", "location = /global/terms", "location = /global/support", "location = /global/account-deletion", "location ^~ /global/public-assets/", "location ^~ /global/down/files/", "location = /global/down {", "location = /global/down/ {"];
     for (const [index, marker] of routes.entries()) {
       const count = block.split(marker).length - 1;
       if (count > 1) throw new Error(`Duplicate public route: ${marker}`);

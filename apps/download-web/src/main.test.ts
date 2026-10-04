@@ -119,6 +119,9 @@ function page(path = "/down") {
     "product-legacy",
     "product-ring",
     "health-links",
+    "ring-links",
+    "product-nav",
+    "release-grid",
     "ios-note",
     "health-package-note",
     "health-signature-note",
@@ -291,8 +294,8 @@ describe("isolated download pages", () => {
     },
   );
 
-  it("loads only the independent Say Ring manifest on /say-ring", async () => {
-    const p = page("/say-ring");
+  it.each(["/down2", "/down2/", "/say-ring", "/say-ring/"])("loads only two Say Ring platforms on %s", async (path) => {
+    const p = page(path);
     const fetch = vi.fn(async (_url: string) => response(ring));
     vi.stubGlobal("fetch", fetch);
     await import("./main");
@@ -307,6 +310,30 @@ describe("isolated download pages", () => {
       "/api/saydian-app/v2/support/app-update?product=say-ring",
     );
     expect(p.nodes.get("#page-title")!.innerHTML).toContain("Say Ring");
+    expect(p.nodes.get("#canonical-url")!.href).toBe("https://app.saydian.cn/down2");
+    expect(QRCode.toCanvas).toHaveBeenCalledWith(p.nodes.get("#page-qr"), "https://app.saydian.cn/down2", expect.any(Object));
+    expect(p.cards.get("harmonyos")!.attributes.get("hidden")).toBe("");
+    expect(p.cards.get("harmonyos")!.fields.get('[data-field="version"]')!.textContent).toBe("");
+  });
+
+  it("keeps both Ring downloads disabled on API failure without falling back to Health", async () => {
+    const p = page("/down2");
+    const fetch = vi.fn(async () => response(null, false));
+    vi.stubGlobal("fetch", fetch);
+    await import("./main");
+    await vi.waitFor(() => expect(p.cards.get("ios")!.fields.get(".status-badge")!.textContent).toBe("暂不可用"));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const platform of ["android", "ios"])
+      expect(p.cards.get(platform)!.fields.get('[data-field="action"]')!.attributes.get("aria-disabled")).toBe("true");
+    expect(p.cards.get("harmonyos")!.attributes.has("hidden")).toBe(true);
+  });
+
+  it("does not recommend an unsupported HarmonyOS installation on Ring", async () => {
+    const p = page("/down2");
+    vi.stubGlobal("navigator", { userAgent: "HarmonyOS", platform: "", maxTouchPoints: 1 });
+    vi.stubGlobal("fetch", vi.fn(async () => response(ring)));
+    await import("./main");
+    expect(p.nodes.get("#device-notice")!.textContent).toBe("本页仅提供 Android 和 iPhone 版本。");
   });
 
   it("does not present Say Ring's Baidu placeholder as an installation link", async () => {

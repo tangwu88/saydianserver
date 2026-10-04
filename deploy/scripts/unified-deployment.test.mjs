@@ -94,15 +94,15 @@ test("gateway adds exact Health download aliases safely and preserves other rout
   const template = readFileSync(new URL("../nginx/app-https.conf.template", import.meta.url), "utf8").replaceAll("__APP_DOMAIN__", "app.saydian.cn");
   const routes = readFileSync(new URL("../global/nginx.locations.conf", import.meta.url), "utf8")
     .replace(/location = \/global\/down\/? \{[^}]*\}\n\n/g, "");
-  const old = "# preserved host\n" + template.replace("__SAYDIAN_GLOBAL_ROUTES__", routes) + "\n# preserved suffix";
+  const old = "# preserved host\n" + template.replace(/  location = \/down2\/? \{[^}]*\}\n\n/g, "").replace("__SAYDIAN_GLOBAL_ROUTES__", routes) + "\n# preserved suffix";
   const result = unifyGateway(old);
-  for (const marker of ["location = /global/down {", "location = /global/down/ {"]) {
+  for (const marker of ["location = /down2 {", "location = /down2/ {", "location = /global/down {", "location = /global/down/ {"]) {
     assert.equal(result.split(marker).length, 2);
     assert(result.indexOf(marker) < result.indexOf("location = /global {"));
     const start = result.indexOf(marker), end = result.indexOf("}", start);
     const invalid = result.slice(0, start) + result.slice(start, end).replace("http://global-admin:8080", "http://untrusted:8080") + result.slice(end);
     assert.throws(() => unifyGateway(invalid), /static upstream/);
-    assert.throws(() => unifyGateway(result.replace(marker, `location = /global/down { proxy_pass http://global-admin:8080; }\n${marker}`)), /Duplicate/);
+    assert.throws(() => unifyGateway(result.replace(marker, `${marker} proxy_pass http://global-admin:8080; }\n${marker}`)), /Duplicate/);
   }
   assert(result.startsWith("# preserved host\n") && result.endsWith("\n# preserved suffix"));
   assert(result.includes("location ^~ /global/down/files/"));
