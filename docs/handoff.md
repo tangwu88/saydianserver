@@ -13,13 +13,15 @@
 
 日常操作、兼容迁移审核与恢复写入后的回退边界，以[统一生产手册](unified-production.md)为准；故障、修复和上线证据见[实施记录](implementation-log/2026-10-02-unified-build-once.md)。更新前运行 `tools/Start-Change.ps1`，全量验证后显式提交，不覆盖脏工作区。
 
-## 产品下载入口（2026-10-04，本轮发布待核验）
+## 产品下载入口（2026-10-04，功能发布已验收）
 
 本轮将 `/down` 与 `/global/down` 统一为 Health 页面，三平台只读取 `product=saydian-global` 对应的 `global_app_update`，不把原赛电 HAP 展示为 Health。`/down/legacy` 保留原赛电页面与 `app_update`；`/say-ring` 继续使用独立配置。旧 API、安装包文件地址及原文件不变，三个产品可从页首切换。
 
 Health 安卓继续保留已发布、哈希可验证的内部 QA 包 `1.0.0（1012）`，不是 Google Play 正式版，也不能覆盖 Windows 签名的 3012。Health 任务已将 iPhone 元数据改为 `1.0.1（1013）`、`coming_soon` 且无安装地址；页面明确显示等待审核，不把 TestFlight URL 或提交审核当作可安装证据。鸿蒙暂不发布、不构建，原赛电现有 HAP 在独立入口保留。
 
-后台 iPhone 待开放状态新增可编辑的“等待审核”说明，对应兼容字段 `pendingReason=review`；仍使用 `coming_soon`，不新增旧 App 无法识别的 status。新版后台上线后由 Health 任务在原登录会话补设此字段；页面不通过硬编码版本猜测审核状态。Say Ring 当前 Baidu 占位链接不显示为可安装，原配置保留等待真实地址。原因、校验、回滚点和最终线上验收见[本轮记录](implementation-log/2026-10-04-download-product-isolation.md)。
+后台 iPhone 待开放状态新增可编辑的“等待审核”说明，对应兼容字段 `pendingReason=review`；仍使用 `coming_soon`，不新增旧 App 无法识别的 status。Health 任务已在原登录会话保存该字段，公开 GET 独立读回；页面不通过硬编码版本猜测审核状态。Say Ring 下载规范入口为 `/down2`（保留 `/say-ring`），Baidu 占位链接不显示为可安装，原配置保留等待真实地址。
+
+首个完整功能版本 `2f7b78a820daad8b92c16c9378743c2624911cab` 的 [CI/部署 37196520415](https://github.com/tangwu88/saydianserver/actions/runs/37196520415) 已全部成功，双地址 readiness 为该 revision；新旧页面、商城、协议均返回 200。Health 安卓全文件大小/SHA-256 和 206 断点下载再次通过，旧清单及文件链接保留。此后的文档提交仍走自动发布，当前最新版本须以 main、Actions 和双地址 revision 一致为准，不将历史验收 SHA 当作永久最新。原因、回滚点和详细回执见[本轮记录](implementation-log/2026-10-04-download-product-isolation.md)。
 
 ## 历史交接基线（仅作追溯）
 
