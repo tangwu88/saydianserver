@@ -89,6 +89,26 @@ test("gateway routine reconciliation restores Say Ring legal routes without dupl
   assert(result.includes("proxy_pass http://global-admin:8080;"));
   assert.equal(unifyGateway(result), result);
 });
+
+test("gateway adds exact Health download aliases safely and preserves other routes", () => {
+  const template = readFileSync(new URL("../nginx/app-https.conf.template", import.meta.url), "utf8").replaceAll("__APP_DOMAIN__", "app.saydian.cn");
+  const routes = readFileSync(new URL("../global/nginx.locations.conf", import.meta.url), "utf8")
+    .replace(/location = \/global\/down\/? \{[^}]*\}\n\n/g, "");
+  const old = "# preserved host\n" + template.replace("__SAYDIAN_GLOBAL_ROUTES__", routes) + "\n# preserved suffix";
+  const result = unifyGateway(old);
+  for (const marker of ["location = /global/down {", "location = /global/down/ {"]) {
+    assert.equal(result.split(marker).length, 2);
+    assert(result.indexOf(marker) < result.indexOf("location = /global {"));
+    const start = result.indexOf(marker), end = result.indexOf("}", start);
+    const invalid = result.slice(0, start) + result.slice(start, end).replace("http://global-admin:8080", "http://untrusted:8080") + result.slice(end);
+    assert.throws(() => unifyGateway(invalid), /static upstream/);
+    assert.throws(() => unifyGateway(result.replace(marker, `location = /global/down { proxy_pass http://global-admin:8080; }\n${marker}`)), /Duplicate/);
+  }
+  assert(result.startsWith("# preserved host\n") && result.endsWith("\n# preserved suffix"));
+  assert(result.includes("location ^~ /global/down/files/"));
+  assert(result.includes("location = /say-ring"));
+  assert.equal(unifyGateway(result), result);
+});
 test("settings import only fills missing download/support values; no permissions or provider enablement", () => {
   const source = [{ key: "app_update", value: { name: "a'b" }, public: true, updatedAt: "2026-10-01T00:00:00Z" }, { key: "support", value: {}, public: true, updatedAt: "2026-10-01T00:00:00Z" }];
   const retained = { ...source[0], value: { version: "current" } };

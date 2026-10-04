@@ -5,10 +5,7 @@ import {
   type DownloadPlatform,
   type DownloadReleaseContract,
 } from "@saydian/app-contracts/download";
-import {
-  healthAndroidManifestFromApiData,
-  manifestFromApiData,
-} from "./manifest";
+import { productManifestFromApiData, manifestFromApiData } from "./manifest";
 import { detectVisitorPlatform, formatPackageSize } from "./platform";
 import "./styles.css";
 
@@ -17,15 +14,19 @@ const labels: Record<DownloadPlatform, string> = {
   ios: "iPhone",
   harmonyos: "HarmonyOS",
 };
-const isSayRing =
-  window.location.pathname === "/say-ring" ||
-  window.location.pathname.startsWith("/say-ring/");
-const pagePath = isSayRing ? "/say-ring" : "/down";
-const manifestEndpoint = isSayRing
-  ? "/api/saydian-app/v2/support/app-update?product=say-ring"
-  : "/api/saydian-app/v2/support/app-update";
-const healthManifestEndpoint =
-  "/api/saydian-app/v2/support/app-update?product=saydian-global";
+const path = window.location.pathname.replace(/\/$/, "");
+const product =
+  path === "/say-ring" ? "ring" : path === "/down/legacy" ? "legacy" : "health";
+const pages = {
+  health: {
+    name: "SAYDIAN Health",
+    path: "/global/down",
+    query: "?product=saydian-global",
+  },
+  legacy: { name: "原赛电 App", path: "/down/legacy", query: "" },
+  ring: { name: "Say Ring App", path: "/say-ring", query: "?product=say-ring" },
+} as const;
+const currentPage = pages[product];
 
 configurePage();
 
@@ -37,42 +38,31 @@ const visitorPlatform = detectVisitorPlatform(
 
 highlightVisitorPlatform();
 void renderQrCode();
-void loadManifest(
-  manifestEndpoint,
-  isSayRing ? downloadPlatforms : ["ios", "harmonyos"],
-  isSayRing,
-);
-if (!isSayRing) void loadManifest(healthManifestEndpoint, ["android"], true);
+void loadManifest();
 
-async function loadManifest(
-  endpoint: string,
-  platforms: readonly DownloadPlatform[],
-  showPublishedAt: boolean,
-): Promise<void> {
+async function loadManifest(): Promise<void> {
   const status = requiredElement<HTMLElement>("#manifest-status");
   try {
-    const response = await fetch(endpoint, {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
+    const response = await fetch(
+      `/api/saydian-app/v2/support/app-update${currentPage.query}`,
+      {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      },
+    );
     if (!response.ok) throw new Error("暂未发布可用版本");
     const envelope = (await response.json()) as ApiEnvelope<unknown>;
     const manifest =
-      endpoint === healthManifestEndpoint
-        ? healthAndroidManifestFromApiData(envelope.data)
-        : manifestFromApiData(envelope.data);
-    for (const release of manifest.releases) {
-      if (platforms.includes(release.platform)) renderRelease(release);
-    }
-    if (showPublishedAt)
-      status.textContent = `发布于 ${formatPublishedAt(manifest.publishedAt)}`;
+      product === "legacy"
+        ? manifestFromApiData(envelope.data)
+        : productManifestFromApiData(envelope.data, product);
+    for (const release of manifest.releases) renderRelease(release);
+    status.textContent = `发布于 ${formatPublishedAt(manifest.publishedAt)}`;
   } catch (error) {
-    if (showPublishedAt) {
-      status.textContent =
-        error instanceof Error ? error.message : "下载信息暂时不可用";
-      status.classList.add("is-error");
-    }
-    for (const platform of platforms) {
+    status.textContent =
+      error instanceof Error ? error.message : "下载信息暂时不可用";
+    status.classList.add("is-error");
+    for (const platform of downloadPlatforms) {
       const card = requiredElement<HTMLElement>(
         `[data-platform="${platform}"]`,
       );
@@ -83,9 +73,7 @@ async function loadManifest(
         card,
         '[data-field="action"]',
       );
-      action.removeAttribute("href");
-      action.setAttribute("aria-disabled", "true");
-      action.classList.add("is-disabled");
+      disableAction(action, "暂不可用");
     }
   }
 }
@@ -102,14 +90,51 @@ function renderRelease(release: DownloadReleaseContract): void {
     '[data-field="action"]',
   );
   if (release.status === "coming_soon" || !release.destination) {
-    badge.textContent = "待开放";
+    const awaitingReview = release.pendingReason === "review";
+    badge.textContent = awaitingReview ? "等待审核" : "待开放";
     badge.classList.add("status-badge--pending");
     action.textContent =
-      release.platform === "ios" ? "TestFlight 待开放" : "暂未开放";
-    action.removeAttribute("href");
-    action.setAttribute("aria-disabled", "true");
-    action.classList.add("is-disabled");
+      release.platform === "ios"
+        ? awaitingReview
+          ? "TestFlight 等待审核"
+          : "TestFlight 待开放"
+        : "暂未开放";
+    if (release.platform === "ios")
+      requiredElement<HTMLElement>("#ios-note").textContent = awaitingReview
+        ? "外部测试等待审核，通过并核对后开放。"
+        : "暂未开放安装。";
+    disableAction(action, action.textContent ?? "暂未开放");
     return;
+  }
+  if (
+    release.destination.kind === "market" &&
+    ["baidu.com", "www.baidu.com"].includes(
+      new URL(release.destination.url).hostname,
+    )
+  ) {
+    badge.textContent = "安装地址待确认";
+    badge.classList.add("status-badge--muted");
+    disableAction(action, "暂不可用");
+    return;
+  }
+  if (release.platform === "ios")
+    requiredElement<HTMLElement>("#ios-note").textContent =
+      release.destination.kind === "testflight"
+        ? "通过 TestFlight 安装。"
+        : "通过 App Store 安装。";
+  if (
+    product === "health" &&
+    release.platform === "android" &&
+    release.destination.kind === "direct" &&
+    release.versionName === "1.0.0" &&
+    release.buildNumber === 1012
+  ) {
+    requiredElement<HTMLElement>("#health-package-note").classList.remove(
+      "is-hidden",
+    );
+    requiredElement<HTMLElement>("#health-signature-note").classList.remove(
+      "is-hidden",
+    );
   }
   badge.textContent = "可下载";
   badge.classList.add("status-badge--available");
@@ -146,6 +171,13 @@ function renderRelease(release: DownloadReleaseContract): void {
   }
 }
 
+function disableAction(action: HTMLAnchorElement, label: string): void {
+  action.textContent = label;
+  action.removeAttribute("href");
+  action.setAttribute("aria-disabled", "true");
+  action.classList.add("is-disabled");
+}
+
 function highlightVisitorPlatform(): void {
   const notice = requiredElement<HTMLElement>("#device-notice");
   if (visitorPlatform === "desktop") {
@@ -161,31 +193,40 @@ function highlightVisitorPlatform(): void {
 async function renderQrCode(): Promise<void> {
   const canvas = requiredElement<HTMLCanvasElement>("#page-qr");
   try {
-    await QRCode.toCanvas(canvas, `${window.location.origin}${pagePath}`, {
-      width: 184,
-      margin: 1,
-      color: { dark: "#17191f", light: "#ffffff" },
-      errorCorrectionLevel: "M",
-    });
+    await QRCode.toCanvas(
+      canvas,
+      `${window.location.origin}${currentPage.path}`,
+      {
+        width: 184,
+        margin: 1,
+        color: { dark: "#17191f", light: "#ffffff" },
+        errorCorrectionLevel: "M",
+      },
+    );
   } catch {
     canvas.closest<HTMLElement>(".qr-panel")?.classList.add("is-hidden");
   }
 }
 
 function configurePage(): void {
-  if (!isSayRing) {
-    requiredElement<HTMLElement>('[data-platform="android"] h3').textContent =
-      "Saydian Health 安卓版";
-    return;
-  }
-  document.title = "Say Ring App 下载";
+  document.title = `${currentPage.name} 下载`;
   requiredElement<HTMLElement>("#page-title").innerHTML =
-    "下载 <strong>Say Ring App</strong>";
+    `下载 <strong>${currentPage.name}</strong>`;
   requiredElement<HTMLElement>("#page-description").textContent =
-    "选择 Android、iPhone 或 HarmonyOS 版本，安装后连接并管理智能戒指。";
-  requiredElement<HTMLElement>("#page-eyebrow").textContent =
-    "Say Ring 官方下载";
-  requiredElement<HTMLImageElement>("#brand-lockup").alt = "Say Ring";
+    product === "health"
+      ? "健康设备配套 App"
+      : product === "ring"
+        ? "智能戒指配套 App"
+        : "原赛电 App · 与 Health 安装包不同";
+  requiredElement<HTMLImageElement>("#brand-lockup").alt = currentPage.name;
+  requiredElement<HTMLLinkElement>("#canonical-url").href =
+    `${window.location.origin}${currentPage.path}`;
+  requiredElement<HTMLElement>(`#product-${product}`).setAttribute(
+    "aria-current",
+    "page",
+  );
+  if (product !== "health")
+    requiredElement<HTMLElement>("#health-links").classList.add("is-hidden");
 }
 
 async function copyHash(

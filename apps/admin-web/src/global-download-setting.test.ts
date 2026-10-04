@@ -47,6 +47,29 @@ const manifest = {
 };
 
 describe("international download settings", () => {
+  it("roundtrips iPhone review status without publishing a TestFlight link", () => {
+    const editor = globalDownloadManifestToEditor(manifest);
+    editor.releases.ios.versionName = "1.0.1";
+    editor.releases.ios.buildNumber = 1013;
+    editor.releases.ios.pendingReason = "review";
+    editor.releases.ios.url =
+      "https://testflight.apple.com/join/unapproved-fixture";
+    const saved = globalDownloadEditorToManifest(editor);
+    expect(saved.releases[1]).toMatchObject({
+      versionName: "1.0.1",
+      buildNumber: 1013,
+      status: "coming_soon",
+      pendingReason: "review",
+    });
+    expect(saved.releases[1]).not.toHaveProperty("destination");
+    expect(
+      globalDownloadManifestToEditor(saved).releases.ios.pendingReason,
+    ).toBe("review");
+    editor.releases.ios.status = "available";
+    expect(
+      globalDownloadEditorToManifest(editor).releases[1],
+    ).not.toHaveProperty("pendingReason");
+  });
   it("creates separate empty drafts without invented publication or version data", () => {
     const draft = createGlobalDownloadDraft();
     expect(draft.publishedAt).toBe("");
@@ -56,9 +79,13 @@ describe("international download settings", () => {
       expect(release.buildNumber).toBeUndefined();
       expect(release.url).toBe("");
     }
-    expect(() => globalDownloadEditorToManifest(draft)).toThrow("请填写发布时间");
+    expect(() => globalDownloadEditorToManifest(draft)).toThrow(
+      "请填写发布时间",
+    );
     draft.publishedAt = "2026-09-29T03:28:31.100Z";
-    expect(() => globalDownloadEditorToManifest(draft)).toThrow("请填写 Android 版本号");
+    expect(() => globalDownloadEditorToManifest(draft)).toThrow(
+      "请填写 Android 版本号",
+    );
     draft.releases.android.versionName = "local-unsaved-edit";
     expect(createGlobalDownloadDraft().releases.android.versionName).toBe("");
   });

@@ -357,7 +357,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
   const definitions = [
     { key: "global_support", name: "客服设置" },
     { key: "app_update", name: "赛电 App 更新" },
-    { key: "global_app_update", name: "Saydian Health 更新" },
+    { key: "global_app_update", name: "SAYDIAN Health 更新" },
     { key: "say_ring_app_update", name: "Say Ring App 更新" },
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
     { key: "say_ring_map", name: "Say Ring 运动地图" },
@@ -1029,7 +1029,7 @@ function fillDownloadUrl(platform: "android" | "ios" | "harmonyos"): void {
   if (platform === "ios") return;
   const editor = form.value.downloadEditor as DownloadManifestEditor | undefined;
   const release = editor?.releases[platform];
-  if (release?.fileName) release.url = `/global/down/files/${release.fileName.trim()}`;
+  if (release?.fileName) release.url = `${form.value.key === "app_update" ? "" : "/global"}/down/files/${release.fileName.trim()}`;
 }
 
 async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event: Event): Promise<void> {
@@ -1927,7 +1927,7 @@ onBeforeUnmount(() => {
             <el-alert title="启用时至少填写客服电话或微信公众号；关闭后可保留联系方式，但 App 不会展示。" type="warning" :closable="false" />
           </template>
           <template v-else-if="isAppUpdateSetting(form.key) && form.downloadEditor">
-            <el-alert :title="form.key === 'say_ring_app_update' ? '保存后仅 Say Ring 会读取此配置。Android 与 HarmonyOS 可上传安装包或填写应用市场链接。' : '保存后国际版 App 会读取新配置。Android/HarmonyOS 可配置安装包或应用市场链接。'" type="warning" :closable="false" show-icon />
+            <el-alert :title="form.key === 'say_ring_app_update' ? '仅更新 Say Ring。' : form.key === 'app_update' ? '仅更新原赛电下载页 /down/legacy，不影响 Health。' : '仅更新 Health 下载页 /down 与 /global/down。等待审核时不保存安装链接。'" type="warning" :closable="false" show-icon />
             <el-form-item label="发布时间" class="download-published-at">
               <el-input v-model="form.downloadEditor.publishedAt" placeholder="ISO 8601，如 2026-09-06T00:00:00+08:00">
                 <template #append><el-button @click="setDownloadPublishedNow">设为现在</el-button></template>
@@ -1938,7 +1938,7 @@ onBeforeUnmount(() => {
                 <header>
                   <strong>{{ platform.label }}</strong>
                   <el-tag size="small" :type="form.downloadEditor.releases[platform.key].status === 'available' ? 'success' : 'info'">
-                    {{ form.downloadEditor.releases[platform.key].status === "available" ? "可下载" : "待开放" }}
+                    {{ form.downloadEditor.releases[platform.key].status === "available" ? "可下载" : form.downloadEditor.releases[platform.key].pendingReason === "review" ? "等待审核" : "待开放" }}
                   </el-tag>
                 </header>
                 <el-form-item label="版本号">
@@ -1952,6 +1952,9 @@ onBeforeUnmount(() => {
                     <el-option label="可下载" value="available" />
                     <el-option label="待开放" value="coming_soon" />
                   </el-select>
+                </el-form-item>
+                <el-form-item v-if="platform.key === 'ios' && form.downloadEditor.releases.ios.status === 'coming_soon'" label="等待审核">
+                  <el-switch :model-value="form.downloadEditor.releases.ios.pendingReason === 'review'" @change="(value: boolean | string | number) => form.downloadEditor.releases.ios.pendingReason = value === true ? 'review' : undefined" />
                 </el-form-item>
                 <template v-if="form.downloadEditor.releases[platform.key].status === 'available' && platform.key === 'ios'">
                   <el-form-item label="链接类型">

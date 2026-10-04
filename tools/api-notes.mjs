@@ -110,7 +110,7 @@ export const notes = {
   "SupportController.weatherForecast": entry("手机当前位置天气预报", "公开 GET；query lat=-90..90、lon=-180..180；服务端按两位小数网格取预报，不接收会员标识", "{source,sourceUrl,licenseUrl,updatedAt,timeseries}；MET Norway 预报及来源/CC BY 4.0 标注；无有效数据返回503，不生成虚构天气", "固定 MET Norway Locationforecast HTTPS；按 Expires 缓存并以 Last-Modified 条件刷新"),
   "SupportController.sportMapConfig": entry("Say Ring 运动地图状态", "无请求体；不返回高德密钥", "{provider:'amap',configured:boolean}；仅国际 Say Ring 地图已公开、启用且密钥存在时为 true"),
   "SupportController.sportRouteMap": entry("Say Ring 高德运动轨迹图", "会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点", "高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图", "高德 Web 服务坐标转换与静态地图 API"),
-  "SupportController.appUpdate": entry("App 下载与更新配置", "国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单", "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无配置404"),
+  "SupportController.appUpdate": entry("App 下载与更新配置", "统一接口：不传product读取原赛电app_update；product=saydian-global读取Health的global_app_update；product=say-ring读取say_ring_app_update", "DownloadManifest v1；Android/iPhone/HarmonyOS各一项，coming_soon无destination；iPhone可附pendingReason=review表示等待审核，不提供安装链接；Health与Say Ring强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无公开配置404"),
   "SupportController.appPackage": entry("Say Ring 公开安装包", "fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名", "安装包原始文件流，含 Content-Length、ETag 和 nosniff", "已配置对象存储"),
   "SupportController.feedback": entry("提交反馈", "{content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项}", "{id,status}"),
   "FilesController.upload": entry("上传图片", "multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP", "{id,url,...}", "私有对象存储"),

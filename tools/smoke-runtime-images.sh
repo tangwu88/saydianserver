@@ -56,7 +56,7 @@ for (const path of ['/api/saydian-app/v2/members/me', '/api/saydian-app/v2/devic
 }
 console.log('Runtime image: canonical and legacy login/member/device/health/order parity passed.');
 NODE
-for path in /admin/ /down /say-ring /saidian-mall/ /global/saidian-mall/; do
+for path in /admin/ /down /down/ /down/legacy /down/legacy/ /global/down /global/down/ /say-ring /saidian-mall/ /global/saidian-mall/; do
   curl -fsS "http://127.0.0.1:18081$path" | grep -qi '<html'
 done
 for path in /down/files/health-ci.apk /global/down/files/health-ci.apk; do

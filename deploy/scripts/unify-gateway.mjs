@@ -52,7 +52,7 @@ export function unifyGateway(source) {
 ${marker}`);
     }
     // Older managed gateways need these public pages before their generic /global fallback.
-    const routes = ["location = /global/privacy-policy", "location = /global/terms", "location = /global/support", "location = /global/account-deletion", "location ^~ /global/public-assets/", "location ^~ /global/down/files/"];
+    const routes = ["location = /global/privacy-policy", "location = /global/terms", "location = /global/support", "location = /global/account-deletion", "location ^~ /global/public-assets/", "location ^~ /global/down/files/", "location = /global/down {", "location = /global/down/ {"];
     for (const [index, marker] of routes.entries()) {
       const count = block.split(marker).length - 1;
       if (count > 1) throw new Error(`Duplicate public route: ${marker}`);
@@ -67,7 +67,7 @@ ${marker}`);
       if (nextStart < 0 || block.indexOf(next, nextStart + 1) >= 0)
         throw new Error(`Expected one insertion point for ${marker}`);
       const insertionStart = block.lastIndexOf("\n", nextStart) + 1;
-      const route = `  ${marker} {\n    proxy_pass http://global-admin:8080;\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-Proto https;\n  }\n\n`;
+      const route = `  ${marker.endsWith("{") ? marker : `${marker} {`}\n    proxy_pass http://global-admin:8080;\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-Proto https;\n  }\n\n`;
       block = block.slice(0, insertionStart) + route + block.slice(insertionStart);
     }
     return block;

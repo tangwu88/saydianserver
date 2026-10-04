@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { manifestFromApiData } from "./manifest";
+import { manifestFromApiData, productManifestFromApiData } from "./manifest";
 
 const manifest = {
   schemaVersion: 1,
@@ -81,5 +81,65 @@ describe("download manifest API compatibility", () => {
     expect(manifestFromApiData(global).releases[0]?.destination?.url).toBe(
       "/global/down/files/Saydian-Android-0.1.19-build23-QA.apk",
     );
+  });
+
+  it("rejects wrong product identity on every Health platform", () => {
+    const health = {
+      ...manifest,
+      realm: "global",
+      releases: manifest.releases.map((release) => ({
+        ...release,
+        packageId:
+          release.platform === "harmonyos"
+            ? "cn.saydian.app.global.hm"
+            : "cn.saydian.app.global",
+        ...(release.destination
+          ? {
+              destination: {
+                ...release.destination,
+                url: `/global${release.destination.url}`,
+              },
+            }
+          : {}),
+      })),
+    };
+    expect(productManifestFromApiData(health, "health").releases).toHaveLength(
+      3,
+    );
+    expect(() => productManifestFromApiData(health, "ring")).toThrow();
+    for (const platform of ["android", "ios", "harmonyos"]) {
+      expect(() =>
+        productManifestFromApiData(
+          {
+            ...health,
+            releases: health.releases.map((release) =>
+              release.platform === platform
+                ? { ...release, packageId: "cn.saydian.ring" }
+                : release,
+            ),
+          },
+          "health",
+        ),
+      ).toThrow();
+    }
+    expect(() =>
+      productManifestFromApiData(
+        {
+          ...health,
+          releases: health.releases.map((release) =>
+            release.destination
+              ? {
+                  ...release,
+                  destination: {
+                    ...release.destination,
+                    url: release.destination.url.slice(7),
+                  },
+                }
+              : release,
+          ),
+        },
+        "health",
+      ),
+    ).toThrow();
   });
 });

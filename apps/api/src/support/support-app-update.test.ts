@@ -54,6 +54,49 @@ function serviceWith(setting: unknown): SupportService {
 }
 
 describe("public App download manifest", () => {
+  it("returns review-pending iPhone metadata without an install destination", async () => {
+    const value = {
+      ...validManifest,
+      releases: validManifest.releases.map((release) =>
+        release.platform === "ios"
+          ? {
+              ...release,
+              versionName: "1.0.1",
+              buildNumber: 1013,
+              pendingReason: "review",
+            }
+          : release,
+      ),
+    };
+    const saved = await serviceWith({ public: true, value }).appUpdateConfig();
+    expect(saved.releases[1]).toMatchObject({
+      status: "coming_soon",
+      pendingReason: "review",
+    });
+    expect(saved.releases[1]).not.toHaveProperty("destination");
+    for (const release of [
+      {
+        ...value.releases[1]!,
+        destination: {
+          kind: "testflight",
+          url: "https://testflight.apple.com/join/fixture",
+        },
+      },
+      { ...value.releases[1]!, pendingReason: "approved" },
+      { ...validManifest.releases[0]!, pendingReason: "review" },
+    ])
+      await expect(
+        serviceWith({
+          public: true,
+          value: {
+            ...value,
+            releases: value.releases.map((item) =>
+              item.platform === release.platform ? release : item,
+            ),
+          },
+        }).appUpdateConfig(),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
   it("reads only the global manifest key and never exposes domestic direct package paths", async () => {
     vi.stubEnv("APP_REALM", "global");
     const globalManifest = {

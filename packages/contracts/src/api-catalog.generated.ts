@@ -24942,8 +24942,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "App 下载与更新配置",
-      "request": "国际环境可传product=say-ring读取Say Ring独立清单；不传则读取原国际App清单",
-      "response": "DownloadManifest v1；Android/iPhone/HarmonyOS 各一项，待开放项无下载地址；国际按产品读取global_app_update或say_ring_app_update，强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无配置404",
+      "request": "统一接口：不传product读取原赛电app_update；product=saydian-global读取Health的global_app_update；product=say-ring读取say_ring_app_update",
+      "response": "DownloadManifest v1；Android/iPhone/HarmonyOS各一项，coming_soon无destination；iPhone可附pendingReason=review表示等待审核，不提供安装链接；Health与Say Ring强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无公开配置404",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {

@@ -34,6 +34,27 @@ main {
   margin: 0 auto;
   padding: 42px 0 32px;
 }
+.product-nav,
+footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.product-nav a {
+  padding: 10px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  background: #fff;
+  font-size: 14px;
+}
+.product-nav a[aria-current="page"] {
+  color: #b10a28;
+  box-shadow: inset 0 0 0 1px #cf082b;
+}
+footer nav {
+  justify-content: center;
+}
 
 .hero {
   display: grid;

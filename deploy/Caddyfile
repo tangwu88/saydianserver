@@ -19,6 +19,14 @@
     reverse_proxy admin:8080
   }
 
+  handle /global/down {
+    reverse_proxy admin:8080
+  }
+
+  handle /global/down/* {
+    reverse_proxy admin:8080
+  }
+
   handle /say-ring* {
     reverse_proxy admin:8080
   }

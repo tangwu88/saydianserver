@@ -48,23 +48,30 @@ export function manifestFromApiData(data: unknown): DownloadManifestContract {
   return parseDownloadManifest(candidate);
 }
 
-export function healthAndroidManifestFromApiData(
+export function productManifestFromApiData(
   data: unknown,
+  product: "health" | "ring",
 ): DownloadManifestContract {
   const candidate = manifestSource(data);
-  const android =
-    isRecord(candidate) && Array.isArray(candidate.releases)
-      ? candidate.releases.find(
-          (release) => isRecord(release) && release.platform === "android",
-        )
-      : undefined;
+  const packageId =
+    product === "health" ? "cn.saydian.app.global" : "cn.saydian.ring";
   if (
     !isRecord(candidate) ||
     candidate.realm !== "global" ||
-    !isRecord(android) ||
-    android.packageId !== "cn.saydian.app.global"
+    !Array.isArray(candidate.releases) ||
+    candidate.releases.some(
+      (release) =>
+        !isRecord(release) ||
+        release.packageId !==
+          `${packageId}${release.platform === "harmonyos" ? ".hm" : ""}` ||
+        (isRecord(release.destination) &&
+          release.destination.kind === "direct" &&
+          !String(release.destination.url).startsWith("/global/")),
+    )
   ) {
-    throw new Error("Saydian Health 安卓下载信息无效");
+    throw new Error(
+      `${product === "health" ? "SAYDIAN Health" : "Say Ring"} 下载信息无效`,
+    );
   }
   return manifestFromApiData(data);
 }

@@ -89,6 +89,8 @@ test("migration failure never restarts apps; startup or health failure rolls bac
 test("successful routine publication verifies both health aliases without build, seed or cleanup", () => {
   const result = run("success"); assert.equal(result.status, 0, result.output);
   assert(result.calls.includes("https://app.saydian.cn/global/health/ready"));
+  for (const path of ["/down/legacy", "/global/down", "/global/down/"])
+    assert(result.calls.includes(`https://app.saydian.cn${path}`));
   assert(!/docker build|prisma db seed|compose down|docker prune/.test(result.calls));
 });
 test("public readiness tolerates a reloading gateway but rejects persistent old revisions", () => {

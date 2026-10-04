@@ -9,13 +9,23 @@
     <meta name="theme-color" content="#f7f8fb" />
     <meta
       name="description"
-      content="Saydian赛电 App Android、iPhone 和 HarmonyOS 内部测试版下载与安装引导"
+      content="SAYDIAN Health、原赛电与 Say Ring 独立下载入口，内部测试版与待审核状态"
     />
     <link rel="icon" type="image/png" href="/down/saidian-brand-mark.png" />
-    <title>Saydian赛电 App 下载</title>
+    <link
+      id="canonical-url"
+      rel="canonical"
+      href="https://app.saydian.cn/global/down"
+    />
+    <title>SAYDIAN Health 下载</title>
   </head>
   <body>
     <main>
+      <nav class="product-nav" aria-label="选择 App">
+        <a id="product-health" href="/global/down">SAYDIAN Health</a>
+        <a id="product-legacy" href="/down/legacy">原赛电 App</a>
+        <a id="product-ring" href="/say-ring">Say Ring</a>
+      </nav>
       <section class="hero" aria-labelledby="page-title">
         <div class="hero__copy">
           <img
@@ -29,7 +39,7 @@
           <div class="eyebrow">
             <span></span><b id="page-eyebrow">内部测试下载</b>
           </div>
-          <h1 id="page-title">下载 <strong>Saydian赛电 App</strong></h1>
+          <h1 id="page-title">下载 <strong>SAYDIAN Health</strong></h1>
           <p id="page-description" class="hero__lead">
             选择您的设备版本，手动确认下载。
           </p>
@@ -90,6 +100,12 @@
               aria-disabled="true"
               >暂不可下载</a
             >
+            <p id="health-package-note" class="card-note is-hidden">
+              内部 QA 测试包 · 非 Google Play 正式版
+            </p>
+            <p id="health-signature-note" class="card-note is-hidden">
+              此包不能覆盖 Windows 签名的 3012 版本。不要卸载旧版或清除数据强行安装。
+            </p>
             <div class="hash-block is-hidden" data-field="hash-block">
               <span>SHA-256</span>
               <code data-field="hash"></code>
@@ -133,7 +149,7 @@
               aria-disabled="true"
               >TestFlight 待开放</a
             >
-            <p class="card-note">取得官方 TestFlight 链接后开放。</p>
+            <p id="ios-note" class="card-note">暂未开放安装。</p>
           </article>
 
           <article class="release-card" data-platform="harmonyos">
@@ -189,6 +205,12 @@
       </section>
     </main>
     <footer>
+      <nav id="health-links" aria-label="Health 支持">
+        <a href="/global/privacy-policy">隐私政策</a>
+        <a href="/global/terms">用户协议</a>
+        <a href="/global/support">客服支持</a>
+        <a href="/global/account-deletion">账号注销</a>
+      </nav>
       <span>© 2026 Saydian赛电</span>
     </footer>
     <script type="module" src="/src/main.ts"></script>

@@ -12,6 +12,7 @@ export interface DownloadReleaseEditor {
   versionName: string;
   buildNumber: number | undefined;
   status: DownloadReleaseStatus;
+  pendingReason?: "review";
   destinationKind: DownloadDestinationKind;
   url: string;
   fileName: string;
@@ -43,6 +44,9 @@ export function downloadManifestToEditor(
         versionName: release.versionName,
         buildNumber: release.buildNumber,
         status: release.status,
+        ...(release.pendingReason
+          ? { pendingReason: release.pendingReason }
+          : {}),
         destinationKind:
           release.destination?.kind ??
           (release.platform === "ios" ? "testflight" : "direct"),
@@ -70,9 +74,14 @@ export function downloadEditorToManifest(
   for (const platform of downloadPlatforms) {
     const release = editor.releases[platform];
     if (!release.versionName.trim()) {
-      throw new Error(`请填写 ${platformLabels[platform]} 版本号（待开放也需要版本号）`);
+      throw new Error(
+        `请填写 ${platformLabels[platform]} 版本号（待开放也需要版本号）`,
+      );
     }
-    if (!Number.isInteger(release.buildNumber) || Number(release.buildNumber) <= 0) {
+    if (
+      !Number.isInteger(release.buildNumber) ||
+      Number(release.buildNumber) <= 0
+    ) {
       throw new Error(`请填写 ${platformLabels[platform]} 构建号（正整数）`);
     }
   }
@@ -84,7 +93,13 @@ export function downloadEditorToManifest(
       buildNumber: Number(release.buildNumber),
       status: release.status,
     };
-    if (release.status === "coming_soon") return base;
+    if (release.status === "coming_soon")
+      return {
+        ...base,
+        ...(platform === "ios" && release.pendingReason
+          ? { pendingReason: release.pendingReason }
+          : {}),
+      };
     if (platform === "ios") {
       return {
         ...base,

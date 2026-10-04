@@ -17,6 +17,7 @@ export interface DownloadReleaseContract {
   versionName: string;
   buildNumber: number;
   status: DownloadReleaseStatus;
+  pendingReason?: "review";
   destination?: DownloadDestinationContract;
 }
 
@@ -78,6 +79,13 @@ function parseDownloadRelease(input: unknown): DownloadReleaseContract {
   const status = source.status;
   if (status !== "available" && status !== "coming_soon")
     throw new Error(`${platform}.status 无效`);
+  if (
+    source.pendingReason !== undefined &&
+    (source.pendingReason !== "review" ||
+      platform !== "ios" ||
+      status !== "coming_soon")
+  )
+    throw new Error("等待审核仅适用于待开放的 iPhone 版本");
   if (status === "coming_soon") {
     if (source.destination !== undefined && source.destination !== null) {
       throw new Error(`${platform} 待开放时不得配置下载地址`);
@@ -87,6 +95,9 @@ function parseDownloadRelease(input: unknown): DownloadReleaseContract {
       versionName,
       buildNumber: Number(buildNumber),
       status,
+      ...(source.pendingReason === "review"
+        ? { pendingReason: "review" as const }
+        : {}),
     };
   }
   const destination = parseDownloadDestination(
