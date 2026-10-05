@@ -23,11 +23,17 @@ Health 安卓继续保留已发布、哈希可验证的内部 QA 包 `1.0.0（10
 
 首个完整功能版本 `2f7b78a820daad8b92c16c9378743c2624911cab` 的 [CI/部署 37196520415](https://github.com/tangwu88/saydianserver/actions/runs/37196520415) 已全部成功，双地址 readiness 为该 revision；新旧页面、商城、协议均返回 200。Health 安卓全文件大小/SHA-256 和 206 断点下载再次通过，旧清单及文件链接保留。此后的文档提交仍走自动发布，当前最新版本须以 main、Actions 和双地址 revision 一致为准，不将历史验收 SHA 当作永久最新。原因、回滚点和详细回执见[本轮记录](implementation-log/2026-10-04-download-product-isolation.md)。
 
-## Say Ring 公开政策同步（2026-10-05，发布结果须按回执核对）
+## Say Ring 公开政策同步（2026-10-05）
 
 `/say-ring/privacy` 与 `/say-ring/terms` 改为实时只读 HTML，使用 App 相同的当前已审、激活、同版本 Say Ring 专属法律文档对。后台发布后即时生效，无 JavaScript、无静态正文副本；原静态 HTML 地址保留精简兼容入口。无有效专属文档则不可用，不展示 Health 政策或过时“不登录/不云同步”承诺。
 
 隐私页另列当前已发布的独立睡眠 AI 分析说明；仅展示、不接受授权、不传输健康数据。第三方运动地图披露缺口及实际日志/留存边界单独核查，不能把这次页面同步当作完整法律审查或苹果审核通过。实现、测试和公开回查见[本轮记录](implementation-log/2026-10-05-say-ring-current-public-legal.md)。
+
+后台保留新中文 `say-ring-cn-2026-10-05-v3` 隐私与协议草稿，均未审核、未启用；[隐私源稿](legal/say-ring-privacy-20261005.zh-Hans.html)和[协议源稿](legal/say-ring-terms-20261005.zh-Hans.html)只作交接，不随部署发布。正式页仍读取已审 v2 和独立睡眠说明。草稿补充可选高德地图、通用 AI 自由文本与睡眠汇总的区别；启用前须核实事实、法律审核及客户端单独授权。
+
+Say Ring 公开显示配置已读回 `hideAi=true, sleepAiEnabled=true`，只隐藏通用 AI，保留独立睡眠分析。地图仍 `configured=false`。显示开关不是服务端产品级权限：共享账号令牌尚无可信产品身份，旧离线缓存与真机入口须由 App 侧验收，不能据此宣称共享 AI 接口已禁止 Say Ring 调用。
+
+功能提交 `60178a23a5bfa4ae5f685abc90141967c8492e4e` 的 [CI/部署 37259398854](https://github.com/tangwu88/saydianserver/actions/runs/37259398854) 已成功，双 readiness 为该 revision；公开两页与正式 JSON 渲染结果逐字一致，独立睡眠说明可见，10 项其他产品/旧接口快照均未变。文档提交也会触发流水线，因此最新状态仍以 main、Actions 和线上 revision 为准。v3 草稿不会随代码部署激活。
 
 ## 历史交接基线（仅作追溯）
 
