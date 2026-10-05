@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, Headers, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { ContentService } from "./content.service";
 import { UserAuthGuard } from "../common/user-auth.guard";
 import { CurrentUser, type AuthenticatedUser } from "../common/request-context";
+import { RawResponse } from "../common/raw-response.decorator";
 
 @ApiTags("content")
 @Controller("api/saydian-app/v2/content")
@@ -33,6 +34,16 @@ export class ContentController {
   @Get("legal/:type")
   legal(@Param("type") type: string, @Query("version") version?: string, @Query("locale") locale?: string) {
     return this.content.legalDocument(type, version, locale);
+  }
+
+  @Get("legal-page/say-ring/:type")
+  @RawResponse()
+  @Header("Content-Type", "text/html; charset=utf-8")
+  @Header("Cache-Control", "no-store")
+  @Header("X-Content-Type-Options", "nosniff")
+  @Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+  sayRingLegalPage(@Param("type") type: string) {
+    return this.content.sayRingLegalPage(type);
   }
 }
 

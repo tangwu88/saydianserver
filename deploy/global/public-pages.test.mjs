@@ -11,6 +11,17 @@ test("Say Ring download aliases serve the dedicated product page with no-store",
       assert.match(read(source), new RegExp(`location = ${path} \\{\\s*try_files /down/index.html =404;\\s*add_header Cache-Control "no-store" always;`));
 });
 
+test("Say Ring legal pages proxy read-only rendered current documents instead of stale static policies", () => {
+  for (const source of ["../../docker/admin-nginx.conf", "../nginx/download-static.conf"])
+    for (const type of ["privacy", "terms"])
+      assert.match(read(source), new RegExp(`location = /say-ring/${type} \\{\\s*proxy_pass http://\\$api_upstream/api/saydian-app/v2/content/legal-page/say-ring/${type};`));
+  for (const type of ["privacy", "terms"]) {
+    const legacy = read(`../../apps/download-web/say-ring-${type}.html`);
+    assert.match(legacy, new RegExp(`url=/say-ring/${type}`));
+    assert.doesNotMatch(legacy, /本机使用版|不提供账号|不会.*上传/);
+  }
+});
+
 test("Health public pages are international-only and use the published server contracts", () => {
   const routes = read("./nginx.locations.conf");
   const admin = read("../../docker/admin-nginx.conf");

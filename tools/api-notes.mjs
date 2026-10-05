@@ -104,6 +104,7 @@ export const notes = {
   "ContentController.articles": entry("已发布文章", "categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language", "{items,total,page,pageSize}；国际仅已发布的对应语言"),
   "ContentController.article": entry("文章详情", "id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language", "Article；未发布/未来发布/国际语言不匹配 404"),
   "ContentController.legal": entry("协议文档", "type=文档类型；version可选；国际locale必选当前capabilities法律文档locale", "国内LegalDocument；国际GlobalLegalDocument（reviewed+active+published）；未发布404"),
+  "ContentController.sayRingLegalPage": entry("Say Ring 当前已发布法律 HTML 页面", "type=privacy|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖", "text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意", "GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口"),
   "AiController.history": entry("本人 AI 历史", "sessionId 可选客户端会话标识", "最近 20 个会话及消息"),
   "AiController.send": entry("AI 提问", "{content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en", "{id,conversationId,role,content,createdAt}", "AI 供应商；未配置返回 503；语言指令不改变健康安全边界"),
   "SupportController.config": entry("客服配置", undefined, "客服配置或未配置状态"),

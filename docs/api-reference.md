@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **377 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **378 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -163,7 +163,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（124）
+## V2 App 接口（125）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -241,6 +241,7 @@
 | `GET /api/saydian-app/v2/content/articles` | 已发布文章 | public | query:categoryId?，query:page?，query:pageSize?，query:locale?，header:accept-language?；categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language | {items,total,page,pageSize}；国际仅已发布的对应语言 | 核心服务 |
 | `GET /api/saydian-app/v2/content/articles/:id` | 文章详情 | public | path:id，query:locale?，header:accept-language?；id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language | Article；未发布/未来发布/国际语言不匹配 404 | 核心服务 |
 | `GET /api/saydian-app/v2/content/legal/:type` | 协议文档 | public | path:type，query:version?，query:locale?；type=文档类型；version可选；国际locale必选当前capabilities法律文档locale | 国内LegalDocument；国际GlobalLegalDocument（reviewed+active+published）；未发布404 | 核心服务 |
+| `GET /api/saydian-app/v2/content/legal-page/say-ring/:type` | Say Ring 当前已发布法律 HTML 页面 | public | path:type；type=privacy\|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖 | text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意 | GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口 |
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
 | `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503；语言指令不改变健康安全边界 |
 | `GET /api/saydian-app/v2/devices` | 已绑定设备 | member | 无请求体 | Device[]；只含未解绑设备 | 核心服务 |

@@ -20273,6 +20273,40 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "ContentController.sayRingLegalPage",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/content/legal-page/say-ring/:type",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "type",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/content/content.controller.ts",
+      "summary": "Say Ring 当前已发布法律 HTML 页面",
+      "request": "type=privacy|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖",
+      "response": "text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意",
+      "dependency": "GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "string"
+        },
+        "responseExample": "<!doctype html><html lang=\"zh-Hans\"><title>Say Ring synthetic legal document</title></html>",
+        "contentType": "text/html",
+        "source": "apps/api/src/content/content.controller.ts; apps/api/src/content/content.service.ts; apps/api/src/content/say-ring-legal-page.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
       "key": "AiController.history",
       "method": "GET",
       "path": "/api/saydian-app/v2/ai/messages",

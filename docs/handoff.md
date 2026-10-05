@@ -23,6 +23,12 @@ Health 安卓继续保留已发布、哈希可验证的内部 QA 包 `1.0.0（10
 
 首个完整功能版本 `2f7b78a820daad8b92c16c9378743c2624911cab` 的 [CI/部署 37196520415](https://github.com/tangwu88/saydianserver/actions/runs/37196520415) 已全部成功，双地址 readiness 为该 revision；新旧页面、商城、协议均返回 200。Health 安卓全文件大小/SHA-256 和 206 断点下载再次通过，旧清单及文件链接保留。此后的文档提交仍走自动发布，当前最新版本须以 main、Actions 和双地址 revision 一致为准，不将历史验收 SHA 当作永久最新。原因、回滚点和详细回执见[本轮记录](implementation-log/2026-10-04-download-product-isolation.md)。
 
+## Say Ring 公开政策同步（2026-10-05，发布结果须按回执核对）
+
+`/say-ring/privacy` 与 `/say-ring/terms` 改为实时只读 HTML，使用 App 相同的当前已审、激活、同版本 Say Ring 专属法律文档对。后台发布后即时生效，无 JavaScript、无静态正文副本；原静态 HTML 地址保留精简兼容入口。无有效专属文档则不可用，不展示 Health 政策或过时“不登录/不云同步”承诺。
+
+隐私页另列当前已发布的独立睡眠 AI 分析说明；仅展示、不接受授权、不传输健康数据。第三方运动地图披露缺口及实际日志/留存边界单独核查，不能把这次页面同步当作完整法律审查或苹果审核通过。实现、测试和公开回查见[本轮记录](implementation-log/2026-10-05-say-ring-current-public-legal.md)。
+
 ## 历史交接基线（仅作追溯）
 
 以下独立国际发布、旧 SHA、容量、只读开关和迁移门禁描述均为历史记录，不是当前操作指令；不得据此恢复旧发布入口、覆盖原数据或重复执行首次切换。

@@ -13,6 +13,8 @@ import { markIntegrationVerified } from "../common/integration-health";
 
 import { globalLocale } from "../auth/global-identity";
 import { globalAiSystemPrompt } from "./global-content";
+import { globalLegalBundle } from "../auth/global-legal";
+import { renderSayRingLegalPage } from "./say-ring-legal-page";
 
 @Injectable()
 export class ContentService {
@@ -108,6 +110,26 @@ export class ContentService {
         throw new NotFoundException("The requested document is not available.");
       return document;
     }
+  }
+
+  async sayRingLegalPage(type: string) {
+    if (type !== "privacy" && type !== "terms")
+      throw new NotFoundException("The requested document is not available.");
+    const bundle = await globalLegalBundle(this.prisma, "zh-Hans", "say-ring");
+    if (!bundle)
+      throw new ServiceUnavailableException("No current reviewed Say Ring document is available.");
+    const published = { locale: bundle.locale, active: true, reviewed: true, publishedAt: { lte: new Date() } };
+    const document = await this.prisma.globalLegalDocument.findFirst({
+      where: { ...published, documentType: bundle.documentTypes[type === "privacy" ? "privacyPolicy" : "userAgreement"], version: bundle.consentVersion },
+    });
+    // A publication change between reads must not expose a retired version.
+    if (!document?.contentHtml.trim())
+      throw new ServiceUnavailableException("The published Say Ring document changed. Please try again.");
+    const sleepNotice = type === "privacy" ? await this.prisma.globalLegalDocument.findFirst({
+      where: { ...published, documentType: "say_ring_sleep_analysis" },
+      orderBy: { publishedAt: "desc" },
+    }) : null;
+    return renderSayRingLegalPage(document, sleepNotice?.contentHtml.trim() ? sleepNotice : null);
   }
 
   async aiHistory(userId: string, clientSessionId?: string) {

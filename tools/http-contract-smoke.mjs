@@ -22,6 +22,7 @@ async function request(route, { method = "GET", body, token, headers = {} } = {}
 const v1 = "/api/v1/member";
 const v2 = "/api/saydian-app/v2";
 const password = "local-fixture-password-only";
+const legalPageVersion = `synthetic-ring-page-${Date.now()}`;
 async function registerVerified(mobile, nickname) {
   const rejected = await request(v2 + "/auth/register", { method: "POST", body: { mobile, password, nickname, consentVersion: "fixture-only" } });
   check(rejected.json.code, 503); // Unverified registration stays disabled in the unified account service.
@@ -35,6 +36,23 @@ async function registerVerified(mobile, nickname) {
   })).json;
 }
 try {
+  await prisma.globalLegalDocument.createMany({ data: ["say_ring_user_agreement", "say_ring_privacy_policy", "say_ring_sleep_analysis"].map(documentType => ({
+    documentType, version: legalPageVersion, locale: "zh-Hans", title: "Say Ring synthetic legal page",
+    contentHtml: `<p>${documentType}: synthetic current published text</p>`, active: true, reviewed: true, publishedAt: new Date(),
+  })) });
+  for (const type of ["privacy", "terms"]) {
+    const response = await fetch(base + v2 + "/content/legal-page/say-ring/" + type, { signal: AbortSignal.timeout(15_000) });
+    check(response.status, 200); check(response.headers.get("cache-control"), "no-store");
+    check(response.headers.get("content-type").includes("text/html"), true);
+    const html = await response.text();
+    check(html.startsWith("<!doctype html>"), true); check(html.includes(legalPageVersion), true);
+    check(html.includes('id="sleep-analysis"'), type === "privacy");
+    check(html.includes("synthetic current published text"), true);
+  }
+  await prisma.globalLegalDocument.update({ where: { documentType_version_locale: { documentType: "say_ring_privacy_policy", version: legalPageVersion, locale: "zh-Hans" } }, data: { contentHtml: "<p>synthetic edited published text</p>" } });
+  const updatedLegal = await fetch(base + v2 + "/content/legal-page/say-ring/privacy");
+  check((await updatedLegal.text()).includes("synthetic edited published text"), true);
+  check((await request(v2 + "/content/legal-page/say-ring/other-product")).status, 404);
   const a = await registerVerified("19900000001", "fixture-A");
   const b = await registerVerified("19900000002", "fixture-B");
   check(a.code, 200); check(b.code, 200);
@@ -192,4 +210,7 @@ try {
   await request(admin + "/feedback/" + feedbackId, { method: "PATCH", token: supportToken, body: { status: "CLOSED", replyContent: reply } });
   check(await prisma.notification.count({ where: { userId: a.data.member.id, readAt: null } }), 0);
   console.log(`HTTP contract smoke passed: ${assertions} assertions; local isolated fixtures only.`);
-} finally { await prisma.$disconnect(); }
+} finally {
+  await prisma.globalLegalDocument.deleteMany({ where: { version: legalPageVersion } });
+  await prisma.$disconnect();
+}
