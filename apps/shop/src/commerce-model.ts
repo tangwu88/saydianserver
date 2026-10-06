@@ -22,8 +22,9 @@ export function checkoutQuoteFingerprint(quote: any): string | null {
   return JSON.stringify([fields.map(key => quote[key] ?? null), lines.map(line => lineFields.map(key => line[key] ?? null))]);
 }
 export function channelsForEnvironment(capabilities: any[], environment: "wechat"|"browser"|"mini", desktop: boolean) {
-  const expected = environment === "mini" ? ["wechat_mini"] : environment === "wechat" ? ["wechat_jsapi"] : desktop ? ["wechat_native","alipay_page"] : ["wechat_h5","alipay_wap"];
-  return capabilities.filter(item => expected.includes(String(item.channel).toLowerCase()));
+  const expected = environment === "mini" ? ["wechat_mini"] : environment === "wechat" ? ["wechat_jsapi"] : desktop ? ["wechat_native","alipay_wap","alipay_page"] : ["wechat_h5","alipay_wap"];
+  const byChannel = new Map(capabilities.map(item => [String(item.channel).toLowerCase(), item]));
+  return expected.map(channel => byChannel.get(channel)).filter(Boolean);
 }
 export function isPaidStatus(value: unknown) { return ["succeeded","partial_refunded","refunded"].includes(String(value).toLowerCase()); }
 

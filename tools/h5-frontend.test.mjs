@@ -78,8 +78,11 @@ test("payment channels follow environment, and pending is not paid", () => {
   const channels = ["wechat_jsapi", "wechat_mini", "wechat_native", "wechat_h5", "alipay_wap", "alipay_page"].map(channel => ({ channel }));
   assert.deepEqual(normalize(model.channelsForEnvironment(channels, "wechat", false)).map(x => x.channel), ["wechat_jsapi"]);
   assert.deepEqual(normalize(model.channelsForEnvironment(channels, "mini", false)).map(x => x.channel), ["wechat_mini"]);
-  assert.deepEqual(normalize(model.channelsForEnvironment(channels, "browser", true)).map(x => x.channel), ["wechat_native", "alipay_page"]);
+  assert.deepEqual(normalize(model.channelsForEnvironment(channels, "browser", true)).map(x => x.channel), ["wechat_native", "alipay_wap", "alipay_page"]);
   assert.deepEqual(normalize(model.channelsForEnvironment(channels, "browser", false)).map(x => x.channel), ["wechat_h5", "alipay_wap"]);
+  const wideAlipay = normalize(model.channelsForEnvironment([{ channel: "alipay_page", enabled: true }, { channel: "alipay_wap", enabled: true }], "browser", true));
+  assert.deepEqual(wideAlipay.map(x => x.channel), ["alipay_wap", "alipay_page"]);
+  assert.equal(wideAlipay.find(x => x.enabled)?.channel, "alipay_wap");
   assert.equal(model.isPaidStatus("PENDING"), false);
   assert.equal(model.isPaidStatus("SUCCEEDED"), true);
 });
