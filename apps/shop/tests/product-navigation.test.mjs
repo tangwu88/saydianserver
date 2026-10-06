@@ -151,11 +151,22 @@ test("real images replace the placeholder and multiple unique thumbnails update 
   const first = "https://example.invalid/first.png", second = "https://example.invalid/second.png";
   const h = await page("global", product({ coverImage: first, gallery: [first, second] }));
   let tree = h.tree();
-  assert.equal(nodes(tree).filter(node => node.type === "image").length, 3);
+  assert.equal(nodes(tree).filter(node => node.type === "image").length, 4);
   assert.equal(nodes(tree).some(node => text(node) === "暂无商品图片"), false);
-  const thumbnail = nodes(tree).find(node => node.type === "image" && node.props.src === second);
+  const thumbnail = nodes(tree).find(node => node.type === "image" && node.props.src === second && node.props.class !== "main-image");
   thumbnail.props.onClick(); tree = h.tree();
-  assert.equal(nodes(tree).find(node => node.type === "image" && node.props.class === "main-image").props.src, second);
+  let carousel = nodes(tree).find(node => node.type === "swiper");
+  assert.equal(carousel.props.current, 1);
+  assert.equal(carousel.props.autoplay, true);
+  carousel.props.onChange({ detail: { current: 0 } });
+  assert.equal(h.state.currentImage.value, first);
+  h.state.previewProductImages();
+  assert.deepEqual(Array.from(h.previews[0].urls), [first, second]);
+  assert.equal(h.previews[0].current, first);
+  const single = await page("domestic", product({ coverImage: first }));
+  carousel = nodes(single.tree()).find(node => node.type === "swiper");
+  assert.equal(carousel.props.autoplay, false);
+  assert.equal(carousel.props["indicator-dots"], false);
 });
 
 function orderPage(name, apiHandler, paymentOverrides = {}) {

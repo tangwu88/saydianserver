@@ -3,11 +3,9 @@
     ><view class="container product-shortcuts"><button @click="goHome"><UniIcons type="home-filled" color="currentColor" size="18" />商城首页</button><button aria-label="分享商品" :disabled="posterBusy" @click="shareProduct"><UniIcons type="redo-filled" color="currentColor" size="18" />分享商品</button><button @click="goCart"><UniIcons type="cart-filled" color="currentColor" size="18" />购物车</button></view
     ><view class="container product-layout"
       ><view class="gallery"
-        ><image
-          v-if="currentImage"
-          class="main-image"
-          :src="currentImage"
-          mode="aspectFit" /><view v-else class="main-image missing-image">暂无商品图片</view><scroll-view v-if="images.length > 1" scroll-x class="thumbs"
+        ><swiper v-if="images.length" class="product-carousel" :current="imageIndex" :autoplay="images.length > 1" :circular="images.length > 1" :indicator-dots="images.length > 1" :interval="5000" :duration="350" @change="onImageChange">
+          <swiper-item v-for="image in images" :key="image"><image class="main-image" :src="image" mode="aspectFit" @click="previewProductImages" /></swiper-item>
+        </swiper><view v-else class="main-image missing-image">暂无商品图片</view><scroll-view v-if="images.length > 1" scroll-x class="thumbs"
           ><image
             v-for="image in images"
             :key="image"
@@ -96,6 +94,13 @@ const images = computed(() => [
     ].filter(Boolean),
   ),
 ]);
+const imageIndex = computed(() => Math.max(0, images.value.indexOf(currentImage.value)));
+function onImageChange(event: { detail: { current: number } }) {
+  currentImage.value = images.value[event.detail.current] || images.value[0] || "";
+}
+function previewProductImages() {
+  if (images.value.length) uni.previewImage({ current: currentImage.value || images.value[0], urls: images.value });
+}
 onLoad(o => { id.value = String(o?.id || ''); });
 onShow(load);
 function goHome(){uni.switchTab({url:'/pages/home/index'});}
@@ -256,12 +261,14 @@ async function toggleFavorite() {
 .detail {
   min-width: 0;
 }
+.product-carousel { width: 100%; height: 720rpx; border-radius: 24rpx; overflow: hidden; }
 .main-image {
   width: 100%;
   height: 720rpx;
   background: #fff;
   border-radius: 24rpx;
 }
+.detail :deep(img) { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .thumbs {
   white-space: nowrap;
   margin-top: 16rpx;
@@ -395,7 +402,7 @@ async function toggleFavorite() {
     grid-template-columns: 1.05fr 0.95fr;
     gap: 34px;
   }
-  .main-image {
+  .product-carousel, .main-image {
     height: 620px;
   }
   .product-info {

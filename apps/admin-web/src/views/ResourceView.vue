@@ -10,6 +10,7 @@ import MemberHealthData from "../components/MemberHealthData.vue";
 import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
 import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
 import ContentImageField from "../components/ContentImageField.vue";
+import ProductGalleryField from "../components/ProductGalleryField.vue";
 import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor, type DownloadManifestEditor } from "../global-download-setting";
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "../download-setting";
 import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "../legal-document-editor";
@@ -22,6 +23,7 @@ const route = useRoute();
 const loading = ref(false);
 const loadError = ref("");
 const saving = ref(false);
+const productImagesUploading = ref(0);
 const erpLookupBusy = ref(false);
 const erpLookupError = ref("");
 const rows = ref<Row[]>([]);
@@ -1646,7 +1648,7 @@ onBeforeUnmount(() => {
       </el-form>
       <template #footer><el-button :disabled="feedbackSaving" @click="feedbackVisible = false">关闭</el-button><el-button type="primary" :loading="feedbackSaving" @click="saveFeedback">保存处理结果</el-button></template>
     </el-dialog>
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="dialogMode === 'health' ? 'min(960px, 94vw)' : resource === 'settings' && isAppUpdateSetting(form.key) ? '980px' : ['articles', 'legal-documents'].includes(resource) ? 'min(980px, 94vw)' : '720px'" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" :close-on-click-modal="!productImagesUploading" :close-on-press-escape="!productImagesUploading" :show-close="!productImagesUploading" :width="dialogMode === 'health' ? 'min(960px, 94vw)' : resource === 'settings' && isAppUpdateSetting(form.key) ? '980px' : ['articles', 'legal-documents'].includes(resource) ? 'min(980px, 94vw)' : '720px'" destroy-on-close>
       <div v-if="dialogMode === 'health'">
         <MemberHealthData :mode="healthMode" :rows="detailRows" :member-no="healthMember.memberNo" />
         <MemberHealthReportPanel v-if="dialogVisible && healthMode === 'summary' && canReadRawHealth" :key="healthMember.id" :member-id="healthMember.id" />
@@ -1804,10 +1806,9 @@ onBeforeUnmount(() => {
               ><el-select v-model="form.categoryId" clearable filterable placeholder="请选择分类"><el-option v-for="item in categoryOptions" :key="item.id" :label="item.parent?.name ? `${item.parent.name} / ${item.name}` : item.name" :value="item.id" /></el-select
             ></el-form-item>
             <el-form-item label="商品封面"><ContentImageField v-model="form.coverImage" upload-url="/commerce-images" /></el-form-item>
-            <el-form-item label="相册上传"><ContentImageField :model-value="''" upload-url="/commerce-images" @update:model-value="appendProductGalleryImage" /></el-form-item>
-            <el-form-item label="相册地址"><el-input v-model="form.galleryText" type="textarea" :rows="4" placeholder="每行一个图片地址" /></el-form-item>
+            <el-form-item label="轮播图片"><ProductGalleryField v-model="form.galleryText" @uploading="productImagesUploading += $event ? 1 : -1" /></el-form-item>
             <el-form-item label="标签"><el-input v-model="form.tagsText" placeholder="多个标签用逗号分隔" /></el-form-item>
-            <el-form-item label="商品详情"><RichTextEditor v-model="form.detailHtml" /></el-form-item>
+            <el-form-item label="商品详情"><RichTextEditor v-model="form.detailHtml" upload-url="/commerce-images" multiple @uploading="productImagesUploading += $event ? 1 : -1" /></el-form-item>
             <el-form-item label="商品规格">
               <div style="width: 100%">
                 <el-table :data="form.skus" border>
@@ -2090,7 +2091,7 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
       </el-form>
-      <template #footer><el-button @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit'" type="primary" :loading="saving" :disabled="(needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
+      <template #footer><el-button :disabled="productImagesUploading > 0" @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit'" type="primary" :loading="saving" :disabled="productImagesUploading > 0 || (needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
     </el-dialog>
   </section>
 </template>

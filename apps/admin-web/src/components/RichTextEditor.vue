@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { api, readableError, responseData } from "../api";
+import { api, responseData } from "../api";
+import { uploadImageBatch } from "../image-batch";
 
-const props = defineProps<{ modelValue: string; readonly?: boolean }>();
-const emit = defineEmits<{ "update:modelValue": [value: string] }>();
+const props = withDefaults(defineProps<{ modelValue: string; readonly?: boolean; uploadUrl?: string; multiple?: boolean }>(), { uploadUrl: "/content-images", multiple: false });
+const emit = defineEmits<{ "update:modelValue": [value: string]; uploading: [value: boolean] }>();
 const editor = ref<HTMLElement | null>(null);
 const savedRange = ref<Range | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -181,26 +182,24 @@ function insertImage(source: string, alt: string): void {
 
 async function uploadImage(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const files = Array.from(input.files || []);
   input.value = "";
-  if (!file || uploading.value) return;
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size <= 0 || file.size > 10 * 1024 * 1024) {
-    ElMessage.error("请选择不超过10MB的 JPG、PNG 或 WebP 图片");
-    return;
-  }
+  if (!files.length || uploading.value || props.readonly) return;
   uploading.value = true;
+  emit("uploading", true);
   try {
-    const body = new FormData();
-    body.append("file", file);
-    const result = responseData<{ url: string }>(await api.post("/content-images", body));
-    const source = normalizeImage(result?.url ?? "");
-    if (!source) throw new Error("上传响应缺少安全图片地址");
-    insertImage(source, file.name.replace(/\.[^.]+$/, "").slice(0, 120));
-    ElMessage.success("图片已插入正文");
-  } catch (error) {
-    ElMessage.error(readableError(error));
+    const result = await uploadImageBatch(props.multiple ? files : files.slice(0, 1), async file => {
+      const body = new FormData(); body.append("file", file);
+      const uploaded = responseData<{ url: string }>(await api.post(props.uploadUrl, body));
+      const source = normalizeImage(uploaded?.url ?? "");
+      if (!source) throw new Error("上传响应缺少安全图片地址");
+      return source;
+    }, (source, file) => insertImage(source, file.name.replace(/\.[^.]+$/, "").slice(0, 120)));
+    if (result.uploaded) ElMessage.success(`已插入${result.uploaded}张图片，保存后生效`);
+    if (result.failures.length) ElMessage.error(result.failures.join("；"));
   } finally {
     uploading.value = false;
+    emit("uploading", false);
   }
 }
 
@@ -230,9 +229,9 @@ watch(() => props.modelValue, async (value) => {
       <el-button size="small" @mousedown.prevent="runCommand('insertOrderedList')">有序列表</el-button>
       <el-button size="small" @mousedown.prevent="runCommand('formatBlock', '<blockquote>')">引用</el-button>
       <el-button size="small" @mousedown.prevent="insertLink">链接</el-button>
-      <el-button size="small" :loading="uploading" @mousedown.prevent="chooseImage">上传图片</el-button>
+      <el-button size="small" :loading="uploading" @mousedown.prevent="chooseImage">{{ multiple ? '批量上传详情图' : '上传图片' }}</el-button>
       <el-button size="small" @mousedown.prevent="runCommand('removeFormat')">清除格式</el-button>
-      <input ref="fileInput" class="file-input" type="file" accept="image/jpeg,image/png,image/webp" @change="uploadImage" />
+      <input ref="fileInput" class="file-input" type="file" :multiple="multiple" accept="image/jpeg,image/png,image/webp" @change="uploadImage" />
     </div>
     <div
       ref="editor"
