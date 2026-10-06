@@ -65,3 +65,24 @@
 - 2026-10-06T09:17:43.0503083Z：pnpm.cmd test，退出码 0。
 
 - 2026-10-06T09:18:14.9502194Z：pnpm.cmd build，退出码 0。
+- 403c195 的 CI 37442031506：三份 Linux 镜像构建与 API 实际镜像登录/会员/设备/健康/订单兼容检查成功；前端 curl | grep -q 在 pipefail 下因提前关闭管道返回 23，阻断发布。tools/smoke-runtime-images.sh 改用读取完整响应的 grep，保留 HTTP 错误和 HTML 内容门禁；重新执行完整检查及 CI。
+
+- 2026-10-06T09:29:44.4441357Z：pnpm.cmd api:docs:check，退出码 0。
+
+- 2026-10-06T09:31:31.8255725Z：pnpm.cmd tools:test，退出码 0。
+
+- 2026-10-06T09:31:50.3468718Z：pnpm.cmd typecheck，退出码 0。
+
+- 2026-10-06T09:32:40.5636809Z：pnpm.cmd test，退出码 0。
+
+- 2026-10-06T09:33:10.9034726Z：pnpm.cmd build，退出码 0。
+
+- 2026-10-06T09:37:11.7975792Z：pnpm.cmd api:docs:check，退出码 0。
+
+- 2026-10-06T09:38:58.6851236Z：pnpm.cmd tools:test，退出码 0。
+
+- 2026-10-06T09:39:17.2033204Z：pnpm.cmd typecheck，退出码 0。
+
+- 2026-10-06T09:40:06.9705278Z：pnpm.cmd test，退出码 0。
+
+- 2026-10-06T09:40:37.3902536Z：pnpm.cmd build，退出码 0。

@@ -57,7 +57,9 @@ for (const path of ['/api/saydian-app/v2/members/me', '/api/saydian-app/v2/devic
 console.log('Runtime image: canonical and legacy login/member/device/health/order parity passed.');
 NODE
 for path in /admin/ /down /down/ /down/legacy /down/legacy/ /global/down /global/down/ /say-ring /saidian-mall/ /global/saidian-mall/; do
-  curl -fsS "http://127.0.0.1:18081$path" | grep -qi '<html'
+  # Read the full response: grep -q can close the pipe early and make curl fail
+  # with exit 23 under pipefail even when the HTML is valid.
+  curl -fsS "http://127.0.0.1:18081$path" | grep -i '<html' >/dev/null
 done
 for path in /down/files/health-ci.apk /global/down/files/health-ci.apk; do
   [[ $(curl -fsS "http://127.0.0.1:18081$path" | wc -c) -eq 4096 ]]
