@@ -46,7 +46,11 @@ try {
     check(response.headers.get("content-type").includes("text/html"), true);
     const html = await response.text();
     check(html.startsWith("<!doctype html>"), true); check(html.includes(legalPageVersion), true);
+    check(html.includes('id="ios-activity-sleep-scope"'), true);
+    check(html.includes('data-platform="ios" data-min-build="1062"'), true);
+    check(html.includes("不会删除原有本机或云端记录"), true);
     check(html.includes('id="sleep-analysis"'), type === "privacy");
+    if (type === "privacy") check(html.includes("实际提供可选睡眠 AI 的 Android 或历史版本"), true);
     check(html.includes("synthetic current published text"), true);
   }
   await prisma.globalLegalDocument.update({ where: { documentType_version_locale: { documentType: "say_ring_privacy_policy", version: legalPageVersion, locale: "zh-Hans" } }, data: { contentHtml: "<p>synthetic edited published text</p>" } });

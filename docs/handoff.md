@@ -35,6 +35,10 @@ Say Ring 公开显示配置已读回 `hideAi=true, sleepAiEnabled=true`，只隐
 
 功能提交 `60178a23a5bfa4ae5f685abc90141967c8492e4e` 的 [CI/部署 37259398854](https://github.com/tangwu88/saydianserver/actions/runs/37259398854) 已成功，双 readiness 为该 revision；公开两页与正式 JSON 渲染结果逐字一致，独立睡眠说明可见，10 项其他产品/旧接口快照均未变。文档提交也会触发流水线，因此最新状态仍以 main、Actions 和线上 revision 为准。v3 草稿不会随代码部署激活。
 
+## Say Ring iOS 1062 版本范围补充（2026-10-07）
+
+Say Ring 两个公开法律页新增独立的 iOS 构建 1062 活动与睡眠版说明，明确活动/睡眠、账号/游客/同步及经授权的活动睡眠关爱范围。Android 和历史版本的既有政策及原记录保留；睡眠 AI 独立说明仍保留，但不适用于此 iOS 版本。正式 v2、v3 草稿、同意记录、保留期限和服务端 AI 开关未修改，不能将公开说明当作客户端或苹果验收。实施、测试及待验收边界见[本轮记录](implementation-log/2026-10-07-say-ring-ios-1062-scope.md)。
+
 ## 历史交接基线（仅作追溯）
 
 以下独立国际发布、旧 SHA、容量、只读开关和迁移门禁描述均为历史记录，不是当前操作指令；不得据此恢复旧发布入口、覆盖原数据或重复执行首次切换。

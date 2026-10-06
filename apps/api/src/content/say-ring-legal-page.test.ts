@@ -32,6 +32,8 @@ describe("current Say Ring public legal pages", () => {
     const html = await service.sayRingLegalPage(type);
     expect(html).toContain('<!doctype html>');
     expect(html).toContain('lang="zh-Hans"');
+    expect(html).toContain('id="ios-activity-sleep-scope"');
+    expect(html).toContain('data-platform="ios" data-min-build="1062"');
     expect(html).toContain(`data-document-type="say_ring_${type === "privacy" ? "privacy_policy" : "user_agreement"}"`);
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
       documentType: { in: ["say_ring_user_agreement", "say_ring_privacy_policy"] }, active: true, reviewed: true,
@@ -67,6 +69,34 @@ describe("current Say Ring public legal pages", () => {
     expect(await service.sayRingLegalPage("privacy")).toContain("逐段时间轴留在本机");
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ documentType: "say_ring_sleep_analysis", active: true, reviewed: true }) }));
     expect(await fixture([terms, privacy, { ...sleep, reviewed: false }]).service.sayRingLegalPage("privacy")).not.toContain('id="sleep-analysis"');
+  });
+
+  it("scopes the iOS edition without rewriting the approved documents or removing historical sleep notices", async () => {
+    const { service } = fixture();
+    const html = await service.sayRingLegalPage("privacy");
+    expect(html).toContain("步数、距离、热量、睡眠阶段与时长");
+    expect(html).toContain("不表示该构建已上架");
+    expect(html).toContain("仅限活动与睡眠的远程关爱");
+    expect(html).toContain("不提供心率、血氧、血压、血糖、心电、心率变异性、体温等生理指标的测量、展示或账号同步功能");
+    expect(html).not.toContain("不采集");
+    expect(html).toContain("不会删除原有本机或云端记录");
+    expect(html).toContain("Android 和历史版本已有功能及数据继续按各自适用规则处理");
+    expect(html).toContain("Xuewu Tang");
+    expect(html).toContain("kf@saydian.com");
+    expect(html).toContain("保存期限及访问、删除、撤回和注销权利不因本说明改变");
+    expect(html).toContain("以下独立说明仅适用于实际提供可选睡眠 AI 的 Android 或历史版本");
+    expect(html).toContain(`<article data-document-type="${privacy.documentType}" data-version="${privacy.version}">${privacy.contentHtml}</article>`);
+    expect(html).toContain(`<article data-document-type="${sleep.documentType}" data-version="${sleep.version}">${sleep.contentHtml}</article>`);
+  });
+
+  it("localizes scope for a valid English fallback and does not relabel it as a Chinese policy", () => {
+    const html = renderSayRingLegalPage({ ...privacy, locale: "en" }, { ...sleep, locale: "en" });
+    expect(html).toContain('lang="en"');
+    expect(html).toContain("starting with build 1062");
+    expect(html).toContain("does not indicate App Store availability");
+    expect(html).toContain("does not offer measurement, display or account-sync features for physiological readings");
+    expect(html).toContain("does not delete existing local or cloud records");
+    expect(html).not.toContain("iOS 活动与睡眠版适用说明");
   });
 
   it("escapes metadata and strips executable markup, links and third-party resources", () => {
