@@ -214,6 +214,41 @@
       }
     },
     {
+      "key": "AdminController.uploadCommerceImage",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-images",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "上传商城商品或SKU图片",
+      "request": "multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/COMMERCE_OPERATIONS",
+      "response": "{id,url,sha256,byteSize}；url可保存到商品封面、相册或SKU图片字段，不返回对象存储密钥",
+      "dependency": "已配置对象存储",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.uploadAppPackage",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/app-packages",
@@ -20107,13 +20142,19 @@
           "name": "accept-language",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "文章分类",
-      "request": "parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en",
-      "response": "ArticleCategory[]；未翻译不返回其他语言替代",
+      "request": "parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en；product可选shared|saidian|saydian-global|say-ring并校验取值",
+      "response": "ArticleCategory[]；分类当前跨 App 共用；未翻译不返回其他语言替代",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -20163,13 +20204,19 @@
           "name": "accept-language",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "已发布文章",
-      "request": "categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language",
-      "response": "{items,total,page,pageSize}；国际仅已发布的对应语言",
+      "request": "categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language；product可选shared|saidian|saydian-global|say-ring，默认saydian-global",
+      "response": "{items,total,page,pageSize}；只返回通用内容和指定 App 的已发布对应语言文章",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -20207,13 +20254,19 @@
           "name": "accept-language",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "文章详情",
-      "request": "id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language",
-      "response": "Article；未发布/未来发布/国际语言不匹配 404",
+      "request": "id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language；product可选shared|saidian|saydian-global|say-ring，默认saydian-global",
+      "response": "Article；非通用且不属于指定 App、未发布、未来发布或国际语言不匹配均404",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {

@@ -15,6 +15,7 @@ import { globalLocale } from "../auth/global-identity";
 import { globalAiSystemPrompt } from "./global-content";
 import { globalLegalBundle } from "../auth/global-legal";
 import { renderSayRingLegalPage } from "./say-ring-legal-page";
+import { contentProduct, contentProductFilter } from "./content-product";
 
 @Injectable()
 export class ContentService {
@@ -23,7 +24,8 @@ export class ContentService {
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
 
-  async categories(parentId?: string, locale?: string) {
+  async categories(parentId?: string, locale?: string, productInput?: string) {
+    contentProduct(productInput);
     return this.prisma.articleCategory.findMany({
       where: {
         enabled: true,
@@ -39,7 +41,9 @@ export class ContentService {
     pageInput = 1,
     pageSizeInput = 20,
     locale?: string,
+    productInput?: string,
   ) {
+    const product = contentProduct(productInput);
     if (
       !Number.isSafeInteger(Number(pageInput)) ||
       Number(pageInput) < 1 ||
@@ -58,6 +62,7 @@ export class ContentService {
       publishedAt: { lte: new Date() },
       ...(categoryId ? { categoryId } : {}),
       ...{ locale: globalLocale(locale) },
+      product: contentProductFilter(product),
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.article.findMany({
@@ -81,13 +86,15 @@ export class ContentService {
     return { items, total, page, pageSize };
   }
 
-  async article(id: string, locale?: string) {
+  async article(id: string, locale?: string, productInput?: string) {
+    const product = contentProduct(productInput);
     const article = await this.prisma.article.findFirst({
       where: {
         OR: [...(isUuid(id) ? [{ id }] : []), { legacyId: id }],
         status: "PUBLISHED",
         ...{ locale: globalLocale(locale) },
         publishedAt: { lte: new Date() },
+        product: contentProductFilter(product),
       },
     });
     if (!article) throw new NotFoundException("文章不存在");

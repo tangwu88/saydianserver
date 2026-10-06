@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **378 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **379 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -237,9 +237,9 @@
 | `POST /api/saydian-app/v2/commerce/coupons/:id/claim` | 领取优惠券 | member | path:id；id=优惠券UUID | 领取记录；重复领取幂等 | 主库商城 |
 | `POST /api/saydian-app/v2/commerce/reviews` | 评价已收货商品 | member | {orderItemId,rating,content,images?} | 评价记录 | 主库商城 |
 | `GET /api/saydian-app/v2/commerce/points` | App积分余额与流水 | member | query:page?；page=页码，默认1，每页20；会员鉴权 | 本人已核验余额或不可用状态、真实流水与分页；null不转为0 | 主库商城 |
-| `GET /api/saydian-app/v2/content/categories` | 文章分类 | public | query:parentId?，query:locale?，header:accept-language?；parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en | ArticleCategory[]；未翻译不返回其他语言替代 | 核心服务 |
-| `GET /api/saydian-app/v2/content/articles` | 已发布文章 | public | query:categoryId?，query:page?，query:pageSize?，query:locale?，header:accept-language?；categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language | {items,total,page,pageSize}；国际仅已发布的对应语言 | 核心服务 |
-| `GET /api/saydian-app/v2/content/articles/:id` | 文章详情 | public | path:id，query:locale?，header:accept-language?；id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language | Article；未发布/未来发布/国际语言不匹配 404 | 核心服务 |
+| `GET /api/saydian-app/v2/content/categories` | 文章分类 | public | query:parentId?，query:locale?，header:accept-language?，query:product?；parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en；product可选shared\|saidian\|saydian-global\|say-ring并校验取值 | ArticleCategory[]；分类当前跨 App 共用；未翻译不返回其他语言替代 | 核心服务 |
+| `GET /api/saydian-app/v2/content/articles` | 已发布文章 | public | query:categoryId?，query:page?，query:pageSize?，query:locale?，header:accept-language?，query:product?；categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language；product可选shared\|saidian\|saydian-global\|say-ring，默认saydian-global | {items,total,page,pageSize}；只返回通用内容和指定 App 的已发布对应语言文章 | 核心服务 |
+| `GET /api/saydian-app/v2/content/articles/:id` | 文章详情 | public | path:id，query:locale?，header:accept-language?，query:product?；id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language；product可选shared\|saidian\|saydian-global\|say-ring，默认saydian-global | Article；非通用且不属于指定 App、未发布、未来发布或国际语言不匹配均404 | 核心服务 |
 | `GET /api/saydian-app/v2/content/legal/:type` | 协议文档 | public | path:type，query:version?，query:locale?；type=文档类型；version可选；国际locale必选当前capabilities法律文档locale | 国内LegalDocument；国际GlobalLegalDocument（reviewed+active+published）；未发布404 | 核心服务 |
 | `GET /api/saydian-app/v2/content/legal-page/say-ring/:type` | Say Ring 当前已发布法律 HTML 页面 | public | path:type；type=privacy\|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖 | text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意 | GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口 |
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
@@ -293,7 +293,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（108）
+## 管理后台接口（109）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -303,6 +303,7 @@
 | `PATCH /api/saydian-app/admin/v1/health-reports/:id` | 超级管理员复核并编辑已生成健康报告 | admin: SUPER_ADMIN | path:id；id=报告UUID；仅SUPER_ADMIN；{content:{overview,trends:[{metric,text}],suggestions,limitations},expectedUpdatedAt}；指标、顺序和证据ID不可修改 | 更新后的报告正文；使用乐观锁，版本冲突返回409；HEALTH_REPORT_UPDATE审计只保存内容散列和变更章节，不保存报告正文 | 已生成READY报告；内容仅供日常健康管理参考 |
 | `POST /api/saydian-app/admin/v1/auth/login` | 后台登录 | public | JSON {username,password} | AdminSession；不能与 App Token 混用 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/content-images` | 上传后台文章或协议图片 | admin: SUPER_ADMIN, CONTENT_EDITOR | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR | {id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥 | 已配置对象存储 |
+| `POST /api/saydian-app/admin/v1/commerce-images` | 上传商城商品或SKU图片 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/COMMERCE_OPERATIONS | {id,url,sha256,byteSize}；url可保存到商品封面、相册或SKU图片字段，不返回对象存储密钥 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/app-packages` | 上传 Say Ring 安装包 | admin: SUPER_ADMIN, APP_OPERATIONS | file:file，query:platform；platform=android/harmonyos；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS | {fileName,url,sizeBytes,sha256}；上传成功后仍需保存版本配置才发布 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |

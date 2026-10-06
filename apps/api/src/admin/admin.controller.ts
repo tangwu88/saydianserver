@@ -65,6 +65,20 @@ export class AdminController {
     return this.support.uploadAdminContentImage(current.id, file);
   }
 
+  @Post("commerce-images")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    }),
+  )
+  uploadCommerceImage(
+    @CurrentAdmin() current: { id: string },
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.support.uploadAdminContentImage(current.id, file);
+  }
+
   @Post("app-packages")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
   @UseInterceptors(

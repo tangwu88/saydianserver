@@ -35,6 +35,7 @@ const memberReferralOptions = ref<Row[]>([]);
 const search = ref("");
 const commerceStatus = ref("");
 const reportType = ref("");
+const appProductFilter = ref("");
 const currentPage = ref(1);
 const dialogVisible = ref(false);
 const dialogTitle = ref("");
@@ -80,6 +81,24 @@ const downloadPlatformOptions = [
 ] as const;
 const visibleDownloadPlatformOptions = computed(() => downloadPlatformOptions);
 const appUpdateSettingKeys = new Set(["app_update", "global_app_update", "say_ring_app_update"]);
+const contentProductOptions = [
+  { value: "shared", label: "通用内容" },
+  { value: "saidian", label: "原赛电 App" },
+  { value: "saydian-global", label: "Saydian Health" },
+  { value: "say-ring", label: "Say Ring" },
+] as const;
+const contentProductLabel = (value: unknown): string => contentProductOptions.find((item) => item.value === value)?.label ?? String(value ?? "未分类");
+const settingProducts = (key: unknown): string[] => {
+  const products: Record<string, string[]> = {
+    global_support: ["saydian-global", "say-ring"],
+    app_update: ["saidian"],
+    global_app_update: ["saydian-global"],
+    say_ring_app_update: ["say-ring"],
+    say_ring_app_display: ["say-ring"],
+    say_ring_map: ["say-ring"],
+  };
+  return products[String(key ?? "")] ?? [];
+};
 const isAppUpdateSetting = (key: unknown): boolean => appUpdateSettingKeys.has(String(key ?? ""));
 const isAppDisplaySetting = (key: unknown): boolean => key === "say_ring_app_display";
 const isGlobalSupportSetting = (key: unknown): boolean => key === "global_support";
@@ -172,6 +191,8 @@ const fieldLabels: Record<string, string> = {
   version: "版本",
   documentType: "协议类型",
   legalProduct: "所属 App",
+  product: "所属 App",
+  appScope: "所属 App",
   locale: "语言",
   reviewed: "已审核",
   publishedAt: "发布时间",
@@ -272,10 +293,10 @@ const columns = computed(() => {
   if (resource.value === "members") return memberColumns;
   if (resource.value === "health-reports") return ["memberNo", "memberNickname", "reportType", "status", "distinctDays", "validRecordCount", "generatedAt", "createdAt"];
   if (resource.value === "feedback") return ["memberNo", "memberNickname", "category", "content", "status", "replyContent", "createdAt"];
-  if (resource.value === "articles") return ["title", "locale", "categoryId", "status", "publishedAt", "updatedAt"];
+  if (resource.value === "articles") return ["product", "title", "locale", "categoryId", "status", "publishedAt", "updatedAt"];
   if (resource.value === "article-categories") return ["categoryNo", "name", "locale", "sort", "enabled"];
   if (resource.value === "legal-documents") return ["legalProduct", "documentType", "locale", "version", "reviewed", "active", "publishedAt"];
-  if (resource.value === "settings") return ["name", "configuration", "public", "updatedAt"];
+  if (resource.value === "settings") return ["appScope", "name", "configuration", "public", "updatedAt"];
   if (resource.value === "devices") return ["memberNo", "memberNickname", "bluetoothName", "model", "deviceIdentifier", "macAddress", "firmware", "lastSeenAt", "status"];
   const first = rows.value[0];
   return first
@@ -284,6 +305,15 @@ const columns = computed(() => {
         .slice(0, 10)
     : [];
 });
+
+function rowProducts(row: Row): string[] {
+  if (resource.value === "articles") return [String(row.product ?? "shared")];
+  if (resource.value === "legal-documents") return [legalProductForDocumentType(String(row.documentType ?? ""))];
+  if (resource.value === "settings") return Array.isArray(row._products) ? row._products : settingProducts(row.key);
+  return [];
+}
+
+const visibleRows = computed(() => appProductFilter.value ? rows.value.filter((row) => rowProducts(row).includes(appProductFilter.value)) : rows.value);
 
 let loadRequestId = 0;
 let healthRequestId = 0;
@@ -369,10 +399,14 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
       ? {
           ...row,
           name: definition.name,
+          _products: settingProducts(definition.key),
+          appScope: settingProducts(definition.key).map(contentProductLabel).join(" / "),
           configuration: isAppDisplaySetting(definition.key) ? (row.value?.hideAi === true ? "AI已隐藏" : "AI已显示") : isGlobalSupportSetting(definition.key) ? (supportEditor?.enabled && (supportEditor.phone || supportEditor.officialAccount) ? (row.public ? "客服已启用" : "客服未公开") : "客服未启用") : row.value?.configured === false ? "未配置" : row.public ? "已公开" : "未公开",
         }
       : {
           ...definition,
+          _products: settingProducts(definition.key),
+          appScope: settingProducts(definition.key).map(contentProductLabel).join(" / "),
           configuration: isAppDisplaySetting(definition.key) ? "AI已显示（默认）" : "未配置",
           public: false,
           updatedAt: null,
@@ -601,7 +635,7 @@ async function openCreate(): Promise<void> {
   dialogMode.value = "edit";
   dialogTitle.value = `新增${title.value}`;
   const defaults: Record<string, Row> = {
-    articles: { status: "DRAFT", categoryId: null, locale: "zh-Hans" },
+    articles: { status: "DRAFT", categoryId: null, locale: "zh-Hans", product: "shared" },
     "article-categories": { enabled: true, sort: 0, parentId: null, locale: "zh-Hans" },
     "legal-documents": createLegalDocumentDraft("saydian-global"),
     "admin-users": { role: "READ_ONLY", roles: ["READ_ONLY"], active: true },
@@ -708,7 +742,7 @@ async function openEdit(row: Row): Promise<void> {
   const nextForm: Row = {
     ...row,
     roles: Array.isArray(row.roles) && row.roles.length ? [...row.roles] : [row.role ?? "READ_ONLY"],
-    skus: Array.isArray(row.skus) ? row.skus.map((sku: Row) => ({ ...sku })) : [],
+    skus: Array.isArray(row.skus) ? row.skus.map((sku: Row) => ({ ...sku, _originalImage: String(sku.image ?? "") })) : [],
     _isNew: false,
     publicConfigText: row.publicConfig ? JSON.stringify(row.publicConfig, null, 2) : "{}",
     secretsText: "",
@@ -826,7 +860,7 @@ async function loadCommerceProductBySku(): Promise<void> {
       _erpLookupSku: sku,
       _erpLookupPending: false,
       _erpSnapshotText: product.erpLookup ? JSON.stringify(product.erpLookup, null, 2) : "",
-      skus: product.skus.map((entry: Row) => ({ ...entry })),
+      skus: product.skus.map((entry: Row) => ({ ...entry, _originalImage: String(entry.image ?? "") })),
       galleryText: Array.isArray(product.gallery) ? product.gallery.join("\n") : "",
       tagsText: Array.isArray(product.tags) ? product.tags.join("，") : "",
     };
@@ -1025,6 +1059,17 @@ function setDownloadPublishedNow(): void {
   if (editor) editor.publishedAt = new Date().toISOString();
 }
 
+function appendProductGalleryImage(url: string): void {
+  const value = String(url ?? "").trim();
+  if (!value) return;
+  const gallery = String(form.value.galleryText ?? "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!gallery.includes(value)) gallery.push(value);
+  form.value.galleryText = gallery.join("\n");
+}
+
 function fillDownloadUrl(platform: "android" | "ios" | "harmonyos"): void {
   if (platform === "ios") return;
   const editor = form.value.downloadEditor as DownloadManifestEditor | undefined;
@@ -1068,7 +1113,7 @@ function payloadForResource(current: string, source: Row): Row {
   if (current === "legal-documents") return legalDocumentPayload(source as any);
   const fields: Record<string, string[]> = {
     "admin-users": ["username", "displayName", "password", "roles", "active"],
-    articles: ["title", "summary", "categoryId", "coverUrl", "contentHtml", "status", "locale", "publishedAt"],
+    articles: ["product", "title", "summary", "categoryId", "coverUrl", "contentHtml", "status", "locale", "publishedAt"],
     "article-categories": ["name", "parentId", "locale", "sort", "enabled"],
     "commerce-products": ["displayName", "subtitle", "brand", "categoryId", "coverImage", "detailHtml", "status", "featured", "sort", "localArchived"],
     "commerce-categories": ["name", "parentId", "iconUrl", "sort", "enabled"],
@@ -1088,6 +1133,11 @@ function payloadForResource(current: string, source: Row): Row {
     };
   }
   if (current === "commerce-products") {
+    const skuImages = source.source === "ERP" && Array.isArray(source.skus)
+      ? source.skus
+          .filter((sku: Row) => String(sku.image ?? "").trim() !== String(sku._originalImage ?? "").trim())
+          .map((sku: Row) => ({ id: sku.id, updatedAt: sku.updatedAt, image: String(sku.image ?? "").trim() || null }))
+      : [];
     return {
       ...pick(source, fields["commerce-products"]!),
       ...(source.source === "LOCAL"
@@ -1098,6 +1148,7 @@ function payloadForResource(current: string, source: Row): Row {
             skus: source.skus,
           }
         : {}),
+      ...(skuImages.length ? { skuImages } : {}),
       gallery: String(source.galleryText ?? "")
         .split(/\r?\n/)
         .map((value) => value.trim())
@@ -1353,6 +1404,7 @@ function resetResourceView(): void {
   resourceMeta.value = {};
   search.value = "";
   commerceStatus.value = "";
+  appProductFilter.value = "";
   currentPage.value = 1;
   dialogVisible.value = false;
   deviceDetailVisible.value = false;
@@ -1392,6 +1444,7 @@ onBeforeUnmount(() => {
       <template v-else>
         <div class="toolbar">
           <el-select v-if="resource === 'health-reports'" v-model="reportType" placeholder="全部报告" clearable style="width: 180px" @change="load"><el-option label="健康报告" value="health" /><el-option label="睡眠报告" value="sleep" /></el-select>
+          <el-select v-if="['articles', 'legal-documents', 'settings'].includes(resource)" v-model="appProductFilter" placeholder="全部前端 App" clearable style="width: 190px"><el-option v-for="item in contentProductOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select>
           <el-input v-if="searchable" v-model="search" placeholder="邮箱、会员编号、手机号、昵称或推广码" clearable style="width: 340px" @keyup.enter="searchMembers" @clear="searchMembers" />
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
@@ -1399,7 +1452,7 @@ onBeforeUnmount(() => {
           <span class="muted">{{ resource === "devices" ? "设备标识由 App 上报标识单向生成，用于蓝牙名或 MAC 缺失时区分设备。" : "会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。" }}</span>
         </div>
         <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
-        <el-table v-if="!loadError" v-loading="loading" :data="rows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
+        <el-table v-if="!loadError" v-loading="loading" :data="visibleRows" border stripe :empty-text="resource === 'members' ? (loading ? '正在加载会员…' : search ? '未找到匹配会员，请检查搜索条件' : '暂无会员') : '暂无记录'">
           <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" :min-width="resource === 'members' && column === 'referrerProfile' ? 280 : resource === 'members' && ['emailMasked', 'mobile'].includes(column) ? 220 : column === 'avatarUrl' ? 78 : 145" :show-overflow-tooltip="!(resource === 'members' && column === 'referrerProfile')">
             <template #default="scope">
               <el-avatar v-if="resource === 'members' && column === 'avatarUrl'" :size="38" :src="scope.row.avatarUrl || undefined">{{ String(scope.row.nickname || "会员").slice(0, 1) }}</el-avatar>
@@ -1430,6 +1483,8 @@ onBeforeUnmount(() => {
                 <span v-if="!deviceCapabilities(scope.row[column]).length" class="muted">未上报</span>
               </div>
               <span v-else-if="needsArticleCategories && column === 'locale'">{{ contentLocales.find((item) => item.value === scope.row.locale)?.label ?? scope.row.locale ?? '未标注' }}</span>
+              <el-tag v-else-if="resource === 'articles' && column === 'product'" size="small" :type="scope.row.product === 'say-ring' ? 'warning' : scope.row.product === 'shared' ? 'info' : 'primary'">{{ contentProductLabel(scope.row.product ?? 'shared') }}</el-tag>
+              <div v-else-if="resource === 'settings' && column === 'appScope'" class="app-scope-tags"><el-tag v-for="product in rowProducts(scope.row)" :key="product" size="small" :type="product === 'say-ring' ? 'warning' : 'primary'">{{ contentProductLabel(product) }}</el-tag></div>
               <el-tag v-else-if="resource === 'devices' && column === 'status'" size="small" :type="scope.row.status === 'BOUND' ? 'success' : 'info'">{{ scope.row.status === "BOUND" ? "已绑定" : scope.row.status === "UNBOUND" ? "已解绑" : render(scope.row.status) }}</el-tag>
               <el-tag v-else-if="resource === 'legal-documents' && column === 'legalProduct'" size="small" :type="legalProductForDocumentType(scope.row.documentType) === 'say-ring' ? 'warning' : 'primary'">{{ legalProductForDocumentType(scope.row.documentType) === "say-ring" ? "Say Ring" : "Saydian Health" }}</el-tag>
               <span v-else-if="resource === 'legal-documents' && column === 'documentType'">{{ legalDocumentTypeLabel(scope.row.documentType) }}</span>
@@ -1663,6 +1718,7 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="resource === 'articles'">
           <el-alert title="封面和正文图片可直接上传；正文会按安全 HTML 保存，发布前请预览排版与链接。" type="info" :closable="false" show-icon />
+          <el-form-item label="所属 App"><el-select v-model="form.product"><el-option v-for="item in contentProductOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
           <el-form-item label="标题"><el-input v-model="form.title" maxlength="200" show-word-limit /></el-form-item>
           <el-form-item label="摘要"><el-input v-model="form.summary" type="textarea" :rows="3" maxlength="500" show-word-limit /></el-form-item>
           <el-form-item label="内容分类">
@@ -1741,30 +1797,33 @@ onBeforeUnmount(() => {
             <el-form-item label="商城分类"
               ><el-select v-model="form.categoryId" clearable filterable placeholder="请选择分类"><el-option v-for="item in categoryOptions" :key="item.id" :label="item.parent?.name ? `${item.parent.name} / ${item.name}` : item.name" :value="item.id" /></el-select
             ></el-form-item>
-            <el-form-item label="封面地址"><el-input v-model="form.coverImage" /></el-form-item>
+            <el-form-item label="商品封面"><ContentImageField v-model="form.coverImage" upload-url="/commerce-images" /></el-form-item>
+            <el-form-item label="相册上传"><ContentImageField :model-value="''" upload-url="/commerce-images" @update:model-value="appendProductGalleryImage" /></el-form-item>
             <el-form-item label="相册地址"><el-input v-model="form.galleryText" type="textarea" :rows="4" placeholder="每行一个图片地址" /></el-form-item>
             <el-form-item label="标签"><el-input v-model="form.tagsText" placeholder="多个标签用逗号分隔" /></el-form-item>
             <el-form-item label="商品详情"><RichTextEditor v-model="form.detailHtml" /></el-form-item>
-            <el-form-item v-if="form.source === 'LOCAL'" label="商品规格">
+            <el-form-item label="商品规格">
               <div style="width: 100%">
                 <el-table :data="form.skus" border>
                   <el-table-column label="规格"
-                    ><template #default="scope"><el-input v-model="scope.row.specification" /></template
+                    ><template #default="scope"><el-input v-if="form.source === 'LOCAL'" v-model="scope.row.specification" /><span v-else>{{ scope.row.specification || '—' }}</span></template
                   ></el-table-column>
                   <el-table-column label="SKU编码"
-                    ><template #default="scope"><el-input v-model="scope.row.erpSkuId" placeholder="自动生成" /></template
+                    ><template #default="scope"><el-input v-if="form.source === 'LOCAL'" v-model="scope.row.erpSkuId" placeholder="自动生成" /><span v-else>{{ scope.row.erpSkuId }}</span></template
                   ></el-table-column>
+                  <el-table-column label="规格图片" min-width="270"><template #default="scope"><ContentImageField v-model="scope.row.image" upload-url="/commerce-images" compact /></template></el-table-column>
                   <el-table-column label="售价（分）" width="145"
-                    ><template #default="scope"><el-input-number v-model="scope.row.salePriceCents" :min="1" controls-position="right" style="width: 120px" /></template
+                    ><template #default="scope"><el-input-number v-if="form.source === 'LOCAL'" v-model="scope.row.salePriceCents" :min="1" controls-position="right" style="width: 120px" /><span v-else>{{ scope.row.salePriceCents }}</span></template
                   ></el-table-column>
                   <el-table-column label="库存" width="130"
-                    ><template #default="scope"><el-input-number v-model="scope.row.stock" :min="0" controls-position="right" style="width: 105px" /></template
+                    ><template #default="scope"><el-input-number v-if="form.source === 'LOCAL'" v-model="scope.row.stock" :min="0" controls-position="right" style="width: 105px" /><span v-else>{{ scope.row.stock }}</span></template
                   ></el-table-column>
-                  <el-table-column label="启用" width="65"
+                  <el-table-column v-if="form.source === 'LOCAL'" label="启用" width="65"
                     ><template #default="scope"><el-switch v-model="scope.row.enabled" /></template
                   ></el-table-column>
                 </el-table>
                 <el-button
+                  v-if="form.source === 'LOCAL'"
                   style="margin-top: 8px"
                   @click="
                     form.skus.push({
@@ -2062,4 +2121,5 @@ onBeforeUnmount(() => {
   border-radius: 4px;
 }
 .device-history-tabs { margin-top: 20px; }
+.app-scope-tags { display: flex; gap: 6px; flex-wrap: wrap; }
 </style>

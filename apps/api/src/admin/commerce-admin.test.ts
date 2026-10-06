@@ -24,6 +24,39 @@ describe("commerce administration", () => {
     await expect(service.saveCommerceProduct("p", { skus: [{ salePriceCents: 1 }] })).rejects.toThrow("ERP");
     await expect(service.saveCommerceProduct(undefined, { source: "ERP" })).rejects.toThrow("同步");
   });
+  it("updates ERP SKU images without accepting ERP price or inventory edits", async () => {
+    const updatedAt = new Date("2026-10-06T04:00:00.000Z");
+    const existing = {
+      id: "p",
+      source: "ERP",
+      name: "ERP watch",
+      erpItemId: "E",
+      status: "DRAFT",
+      gallery: [],
+      tags: [],
+      featured: false,
+      sort: 0,
+      localArchived: false,
+      skus: [{ id: "s", updatedAt }],
+    };
+    const saved = { ...existing, skus: [{ ...existing.skus[0], image: "https://cdn.example.invalid/black.png" }] };
+    const tx = {
+      commerceProduct: { update: vi.fn().mockResolvedValue(existing), findUniqueOrThrow: vi.fn().mockResolvedValue(saved) },
+      commerceSku: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const prisma = {
+      commerceProduct: { findUnique: vi.fn().mockResolvedValue(existing) },
+      $transaction: vi.fn().mockImplementation(async (run) => run(tx)),
+    };
+    const result = await new AdminService(prisma as any, {} as any).saveCommerceProduct("p", {
+      skuImages: [{ id: "s", updatedAt: updatedAt.toISOString(), image: "https://cdn.example.invalid/black.png" }],
+    });
+    expect(tx.commerceSku.updateMany).toHaveBeenCalledWith({
+      where: { id: "s", productId: "p", updatedAt },
+      data: { image: "https://cdn.example.invalid/black.png" },
+    });
+    expect(result).toBe(saved);
+  });
   it("quick-updates selected SKU prices and stock with stale-write protection", async () => {
     const updatedAt = new Date("2026-09-11T08:00:00.000Z");
     const product = { id: "p", source: "ERP", skus: [{ id: "s", updatedAt }] };
@@ -37,11 +70,11 @@ describe("commerce administration", () => {
       $transaction: vi.fn().mockImplementation(async (run) => run(tx)),
     };
     const result = await new AdminService(prisma as any, {} as any).quickUpdateCommerceProductSkus("p", {
-      skus: [{ id: "s", updatedAt: updatedAt.toISOString(), salePriceCents: 149800, stock: 20 }],
+      skus: [{ id: "s", updatedAt: updatedAt.toISOString(), salePriceCents: 149800, stock: 20, image: "https://cdn.example.invalid/watch.png" }],
     });
     expect(tx.commerceSku.updateMany).toHaveBeenCalledWith({
       where: { id: "s", productId: "p", updatedAt },
-      data: { salePriceCents: 149800, stock: 20 },
+      data: { salePriceCents: 149800, stock: 20, image: "https://cdn.example.invalid/watch.png" },
     });
     expect(tx.commerceProduct.update).toHaveBeenCalledWith({ where: { id: "p" }, data: { updatedAt: expect.any(Date) } });
     expect(result).toBe(saved);

@@ -5,8 +5,10 @@ describe("administrator online content editor", () => {
   it("uploads cover and inline images through the authenticated same-origin endpoint", () => {
     const rich = readFileSync(new URL("./components/RichTextEditor.vue", import.meta.url), "utf8");
     const cover = readFileSync(new URL("./components/ContentImageField.vue", import.meta.url), "utf8");
+    expect(rich).toContain('api.post("/content-images", body)');
+    expect(cover).toContain('uploadUrl: "/content-images"');
+    expect(cover).toContain("api.post(props.uploadUrl, body)");
     for (const source of [rich, cover]) {
-      expect(source).toContain('api.post("/content-images", body)');
       expect(source).not.toContain('"content-type": "multipart/form-data"');
       expect(source).toContain("image/jpeg,image/png,image/webp");
       expect(source).toContain("10 * 1024 * 1024");

@@ -2,16 +2,19 @@
 import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { api, readableError, responseData } from "../api";
+import ContentImageField from "./ContentImageField.vue";
 
 type Row = Record<string, any>;
 type SkuDraft = {
   id: string;
   erpSkuId: string;
   specification: string;
+  image: string;
   priceYuan: number | undefined;
   stock: number | undefined;
   originalSalePriceCents: number;
   originalStock: number;
+  originalImage: string;
   updatedAt: string;
 };
 
@@ -41,10 +44,12 @@ function startEditing(): void {
     id: String(sku.id ?? ""),
     erpSkuId: String(sku.erpSkuId ?? ""),
     specification: String(sku.specification ?? "—"),
+    image: String(sku.image ?? ""),
     priceYuan: Number.isFinite(Number(sku.salePriceCents)) ? Number(sku.salePriceCents) / 100 : undefined,
     stock: Number.isSafeInteger(Number(sku.stock)) ? Number(sku.stock) : undefined,
     originalSalePriceCents: Number(sku.salePriceCents),
     originalStock: Number(sku.stock),
+    originalImage: String(sku.image ?? ""),
     updatedAt: String(sku.updatedAt ?? ""),
   }));
   editing.value = true;
@@ -77,10 +82,11 @@ async function saveAdjustments(): Promise<void> {
     const skus = drafts.value.map((sku) => {
       const salePriceCents = priceInCents(sku.priceYuan);
       const stock = validStock(sku.stock);
-      return { id: sku.id, updatedAt: sku.updatedAt, salePriceCents, stock,
-        changed: salePriceCents !== sku.originalSalePriceCents || stock !== sku.originalStock };
+      const image = sku.image.trim();
+      return { id: sku.id, updatedAt: sku.updatedAt, salePriceCents, stock, image: image || null,
+        changed: salePriceCents !== sku.originalSalePriceCents || stock !== sku.originalStock || image !== sku.originalImage };
     }).filter((sku) => sku.changed).map(({ changed: _changed, ...sku }) => sku);
-    if (!skus.length) throw new Error("售价和库存没有变化");
+    if (!skus.length) throw new Error("SKU 图片、售价和库存没有变化");
     const saved = responseData<Row>(await api.patch(
       `/commerce-products/${encodeURIComponent(String(props.product.id ?? ""))}/skus`,
       { skus },
@@ -88,7 +94,7 @@ async function saveAdjustments(): Promise<void> {
     editing.value = false;
     drafts.value = [];
     emit("saved", saved);
-    ElMessage.success("售价和库存已更新");
+    ElMessage.success("SKU 图片、售价和库存已更新");
   } catch (error) {
     ElMessage.error(error instanceof Error && !("response" in error) ? error.message : readableError(error));
   } finally {
@@ -119,6 +125,13 @@ async function saveAdjustments(): Promise<void> {
     <el-table :data="displayRows" border>
       <el-table-column prop="erpSkuId" :label="skuCodeLabel" min-width="140" />
       <el-table-column prop="specification" label="规格" min-width="120" />
+      <el-table-column label="规格图片" min-width="270">
+        <template #default="scope">
+          <ContentImageField v-if="editing" v-model="scope.row.image" upload-url="/commerce-images" compact />
+          <el-image v-else-if="scope.row.image" :src="scope.row.image" fit="cover" class="sku-image" />
+          <span v-else>未设置</span>
+        </template>
+      </el-table-column>
       <el-table-column label="售价" min-width="150">
         <template #default="scope">
           <el-input-number
@@ -173,6 +186,7 @@ async function saveAdjustments(): Promise<void> {
 .erp-warning { margin-bottom: 12px; }
 .price-input { width: 132px; }
 .stock-input { width: 106px; }
+.sku-image { width: 66px; height: 66px; border-radius: 6px; }
 .editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; }
 .editor-actions > div { display: flex; flex: none; gap: 8px; }
 @media (max-width: 680px) {

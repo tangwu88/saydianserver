@@ -20,7 +20,7 @@ export class LegacyContentController {
   @Get("article-cate/index")
   async categories(@Query("pid") parentId?: string) {
     const resolved = await this.legacy.articleCategoryId(parentId);
-    const categories = await this.content.categories(resolved);
+    const categories = await this.content.categories(resolved, undefined, "saidian");
     return legacySuccess(
       categories.map((category) => ({
         id: category.legacyId ?? category.id,
@@ -38,7 +38,7 @@ export class LegacyContentController {
     @Query("page") page?: string,
   ) {
     const categoryId = await this.legacy.articleCategoryId(category);
-    const result = await this.content.articles(categoryId, Number(page ?? 1), 20);
+    const result = await this.content.articles(categoryId, Number(page ?? 1), 20, undefined, "saidian");
     return legacySuccess(
       result.items.map((article) =>
         this.legacy.articleContract(article as unknown as Record<string, unknown>),
@@ -48,7 +48,7 @@ export class LegacyContentController {
 
   @Get("article/view")
   async article(@Query("id") id: string) {
-    const article = await this.content.article(id);
+    const article = await this.content.article(id, undefined, "saidian");
     return legacySuccess(
       this.legacy.articleContract(article as unknown as Record<string, unknown>),
     );
@@ -56,7 +56,7 @@ export class LegacyContentController {
 
   @Get("article-single/view")
   async single(@Query("id") id: string) {
-    const article = await this.content.article(id);
+    const article = await this.content.article(id, undefined, "saidian");
     return legacySuccess(
       this.legacy.articleContract(article as unknown as Record<string, unknown>),
     );

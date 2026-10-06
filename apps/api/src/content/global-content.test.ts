@@ -23,6 +23,15 @@ describe("global localized content", () => {
     expect(await service.articles(undefined, 1, 20, "de-DE,en;q=0.8")).toMatchObject({ items: [], total: 0 });
     expect((findMany.mock.calls[0] as any)[0].where.locale).toBe("de");
   });
+  it("returns shared content plus the requested app and rejects unknown app scopes", async () => {
+    const findMany = vi.fn(async () => []), count = vi.fn(async () => 0), findFirst = vi.fn(async () => ({ id: "ring" }));
+    const service = new ContentService({ article: { findMany, count, findFirst }, $transaction: (values: any[]) => Promise.all(values) } as any, {} as any);
+    await service.articles(undefined, 1, 20, "zh-Hans", "say-ring");
+    expect((findMany.mock.calls[0] as any)[0].where.product).toEqual({ in: ["shared", "say-ring"] });
+    await service.article("ring", "zh-Hans", "saidian");
+    expect((findFirst.mock.calls[0] as any)[0].where.product).toEqual({ in: ["shared", "saidian"] });
+    await expect(service.articles(undefined, 1, 20, "zh-Hans", "unknown-app")).rejects.toThrow("支持的前端应用");
+  });
   it("selects AI language by locale rather than deployment", async () => {
     const fetch = vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: "Synthetic answer" } }] }) })); vi.stubGlobal("fetch", fetch);
     const service = new ContentService({} as any, {} as any); const settings = { provider: "synthetic", baseUrl: "https://example.invalid", apiKey: "synthetic", model: "synthetic" };

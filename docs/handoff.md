@@ -53,7 +53,7 @@ Say Ring 公开显示配置已读回 `hideAi=true, sleepAiEnabled=true`，只隐
 - 最新交接前 Git HEAD 必须以 `git rev-parse HEAD origin/main` 为准；不要复制本文件中的旧提交号代替现场核对。
 - 新仓库 CI、GHCR 和受限 SSH receiver 已接通，仓库变量 `AUTO_DEPLOY_ENABLED=true`；四个生产 Secret 已配置，但值不进入 Git 或交接文档。
 - [生产部署 34006385576](https://github.com/tangwu88/saydianserver/actions/runs/34006385576) 已成功发布基线 `36ad693917da957f423135bbe8c3e065aeed3290`。后续文档提交也会触发新 CI，因此接手时必须重新核对 Actions 与 `/health/ready`，不能把该 SHA 当作永久当前值。
-- 生产数据库已先备份并完成隔离恢复演练，4/4 Prisma migrations 已应用；自动发布仍会在发现新待执行 migration 时停止，不会擅自改 schema。
+- 生产数据库已先备份并完成隔离恢复演练；自动发布只执行 `deploy/compatible-migrations.json` 中按精确 SQL 摘要独立审核的兼容 migration，未登记、摘要变化或迁移历史异常都会在变更服务和结构前停止。
 - 生产 `MAINTENANCE_READ_ONLY=true`；旧 `app.saidian.cc` 未切换，旧数据未迁移。不要把自动部署成功、管理后台可打开或 API 探针正常表述成业务全量上线。
 - `/down` 已公开上线原 App 三端下载页；Say Ring 复用同一受审下载页实现并由独立入口 `/say-ring` 读取 `product=say-ring` 清单。生产发布状态仍必须以当次线上清单和页面为准。
 - `app_update` 已归一为 `DownloadManifest v1`。原 App 仍按既有方式填写文件元数据；Say Ring 的 Android/HarmonyOS 可在“客服与更新”选择上传 APK/HAP 或填写应用市场 HTTPS 链接，iOS 填写 TestFlight/App Store 链接。上传只写私有对象存储和文件记录，不自动把版本设为可用，也不绕过现有发布审核。
@@ -139,7 +139,7 @@ git rev-list --left-right --count HEAD...origin/main
 - 本项目与商城/运营系统共享 `saidian-gateway-1` 和 `saidian_default`；禁止 `compose down`、Docker prune 或修改无关网关路由。
 - 服务器 API/PostgreSQL/Redis/MinIO 已健康。主机只有 40GB 根盘，接手和发布前用 `df -h /` 现场核对；过渡存储与备份都在同机，不是异地容灾。
 - 自动发布已启用：main push → CI verify → 完整 SHA 镜像 → 受限 SSH receiver → 数据库备份/迁移状态检查 → 更新 API/Worker/Admin+商城+下载页 → 外网 revision 验证。
-- 自动脚本保留现有维护值；发现待执行/失败的数据库迁移会停止，不自动改 schema。发布失败尝试恢复旧镜像/配置，但仍须人工核对 readiness。
+- 自动脚本保留现有维护值；只在 CI 通过、迁移历史与磁盘检查通过、生产备份完成后执行精确摘要已审核的兼容迁移，未审核或失败迁移会停止。发布失败尝试恢复旧镜像/配置，但仍须人工核对 readiness。
 - 专用账号、主机指纹、4 个 GitHub Secrets 和变量已配置。轮换、停用或重建时按 [持续部署说明](continuous-deployment.md) 操作；该账号具备受限生产发布能力。
 - 不要把私钥、Token、生产 `.env`、数据库备份或真实健康数据放进 Git、聊天记录或交接 ZIP。
 

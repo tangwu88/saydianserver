@@ -3,7 +3,10 @@ import { ref } from "vue";
 import { ElMessage } from "element-plus";
 import { api, readableError, responseData } from "../api";
 
-defineProps<{ modelValue: string | null | undefined }>();
+const props = withDefaults(defineProps<{ modelValue: string | null | undefined; uploadUrl?: string; compact?: boolean }>(), {
+  uploadUrl: "/content-images",
+  compact: false,
+});
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 const input = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
@@ -23,10 +26,10 @@ async function upload(event: Event): Promise<void> {
   try {
     const body = new FormData();
     body.append("file", file);
-    const result = responseData<{ url: string }>(await api.post("/content-images", body));
+    const result = responseData<{ url: string }>(await api.post(props.uploadUrl, body));
     if (!result?.url) throw new Error("上传响应缺少图片地址");
     emit("update:modelValue", result.url);
-    ElMessage.success("封面图片已上传");
+    ElMessage.success("图片已上传");
   } catch (error) {
     ElMessage.error(readableError(error));
   } finally {
@@ -36,7 +39,7 @@ async function upload(event: Event): Promise<void> {
 </script>
 
 <template>
-  <div class="content-image-field">
+  <div class="content-image-field" :class="{ compact: props.compact }">
     <el-input :model-value="modelValue || ''" clearable placeholder="上传图片或填写 HTTPS 地址" @update:model-value="emit('update:modelValue', String($event))">
       <template #append><el-button :loading="uploading" @click="choose">上传图片</el-button></template>
     </el-input>
@@ -50,6 +53,8 @@ async function upload(event: Event): Promise<void> {
 .content-image-field { width: 100%; }
 .file-input { display: none; }
 .cover-preview { width: 180px; height: 112px; margin-top: 10px; border: 1px solid #e4e7ed; border-radius: 6px; background: #f5f7fa; }
+.compact .cover-preview { width: 88px; height: 66px; }
+.compact p { display: none; }
 .preview-error { display: grid; width: 100%; height: 100%; place-items: center; color: #909399; font-size: 12px; }
 p { margin: 5px 0 0; color: #909399; font-size: 12px; }
 </style>

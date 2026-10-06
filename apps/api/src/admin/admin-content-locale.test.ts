@@ -48,10 +48,16 @@ describe("admin content locale", () => {
     const h = harness();
     expect(await h.service.saveArticle(undefined, articleInput)).toMatchObject({
       locale: "zh-Hans",
+      product: "shared",
     });
     expect(
       await h.service.saveArticleCategory(undefined, { name: "New" }),
     ).toMatchObject({ locale: "zh-Hans" });
+  });
+  it("stores an article's frontend app scope and rejects unknown scopes", async () => {
+    const h = harness();
+    expect(await h.service.saveArticle(undefined, { ...articleInput, product: "say-ring" })).toMatchObject({ product: "say-ring" });
+    await expect(h.service.saveArticle(undefined, { ...articleInput, product: "other-app" })).rejects.toThrow("支持的前端应用");
   });
   it.each(["zh-CN", "zh_CN", "zh-Hans"])(
     "normalizes old Chinese alias %s",

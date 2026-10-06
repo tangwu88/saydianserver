@@ -41,8 +41,8 @@ pwsh -NoProfile -File tools/Start-Change.ps1
 - 镜像私有保存于 GHCR。接收器用本次 Actions 的短期 GITHUB_TOKEN 拉取；不在服务器永久保存个人 Token。
 - 日常发布不通过 SSH 发送镜像归档，旧 transport 变量不再选择该路径。只在人工灾备恢复时导出同一批原始镜像；详细门禁见统一生产手册。
 - 服务器保存当前环境、Compose、运行中镜像 ID 和数据库备份后更新三项应用；商城 H5 已打入 Admin 镜像并发布到 `/saidian-mall/`。不启动或重建原商城、旧库或其他应用。
-- 保持原有 MAINTENANCE_READ_ONLY；出现待执行/失败的数据库迁移时停止，不自动变更结构。
-- 已审 migration 仅能由 `Deploy production` 的手工运行显式启用 `apply_migrations`；工作流会先验证目标为当前 main 且该 SHA 已有成功 CI，再由发布脚本生成生产备份后应用。main 自动发布和安装包单独发布都不能启用该开关。
+- 保持原有 MAINTENANCE_READ_ONLY；发布清单中没有通过精确 SQL SHA-256 审核的待执行迁移会在变更服务和结构前停止。
+- 已独立审查并登记在 `deploy/compatible-migrations.json` 的兼容迁移，会在目标 main SHA 通过 CI、校验生产迁移历史与磁盘空间并生成生产备份后执行；SQL 内容变化会使摘要失配并停止发布。失败迁移不会启动新应用镜像。
 - API/公开 readiness 版本不符、启动或页面检查失败时尝试恢复上一版镜像与配置；日志会明确报告回退失败，不假报成功。不会自动覆盖数据库。
 - 首次部署后 `/health/live`、`/health/ready` 的 `revision` 应等于 GitHub 提交号；仅显示 200 不足以证明新版已运行。
 
@@ -67,7 +67,7 @@ pwsh -NoProfile -File tools/Start-Change.ps1
 
 - CI 失败：不发布；读失败步骤和本轮日志，先安全更新再修复。
 - 服务器发布失败：保留 `releases/rollback-*` 和 `deploy/backups/saydian-ci-*.dump`，核对是否已自动恢复，再决定重试；不要删除失败证据。
-- 数据库迁移待执行：保留维护状态，单独审查兼容性、备份和恢复点后实施；不能跳过迁移状态检查。
+- 数据库迁移待执行：先单独审查锁表、数据兼容性、精确 SQL 摘要、备份和恢复点；通过后才登记兼容清单并发布，不能跳过迁移状态检查。
 - 外部服务未配置：继续返回真实不可用状态，不能在发布中写入模拟短信、推送、支付或健康数据。
 - 停用自动部署：将 AUTO_DEPLOY_ENABLED 设为 false；撤销服务器专用公钥和 GitHub Secret 需作为独立安全变更记录。
 - 现有本机备份不等于异地容灾；定期做容量检查和恢复演练。本脚本不自动清理备份/镜像，清理前需确认精确范围。

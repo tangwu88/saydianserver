@@ -54,11 +54,11 @@ describe("product SKU quick editor", () => {
     h.drafts.value[0].stock = 20;
     await h.saveAdjustments();
     expect(h.api.patch).toHaveBeenCalledWith("/commerce-products/product-1/skus", {
-      skus: [{ id: "sku-1", updatedAt: "2026-09-11T08:00:00.000Z", salePriceCents: 139950, stock: 20 }],
+      skus: [{ id: "sku-1", updatedAt: "2026-09-11T08:00:00.000Z", salePriceCents: 139950, stock: 20, image: null }],
     });
     expect(h.emit).toHaveBeenCalledWith("saved", expect.objectContaining({ id: "product-1" }));
     expect(h.editing.value).toBe(false);
-    expect(h.ElMessage.success).toHaveBeenCalledWith("售价和库存已更新");
+    expect(h.ElMessage.success).toHaveBeenCalledWith("SKU 图片、售价和库存已更新");
   });
 
   it("keeps the editor open and skips the request for invalid values", async () => {
@@ -77,7 +77,23 @@ describe("product SKU quick editor", () => {
     await h.saveAdjustments();
     expect(h.api.patch).not.toHaveBeenCalled();
     expect(h.editing.value).toBe(true);
-    expect(h.ElMessage.error).toHaveBeenCalledWith("售价和库存没有变化");
+    expect(h.ElMessage.error).toHaveBeenCalledWith("SKU 图片、售价和库存没有变化");
+  });
+
+  it("submits an uploaded SKU image without requiring a price or stock change", async () => {
+    const h = harness();
+    h.startEditing();
+    h.drafts.value[0].image = "https://app.saydian.cn/api/saydian-app/v2/files/image-1";
+    await h.saveAdjustments();
+    expect(h.api.patch).toHaveBeenCalledWith("/commerce-products/product-1/skus", {
+      skus: [{
+        id: "sku-1",
+        updatedAt: "2026-09-11T08:00:00.000Z",
+        salePriceCents: 149800,
+        stock: 0,
+        image: "https://app.saydian.cn/api/saydian-app/v2/files/image-1",
+      }],
+    });
   });
 
   it("keeps the user's values when the server rejects a stale edit", async () => {

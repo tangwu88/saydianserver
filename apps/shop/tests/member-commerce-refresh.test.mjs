@@ -29,7 +29,7 @@ test("coupon gifts produce a poster, survive login and are visible during checko
   const gift = read("pages/coupon-gift/index.vue");
   assert.match(gift, /登录后领取/);
   assert.match(gift, /requireLogin\(`\/pages\/coupon-gift\/index\?token=/);
-  assert.match(read("pages/checkout/index.vue"), /showBenefits=ref\(true\)/);
+  assert.match(read("pages/checkout/index.vue"), /showBenefits=ref\(false\)/);
 });
 
 test("home categories stay in one horizontal row and keep the all-products action right aligned", () => {

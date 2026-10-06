@@ -220,6 +220,8 @@ test("checkout CTA starts payment directly and retains loading, recovery and mai
   s.capabilities.value.payments[0].enabled = true;
   assert.equal(text(cta()), "立即付款"); assert.equal(cta().props.disabled, false);
   assert.equal(nodes(h.tree()).some(node => node.type === "input" && node.props.placeholder?.includes("配送要求")), false);
+  assert.equal(s.showBenefits.value, false);
+  nodes(h.tree()).find(node => node.type === "button" && node.props.class === "benefits-toggle").props.onClick();
   assert.equal(s.showBenefits.value, true);
   button(h.tree(), "添加订单备注（选填） ›").props.onClick();
   assert.equal(nodes(h.tree()).some(node => node.type === "input" && node.props.placeholder?.includes("配送要求")), true);
@@ -231,7 +233,7 @@ test("checkout CTA starts payment directly and retains loading, recovery and mai
   assert.deepEqual(h.requests, []); assert.deepEqual(h.navigations, []);
 });
 
-test("checkout shows owned benefits by default and redeems only a server-configured coupon code", async () => {
+test("checkout expands owned benefits on demand and redeems only a server-configured coupon code", async () => {
   const claim = { id: "claim-1", couponId: "coupon-1" }, owned = [{ ...claim, usedAt: null, coupon: { name: "满 100 减 10" } }];
   const h = orderPage("checkout", async (path, input) => {
     if (path === "/storefront/coupons/code/claim") return claim;
@@ -240,6 +242,8 @@ test("checkout shows owned benefits by default and redeems only a server-configu
     throw new Error(`Unexpected API call ${path}`);
   }), s = h.state;
   s.address.value = { id: "address" }; s.items.value = [{ skuId: "sku", quantity: 1 }];
+  assert.equal(s.showBenefits.value, false); assert.equal(nodes(h.tree()).some(node => node.type === "input" && node.props.placeholder === "输入优惠码"), false);
+  nodes(h.tree()).find(node => node.type === "button" && node.props.class === "benefits-toggle").props.onClick();
   assert.equal(s.showBenefits.value, true); assert.equal(nodes(h.tree()).some(node => node.type === "input" && node.props.placeholder === "输入优惠码"), true);
   s.couponCode.value = " save10 "; await s.redeemCouponCode();
   assert.equal(s.selectedCoupon.value.id, "claim-1"); assert.equal(s.couponCode.value, "");

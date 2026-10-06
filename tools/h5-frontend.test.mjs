@@ -87,6 +87,13 @@ test("payment channels follow environment, and pending is not paid", () => {
   assert.equal(model.isPaidStatus("SUCCEEDED"), true);
 });
 
+test("checkout benefits are collapsed by default", () => {
+  const source = readFileSync(resolve(repo, "apps/shop/src/pages/checkout/index.vue"), "utf8");
+  assert.match(source, /showBenefits=ref\(false\)/);
+  assert.match(source, /:aria-expanded="showBenefits"/);
+  assert.match(source, /v-if="showBenefits" class="benefits-body"/);
+});
+
 function sessionHarness() {
   const storage = new Map(), requests = [], navigations = [];
   const uni = {

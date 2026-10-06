@@ -88,7 +88,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     healthRawJson,
     healthTime,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, changeDeviceHistoryTab, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, changeContentLocale, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceHistoryTab, deviceMeasurements, deviceMeasurementsLoading, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, changeDeviceHistoryTab, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, changeContentLocale, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, visibleRows, appProductFilter, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceHistoryTab, deviceMeasurements, deviceMeasurementsLoading, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal, contentProductLabel, rowProducts, appendProductGalleryImage }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -851,6 +851,33 @@ describe("product-scoped legal document admin", () => {
   });
 });
 
+describe("frontend app content classification", () => {
+  it("defaults new articles to shared content and submits an explicit app scope", async () => {
+    const h = harness();
+    h.route.params.resource = "articles";
+    h.api.get.mockResolvedValueOnce({ data: { data: [] } });
+    await h.openCreate();
+    expect(h.form.value.product).toBe("shared");
+    h.form.value.product = "say-ring";
+    h.form.value.title = "Ring help";
+    h.form.value.contentHtml = "<p>Ring only</p>";
+    expect(h.payloadForResource("articles", h.form.value)).toMatchObject({ product: "say-ring" });
+    expect(h.columns.value[0]).toBe("product");
+    expect(h.sfc).toContain("全部前端 App");
+  });
+
+  it("classifies support and update settings and filters rows by frontend app", async () => {
+    const h = harness();
+    h.route.params.resource = "settings";
+    h.rows.value = await h.withDownloadSetting([]);
+    expect(h.rowProducts(h.rows.value[0])).toEqual(["saydian-global", "say-ring"]);
+    h.appProductFilter.value = "saidian";
+    expect(h.visibleRows.value.map((row: any) => row.key)).toEqual(["app_update"]);
+    h.appProductFilter.value = "say-ring";
+    expect(h.visibleRows.value.map((row: any) => row.key)).toEqual(["global_support", "say_ring_app_update", "say_ring_app_display", "say_ring_map"]);
+  });
+});
+
 describe("international settings first configuration", () => {
   it("shows unconfigured editable entries from an empty database without writing anything", async () => {
     const h = harness();
@@ -859,7 +886,7 @@ describe("international settings first configuration", () => {
     await h.load();
     expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "app_update", "global_app_update", "say_ring_app_update", "say_ring_app_display", "say_ring_map"]);
     expect(h.rows.value.filter((row: any) => row.key !== "say_ring_app_display").every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
-    expect(h.columns.value).toEqual(["name", "configuration", "public", "updatedAt"]);
+    expect(h.columns.value).toEqual(["appScope", "name", "configuration", "public", "updatedAt"]);
     expect(h.api.patch).not.toHaveBeenCalled();
     expect(h.api.post).not.toHaveBeenCalled();
     await h.openEdit(h.rows.value[0]);
@@ -1278,6 +1305,24 @@ describe("content category number and association editor", () => {
 });
 
 describe("administrator commerce and service editor improvements", () => {
+  it("offers product, gallery and SKU uploads and sends only changed ERP SKU images", () => {
+    const h = harness();
+    const payload = h.payloadForResource("commerce-products", {
+      id: "product-1",
+      source: "ERP",
+      displayName: "Watch",
+      galleryText: "",
+      tagsText: "",
+      skus: [{ id: "sku-1", updatedAt: "2026-10-06T04:00:00.000Z", image: "https://cdn.example.invalid/new.png", _originalImage: "" }],
+    });
+    expect(payload.skuImages).toEqual([{ id: "sku-1", updatedAt: "2026-10-06T04:00:00.000Z", image: "https://cdn.example.invalid/new.png" }]);
+    expect(h.sfc).toContain('v-model="form.coverImage" upload-url="/commerce-images"');
+    expect(h.sfc).toContain('v-model="scope.row.image" upload-url="/commerce-images" compact');
+    h.form.value.galleryText = "https://cdn.example.invalid/one.png";
+    h.appendProductGalleryImage("https://cdn.example.invalid/two.png");
+    expect(h.form.value.galleryText).toContain("two.png");
+  });
+
   it("requires an ERP SKU, imports live ERP product data and edits the imported draft", async () => {
     const h = harness();
     h.route.params.resource = "commerce-products";

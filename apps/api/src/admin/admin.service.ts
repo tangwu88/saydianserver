@@ -71,6 +71,7 @@ import { cancelCommerceOrderInTransaction } from "../commerce/commerce-order-can
 import { memberPromoterExternalId } from "../common/member-promoter-identity";
 import { importJushuitanProductBySku } from "./jushuitan-product-import";
 import { foldedHealthRecordWhere } from "../health/health-record-scope";
+import { contentProduct } from "../content/content-product";
 
 function contentLocale(value: unknown, fallback: string | null): string | null {
   if (value == null) return fallback;
@@ -1478,14 +1479,15 @@ export class AdminService {
       const previous = id ? await tx.article.findUnique({ where: { id } }) : null;
       if (id && !previous) throw globalError(404, "content_article_not_found", "文章不存在");
       const locale = contentLocale(body.locale, previous ? previous.locale : "zh-Hans");
+      const product = contentProduct(body.product, contentProduct(previous?.product, "shared"));
       if (data.categoryId) {
         const category = await tx.articleCategory.findUnique({ where: { id: data.categoryId } });
         if (!category) throw globalError(404, "content_category_not_found", "分类不存在");
         if (category.locale !== locale) throw globalError(400, "content_article_locale_mismatch", "文章与分类的语言必须一致");
       }
       return id
-        ? tx.article.update({ where: { id }, data: { ...data, locale } })
-        : tx.article.create({ data: { ...data, locale } });
+        ? tx.article.update({ where: { id }, data: { ...data, locale, product } })
+        : tx.article.create({ data: { ...data, locale, product } });
     });
   }
 
@@ -2066,6 +2068,27 @@ export class AdminService {
           ? (existing?.localArchived ?? false)
           : body.localArchived === true,
     };
+    const skuImageAdjustments = !local && body.skuImages !== undefined
+      ? (() => {
+          if (!Array.isArray(body.skuImages) || body.skuImages.length > 100)
+            throw new BadRequestException("SKU 图片修改格式不正确");
+          const productSkuIds = new Set(existing!.skus.map((sku) => sku.id));
+          const requestedIds = new Set<string>();
+          return body.skuImages.map((raw) => {
+            const sku = safeObject(raw);
+            const skuId = String(sku.id ?? "").trim();
+            if (!skuId || !productSkuIds.has(skuId))
+              throw new BadRequestException("SKU不属于当前商品，请刷新后重试");
+            if (requestedIds.has(skuId))
+              throw new BadRequestException("同一个SKU不能重复提交");
+            requestedIds.add(skuId);
+            const expectedUpdatedAt = new Date(String(sku.updatedAt ?? ""));
+            if (Number.isNaN(expectedUpdatedAt.valueOf()))
+              throw new BadRequestException("SKU版本无效，请刷新后重试");
+            return { id: skuId, expectedUpdatedAt, image: nullableText(sku.image) };
+          });
+        })()
+      : [];
     return this.prisma.$transaction(async (tx) => {
       const saved = id
         ? await tx.commerceProduct.update({ where: { id }, data })
@@ -2118,6 +2141,14 @@ export class AdminService {
           where: { productId: saved.id, id: { notIn: retained } },
           data: { enabled: false },
         });
+      }
+      for (const adjustment of skuImageAdjustments) {
+        const result = await tx.commerceSku.updateMany({
+          where: { id: adjustment.id, productId: saved.id, updatedAt: adjustment.expectedUpdatedAt },
+          data: { image: adjustment.image },
+        });
+        if (result.count !== 1)
+          throw new ConflictException("SKU 图片已被更新，请刷新后重新修改");
       }
       if (saved.localArchived)
         await tx.commerceSku.updateMany({
@@ -2220,6 +2251,9 @@ export class AdminService {
         expectedUpdatedAt,
         salePriceCents: integerCents(sku.salePriceCents, "销售价格", 1),
         stock: integerCents(sku.stock, "库存"),
+        image: Object.prototype.hasOwnProperty.call(sku, "image")
+          ? nullableText(sku.image)
+          : undefined,
       };
     });
 
@@ -2234,11 +2268,12 @@ export class AdminService {
           data: {
             salePriceCents: adjustment.salePriceCents,
             stock: adjustment.stock,
+            ...(adjustment.image !== undefined ? { image: adjustment.image } : {}),
           },
         });
         if (result.count !== 1) {
           throw new ConflictException(
-            "SKU价格或库存已被更新，请刷新后重新修改",
+            "SKU 图片、价格或库存已被更新，请刷新后重新修改",
           );
         }
       }
