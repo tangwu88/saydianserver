@@ -90,8 +90,9 @@ export class AdminController {
     @CurrentAdmin() current: { id: string },
     @UploadedFile() file: Express.Multer.File,
     @Query("platform") platform: string,
+    @Query("product") product?: string,
   ) {
-    return this.support.uploadAdminAppPackage(current.id, file, platform);
+    return this.support.uploadAdminAppPackage(current.id, file, platform, product);
   }
 
   @Post("auth/logout")

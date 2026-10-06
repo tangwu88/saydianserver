@@ -286,7 +286,7 @@
 | `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | query:product?；统一接口：不传product读取原赛电app_update；product=saydian-global读取Health的global_app_update；product=say-ring读取say_ring_app_update | DownloadManifest v1；Android/iPhone/HarmonyOS各一项，coming_soon无destination；iPhone可附pendingReason=review表示等待审核，不提供安装链接；Health与Say Ring强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无公开配置404 | 核心服务 |
 | `GET /api/saydian-app/v2/support/sport-map-config` | Say Ring 运动地图状态 | public | 无请求体；不返回高德密钥 | {provider:'amap',configured:boolean}；仅国际 Say Ring 地图已公开、启用且密钥存在时为 true | 核心服务 |
 | `POST /api/saydian-app/v2/support/sport-route-map` | Say Ring 高德运动轨迹图 | member | 会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点 | 高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图 | 高德 Web 服务坐标转换与静态地图 API |
-| `GET /api/saydian-app/v2/support/app-package/:fileName` | Say Ring 公开安装包 | public | path:fileName；fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名 | 安装包原始文件流，含 Content-Length、ETag 和 nosniff | 已配置对象存储 |
+| `GET /api/saydian-app/v2/support/app-package/:fileName` | 赛电、Health 与 Say Ring 公开安装包 | public | path:fileName；fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名及对应产品安装包用途的 ACTIVE 文件 | 安装包原始文件流，含 Content-Length、ETag 和 nosniff | 已配置对象存储 |
 | `POST /api/saydian-app/v2/support/feedback` | 提交反馈 | member | {content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项} | {id,status} | 核心服务 |
 | `POST /api/saydian-app/v2/files/say-ring-avatar` | Say Ring 上传头像 | member | file:file；会员令牌；multipart file，JPEG/PNG/WebP，最大 10 MiB；仅国际环境 | {id,url,sha256,byteSize}；URL 与现有头像接口一致 | Say Ring 专用服务器持久目录；开关关闭时沿用原头像存储 |
 | `POST /api/saydian-app/v2/files` | 上传图片 | member | file:file，query:purpose?；multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP | {id,url,...} | 私有对象存储 |
@@ -304,7 +304,7 @@
 | `POST /api/saydian-app/admin/v1/auth/login` | 后台登录 | public | JSON {username,password} | AdminSession；不能与 App Token 混用 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/content-images` | 上传后台文章或协议图片 | admin: SUPER_ADMIN, CONTENT_EDITOR | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR | {id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/commerce-images` | 上传商城商品或SKU图片 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/COMMERCE_OPERATIONS | {id,url,sha256,byteSize}；url可保存到商品封面、相册或SKU图片字段，不返回对象存储密钥 | 已配置对象存储 |
-| `POST /api/saydian-app/admin/v1/app-packages` | 上传 Say Ring 安装包 | admin: SUPER_ADMIN, APP_OPERATIONS | file:file，query:platform；platform=android/harmonyos；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS | {fileName,url,sizeBytes,sha256}；上传成功后仍需保存版本配置才发布 | 已配置对象存储 |
+| `POST /api/saydian-app/admin/v1/app-packages` | 上传赛电、Health 或 Say Ring 安装包 | admin: SUPER_ADMIN, APP_OPERATIONS | file:file，query:platform，query:product?；platform=android/harmonyos；product=saidian/saydian-global/say-ring，省略时兼容默认say-ring；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS | {fileName,url,sizeBytes,sha256}；按产品保存，赛电返回/api/地址，Health和Say Ring返回/global/api/地址；上传成功后仍需保存版本配置才发布 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量 | 核心服务 |

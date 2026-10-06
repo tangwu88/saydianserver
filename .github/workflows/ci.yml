@@ -107,39 +107,55 @@ jobs:
         run: bash tools/smoke-backup-restore.sh
       - uses: ./.github/actions/setup-runtime-docker
       - uses: docker/setup-buildx-action@v3
+      - name: Authenticate private component cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Select builds from component input fingerprints
+        id: component
+        env:
+          ALLOW_COMPONENT_REUSE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'true' || 'false' }}
+        run: node deploy/scripts/component-cache.mjs prepare "$GITHUB_SHA"
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/api.Dockerfile
+          file: ${{ steps.component.outputs.api_file }}
           cache-from: type=gha,scope=saydian-api,version=2,timeout=3m
           cache-to: type=gha,scope=saydian-api,version=2,mode=max,ignore-error=true,timeout=3m
           load: true
           platforms: linux/amd64
           provenance: false
           tags: ghcr.io/tangwu88/saydianserver-api:sha-${{ github.sha }}
-          labels: org.opencontainers.image.revision=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            cc.saydian.build-input=${{ steps.component.outputs.api_hash }}
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/worker.Dockerfile
+          file: ${{ steps.component.outputs.worker_file }}
           cache-from: type=gha,scope=saydian-worker,version=2,timeout=3m
           cache-to: type=gha,scope=saydian-worker,version=2,mode=max,ignore-error=true,timeout=3m
           load: true
           platforms: linux/amd64
           provenance: false
           tags: ghcr.io/tangwu88/saydianserver-worker:sha-${{ github.sha }}
-          labels: org.opencontainers.image.revision=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            cc.saydian.build-input=${{ steps.component.outputs.worker_hash }}
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/admin.Dockerfile
+          file: ${{ steps.component.outputs.admin_file }}
           cache-from: type=gha,scope=saydian-admin,version=2,timeout=3m
           cache-to: type=gha,scope=saydian-admin,version=2,mode=max,ignore-error=true,timeout=3m
           load: true
           platforms: linux/amd64
           provenance: false
           tags: ghcr.io/tangwu88/saydianserver-admin:sha-${{ github.sha }}
-          labels: org.opencontainers.image.revision=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            cc.saydian.build-input=${{ steps.component.outputs.admin_hash }}
       - name: Smoke test the actual runtime images
         run: bash tools/smoke-runtime-images.sh "$GITHUB_SHA"
       - name: Rehearse original-image offline transfer with real Docker
@@ -154,6 +170,7 @@ jobs:
             docker push "ghcr.io/tangwu88/saydianserver-$component:sha-$GITHUB_SHA"
           done
           node deploy/scripts/release-manifest.mjs create "$GITHUB_SHA" deploy/release-manifest.json
+          node deploy/scripts/component-cache.mjs publish "$GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:

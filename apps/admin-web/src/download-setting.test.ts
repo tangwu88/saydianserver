@@ -93,4 +93,13 @@ describe("download setting editor", () => {
       /download address|\u4e0b\u8f7d\u5730\u5740/,
     );
   });
+
+  it("preserves an uploaded domestic package after saving and reopening", () => {
+    const editor = downloadManifestToEditor(manifest);
+    const fileName = "saidian-android-123-abcdef01.apk";
+    const url = `/api/saydian-app/v2/support/app-package/${fileName}`;
+    Object.assign(editor.releases.android, { fileName, url, sizeBytes: 123, sha256: "a".repeat(64) });
+    const reopened = downloadManifestToEditor(downloadEditorToManifest(editor));
+    expect(reopened.releases.android).toMatchObject({ fileName, url, sizeBytes: 123, sha256: "a".repeat(64) });
+  });
 });

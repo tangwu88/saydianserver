@@ -13,6 +13,8 @@ import "../deploy/scripts/deploy-failure.test.mjs";
 import "../deploy/scripts/offline-image-transfer.test.mjs";
 import "../deploy/scripts/ci-registry-login.test.mjs";
 import "../deploy/scripts/runtime-artifact.test.mjs";
+import "../deploy/scripts/component-cache.test.mjs";
+import { writeWindowsInstallDouble } from "./shell-test-fixture.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bash = process.env.SAYDIAN_BASH || (process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash");
@@ -211,6 +213,7 @@ test("admin upstream switch changes only the unique managed block and validates 
   const backupDir = path.join(temporary, "backups");
   const dockerLog = path.join(temporary, "docker.log");
   fs.mkdirSync(bin);
+  writeWindowsInstallDouble(bin);
   fs.writeFileSync(path.join(bin, "docker"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$DOCKER_LOG\"\n");
   fs.chmodSync(path.join(bin, "docker"), 0o755);
   fs.writeFileSync(gatewayConfig, `server {

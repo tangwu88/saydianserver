@@ -209,6 +209,12 @@ curl -sS 'http://127.0.0.1:8080/api/saydian-app/admin/v1/members?page=1&pageSize
 
 ## 10. 文档维护与验收层级
 
+### 后台安装包上传
+
+在“App 更新”中编辑赛电、SAYDIAN Health 或 Say Ring，对 Android/HarmonyOS 选择“可下载”及“上传安装包”，选择 APK/HAP（最大 128MB）。上传成功自动填写文件名、下载链接、大小及 SHA-256；填写版本号、构建号、发布时间并保存设置后才发布。iPhone 继续填写官方 TestFlight 或 App Store 链接。
+
+管理接口 `POST /api/saydian-app/admin/v1/app-packages?platform=android&product=saidian` 使用管理员 Token 和 multipart 字段 `file`。`product` 对应 `saidian`、`saydian-global`、`say-ring`，旧调用省略时保持 Say Ring；HarmonyOS 使用 `platform=harmonyos`。安装包按产品保存，下载清单仍使用各自原设置键。文件格式校验不能代替真实包名、签名及覆盖安装验收。
+
 更新控制器后修改 `tools/api-notes.mjs` 并运行 `pnpm api:docs`；CI 执行 `pnpm api:docs:check`，缺说明/多余说明/文档未生成都会失败。该目录不是伪装成完整 DTO 的 OpenAPI；参数边界以调用手册、校验器和可重复测试共同确认。
 
 单元测试证明映射逻辑；本地/CI HTTP 测试证明真实路由和中间件；生产只读探测证明端点响应；真实账号、支付沙箱、双人授权、供应商投递和旧数据迁移需各自独立证据。

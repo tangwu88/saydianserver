@@ -269,13 +269,19 @@
           "name": "platform",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
-      "summary": "上传 Say Ring 安装包",
-      "request": "platform=android/harmonyos；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS",
-      "response": "{fileName,url,sizeBytes,sha256}；上传成功后仍需保存版本配置才发布",
+      "summary": "上传赛电、Health 或 Say Ring 安装包",
+      "request": "platform=android/harmonyos；product=saidian/saydian-global/say-ring，省略时兼容默认say-ring；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS",
+      "response": "{fileName,url,sizeBytes,sha256}；按产品保存，赛电返回/api/地址，Health和Say Ring返回/global/api/地址；上传成功后仍需保存版本配置才发布",
       "dependency": "已配置对象存储",
       "successStatus": 201,
       "contract": {
@@ -25116,8 +25122,8 @@
       ],
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/support/support.controller.ts",
-      "summary": "Say Ring 公开安装包",
-      "request": "fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名",
+      "summary": "赛电、Health 与 Say Ring 公开安装包",
+      "request": "fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名及对应产品安装包用途的 ACTIVE 文件",
       "response": "安装包原始文件流，含 Content-Length、ETag 和 nosniff",
       "dependency": "已配置对象存储",
       "successStatus": 200,

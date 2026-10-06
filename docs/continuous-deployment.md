@@ -32,6 +32,14 @@ pwsh -NoProfile -File tools/Start-Change.ps1
 
 ## 发布链路
 
+### 组件复用与重试加速
+
+CI 对 API、Worker、Admin 各自的构建输入计算指纹。受信任 main 发布可复用此前通过真实镜像验收的同指纹文件层，仅更新当前发布版本标签；锁文件、共享契约、schema 或构建规则变化会使相关缓存失效。PR 始终普通构建，缓存不存在或校验失败也普通构建，完整质量检查和三镜像验收均保留。
+
+服务器重试发布时，对完整匹配发布清单 digest/imageId 的本地镜像跳过远端拉取，继续检查版本标签和健康状态。日志报告每个镜像的拉取/验证耗时；没有关闭备份、只读保持、迁移门禁或回滚。首次发布需建立缓存，实际耗时必须以 Actions 和线上验收计量。当前未接入国内镜像仓库。
+
+Windows 本地部署夹具需要 Git Bash 和 jq；便携 jq 可通过 `SAYDIAN_JQ` 指向已验证的本地二进制，`SAYDIAN_BASH` 可指定 Git Bash。仅测试夹具模拟 Windows 不支持的 Linux 权限/目录同步操作，生产脚本不因此跳过这些操作。
+
 `main push → CI verify → GHCR digest 镜像 → 短 SSH 发布指令 → 服务器拉取镜像 → 备份/检查 → 更新 API、Worker、Admin+商城 H5 → 外网版本验收`
 
 - 仅 `AUTO_DEPLOY_ENABLED=true` 时自动发布；当前仓库已开启。新环境或密钥轮换时重新执行下方一次性接入。

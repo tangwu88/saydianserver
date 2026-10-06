@@ -110,14 +110,21 @@ compose() { docker compose -f "$base_compose" -f "$source_dir/images.json" "$@";
 compose config --quiet
 deadline=$((SECONDS + 3600))
 for name in api worker admin; do
+  started=$SECONDS
   image=$(jq -r --arg name "$name" '.images[$name].ref' "$manifest")
   expected_id=$(jq -r --arg name "$name" '.images[$name].imageId' "$manifest")
   if [[ "$mode" == compose ]]; then
-    remaining=$((deadline - SECONDS)); ((remaining > 0))
-    timeout --signal=TERM --kill-after=10s "$remaining" docker pull --quiet "$image"
+    if [[ $(docker image inspect -f '{{.Id}}' "$image" 2>/dev/null || true) == "$expected_id" ]]; then
+      echo "Runtime image $name already verified locally; skipping registry pull."
+    else
+      remaining=$((deadline - SECONDS)); ((remaining > 0))
+      echo "Pulling runtime image $name."
+      timeout --signal=TERM --kill-after=10s "$remaining" docker pull --quiet "$image"
+    fi
     [[ $(docker image inspect -f '{{.Id}}' "$image") == "$expected_id" ]]
   fi
   [[ $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$expected_id") == "$revision" ]]
+  echo "Runtime image $name verified in $((SECONDS - started)) seconds."
 done
 # Older installed receivers already store this same short-lived job token in their
 # private temporary Docker config. Reuse it in memory only; never print or persist it.

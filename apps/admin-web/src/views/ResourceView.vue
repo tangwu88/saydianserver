@@ -1082,6 +1082,11 @@ async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event
   if (platform === "ios") return;
   const file = input.files?.[0];
   if (!file) return;
+  if (file.size <= 0 || file.size > 128 * 1024 * 1024) {
+    ElMessage.error("安装包大小必须在 128MB 以内");
+    input.value = "";
+    return;
+  }
   const expectedExtension = platform === "android" ? ".apk" : ".hap";
   if (!file.name.toLowerCase().endsWith(expectedExtension)) {
     ElMessage.error(`请选择 ${expectedExtension.toUpperCase()} 安装包`);
@@ -1089,11 +1094,12 @@ async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event
     return;
   }
   packageUploading.value = { ...packageUploading.value, [platform]: true };
+  const editor = form.value.downloadEditor as DownloadManifestEditor;
   try {
     const body = new FormData();
     body.append("file", file);
-    const uploaded = responseData<Row>(await api.post(`/app-packages?platform=${encodeURIComponent(platform)}`, body, { timeout: 5 * 60_000 }));
-    const editor = form.value.downloadEditor as DownloadManifestEditor;
+    const product = form.value.key === "app_update" ? "saidian" : form.value.key === "global_app_update" ? "saydian-global" : "say-ring";
+    const uploaded = responseData<Row>(await api.post(`/app-packages?platform=${encodeURIComponent(platform)}&product=${encodeURIComponent(product)}`, body, { timeout: 5 * 60_000 }));
     const release = editor.releases[platform];
     release.destinationKind = "direct";
     release.fileName = String(uploaded.fileName ?? "");
@@ -2039,9 +2045,10 @@ onBeforeUnmount(() => {
                     </el-form-item>
                   </template>
                   <template v-else>
-                    <el-form-item v-if="form.key === 'say_ring_app_update'" label="上传安装包">
+                    <el-form-item label="上传安装包">
                       <input :accept="platform.key === 'android' ? '.apk' : '.hap'" type="file" :disabled="packageUploading[platform.key]" @change="uploadAppPackage(platform.key, $event)" />
                       <span v-if="packageUploading[platform.key]">正在上传并计算校验值…</span>
+                      <span v-else>最大 128MB；上传后自动填写文件信息，保存设置后发布。</span>
                     </el-form-item>
                     <el-form-item label="文件名">
                       <el-input v-model="form.downloadEditor.releases[platform.key].fileName" :placeholder="platform.packageLabel + ' 版本化文件名'" />

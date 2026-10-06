@@ -6,6 +6,21 @@ import { Readable } from "node:stream";
 import sharp from "sharp";
 import { SupportService } from "./support.service";
 
+// Windows cannot open/fsync a directory handle. Keep file IO and checks real;
+// Linux CI exercises the production durability operation without this shim.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    open: async (...args: Parameters<typeof actual.open>) => {
+      if (process.platform === "win32" && args[0] === process.env.SAY_RING_AVATAR_DIR && (await actual.lstat(args[0])).isDirectory()) {
+        return { sync: async () => undefined, close: async () => undefined };
+      }
+      return actual.open(...args);
+    },
+  };
+});
+
 const prior = {
   realm: process.env.APP_REALM,
   enabled: process.env.SAY_RING_LOCAL_AVATAR_WRITE_ENABLED,

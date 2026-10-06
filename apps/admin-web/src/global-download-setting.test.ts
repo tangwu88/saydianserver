@@ -249,4 +249,18 @@ describe("international download settings", () => {
       status: "coming_soon",
     });
   });
+
+  it.each(["saydian-global", "say-ring"])("preserves uploaded %s packages after saving and reopening", (product) => {
+    const editor = createGlobalDownloadDraft();
+    editor.publishedAt = "2026-10-06T00:00:00+08:00";
+    for (const platform of ["android", "ios", "harmonyos"] as const) {
+      Object.assign(editor.releases[platform], { versionName: "1.0.0", buildNumber: 1 });
+    }
+    const fileName = `${product}-android-123-abcdef01.apk`;
+    const url = `/global/api/saydian-app/v2/support/app-package/${fileName}`;
+    Object.assign(editor.releases.android, { status: "available", fileName, url, sizeBytes: 123, sha256: "a".repeat(64) });
+    const saved = product === "say-ring" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor);
+    const reopened = product === "say-ring" ? sayRingDownloadManifestToEditor(saved) : globalDownloadManifestToEditor(saved);
+    expect(reopened.releases.android).toMatchObject({ fileName, url, sizeBytes: 123, sha256: "a".repeat(64) });
+  });
 });

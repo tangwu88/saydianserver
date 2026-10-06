@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { shellPath, shellArgs, bashCommand, shellEnvironment, writeNodeDouble, writeWindowsInstallDouble } from "../../tools/shell-test-fixture.mjs";
 import { validateTransfer } from "./offline-image-transfer.mjs";
 
 const revision = "a".repeat(40), imageId = "sha256:" + "b".repeat(64);
@@ -31,11 +32,11 @@ function fixture(mode, callback) {
     writeFileSync(join(payload, "offline-transfer.json"), JSON.stringify(descriptor()));
     writeFileSync(join(payload, "unrelated-file"), "preserve");
     const script = join(root, "receiver.sh");
-    writeFileSync(script, readFileSync(new URL("./receive-offline-images.sh", import.meta.url), "utf8").replaceAll("/opt/saydianapp-server", root));
+    writeFileSync(script, readFileSync(new URL("./receive-offline-images.sh", import.meta.url), "utf8").replaceAll("/opt/saydianapp-server", shellPath(root)));
     const double = `#!${process.execPath}
 const fs=require('node:fs'), path=require('node:path'), cp=require('node:child_process');
 const tool=path.basename(process.argv[1]), a=process.argv.slice(2), root=process.env.FIXTURE_ROOT;
-if(tool==='readlink') console.log(root+'/deploy/.ci-release.lock');
+if(tool==='readlink') console.log(process.env.FIXTURE_SHELL_ROOT+'/deploy/.ci-release.lock');
 if(tool==='df') console.log('Filesystem 1B-blocks Used Available Capacity Mounted\\nfixture 100000000000 0 '+(process.env.FIXTURE_MODE==='disk-full'?1:100000000000)+' 0% /');
 if(tool==='docker') {
  fs.appendFileSync(root+'/calls.log',a.join(' ')+'\\n');
@@ -48,12 +49,13 @@ if(tool==='docker') {
  if(a[0]==='load') fs.writeFileSync(root+'/loaded','1');
 }
 `;
-    for (const name of ["docker", "readlink", "flock", "df"]) writeFileSync(join(bin, name), double, { mode: 0o755 });
+    for (const name of ["docker", "readlink", "flock", "df"]) writeNodeDouble(bin, name, double);
+    writeWindowsInstallDouble(bin);
     const receive = (index, corrupt = false) => {
       writeFileSync(join(payload, "chunk-name"), `chunk-00${index}\n`);
       writeFileSync(join(payload, "image-chunk"), corrupt ? Buffer.from("corrupt") : chunks[index]);
       writeFileSync(join(source, "bundle.tgz"), "owned receiver fixture");
-      const result = spawnSync("bash", [script], { encoding: "utf8", timeout: 15000, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RELEASE_SOURCE: source, RELEASE_SHA: revision, FIXTURE_ROOT: root, FIXTURE_MODE: mode, FIXTURE_HELPER: fileURLToPath(new URL("./offline-image-transfer.mjs", import.meta.url)) } });
+      const result = spawnSync(bashCommand, shellArgs(bin, script), { encoding: "utf8", timeout: 15000, env: shellEnvironment(bin, { RELEASE_SOURCE: shellPath(source), FIXTURE_NATIVE_SOURCE: source, RELEASE_SHA: revision, FIXTURE_ROOT: root, FIXTURE_SHELL_ROOT: shellPath(root), FIXTURE_MODE: mode, FIXTURE_HELPER: fileURLToPath(new URL("./offline-image-transfer.mjs", import.meta.url)) }) });
       return { ...result, output: result.stdout + result.stderr };
     };
     callback({ receive, loaded: () => existsSync(join(root, "loaded")), calls: () => existsSync(join(root, "calls.log")) ? readFileSync(join(root, "calls.log"), "utf8") : "",

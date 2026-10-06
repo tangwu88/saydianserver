@@ -2,6 +2,8 @@ import { NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SupportService } from "./support.service";
+import { parseDownloadManifest } from "@saydian/app-contracts";
+import { parseGlobalDownloadManifest } from "./global-download-manifest";
 afterEach(() => vi.unstubAllEnvs());
 
 const validManifest = {
@@ -287,32 +289,33 @@ describe("Say Ring package upload and download", () => {
     return { service, db, send, rows, file, bytes };
   }
 
-  it("stores a validated package and streams it back through the public route", async () => {
+  it.each(["say-ring", "saidian", "saydian-global"])("stores and downloads packages for %s with a saveable manifest", async (product) => {
     const h = packageFixture();
     const uploaded = await h.service.uploadAdminAppPackage(
       "admin-1",
       h.file,
       "android",
+      product,
     );
 
     expect(uploaded).toMatchObject({
       fileName: expect.stringMatching(
-        /^say-ring-android-\d+-[a-f0-9]{8}\.apk$/,
+        new RegExp(`^${product}-android-\\d+-[a-f0-9]{8}\\.apk$`),
       ),
       url: expect.stringMatching(
-        /^\/global\/api\/saydian-app\/v2\/support\/app-package\//,
+        new RegExp(`^${product === "saidian" ? "" : "/global"}/api/saydian-app/v2/support/app-package/`),
       ),
       sizeBytes: h.bytes.length,
       sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(h.rows[0]).toMatchObject({
       ownerUserId: null,
-      purpose: "app-package:say-ring",
+      purpose: `app-package:${product}`,
       contentType: "application/vnd.android.package-archive",
     });
     expect(h.send.mock.calls[0]![0].input).toMatchObject({
       Bucket: "app-packages",
-      Key: expect.stringMatching(/^app-packages\/say-ring\/android\//),
+      Key: expect.stringMatching(new RegExp(`^app-packages/${product}/android/`)),
     });
 
     const downloaded = await h.service.publicAppPackage(uploaded.fileName);
@@ -322,6 +325,36 @@ describe("Say Ring package upload and download", () => {
       sha256: uploaded.sha256,
     });
     expect(h.send.mock.calls[1]![0].input.Key).toBe(h.rows[0].objectKey);
+    const manifest = structuredClone(validManifest);
+    manifest.releases[0]!.destination = { kind: "direct", ...uploaded };
+    // Only Android is available in this fixture, so other platforms need no package.
+    manifest.releases[2] = { platform: "harmonyos", versionName: "1.0.0", buildNumber: 1, status: "coming_soon" } as any;
+    if (product === "saidian") {
+      expect(parseDownloadManifest(manifest).releases[0]?.destination?.url).toBe(uploaded.url);
+    } else {
+      const packageId = product === "say-ring" ? "cn.saydian.ring" : "cn.saydian.app.global";
+      const globalManifest = { ...manifest, realm: "global", releases: manifest.releases.map(r => ({ ...r, packageId: r.platform === "harmonyos" ? `${packageId}.hm` : packageId })) };
+      expect(parseGlobalDownloadManifest(globalManifest, product as "say-ring" | "saydian-global").releases[0]?.destination?.url).toBe(uploaded.url);
+    }
+  });
+
+  it("keeps the existing default and rejects unknown products before storage", async () => {
+    const h = packageFixture();
+    await expect(h.service.uploadAdminAppPackage("admin-1", h.file, "android", "unknown")).rejects.toThrow();
+    expect(h.send).not.toHaveBeenCalled();
+    const uploaded = await h.service.uploadAdminAppPackage("admin-1", h.file, "android");
+    expect(uploaded.fileName).toMatch(/^say-ring-/);
+    h.rows[0].purpose = "app-package:saidian";
+    await expect(h.service.publicAppPackage(uploaded.fileName)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it.each(["saidian", "saydian-global", "say-ring"])("uploads HarmonyOS packages for %s", async (product) => {
+    const h = packageFixture();
+    const uploaded = await h.service.uploadAdminAppPackage("admin-1", { ...h.file, originalname: "app.hap" }, "harmonyos", product);
+    expect(uploaded.fileName).toMatch(new RegExp(`^${product}-harmonyos-.*\\.hap$`));
+    const downloaded = await h.service.publicAppPackage(uploaded.fileName);
+    expect(downloaded.contentType).toBe("application/octet-stream");
+    expect(h.send.mock.calls[1]![0].input.Key).toContain(`app-packages/${product}/harmonyos/`);
   });
 
   it("rejects a mismatched platform, extension, header, and size before storage", async () => {

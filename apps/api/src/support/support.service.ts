@@ -363,7 +363,12 @@ export class SupportService implements OnModuleInit {
     adminId: string,
     file: Express.Multer.File,
     platformInput: string,
+    productInput: string = "say-ring",
   ) {
+    const product = String(productInput ?? "say-ring");
+    if (!["saidian", "saydian-global", "say-ring"].includes(product)) {
+      throw new BadRequestException("请选择有效的 App");
+    }
     const platform = String(platformInput ?? "")
       .trim()
       .toLowerCase();
@@ -389,13 +394,13 @@ export class SupportService implements OnModuleInit {
       throw new BadRequestException("安装包格式不正确");
     }
     const digest = sha256(file.buffer);
-    const fileName = `say-ring-${platform}-${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
-    const purpose = "app-package:say-ring";
+    const fileName = `${product}-${platform}-${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
+    const purpose = `app-package:${product}`;
     const contentType =
       extension === "apk"
         ? "application/vnd.android.package-archive"
         : "application/octet-stream";
-    const objectKey = `app-packages/say-ring/${platform}/${fileName}`;
+    const objectKey = `app-packages/${product}/${platform}/${fileName}`;
     const storage = await this.storage();
     try {
       await storage.s3.send(
@@ -424,7 +429,7 @@ export class SupportService implements OnModuleInit {
     });
     return {
       fileName,
-      url: `/global/api/saydian-app/v2/support/app-package/${fileName}`,
+      url: `${product === "saidian" ? "" : "/global"}/api/saydian-app/v2/support/app-package/${fileName}`,
       sizeBytes: file.size,
       sha256: digest,
     };
@@ -441,7 +446,7 @@ export class SupportService implements OnModuleInit {
     const file = await this.prisma.fileObject.findFirst({
       where: {
         originalName: fileName,
-        purpose: "app-package:say-ring",
+        purpose: `app-package:${fileName.startsWith("saidian-") ? "saidian" : fileName.startsWith("saydian-global-") ? "saydian-global" : "say-ring"}`,
         status: "ACTIVE",
       },
       orderBy: { createdAt: "desc" },
