@@ -120,7 +120,11 @@ test("runtime code and dependencies use separate cached layers without another i
   for (const component of ["api", "worker"]) {
     const dockerfile = fs.readFileSync(path.join(root, `docker/${component}.Dockerfile`), "utf8");
     assert(dockerfile.includes(`/runtime/${component}/node_modules ./node_modules`));
-    assert(dockerfile.includes(`/runtime/${component}/dist ./dist`));
+    assert(dockerfile.includes(`COPY --from=dependencies --chown=node:node /runtime/${component}/node_modules ./node_modules`));
+    assert(dockerfile.includes(`COPY --from=build --chown=node:node /workspace/apps/${component}/dist ./dist`));
+    const sourceCopy = dockerfile.indexOf(`COPY apps/${component} apps/${component}`);
+    assert(sourceCopy > dockerfile.indexOf("FROM dependencies AS build"));
+    assert(dockerfile.indexOf(`deploy --prod /runtime/${component}`) < sourceCopy);
     assert(!dockerfile.includes(`/runtime/${component} ./`));
   }
 });

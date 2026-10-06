@@ -25,6 +25,16 @@
 
 ## 验证与未验收
 
+### 后续：稳定依赖层拆分
+
+- 功能提交 679c18a84d0200ab57aac9a1556303879c7e2233 已通过完整本地检查并推送；CI 37438622065 的 verify 于 08:58:32 UTC 成功，耗时约 9 分 45 秒，生产发布仍须另验。
+- 进一步将 API/Worker Dockerfile 拆为 dependencies 与 build 阶段：锁文件、共享包、schema 变化时重新打包依赖；业务源码随后编译。runtime 的 node_modules/package/prisma 来自稳定 dependencies 阶段，dist 来自 build；防止业务源码变化使整层依赖重打包、重传。
+- 后续同步曾发生连接重置/空回复。第一次同步尚在 fetch 时已开始编辑 Dockerfiles，未覆盖任何其他改动；随后保留这三项已审阅改动，重跑 Start-Change.ps1 -Resume。
+- 通过当前 Google DNS-over-HTTPS 查询得到 github.com 的另一官方解析地址，仅对本次 Git 进程使用 curloptResolve 和 userAgent 参数，保持 HTTPS 主机名/证书校验；没有修改系统、生产或外部 DNS，没有落盘代理/凭据配置。最终 fetch 成功，-Resume 确认 HEAD 与 origin/main 均为 679c18a，重新建立检查点。
+- 一次日志 patch 的时间戳上下文不匹配，被拒绝且未修改文件；改用实际章节上下文记录。
+- 在 artifacts 中建立仅含 package/锁文件、共享包和 schema、没有 API/Worker 业务源码及 dist 的独立 workspace，offline frozen 安装、共享包构建、Prisma 生成、两个 pnpm deploy --prod 均成功，证明稳定依赖可以先于业务源码打包；真实 Linux Docker/镜像启动仍须 CI 验收。
+
+
 - 组件输入/缓存身份定向测试 3/3 通过；完整结果与发布工具命令结果随后追加。
 - node --test tools/tooling.test.mjs：51/51 通过，覆盖原 47 项工具/部署/离线传输、安全 Git 检查和本轮缓存/本地镜像跳过测试；没有将失败测试设为跳过。
 - CI YAML 经已安装 yaml 库解析通过；pnpm db:generate 通过。接口未新增路径，前轮安装包说明的生成目录保持一致。
@@ -40,3 +50,18 @@
 - 2026-10-06T08:48:01.4002265Z：pnpm.cmd test，退出码 0。
 
 - 2026-10-06T08:48:35.5233864Z：pnpm.cmd build，退出码 0。
+
+- 2026-10-06T09:12:06.6419955Z：pnpm.cmd api:docs:check，退出码 0。
+
+- 2026-10-06T09:13:40.1774862Z：pnpm.cmd tools:test，退出码 1。
+- 后续全量检查发现原 Docker 层检查仍断言旧 dist 来源；更新 tools/tooling.test.mjs，明确依赖打包在业务源码 COPY 之前、runtime 依赖来自 dependencies 而 dist 来自 build。失败未提交，修复后重新执行完整门禁。
+
+- 2026-10-06T09:14:39.6357176Z：pnpm.cmd api:docs:check，退出码 0。
+
+- 2026-10-06T09:16:31.5866443Z：pnpm.cmd tools:test，退出码 0。
+
+- 2026-10-06T09:16:51.4309480Z：pnpm.cmd typecheck，退出码 0。
+
+- 2026-10-06T09:17:43.0503083Z：pnpm.cmd test，退出码 0。
+
+- 2026-10-06T09:18:14.9502194Z：pnpm.cmd build，退出码 0。
