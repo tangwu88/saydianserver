@@ -319,6 +319,88 @@ export async function importJushuitanProductBySku(
   }
 }
 
+export async function syncJushuitanInventory(
+  prisma: PrismaService,
+  integrationSecrets: IntegrationSecretsService,
+) {
+  const skus = await prisma.commerceSku.findMany({
+    where: {
+      enabled: true,
+      erpSkuId: { not: "" },
+      product: { source: "ERP", localArchived: false },
+    },
+    select: {
+      id: true,
+      productId: true,
+      erpSkuId: true,
+      stock: true,
+      updatedAt: true,
+    },
+    orderBy: { id: "asc" },
+    take: 5001,
+  });
+  if (skus.length > 5000) {
+    throw new BadRequestException(
+      "待同步 SKU 超过 5000 个，请联系管理员分批处理",
+    );
+  }
+  if (!skus.length) return { productCount: 0, skuCount: 0, updatedSkuCount: 0 };
+  const ids = skus.map((sku) => sku.erpSkuId.trim());
+  if (ids.some((id) => !id || /[,\r\n]/.test(id))) {
+    throw new BadRequestException("ERP SKU 编码无效，请先核对商品资料");
+  }
+  const settings = await jushuitanSettings(prisma, integrationSecrets);
+  let rows: Record<string, unknown>[];
+  try {
+    rows = await queryJushuitanInventoryRows(settings, ids);
+  } catch (error) {
+    if (error instanceof HttpException) throw error;
+    throw new ServiceUnavailableException(
+      "聚水潭库存查询失败；本次未更新，请稍后重试",
+    );
+  }
+  const inventory = new Map(rows.map((row) => [normalizedSku(row), row]));
+  // Validate the complete response before changing any stock. Missing is not zero.
+  const updates = skus.map((sku) => {
+    const row = inventory.get(sku.erpSkuId.trim().toLowerCase());
+    if (!row)
+      throw new ServiceUnavailableException(
+        `聚水潭未返回 SKU ${sku.erpSkuId} 的库存；本次未更新，请稍后重试`,
+      );
+    return { ...sku, newStock: inventoryStock(row) };
+  });
+  await markIntegrationVerified(prisma, "jushuitan");
+  const changed = updates.filter((sku) => sku.newStock !== sku.stock);
+  await prisma.$transaction(
+    async (tx) => {
+      for (const sku of changed) {
+        const result = await tx.commerceSku.updateMany({
+          where: {
+            id: sku.id,
+            erpSkuId: sku.erpSkuId,
+            stock: sku.stock,
+            updatedAt: sku.updatedAt,
+            enabled: true,
+            product: { source: "ERP", localArchived: false },
+          },
+          data: { stock: sku.newStock },
+        });
+        if (result.count !== 1) {
+          throw new ConflictException(
+            "同步期间商品库存或资料已变化；本次未更新，请重新同步",
+          );
+        }
+      }
+    },
+    { timeout: 10000 },
+  );
+  return {
+    productCount: new Set(skus.map((sku) => sku.productId)).size,
+    skuCount: skus.length,
+    updatedSkuCount: changed.length,
+  };
+}
+
 async function queryJushuitanSpuRows(
   settings: JushuitanSettings,
   erpItemId: string,
@@ -347,21 +429,36 @@ async function queryJushuitanInventoryRows(
   skuIds: string[],
 ): Promise<Record<string, unknown>[]> {
   const rows: Record<string, unknown>[] = [];
+  const deadline = Date.now() + 40000;
   for (let offset = 0; offset < skuIds.length; offset += 100) {
     const batch = skuIds.slice(offset, offset + 100);
-    const response = await callJushuitan(
-      settings,
-      settings.inventoryOperation,
-      {
-        sku_ids: batch.join(","),
-        page_index: 1,
-        page_size: 100,
-        ...(settings.inventoryOperation.startsWith("/")
-          ? { has_lock_qty: true }
-          : {}),
-      },
-    );
-    rows.push(...jushuitanRows(response));
+    for (let page = 1; page <= 100; page += 1) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        throw new ServiceUnavailableException("聚水潭库存查询超时；本次未更新，请稍后重试");
+      }
+      const response = await callJushuitan(
+        settings,
+        settings.inventoryOperation,
+        {
+          sku_ids: batch.join(","),
+          page_index: page,
+          page_size: 100,
+          ...(settings.inventoryOperation.startsWith("/")
+            ? { has_lock_qty: true }
+            : {}),
+        },
+        Math.min(20000, remaining),
+      );
+      const pageRows = jushuitanRows(response);
+      rows.push(...pageRows);
+      if (!hasNextPage(response)) break;
+      if (pageRows.length === 0 || page === 100) {
+        throw new ServiceUnavailableException(
+          "聚水潭库存分页未完整返回；本次未更新",
+        );
+      }
+    }
   }
   return uniqueSkuRows(rows);
 }
@@ -426,6 +523,7 @@ async function callJushuitan(
   settings: JushuitanSettings,
   operation: string,
   body: unknown,
+  timeoutMs = 20000,
 ): Promise<Record<string, unknown>> {
   let response: Response;
   if (operation.startsWith("/")) {
@@ -445,7 +543,7 @@ async function callJushuitan(
         "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
       },
       body: new URLSearchParams(params),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } else {
     const timestamp = String(Math.floor(Date.now() / 1_000));
@@ -468,7 +566,7 @@ async function callJushuitan(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body ?? {}),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   }
 
@@ -625,10 +723,16 @@ function hasNextPage(result: Record<string, unknown>): boolean {
 }
 
 function inventoryStock(row: Record<string, unknown>): number {
-  const quantity = Number(row.avl_qty ?? row.qty);
-  if (!Number.isFinite(quantity)) {
+  const raw = row.avl_qty ?? row.qty;
+  const quantity = Number(raw);
+  if (
+    (typeof raw !== "number" && typeof raw !== "string") ||
+    String(raw).trim() === "" ||
+    !Number.isFinite(quantity) ||
+    quantity > 2147483647
+  ) {
     throw new ServiceUnavailableException(
-      "聚水潭库存响应缺少有效数量；本次没有导入",
+      "聚水潭库存响应缺少有效数量；本次未更新",
     );
   }
   return Math.max(0, Math.floor(quantity));

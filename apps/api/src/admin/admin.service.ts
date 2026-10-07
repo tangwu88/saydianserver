@@ -69,7 +69,7 @@ import { parseGlobalSupportSetting } from "../support/global-support-config";
 import { withCategoryNumbers } from "./article-category-number";
 import { cancelCommerceOrderInTransaction } from "../commerce/commerce-order-cancellation";
 import { memberPromoterExternalId } from "../common/member-promoter-identity";
-import { importJushuitanProductBySku } from "./jushuitan-product-import";
+import { importJushuitanProductBySku, syncJushuitanInventory } from "./jushuitan-product-import";
 import { foldedHealthRecordWhere } from "../health/health-record-scope";
 import { contentProduct } from "../content/content-product";
 
@@ -2005,6 +2005,10 @@ export class AdminService {
       this.integrationSecrets,
       input,
     );
+  }
+
+  syncCommerceInventory() {
+    return syncJushuitanInventory(this.prisma, this.integrationSecrets);
   }
 
   async saveCommerceProduct(id: string | undefined, input: unknown) {

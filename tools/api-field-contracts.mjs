@@ -68,6 +68,12 @@ export const fieldContracts = {
     { id: sampleId, source: "ERP", erpItemId: "ERP-ITEM-001", name: "合成测试商品", skus: [{ id: sampleId, erpSkuId: "ERP-SKU-001", stock: 5, salePriceCents: 100 }], erpLookup: { requestedSku: "ERP-SKU-001", fetchedAt: "2026-09-15T00:00:00.000Z", product: {}, inventory: {} } },
     "apps/api/src/admin/jushuitan-product-import.ts; apps/api/src/admin/jushuitan-product-import.test.ts",
   ),
+  "AdminController.syncCommerceInventory": record(
+    null, null,
+    object({ productCount: integer, skuCount: integer, updatedSkuCount: integer }, ["productCount", "skuCount", "updatedSkuCount"]),
+    { productCount: 1, skuCount: 2, updatedSkuCount: 1 },
+    "apps/api/src/admin/jushuitan-product-import.ts; apps/api/src/admin/jushuitan-inventory-sync.test.ts",
+  ),
 };
 
 const cartRow = object({ id: positive, cart_item_id: positive, sku_id: positive, product_id: positive, num: positive, quantity: positive, price: { type: ["number", "string"] }, available: boolean }, ["id", "sku_id", "num"]);

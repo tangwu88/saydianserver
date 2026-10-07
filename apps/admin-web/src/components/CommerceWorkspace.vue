@@ -40,6 +40,25 @@ const manualOrderVisible = ref(false);
 const manualOrderSaving = ref(false);
 const paymentCloseSaving = ref(false);
 const orderCloseSaving = ref(false);
+const inventorySyncing = ref(false);
+
+async function syncInventory(): Promise<void> {
+  if (inventorySyncing.value || props.resource !== "commerce-products" || !canEdit.value) return;
+  inventorySyncing.value = true;
+  try {
+    const result = responseData<{ productCount: number; skuCount: number; updatedSkuCount: number }>(
+      await api.post("/commerce-products/inventory-sync", {}, { timeout: 300000 }),
+    );
+    ElMessage.success(result.skuCount
+      ? `库存同步完成：${result.productCount} 个商品、${result.skuCount} 个 SKU，更新 ${result.updatedSkuCount} 个 SKU 库存`
+      : "暂无需要同步库存的 ERP 商品");
+    emit("refresh");
+  } catch (error) {
+    ElMessage.error(readableError(error));
+  } finally {
+    inventorySyncing.value = false;
+  }
+}
 const manualOrderForm = ref({
   action: "ADJUST_PRICE",
   payableYuan: 0,
@@ -430,6 +449,7 @@ function changeStatus(value: unknown): void {
       </el-select>
       <el-button type="primary" @click="emit('refresh')">刷新</el-button>
       <el-button v-if="createable" @click="emit('create')">新增</el-button>
+      <el-button v-if="resource === 'commerce-products' && canEdit" type="primary" plain :loading="inventorySyncing" @click="syncInventory">聚水潭库存同步</el-button>
       <el-button v-if="canEdit && resource === 'commerce-commissions'" @click="emit('edit', { enabled: false, rateBps: 0, settlementDays: 7, withdrawalEnabled: false, minimumWithdrawCents: null, dailyWithdrawLimitCents: null, ...meta.plan, reviewRequired: true })">推广奖金与提现规则</el-button>
       <template v-if="canEdit && resource === 'commerce-products' && selectedProductIds.length">
         <el-button @click="emit('batch-products', selectedProductIds, 'PUBLISH')">批量上架</el-button>

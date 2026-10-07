@@ -3,7 +3,7 @@ import ts from "typescript";
 import { computed, ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 
-function harness(roles = ["SUPER_ADMIN"]) {
+function harness(roles = ["SUPER_ADMIN"], canWrite = true) {
   const source = readFileSync(new URL("./components/CommerceWorkspace.vue", import.meta.url), "utf8")
     .match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1]!;
   const ast = ts.createSourceFile("commerce-workspace.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -42,7 +42,7 @@ function harness(roles = ["SUPER_ADMIN"]) {
     watch: vi.fn(),
     defineProps: () => props,
     defineEmits: () => emit,
-    canAdminResource: () => true,
+    canAdminResource: () => canWrite,
     getAdminRoles: () => roles,
     api,
     responseData: (response: any) => response.data.data,
@@ -53,10 +53,39 @@ function harness(roles = ["SUPER_ADMIN"]) {
   };
   const state = new Function(
     ...Object.keys(deps),
-    `${code}\nreturn { detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, paymentCloseSaving, orderCloseSaving, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel, hasActiveOnlinePayment, activeOnlinePayment, orderAddress, closeOnlinePayment, closeOrder };`,
+    `${code}\nreturn { inventorySyncing, syncInventory, detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, paymentCloseSaving, orderCloseSaving, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel, hasActiveOnlinePayment, activeOnlinePayment, orderAddress, closeOnlinePayment, closeOrder };`,
   )(...Object.values(deps));
-  return { ...state, order, api, emit, ElMessage, confirm, prompt };
+  return { ...state, props, order, api, emit, ElMessage, confirm, prompt };
 }
+
+describe("product inventory sync button", () => {
+  it("syncs all ERP inventory and refreshes with a result summary", async () => {
+    const h = harness(); h.props.resource = "commerce-products";
+    h.api.post.mockResolvedValueOnce({ data: { data: { productCount: 2, skuCount: 4, updatedSkuCount: 3 } } } as any);
+    await h.syncInventory();
+    expect(h.api.post).toHaveBeenCalledWith("/commerce-products/inventory-sync", {}, { timeout: 300000 });
+    expect(h.ElMessage.success).toHaveBeenCalledWith("库存同步完成：2 个商品、4 个 SKU，更新 3 个 SKU 库存");
+    expect(h.emit).toHaveBeenCalledWith("refresh");
+    expect(h.inventorySyncing.value).toBe(false);
+  });
+  it("blocks duplicate clicks and resets loading after failure", async () => {
+    const h = harness(); h.props.resource = "commerce-products";
+    let fail!: (error: Error) => void;
+    h.api.post.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    const pending = h.syncInventory(); await h.syncInventory();
+    expect(h.api.post).toHaveBeenCalledTimes(1);
+    expect(h.inventorySyncing.value).toBe(true);
+    fail(new Error("聚水潭库存缺失")); await pending;
+    expect(h.ElMessage.error).toHaveBeenCalledWith("聚水潭库存缺失");
+    expect(h.emit).not.toHaveBeenCalled();
+    expect(h.inventorySyncing.value).toBe(false);
+  });
+  it("does not request synchronization for read-only users or other lists", async () => {
+    const h = harness(["READ_ONLY"], false); h.props.resource = "commerce-products";
+    await h.syncInventory(); expect(h.api.post).not.toHaveBeenCalled();
+    const order = harness(); await order.syncInventory(); expect(order.api.post).not.toHaveBeenCalled();
+  });
+});
 
 describe("commerce order super-admin payment controls", () => {
   it("submits integer cents, current version, idempotency key, and mandatory receipt note", async () => {

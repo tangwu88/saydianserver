@@ -421,6 +421,12 @@ export class AdminController {
     return this.admin.batchCommerceProducts(input);
   }
 
+  @Post("commerce-products/inventory-sync")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  syncCommerceInventory() {
+    return this.admin.syncCommerceInventory();
+  }
+
   @Patch("commerce-products/:id/skus")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
   quickUpdateCommerceProductSkus(

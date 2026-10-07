@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **379 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **380 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -293,7 +293,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（109）
+## 管理后台接口（110）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -346,6 +346,7 @@
 | `POST /api/saydian-app/admin/v1/commerce-products` | 拒绝手工新增ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 请先通过聚水潭商品同步建立商品和SKU | HTTP 400；不会创建第二套库存 | 聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products/erp-import` | 按SKU定位SPU并实时导入ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存 | 聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入 | 聚水潭商品查询与库存查询 |
 | `POST /api/saydian-app/admin/v1/commerce-products/batch` | 商品批量上下架与归档 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {ids:商品UUID数组,action:PUBLISH/DISABLE/ARCHIVE}；ERP和自建商品保留各自库存权威 | 批量处理结果 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/admin/v1/commerce-products/inventory-sync` | 实时同步聚水潭库存 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 无参数；同步未归档ERP商品的启用SKU，最多5000个 | 返回商品数、SKU数及更新SKU数；只更新库存，缺失或无效库存不补零，并发变化时整次回滚 | 聚水潭库存查询；本地SKU库存；管理员审计 |
 | `PATCH /api/saydian-app/admin/v1/commerce-products/:id/skus` | 快速修改商品SKU售价与库存 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数}]}；每次1至100条 | 原子更新并返回商品；版本过期409且不部分保存；ERP商品后续同步可能覆盖手工值 | 主库商城/聚水潭 |
 | `PATCH /api/saydian-app/admin/v1/commerce-products/:id` | 编辑商品展示资料 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?} | 展示资料；ERP编号、内部名称、SKU和库存不会被覆盖 | 主库商城/聚水潭 |
 | `DELETE /api/saydian-app/admin/v1/commerce-products/:id` | 永久删除未产生业务历史的商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；删除前需由后台二次确认 | 无订单或评价时清理购物车、收藏及商品SKU后返回{deleted:true}；已有订单或评价返回409并要求归档 | 主库商城 |

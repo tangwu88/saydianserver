@@ -1829,6 +1829,57 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.syncCommerceInventory",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-products/inventory-sync",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "实时同步聚水潭库存",
+      "request": "无参数；同步未归档ERP商品的启用SKU，最多5000个",
+      "response": "返回商品数、SKU数及更新SKU数；只更新库存，缺失或无效库存不补零，并发变化时整次回滚",
+      "dependency": "聚水潭库存查询；本地SKU库存；管理员审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "productCount": {
+              "type": "integer"
+            },
+            "skuCount": {
+              "type": "integer"
+            },
+            "updatedSkuCount": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "productCount",
+            "skuCount",
+            "updatedSkuCount"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "productCount": 1,
+          "skuCount": 2,
+          "updatedSkuCount": 1
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/jushuitan-product-import.ts; apps/api/src/admin/jushuitan-inventory-sync.test.ts",
+        "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
       "key": "AdminController.quickUpdateCommerceProductSkus",
       "method": "PATCH",
       "path": "/api/saydian-app/admin/v1/commerce-products/:id/skus",
