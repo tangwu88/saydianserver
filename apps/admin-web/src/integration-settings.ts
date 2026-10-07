@@ -64,6 +64,11 @@ export const integrationDefinitions: IntegrationDefinition[] = [
 ];
 
 export type IntegrationDraft = { state: string; replaceSecrets: boolean; values: Record<string, string | boolean> };
+export function miniPaymentAppIdPayload(value: string): { miniPaymentAppId: string } {
+  const appId = value.trim();
+  if (!/^wx[A-Za-z0-9]{8,64}$/.test(appId)) throw new Error('请填写以 wx 开头的小程序 AppID。');
+  return { miniPaymentAppId: appId };
+}
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function get(config: Record<string, unknown>, key: string): unknown { return key.split('.').reduce<unknown>((value, part) => object(value)[part], config); }
 function put(config: Record<string, unknown>, key: string, value: unknown): void { const [parent, child] = key.split('.'); if (child) config[parent!] = { ...object(config[parent!]), [child]: value }; else config[key] = value; }

@@ -1142,8 +1142,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "维护集成登记和密钥",
-      "request": "{state:UNCONFIGURED/CONFIGURED/DISABLED/ERROR,publicConfig?,secrets?:对象,clearSecrets?:boolean}；secrets使用主机外置主密钥加密且只写不回显",
-      "response": "公开配置和hasSecret；不返回密钥内容",
+      "request": "{state:UNCONFIGURED/CONFIGURED/DISABLED/ERROR,publicConfig?,secrets?:对象,clearSecrets?:boolean}；secrets使用主机外置主密钥加密且只写不回显。wechat_pay另支持仅{miniPaymentAppId:与小程序登录一致的AppID}，拒绝组合参数和替换已有不同AppID",
+      "response": "普通保存返回公开配置和hasSecret；补填返回key和miniPaymentAppIdSaved，保留全部商户密钥、服务器凭证回退、H5配置和状态，CAS防并发覆盖；任何路径不返回密钥内容",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {

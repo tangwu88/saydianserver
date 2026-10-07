@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -17,6 +18,34 @@ type EncryptedSecret = {
 @Injectable()
 export class IntegrationSecretsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Add the mini AppID without replacing merchant credentials or environment fallbacks. */
+  async supplementWechatPayMiniAppId(appId: string): Promise<void> {
+    const integrationKey = 'wechat_pay';
+    const row = await this.prisma.integrationSecret.findUnique({ where: { integrationKey } });
+    let stored: Record<string, unknown> = {};
+    if (row) {
+      try { stored = decryptIntegrationSecrets(integrationKey, row, integrationMasterKey()); }
+      catch { throw new ServiceUnavailableException('原支付资料暂时无法读取，未修改任何资料'); }
+    }
+    const existing = String(stored.appIdMini ?? process.env.WECHAT_PAY_APP_ID_MINI ?? '').trim();
+    if (existing && existing !== appId) throw new ConflictException({ errorKey: 'wechat_pay_mini_supplement_conflict', message: '已存在其他小程序支付 AppID，不能通过补填入口替换' });
+    if (existing === appId) return;
+    const encrypted = encryptIntegrationSecrets(integrationKey, { ...stored, appIdMini: appId }, integrationMasterKey());
+    if (row) {
+      const updated = await this.prisma.integrationSecret.updateMany({
+        where: { integrationKey, ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag, keyVersion: row.keyVersion },
+        data: encrypted,
+      });
+      if (updated.count !== 1) throw new ConflictException({ errorKey: 'wechat_pay_mini_supplement_conflict', message: '支付资料已被其他操作更新，请刷新后重试' });
+    } else {
+      try { await this.prisma.integrationSecret.create({ data: { integrationKey, ...encrypted } }); }
+      catch (error) {
+        if ((error as { code?: string })?.code === 'P2002') throw new ConflictException({ errorKey: 'wechat_pay_mini_supplement_conflict', message: '支付资料已被其他操作更新，请刷新后重试' });
+        throw error;
+      }
+    }
+  }
 
   async save(integrationKey: string, value: unknown): Promise<void> {
     const secrets = safeObject(value);

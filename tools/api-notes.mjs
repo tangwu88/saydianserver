@@ -255,7 +255,7 @@ export const notes = {
   "AdminController.createArticle": entry("新增文章", article, "Article"),
   "AdminController.updateArticle": entry("编辑文章", article, "Article；当前为完整字段保存"),
   "AdminController.integrations": entry("集成登记状态", undefined, "公开配置、是否已安全保存密钥、登记状态和检查时间；密钥永不回显，登记不等同实时连通"),
-  "AdminController.updateIntegration": entry("维护集成登记和密钥", "{state:UNCONFIGURED/CONFIGURED/DISABLED/ERROR,publicConfig?,secrets?:对象,clearSecrets?:boolean}；secrets使用主机外置主密钥加密且只写不回显", "公开配置和hasSecret；不返回密钥内容"),
+  "AdminController.updateIntegration": entry("维护集成登记和密钥", "{state:UNCONFIGURED/CONFIGURED/DISABLED/ERROR,publicConfig?,secrets?:对象,clearSecrets?:boolean}；secrets使用主机外置主密钥加密且只写不回显。wechat_pay另支持仅{miniPaymentAppId:与小程序登录一致的AppID}，拒绝组合参数和替换已有不同AppID", "普通保存返回公开配置和hasSecret；补填返回key和miniPaymentAppIdSaved，保留全部商户密钥、服务器凭证回退、H5配置和状态，CAS防并发覆盖；任何路径不返回密钥内容"),
   "AdminController.audits": entry("审计记录", "page 默认1，每页100", "AuditLog[]"),
   "AdminController.warnings": entry("后台预警摘要", "page 默认1，每页100", "摘要数组，不含健康值"),
   "AdminController.notifications": entry("后台通知", "page 默认1，每页100", "通知列表；非主动群发接口"),

@@ -4,7 +4,7 @@ import { onBeforeRouteLeave } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { canAdminResource } from '@saydian/app-contracts';
 import { api, getAdminRoles, responseData } from '../api';
-import { applicableIntegrationFields, draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft, type ConfigField, type IntegrationDefinition, type IntegrationDraft, type IntegrationRow } from '../integration-settings';
+import { applicableIntegrationFields, draftFor, integrationDefinitions, integrationPayload, integrationStatus, miniPaymentAppIdPayload, validateIntegrationDraft, type ConfigField, type IntegrationDefinition, type IntegrationDraft, type IntegrationRow } from '../integration-settings';
 
 const rows = ref<IntegrationRow[]>([]);
 const loading = ref(false);
@@ -22,6 +22,23 @@ const errors = ref<Record<string, string>>({});
 const saving = ref(false);
 const saveUncertain = ref(false);
 const acknowledged = ref(false);
+const miniIdOpen = ref(false), miniPaymentAppId = ref(''), miniIdSaving = ref(false), miniIdError = ref('');
+function beginMiniId() { miniPaymentAppId.value = ''; miniIdError.value = ''; miniIdOpen.value = true; }
+async function saveMiniId() {
+  if (!writable.value || miniIdSaving.value) return;
+  miniIdError.value = '';
+  let payload;
+  try { payload = miniPaymentAppIdPayload(miniPaymentAppId.value); }
+  catch (error) { miniIdError.value = error instanceof Error ? error.message : '请核对 AppID'; return; }
+  miniIdSaving.value = true;
+  try {
+    await api.patch('/integrations/wechat_pay', payload);
+    ElMessage.success('小程序 AppID 已补填，原商户资料和 H5 支付配置保留。');
+    miniIdOpen.value = false; await load();
+  } catch (error: any) {
+    miniIdError.value = error?.response?.data?.message || '保存结果待确认，请刷新状态后核对；原支付资料不会被空值覆盖。';
+  } finally { miniIdSaving.value = false; }
+}
 let loadId = 0;
 const cards = computed(() => [
   ...integrationDefinitions.map(definition => ({ definition, row: rows.value.find(row => row.key === definition.key) ?? { key: definition.key, state: 'UNCONFIGURED' } })),
@@ -105,10 +122,18 @@ onMounted(load);
         <p class="service-purpose">{{ definition.purpose }}</p>
         <div class="card-status"><el-tag :type="definition.readOnly ? 'info' : integrationStatus(row).tone" effect="plain">{{ definition.readOnly ? '系统接入说明' : integrationStatus(row).label }}</el-tag><span v-if="definition.deployment" class="deployment-label">需服务器配置</span></div>
         <p class="card-help">{{ definition.readOnly ? '日常经营请在商城模块操作。' : row.lastError || row.state === 'ERROR' ? '最近调用异常，请核对配置或联系维护人员。' : definition.deployment ? '此页不填写服务器验证资料。' : row.state === 'CONFIGURED' ? '凭证有效性以实际业务调用结果为准。' : '准备好资料后，再按步骤填写。' }}</p>
+        <el-button v-if="row.key === 'wechat_pay' && writable && row.state === 'CONFIGURED'" plain :disabled="loading" @click="beginMiniId">补填小程序 AppID</el-button>
         <footer><span>{{ row.lastCheckedAt ? `最近验证 ${displayDate(row.lastCheckedAt)}` : '尚无真实验证记录' }}</span><el-button :type="writable && !definition.readOnly ? 'primary' : 'default'" plain :disabled="loading" @click="begin(row, definition)">{{ definition.readOnly ? '查看说明' : writable ? '配置服务' : '查看配置' }}</el-button></footer>
       </article>
     </div>
 
+    <el-dialog v-model="miniIdOpen" title="补填小程序 AppID" width="520px" :close-on-click-modal="false" :close-on-press-escape="!miniIdSaving" :show-close="!miniIdSaving" destroy-on-close>
+      <p>此处仅补填小程序 AppID，保留原商户号、密钥、证书、回调地址和 H5 支付状态。须与“商城微信小程序”的 AppID 一致。</p>
+      <el-form label-position="top" @submit.prevent="saveMiniId"><el-form-item label="小程序 AppID"><el-input v-model="miniPaymentAppId" placeholder="wx 开头的 AppID" :disabled="miniIdSaving" /></el-form-item></el-form>
+      <el-alert v-if="miniIdError" :title="miniIdError" type="error" :closable="false" />
+      <p>保存后仍需在“商城微信小程序”开启小程序支付，并在微信商户平台完成 AppID 绑定。</p>
+      <template #footer><el-button :disabled="miniIdSaving" @click="miniIdOpen = false">取消</el-button><el-button type="primary" :loading="miniIdSaving" @click="saveMiniId">仅保存小程序 AppID</el-button></template>
+    </el-dialog>
     <el-dialog v-model="open" :title="selected?.definition.title" width="760px" class="integration-dialog" :close-on-click-modal="false" :before-close="beforeClose" destroy-on-close>
       <template v-if="selected">
         <div class="dialog-status"><el-tag :type="integrationStatus(selected.row).tone">{{ integrationStatus(selected.row).label }}</el-tag><span>最近保存：{{ displayDate(selected.row.updatedAt) }}</span></div>

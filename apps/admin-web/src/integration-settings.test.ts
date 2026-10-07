@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { reactive } from 'vue';
 import { canAdminResource } from '@saydian/app-contracts';
-import { applicableIntegrationFields, draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft, type IntegrationRow } from './integration-settings';
+import { applicableIntegrationFields, draftFor, integrationDefinitions, integrationPayload, integrationStatus, miniPaymentAppIdPayload, validateIntegrationDraft, type IntegrationRow } from './integration-settings';
 
 const definition = (key: string) => integrationDefinitions.find(row => row.key === key)!;
 const row = (key = 'sms', extra: Partial<IntegrationRow> = {}): IntegrationRow => ({ key, state: 'UNCONFIGURED', publicConfig: {}, ...extra });
 describe('plain-language integration settings', () => {
+  it('supplements only mini AppID without sending empty merchant credentials or state', () => {
+    expect(miniPaymentAppIdPayload(' wxSyntheticMini001 ')).toEqual({miniPaymentAppId:'wxSyntheticMini001'});
+    expect(() => miniPaymentAppIdPayload('')).toThrow();
+  });
   it('covers all built-in services without conflating official and native WeChat', () => {
     expect(new Set(integrationDefinitions.map(d => d.key)).size).toBe(17);
     expect(definition('wechat_official').fields.some(f => f.key === 'redirectUri')).toBe(true);
