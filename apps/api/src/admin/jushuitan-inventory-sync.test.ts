@@ -10,29 +10,27 @@ function fixture(count = 2) {
     updatedAt: new Date("2026-10-07T00:00:00Z"),
   }));
   const tx = {
+    commerceOrderItem: { findMany: vi.fn().mockResolvedValue([]) },
     commerceSku: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
   const prisma = {
+    commerceOrderItem: { findMany: vi.fn().mockResolvedValue([]) },
     commerceSku: { findMany: vi.fn().mockResolvedValue(skus) },
     integrationConfig: {
-      findUnique: vi
-        .fn()
-        .mockResolvedValue({
-          state: "CONFIGURED",
-          publicConfig: { paths: { sku: "/open/sku/query" } },
-        }),
+      findUnique: vi.fn().mockResolvedValue({
+        state: "CONFIGURED",
+        publicConfig: { paths: { sku: "/open/sku/query" } },
+      }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     $transaction: vi.fn(async (run: (client: typeof tx) => unknown) => run(tx)),
   };
   const secrets = {
-    resolve: vi
-      .fn()
-      .mockResolvedValue({
-        appKey: "synthetic-key",
-        appSecret: "synthetic-secret",
-        accessToken: "synthetic-token",
-      }),
+    resolve: vi.fn().mockResolvedValue({
+      appKey: "synthetic-key",
+      appSecret: "synthetic-secret",
+      accessToken: "synthetic-token",
+    }),
   };
   const fetch = vi
     .fn()
@@ -64,6 +62,62 @@ afterEach(() => {
 });
 
 describe("manual ERP inventory synchronization", () => {
+  it("preserves unpaid and not-yet-uploaded local order reservations", async () => {
+    const h = fixture(1);
+    const reservations = [
+      {
+        id: "item-1",
+        skuId: "sku-0",
+        quantity: 2,
+        order: { updatedAt: new Date("2026-10-07T00:00:00Z") },
+      },
+    ];
+    h.prisma.commerceOrderItem.findMany.mockResolvedValue(reservations);
+    h.tx.commerceOrderItem.findMany.mockResolvedValue(reservations);
+    await h.run();
+    expect(h.tx.commerceSku.updateMany.mock.calls[0]![0].data).toEqual({
+      stock: 1,
+    });
+    expect(
+      h.prisma.commerceOrderItem.findMany.mock.calls[0]![0].where.order,
+    ).toEqual({
+      executionOwner: "NEW_SYSTEM",
+      OR: [
+        { status: "PENDING_PAYMENT" },
+        {
+          status: { in: ["PAID", "WAITING_FULFILLMENT"] },
+          erpOrderId: null,
+          erpStatus: null,
+        },
+      ],
+    });
+  });
+  it("rejects changed reservations before updating stock", async () => {
+    const h = fixture(1);
+    h.tx.commerceOrderItem.findMany.mockResolvedValue([
+      {
+        id: "new-item",
+        skuId: "sku-0",
+        quantity: 1,
+        order: { updatedAt: new Date() },
+      },
+    ]);
+    await expect(h.run()).rejects.toThrow("订单占用已变化");
+    expect(h.tx.commerceSku.updateMany).not.toHaveBeenCalled();
+  });
+  it("does not overwrite stock when local reservations exceed ERP availability", async () => {
+    const h = fixture(1);
+    h.prisma.commerceOrderItem.findMany.mockResolvedValue([
+      {
+        id: "item-1",
+        skuId: "sku-0",
+        quantity: 4,
+        order: { updatedAt: new Date() },
+      },
+    ]);
+    await expect(h.run()).rejects.toThrow("订单占用超过聚水潭库存");
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+  });
   it("fetches only inventory and updates stock with optimistic concurrency protection", async () => {
     const h = fixture();
     expect(await h.run()).toEqual({
@@ -84,10 +138,12 @@ describe("manual ERP inventory synchronization", () => {
     expect(h.fetch.mock.calls[0]![0]).toBe(
       "https://openapi.jushuitan.com/open/inventory/query",
     );
-    expect(JSON.parse(h.fetch.mock.calls[0]![1].body.get("biz"))).toMatchObject({
-      sku_ids: "ERP-0,ERP-1",
-      has_lock_qty: true,
-    });
+    expect(JSON.parse(h.fetch.mock.calls[0]![1].body.get("biz"))).toMatchObject(
+      {
+        sku_ids: "ERP-0,ERP-1",
+        has_lock_qty: true,
+      },
+    );
     expect(h.tx.commerceSku.updateMany).toHaveBeenCalledWith({
       where: {
         id: "sku-0",

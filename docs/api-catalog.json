@@ -1841,8 +1841,8 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "实时同步聚水潭库存",
       "request": "无参数；同步未归档ERP商品的启用SKU，最多5000个",
-      "response": "返回商品数、SKU数及更新SKU数；只更新库存，缺失或无效库存不补零，并发变化时整次回滚",
-      "dependency": "聚水潭库存查询；本地SKU库存；管理员审计",
+      "response": "返回商品数、SKU数及更新SKU数；从ERP库存扣除尚未同步ERP的本站订单占用，只更新库存；缺失或无效数量不补零，订单或SKU并发变化时整次回滚",
+      "dependency": "聚水潭库存查询；本地SKU库存与订单占用；管理员审计",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",

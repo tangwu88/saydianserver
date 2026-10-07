@@ -271,7 +271,7 @@ export const notes = {
   "AdminController.commerceProducts": entry("总后台商品列表", "search可查商品名或ERP编号；page默认1", "主库商品、SKU及ERP库存快照；不直接改权威库存", "主库商城/聚水潭"),
   "AdminController.createCommerceProduct": entry("拒绝手工新增ERP商品", "请先通过聚水潭商品同步建立商品和SKU", "HTTP 400；不会创建第二套库存", "聚水潭"),
   "AdminController.importCommerceProductBySku": entry("按SKU定位SPU并实时导入ERP商品", "{sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存", "聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入", "聚水潭商品查询与库存查询"),
-  "AdminController.syncCommerceInventory": entry("实时同步聚水潭库存", "无参数；同步未归档ERP商品的启用SKU，最多5000个", "返回商品数、SKU数及更新SKU数；只更新库存，缺失或无效库存不补零，并发变化时整次回滚", "聚水潭库存查询；本地SKU库存；管理员审计"),
+  "AdminController.syncCommerceInventory": entry("实时同步聚水潭库存", "无参数；同步未归档ERP商品的启用SKU，最多5000个", "返回商品数、SKU数及更新SKU数；从ERP库存扣除尚未同步ERP的本站订单占用，只更新库存；缺失或无效数量不补零，订单或SKU并发变化时整次回滚", "聚水潭库存查询；本地SKU库存与订单占用；管理员审计"),
   "AdminController.quickUpdateCommerceProductSkus": entry("快速修改商品SKU售价与库存", "id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数}]}；每次1至100条", "原子更新并返回商品；版本过期409且不部分保存；ERP商品后续同步可能覆盖手工值", "主库商城/聚水潭"),
   "AdminController.updateCommerceProduct": entry("编辑商品展示资料", "id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?}", "展示资料；ERP编号、内部名称、SKU和库存不会被覆盖", "主库商城/聚水潭"),
   "AdminController.deleteCommerceProduct": entry("永久删除未产生业务历史的商品", "id=商品UUID；删除前需由后台二次确认", "无订单或评价时清理购物车、收藏及商品SKU后返回{deleted:true}；已有订单或评价返回409并要求归档", "主库商城"),

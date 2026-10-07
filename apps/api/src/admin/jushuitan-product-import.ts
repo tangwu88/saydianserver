@@ -351,6 +351,34 @@ export async function syncJushuitanInventory(
   }
   const settings = await jushuitanSettings(prisma, integrationSecrets);
   let rows: Record<string, unknown>[];
+  const reservationWhere = {
+    skuId: { in: skus.map((sku) => sku.id) },
+    order: {
+      executionOwner: "NEW_SYSTEM" as const,
+      OR: [
+        { status: "PENDING_PAYMENT" as const },
+        {
+          status: { in: ["PAID" as const, "WAITING_FULFILLMENT" as const] },
+          erpOrderId: null,
+          erpStatus: null,
+        },
+      ],
+    },
+  };
+  const reservationSelect = {
+    id: true,
+    skuId: true,
+    quantity: true,
+    order: { select: { updatedAt: true } },
+  } as const;
+  const reservations = await prisma.commerceOrderItem.findMany({
+    where: reservationWhere,
+    select: reservationSelect,
+    orderBy: { id: "asc" },
+  });
+  const reserved = new Map<string, number>();
+  for (const item of reservations)
+    reserved.set(item.skuId, (reserved.get(item.skuId) ?? 0) + item.quantity);
   try {
     rows = await queryJushuitanInventoryRows(settings, ids);
   } catch (error) {
@@ -367,12 +395,31 @@ export async function syncJushuitanInventory(
       throw new ServiceUnavailableException(
         `聚水潭未返回 SKU ${sku.erpSkuId} 的库存；本次未更新，请稍后重试`,
       );
-    return { ...sku, newStock: inventoryStock(row) };
+    const available = inventoryStock(row);
+    const held = reserved.get(sku.id) ?? 0;
+    if (held > available) {
+      throw new ConflictException(
+        `SKU ${sku.erpSkuId} 的本站订单占用超过聚水潭库存；本次未更新，请先核对订单与库存`,
+      );
+    }
+    return { ...sku, newStock: available - held };
   });
   await markIntegrationVerified(prisma, "jushuitan");
   const changed = updates.filter((sku) => sku.newStock !== sku.stock);
   await prisma.$transaction(
     async (tx) => {
+      const currentReservations = await tx.commerceOrderItem.findMany({
+        where: reservationWhere,
+        select: reservationSelect,
+        orderBy: { id: "asc" },
+      });
+      if (
+        JSON.stringify(currentReservations) !== JSON.stringify(reservations)
+      ) {
+        throw new ConflictException(
+          "同步期间订单占用已变化；本次未更新，请重新同步",
+        );
+      }
       for (const sku of changed) {
         const result = await tx.commerceSku.updateMany({
           where: {
@@ -435,7 +482,9 @@ async function queryJushuitanInventoryRows(
     for (let page = 1; page <= 100; page += 1) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
-        throw new ServiceUnavailableException("聚水潭库存查询超时；本次未更新，请稍后重试");
+        throw new ServiceUnavailableException(
+          "聚水潭库存查询超时；本次未更新，请稍后重试",
+        );
       }
       const response = await callJushuitan(
         settings,
