@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IntegrationSecretsService, encryptIntegrationSecrets, decryptIntegrationSecrets } from '../common/integration-secrets.service';
 import { AdminService } from './admin.service';
+import { AdminController } from './admin.controller';
+import { PATH_METADATA } from '@nestjs/common/constants';
 const appId='wxSyntheticMini001', key=Buffer.alloc(32,7);
 const original={appIdOfficial:'wxSyntheticH5App001',merchantId:'synthetic-merchant',privateKeyPem:'synthetic-private-key',apiV3Key:'synthetic-api-key',platformPublicKeyPem:'synthetic-public-key',serialNo:'synthetic-serial',customFutureField:'preserve'};
 function fixture(stored:Record<string,unknown>|null=original){
@@ -47,6 +49,10 @@ describe('supplementing mini AppID preserves existing merchant configuration',()
  });
 });
 describe('admin supplement request is isolated from state and public payment parameters',()=>{
+ it('uses an independent path that old generic integration saves cannot match',()=>{
+  expect(Reflect.getMetadata(PATH_METADATA, AdminController.prototype.supplementWechatPayMiniAppId)).toBe('integrations/wechat_pay/mini-app-id');
+  expect(Reflect.getMetadata(PATH_METADATA, AdminController.prototype.updateIntegration)).toBe('integrations/:key');
+ });
  function admin(state='CONFIGURED',loginAppId=appId){
   const db={integrationConfig:{findUnique:vi.fn(async()=>({state})),upsert:vi.fn(),update:vi.fn()}};
   const secrets={resolve:vi.fn(async()=>({appId:loginAppId})),supplementWechatPayMiniAppId:vi.fn(async()=>{})};

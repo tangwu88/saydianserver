@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **381 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **382 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -294,7 +294,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（110）
+## 管理后台接口（111）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -331,6 +331,7 @@
 | `PATCH /api/saydian-app/admin/v1/articles/:id` | 编辑文章 | admin: SUPER_ADMIN, CONTENT_EDITOR | path:id；{title,contentHtml,summary?,coverUrl?,categoryId?,locale?,status?:DRAFT/PUBLISHED/ARCHIVED,publishedAt?}；categoryId 为 UUID；locale可选：en/zh-Hans/zh-Hant/de/fr/es/ja/ko；兼容zh-CN等地区别名；新增缺省zh-Hans，编辑缺省保留原语言；关联分类须同语言 | Article；当前为完整字段保存 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/integrations` | 集成登记状态 | admin | 无请求体 | 公开配置、是否已安全保存密钥、登记状态和检查时间；密钥永不回显，登记不等同实时连通 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/integrations/:key` | 维护集成登记和密钥 | admin: SUPER_ADMIN, INTEGRATION_ADMIN | path:key；{state:UNCONFIGURED/CONFIGURED/DISABLED/ERROR,publicConfig?,secrets?:对象,clearSecrets?:boolean}；secrets使用主机外置主密钥加密且只写不回显。wechat_pay另支持仅{miniPaymentAppId:与小程序登录一致的AppID}，拒绝组合参数和替换已有不同AppID | 普通保存返回公开配置和hasSecret；补填返回key和miniPaymentAppIdSaved，保留全部商户密钥、服务器凭证回退、H5配置和状态，CAS防并发覆盖；任何路径不返回密钥内容 | 核心服务 |
+| `PATCH /api/saydian-app/admin/v1/integrations/wechat_pay/mini-app-id` | 保留H5支付资料补填小程序AppID | admin: SUPER_ADMIN, INTEGRATION_ADMIN | 仅{miniPaymentAppId:小程序AppID}，须与登录AppID一致；原微信支付须已配置；拒绝组合修改和覆盖已有不同AppID | 返回key和miniPaymentAppIdSaved；保留商户密钥、环境回退、H5参数和状态，CAS防并发覆盖；不回显凭证、不启用小程序支付、不调用供应商 | 集成管理员权限；独立路径避免旧版本通用保存误处理 |
 | `GET /api/saydian-app/admin/v1/audit-logs` | 审计记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR, READ_ONLY | query:page?；page 默认1，每页100 | AuditLog[] | 核心服务 |
 | `GET /api/saydian-app/admin/v1/warnings` | 后台预警摘要 | admin | query:page?；page 默认1，每页100 | 摘要数组，不含健康值 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/notifications` | 后台通知 | admin | query:page?；page 默认1，每页100 | 通知列表；非主动群发接口 | 核心服务 |

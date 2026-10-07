@@ -315,6 +315,12 @@ export class AdminController {
     return this.admin.updateIntegration(key, input);
   }
 
+  @Patch("integrations/wechat_pay/mini-app-id")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.INTEGRATION_ADMIN)
+  supplementWechatPayMiniAppId(@Body() input: unknown) {
+    return this.admin.supplementWechatPayMiniAppId(input);
+  }
+
   @Get("audit-logs")
   @AdminRoles(
     AdminRole.SUPER_ADMIN,

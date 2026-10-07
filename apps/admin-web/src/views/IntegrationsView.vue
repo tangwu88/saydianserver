@@ -32,7 +32,8 @@ async function saveMiniId() {
   catch (error) { miniIdError.value = error instanceof Error ? error.message : '请核对 AppID'; return; }
   miniIdSaving.value = true;
   try {
-    await api.patch('/integrations/wechat_pay', payload);
+    const result = responseData<{ miniPaymentAppIdSaved?: boolean }>(await api.patch('/integrations/wechat_pay/mini-app-id', payload));
+    if (result?.miniPaymentAppIdSaved !== true) throw new Error('补填保存结果未确认');
     ElMessage.success('小程序 AppID 已补填，原商户资料和 H5 支付配置保留。');
     miniIdOpen.value = false; await load();
   } catch (error: any) {

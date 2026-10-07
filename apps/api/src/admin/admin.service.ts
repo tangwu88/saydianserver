@@ -1521,10 +1521,10 @@ export class AdminService {
     }));
   }
 
-  async updateIntegration(key: string, input: unknown) {
+  async supplementWechatPayMiniAppId(input: unknown) {
     const body = safeObject(input);
-    if (Object.prototype.hasOwnProperty.call(body, 'miniPaymentAppId')) {
-      if (key !== 'wechat_pay' || Object.keys(body).some(field => field !== 'miniPaymentAppId')) throw new BadRequestException({ errorKey: 'wechat_pay_mini_supplement_invalid', message: '补填小程序 AppID 不能同时修改其他资料' });
+      const key = 'wechat_pay';
+      if (Object.keys(body).some(field => field !== 'miniPaymentAppId')) throw new BadRequestException({ errorKey: 'wechat_pay_mini_supplement_invalid', message: '补填小程序 AppID 不能同时修改其他资料' });
       const appId = String(body.miniPaymentAppId ?? '').trim();
       if (!/^wx[A-Za-z0-9]{8,64}$/.test(appId)) throw new BadRequestException({ errorKey: 'wechat_pay_mini_supplement_invalid', message: '请填写正确的小程序 AppID' });
       const pay = await this.prisma.integrationConfig.findUnique({ where: { key } });
@@ -1533,6 +1533,13 @@ export class AdminService {
       if (mini.appId !== appId) throw new BadRequestException({ errorKey: 'wechat_pay_mini_supplement_invalid', message: '须与商城微信小程序登录 AppID 一致' });
       await this.integrationSecrets.supplementWechatPayMiniAppId(appId);
       return { key, miniPaymentAppIdSaved: true };
+  }
+
+  async updateIntegration(key: string, input: unknown) {
+    const body = safeObject(input);
+    if (Object.prototype.hasOwnProperty.call(body, 'miniPaymentAppId')) {
+      if (key !== 'wechat_pay') throw new BadRequestException({ errorKey: 'wechat_pay_mini_supplement_invalid', message: '小程序支付 AppID 只能补填到微信支付' });
+      return this.supplementWechatPayMiniAppId(body);
     }
     if (!/^[a-z0-9_]{2,50}$/.test(key)) {
       throw new BadRequestException("集成项名称不正确");

@@ -1158,6 +1158,41 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.supplementWechatPayMiniAppId",
+      "method": "PATCH",
+      "path": "/api/saydian-app/admin/v1/integrations/wechat_pay/mini-app-id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "INTEGRATION_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "保留H5支付资料补填小程序AppID",
+      "request": "仅{miniPaymentAppId:小程序AppID}，须与登录AppID一致；原微信支付须已配置；拒绝组合修改和覆盖已有不同AppID",
+      "response": "返回key和miniPaymentAppIdSaved；保留商户密钥、环境回退、H5参数和状态，CAS防并发覆盖；不回显凭证、不启用小程序支付、不调用供应商",
+      "dependency": "集成管理员权限；独立路径避免旧版本通用保存误处理",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.audits",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/audit-logs",
