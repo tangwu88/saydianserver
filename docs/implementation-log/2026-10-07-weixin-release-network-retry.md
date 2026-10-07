@@ -29,3 +29,17 @@
 - 2026-10-07T11:03:56.7425025Z: pnpm test exit 0
 
 - 2026-10-07T11:04:31.1056562Z: pnpm build exit 0
+
+- 恢复 37611760048 下载至 234881024 字节，rangeIndex=18 连续按约 180 秒重试仍失败；其他分块持续成功。初版新增的 180 秒读取上限在当前慢链路过短，改为 600 秒并将下载并发由 8 降为 4，减少同链路竞争；原 receiver 3300 秒/下载总限仍保留。此前 SSH 8 MB 单块耗时约 8 分钟，支持该限时调整。业务 main、artifact、实际镜像仍为原 89fe54d，无支付资料写入。
+
+- 2026-10-07T11:25:56.2996956Z: adjusted pnpm api:docs:check exit 0
+
+- 2026-10-07T11:27:44.8079132Z: adjusted pnpm tools:test exit 0
+
+- 2026-10-07T11:28:04.2381871Z: adjusted pnpm typecheck exit 0
+
+- 2026-10-07T11:28:57.6954438Z: adjusted pnpm test exit 0
+
+- 2026-10-07T11:29:29.8518996Z: adjusted pnpm build exit 0
+
+提交前两次 fetch 分别连接重置/空响应，未暂存提交；通过原内存凭证/单进程 OpenSSL + HTTP/1.1 transport fetch 成功。核对原 main/恢复分支基线后继续，不打印凭证、不修改 Git 全局配置。

@@ -132,7 +132,7 @@ export async function downloadArtifact(
     output;
   try {
     const results = await Promise.allSettled(
-      Array.from({ length: 8 }, async () => {
+      Array.from({ length: 4 }, async () => {
         try {
           while (cursor < count) {
             const index = cursor++,
@@ -145,7 +145,7 @@ export async function downloadArtifact(
                 from,
                 Math.min(from + partSize, metadata.size_in_bytes) - 1,
                 metadata.size_in_bytes,
-                AbortSignal.any([signal, AbortSignal.timeout(180000)]),
+                AbortSignal.any([signal, AbortSignal.timeout(600000)]),
               ),
               signal, retryWait,
               (event) => progress({ ...event, rangeIndex: index }),
