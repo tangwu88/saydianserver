@@ -12,6 +12,13 @@ import { markIntegrationVerified } from "../common/integration-health";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { PrismaService } from "../common/prisma.service";
 
+// Only controlled admin diagnostics can bypass the generic exception message.
+class JushuitanUnavailableException extends ServiceUnavailableException {
+  constructor(message: string) {
+    super({ message, errorKey: "jushuitan_unavailable" });
+  }
+}
+
 type JushuitanSettings = {
   apiBase: string;
   appKey: string;
@@ -125,6 +132,46 @@ export async function importJushuitanProductBySku(
   integrationSecrets: IntegrationSecretsService,
   input: unknown,
 ) {
+  return withJushuitanDiagnostics(prisma, () =>
+    performJushuitanProductImport(prisma, integrationSecrets, input),
+  );
+}
+
+export async function syncJushuitanInventory(
+  prisma: PrismaService,
+  integrationSecrets: IntegrationSecretsService,
+) {
+  return withJushuitanDiagnostics(prisma, () =>
+    performJushuitanInventorySync(prisma, integrationSecrets),
+  );
+}
+
+async function withJushuitanDiagnostics<T>(
+  prisma: PrismaService,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof JushuitanUnavailableException) {
+      try {
+        await prisma.integrationConfig.updateMany({
+          where: { key: "jushuitan" },
+          data: { lastCheckedAt: new Date(), lastError: error.message },
+        });
+      } catch {
+        // Health metadata is best effort and must not replace the real failure.
+      }
+    }
+    throw error;
+  }
+}
+
+async function performJushuitanProductImport(
+  prisma: PrismaService,
+  integrationSecrets: IntegrationSecretsService,
+  input: unknown,
+) {
   const requestedSku = String(safeObject(input).sku ?? "").trim();
   if (!requestedSku) throw new BadRequestException("请填写 ERP SKU");
   if (requestedSku.length > 100 || /[,\r\n]/.test(requestedSku)) {
@@ -163,7 +210,7 @@ export async function importJushuitanProductBySku(
     );
     const mappedProducts = familyRows.map(mapJushuitanProduct);
     if (!mappedProducts.some((item) => sameSku(item.erpSkuId, requestedSku))) {
-      throw new ServiceUnavailableException(
+      throw new JushuitanUnavailableException(
         "聚水潭款式查询未返回刚才定位的 SKU；本次没有导入，请稍后重试",
       );
     }
@@ -179,7 +226,7 @@ export async function importJushuitanProductBySku(
       (item) => !inventoryBySku.has(item.erpSkuId.toLowerCase()),
     );
     if (missingInventory.length) {
-      throw new ServiceUnavailableException(
+      throw new JushuitanUnavailableException(
         `聚水潭已返回商品资料，但有 ${missingInventory.length} 个同款 SKU 未返回库存；本次没有导入，请稍后重试`,
       );
     }
@@ -311,15 +358,13 @@ export async function importJushuitanProductBySku(
     };
   } catch (error) {
     if (error instanceof HttpException) throw error;
-    throw new ServiceUnavailableException(
-      error instanceof Error && error.message
-        ? `聚水潭实时查询失败：${sanitizeProviderMessage(error.message)}`
-        : "聚水潭实时查询失败，请稍后重试",
+    throw new JushuitanUnavailableException(
+      "聚水潭实时查询或商品导入失败；请稍后重试，并检查集成状态或联系管理员",
     );
   }
 }
 
-export async function syncJushuitanInventory(
+async function performJushuitanInventorySync(
   prisma: PrismaService,
   integrationSecrets: IntegrationSecretsService,
 ) {
@@ -383,8 +428,8 @@ export async function syncJushuitanInventory(
     rows = await queryJushuitanInventoryRows(settings, ids);
   } catch (error) {
     if (error instanceof HttpException) throw error;
-    throw new ServiceUnavailableException(
-      "聚水潭库存查询失败；本次未更新，请稍后重试",
+    throw new JushuitanUnavailableException(
+      "聚水潭库存查询失败或连接超时；本次未更新，请稍后重试并检查接口服务器配置",
     );
   }
   const inventory = new Map(rows.map((row) => [normalizedSku(row), row]));
@@ -392,7 +437,7 @@ export async function syncJushuitanInventory(
   const updates = skus.map((sku) => {
     const row = inventory.get(sku.erpSkuId.trim().toLowerCase());
     if (!row)
-      throw new ServiceUnavailableException(
+      throw new JushuitanUnavailableException(
         `聚水潭未返回 SKU ${sku.erpSkuId} 的库存；本次未更新，请稍后重试`,
       );
     const available = inventoryStock(row);
@@ -466,7 +511,7 @@ async function queryJushuitanSpuRows(
     rows.push(...pageRows);
     if (!hasNextPage(response) || pageRows.length === 0) return rows;
   }
-  throw new ServiceUnavailableException(
+  throw new JushuitanUnavailableException(
     "聚水潭同款 SKU 数量超过安全分页上限；本次没有导入",
   );
 }
@@ -482,7 +527,7 @@ async function queryJushuitanInventoryRows(
     for (let page = 1; page <= 100; page += 1) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
-        throw new ServiceUnavailableException(
+        throw new JushuitanUnavailableException(
           "聚水潭库存查询超时；本次未更新，请稍后重试",
         );
       }
@@ -503,7 +548,7 @@ async function queryJushuitanInventoryRows(
       rows.push(...pageRows);
       if (!hasNextPage(response)) break;
       if (pageRows.length === 0 || page === 100) {
-        throw new ServiceUnavailableException(
+        throw new JushuitanUnavailableException(
           "聚水潭库存分页未完整返回；本次未更新",
         );
       }
@@ -520,21 +565,29 @@ async function jushuitanSettings(
     where: { key: "jushuitan" },
   });
   if (!integration || integration.state !== IntegrationState.CONFIGURED) {
-    throw new ServiceUnavailableException("聚水潭集成尚未配置并启用");
+    throw new JushuitanUnavailableException("聚水潭集成尚未配置并启用");
   }
   const publicConfig = safeObject(integration.publicConfig);
   const paths = safeObject(publicConfig.paths);
   const methods = safeObject(publicConfig.methods);
-  const secrets = await integrationSecrets.resolve("jushuitan", {
-    appKey: "JUSHUITAN_APP_KEY",
-    appSecret: "JUSHUITAN_APP_SECRET",
-    accessToken: "JUSHUITAN_ACCESS_TOKEN",
-  });
+  let secrets: Record<string, string>;
+  try {
+    secrets = await integrationSecrets.resolve("jushuitan", {
+      appKey: "JUSHUITAN_APP_KEY",
+      appSecret: "JUSHUITAN_APP_SECRET",
+      accessToken: "JUSHUITAN_ACCESS_TOKEN",
+    });
+  } catch (error) {
+    if (!(error instanceof ServiceUnavailableException)) throw error;
+    throw new JushuitanUnavailableException(
+      "聚水潭集成密钥暂时无法读取，请联系管理员检查密钥存储和环境配置",
+    );
+  }
   const appKey = secrets.appKey ?? "";
   const appSecret = secrets.appSecret ?? "";
   const accessToken = secrets.accessToken ?? "";
   if (!appKey || !appSecret || !accessToken) {
-    throw new ServiceUnavailableException(
+    throw new JushuitanUnavailableException(
       "聚水潭 AppKey、AppSecret 或 Access Token 尚未完整配置",
     );
   }
@@ -624,7 +677,7 @@ async function callJushuitan(
   try {
     result = safeObject(JSON.parse(text));
   } catch {
-    throw new ServiceUnavailableException(
+    throw new JushuitanUnavailableException(
       `聚水潭返回了无法识别的响应（HTTP ${response.status}）`,
     );
   }
@@ -635,14 +688,16 @@ async function callJushuitan(
   ) {
     const code = Number(result.code);
     if (code === 190) {
-      throw new ServiceUnavailableException(
+      throw new JushuitanUnavailableException(
         "聚水潭未授权商品或库存查询接口（错误码 190），请先补充接口权限",
       );
     }
-    const message = sanitizeProviderMessage(
-      String(result.msg ?? result.message ?? response.status),
+    const diagnostic = Number.isSafeInteger(code) && code !== 0
+      ? `错误码 ${code}`
+      : `HTTP ${response.status}`;
+    throw new JushuitanUnavailableException(
+      `聚水潭接口拒绝请求（${diagnostic}）；请核对接口路径、应用授权及访问令牌有效期`,
     );
-    throw new ServiceUnavailableException(`聚水潭接口调用失败：${message}`);
   }
   return { ...safeObject(result.data), ...result };
 }
@@ -684,9 +739,9 @@ export function mapJushuitanProduct(
   const erpSkuId = String(row.sku_id ?? row.skuId ?? "").trim();
   const erpItemId = String(row.i_id ?? row.iId ?? erpSkuId).trim();
   if (!erpSkuId || !erpItemId)
-    throw new ServiceUnavailableException("聚水潭商品缺少款式编码或 SKU");
+    throw new JushuitanUnavailableException("聚水潭商品缺少款式编码或 SKU");
   const name = String(row.name ?? row.short_name ?? erpSkuId).trim();
-  if (!name) throw new ServiceUnavailableException("聚水潭商品缺少商品名称");
+  if (!name) throw new JushuitanUnavailableException("聚水潭商品缺少商品名称");
   const modifiedAt = optionalDate(row.modified);
   const weight = Number(row.weight ?? 0);
   const gallery = imageUrls(row);
@@ -780,7 +835,7 @@ function inventoryStock(row: Record<string, unknown>): number {
     !Number.isFinite(quantity) ||
     quantity > 2147483647
   ) {
-    throw new ServiceUnavailableException(
+    throw new JushuitanUnavailableException(
       "聚水潭库存响应缺少有效数量；本次未更新",
     );
   }
@@ -854,14 +909,4 @@ function optionalCents(value: unknown): number | null {
   return value === null || value === undefined || value === ""
     ? null
     : toCents(value);
-}
-
-function sanitizeProviderMessage(value: string): string {
-  return value
-    .replace(
-      /(token|sign|secret|partnerkey)\s*[=:]\s*[^\s&,]+/gi,
-      "$1=<hidden>",
-    )
-    .replace(/[\r\n]/g, " ")
-    .slice(0, 300);
 }

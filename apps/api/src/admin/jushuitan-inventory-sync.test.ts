@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ServiceUnavailableException } from "@nestjs/common";
+import { SafeHttpExceptionFilter } from "../common/http-exception.filter";
 import { syncJushuitanInventory } from "./jushuitan-product-import";
 
 function fixture(count = 2) {
@@ -62,6 +64,49 @@ afterEach(() => {
 });
 
 describe("manual ERP inventory synchronization", () => {
+  it.each(["configuration", "credentials", "secret-store", "permission", "provider", "network", "missing-inventory"])(
+    "returns a useful safe HTTP diagnostic for %s instead of the generic English error",
+    async (failure) => {
+      const h = fixture(1);
+      const sensitive = "synthetic-private-token";
+      if (failure === "configuration") h.prisma.integrationConfig.findUnique.mockResolvedValueOnce({ state: "UNCONFIGURED", publicConfig: {} });
+      if (failure === "credentials") h.secrets.resolve.mockResolvedValueOnce({} as any);
+      if (failure === "secret-store") h.secrets.resolve.mockRejectedValueOnce(new ServiceUnavailableException("集成密钥暂时无法读取，请联系管理员"));
+      if (failure === "permission" || failure === "provider") h.fetch.mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify({ code: failure === "permission" ? 190 : 199, msg: sensitive }) });
+      if (failure === "network") h.fetch.mockRejectedValueOnce(new Error(`https://vendor.invalid?access_token=${sensitive}`));
+      if (failure === "missing-inventory") h.fetch.mockResolvedValueOnce(response([]));
+      let exception: unknown;
+      try { await h.run(); } catch (error) { exception = error; }
+      expect(exception).toBeInstanceOf(ServiceUnavailableException);
+      const json = vi.fn();
+      const status = vi.fn().mockReturnValue({ json });
+      new SafeHttpExceptionFilter().catch(exception, {
+        switchToHttp: () => ({
+          getRequest: () => ({ originalUrl: "/api/saydian-app/admin/v1/commerce-products/inventory-sync", requestId: "synthetic-request" }),
+          getResponse: () => ({ status }),
+        }),
+      } as any);
+      const body = json.mock.calls[0]![0];
+      expect(status).toHaveBeenCalledWith(503);
+      expect(body).toMatchObject({ errorKey: "jushuitan_unavailable", requestId: "synthetic-request" });
+      expect(body.message).toContain("聚水潭");
+      expect(body.message).not.toContain("This service is temporarily unavailable");
+      expect(JSON.stringify(body)).not.toContain(sensitive);
+      if (failure === "provider") expect(body.message).toContain("错误码 199");
+      expect(h.prisma.integrationConfig.updateMany).toHaveBeenCalledWith({
+        where: { key: "jushuitan" },
+        data: { lastCheckedAt: expect.any(Date), lastError: body.message },
+      });
+      expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    },
+  );
+  it("preserves the real diagnostic if recording integration health fails", async () => {
+    const h = fixture(1);
+    h.fetch.mockResolvedValueOnce(response([]));
+    h.prisma.integrationConfig.updateMany.mockRejectedValueOnce(new Error("synthetic-database-outage"));
+    await expect(h.run()).rejects.toThrow("未返回 SKU ERP-0");
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+  });
   it("preserves unpaid and not-yet-uploaded local order reservations", async () => {
     const h = fixture(1);
     const reservations = [

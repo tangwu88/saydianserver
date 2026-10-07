@@ -1658,7 +1658,7 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "按SKU定位SPU并实时导入ERP商品",
       "request": "{sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存",
-      "response": "聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入",
+      "response": "聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误",
       "dependency": "聚水潭商品查询与库存查询",
       "successStatus": 201,
       "contract": {
@@ -1841,7 +1841,7 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "实时同步聚水潭库存",
       "request": "无参数；同步未归档ERP商品的启用SKU，最多5000个",
-      "response": "返回商品数、SKU数及更新SKU数；从ERP库存扣除尚未同步ERP的本站订单占用，只更新库存；缺失或无效数量不补零，订单或SKU并发变化时整次回滚",
+      "response": "返回商品数、SKU数及更新SKU数；从ERP库存扣除尚未同步ERP的本站订单占用，只更新库存；缺失或无效数量不补零，订单或SKU并发变化时整次回滚；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误",
       "dependency": "聚水潭库存查询；本地SKU库存与订单占用；管理员审计",
       "successStatus": 201,
       "contract": {
