@@ -56,6 +56,7 @@ import {
   allItemsReturned,
 } from "../commerce/commerce-finance";
 import { orderFulfillmentState } from "../commerce/commerce-finance";
+import { deductCommercePaymentStock } from "../commerce/commerce-payment-stock";
 import {
   shouldDeferCallbacks,
   shouldPauseWorkers,
@@ -1328,6 +1329,7 @@ export class BillingService {
           });
           return;
         }
+        await deductCommercePaymentStock(tx, intent.commerceOrderId);
         await onCommerceOrderPaid(tx, intent.commerceOrderId);
         const erpItems = await tx.commerceOrderItem.count({
           where: {

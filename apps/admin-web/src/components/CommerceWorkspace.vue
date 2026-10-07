@@ -340,7 +340,7 @@ async function closeOrder(row: Row): Promise<void> {
   if (orderCloseSaving.value || row.status !== "PENDING_PAYMENT" || row.paidAt || row.executionOwner !== "NEW_SYSTEM") return;
   try {
     const answer = await ElMessageBox.prompt(
-      "关闭订单后将释放库存、退回本单占用的优惠券和积分，订单不能继续付款。请输入关闭原因。",
+      "关闭订单后将退回本单占用的优惠券和积分，订单不能继续付款。请输入关闭原因。",
       "关闭订单",
       {
         type: "warning",
@@ -360,7 +360,7 @@ async function closeOrder(row: Row): Promise<void> {
       idempotencyKey: crypto.randomUUID(),
     }));
     detailRow.value = { ...detailRow.value, ...saved };
-    ElMessage.success("订单已关闭，库存、优惠券和积分已按原订单返还");
+    ElMessage.success("订单已关闭，优惠券和积分已按原订单返还");
     emit("refresh");
   } catch (error) {
     if (error !== "cancel" && error !== "close") ElMessage.error(readableError(error));
@@ -632,7 +632,7 @@ function changeStatus(value: unknown): void {
       <section v-if="resource === 'commerce-orders'" class="detail-section">
         <div class="section-heading">
           <h3>收货与推广</h3>
-          <el-button v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && !detailRow.paidAt && detailRow.executionOwner === 'NEW_SYSTEM'" type="danger" plain size="small" :loading="orderCloseSaving" :disabled="hasActiveOnlinePayment(detailRow) || paymentCloseSaving" :title="hasActiveOnlinePayment(detailRow) ? '请先关闭正在处理的在线支付' : '关闭后释放库存并返还优惠券和积分'" @click="closeOrder(detailRow)">关闭订单</el-button>
+          <el-button v-if="canManuallySettleOrder && detailRow.status === 'PENDING_PAYMENT' && !detailRow.paidAt && detailRow.executionOwner === 'NEW_SYSTEM'" type="danger" plain size="small" :loading="orderCloseSaving" :disabled="hasActiveOnlinePayment(detailRow) || paymentCloseSaving" :title="hasActiveOnlinePayment(detailRow) ? '请先关闭正在处理的在线支付' : '关闭后返还优惠券和积分'" @click="closeOrder(detailRow)">关闭订单</el-button>
         </div>
         <el-descriptions :column="1" border>
           <el-descriptions-item label="收货人">{{ detailRow.recipientName || "—" }}</el-descriptions-item>

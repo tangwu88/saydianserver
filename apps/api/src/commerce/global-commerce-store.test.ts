@@ -37,6 +37,7 @@ function fixture() {
   let config: any = null,
     saved: any;
   const db: any = {
+    auditLog: { createMany: vi.fn() },
     $queryRaw: vi.fn().mockResolvedValue([{ acquired: true }]),
     user: {
       findUniqueOrThrow: vi
@@ -75,13 +76,14 @@ function fixture() {
     commerceOrder: {
       findUnique: vi.fn(async () => saved ?? null),
       create: vi.fn(
-        async ({ data }: any) => (saved = { id: "order", ...data }),
+        async ({ data }: any) => (saved = { id: "order", ...data,
+          items: data.items.create.map((item: any, index: number) => ({ ...item, id: `item-${index}` })) }),
       ),
     },
   };
   db.$transaction = vi.fn(async (run: any) => run(db));
   const writes = [
-    db.commerceSku.update,
+    db.auditLog.createMany,
     db.commercePointAccount.updateMany,
     db.commercePointLedger.create,
     db.commerceCartItem.deleteMany,
@@ -119,6 +121,7 @@ describe("global CN/CNY checkout", () => {
     h.setConfig({ enabled: false, value: {} });
     expect((await h.service.createOrder("member", input)).id).toBe("order");
     for (const write of h.writes) expect(write).toHaveBeenCalledOnce();
+    expect(h.db.commerceSku.update).not.toHaveBeenCalled();
   });
   it.each(["US", "", "cn"])(
     "rejects unsupported/unknown persisted country %s before any assets",

@@ -54,7 +54,7 @@ function harness(activePayments = 0) {
       findUnique: vi.fn(async ({ where }: any) => state.keys.find((item: any) => item.userId === where.userId_scope_key.userId && item.scope === where.userId_scope_key.scope && item.key === where.userId_scope_key.key)),
       create: vi.fn(async ({ data }: any) => { state.keys.push(data); return data; }),
     },
-    auditLog: { create: vi.fn(async ({ data }: any) => { state.audits.push(data); return data; }) },
+    auditLog: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn(async ({ data }: any) => { state.audits.push(data); return data; }) },
   };
   const prisma: any = { ...tx, $transaction: vi.fn((run: any) => run(tx)) };
   return { state, tx, service: new AdminService(prisma, {} as any) };

@@ -13,6 +13,8 @@ function fixture(count = 2) {
   }));
   const tx = {
     commerceOrderItem: { findMany: vi.fn().mockResolvedValue([]) },
+    $queryRaw: vi.fn().mockResolvedValue([]),
+    auditLog: { findMany: vi.fn().mockResolvedValue([]), createMany: vi.fn() },
     commerceSku: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
   const prisma = {
@@ -67,8 +69,7 @@ describe("manual ERP inventory synchronization", () => {
   it.each([
     ["invalid-sku", 400, "inventory_sync_invalid_skus", "ERP SKU 编码无效"],
     ["too-many", 400, "inventory_sync_invalid_skus", "超过 5000"],
-    ["reservations", 409, "inventory_sync_reservation_conflict", "订单占用超过"],
-    ["order-change", 409, "inventory_sync_concurrent_change", "订单占用已变化"],
+    ["order-change", 409, "inventory_sync_concurrent_change", "订单已变化"],
     ["stock-change", 409, "inventory_sync_concurrent_change", "商品库存或资料已变化"],
     ["database", 500, "inventory_sync_internal", "数据库错误码 P2022"],
     ["unexpected", 500, "inventory_sync_internal", "本站库存同步执行失败"],
@@ -76,7 +77,6 @@ describe("manual ERP inventory synchronization", () => {
     const h = fixture(failure === "too-many" ? 5001 : 1);
     const privateMessage = "synthetic-private-database-url";
     if (failure === "invalid-sku") h.skus[0]!.erpSkuId = "invalid,sku";
-    if (failure === "reservations") h.prisma.commerceOrderItem.findMany.mockResolvedValueOnce([{ id: "item", skuId: "sku-0", quantity: 4, order: { updatedAt: new Date() } }] as any);
     if (failure === "order-change") h.tx.commerceOrderItem.findMany.mockResolvedValueOnce([{ id: "item", skuId: "sku-0", quantity: 1, order: { updatedAt: new Date() } }] as any);
     if (failure === "stock-change") h.tx.commerceSku.updateMany.mockResolvedValueOnce({ count: 0 });
     if (failure === "database") h.prisma.commerceSku.findMany.mockRejectedValueOnce(Object.assign(new Error(privateMessage), { code: "P2022" }));
@@ -143,7 +143,7 @@ describe("manual ERP inventory synchronization", () => {
     await expect(h.run()).rejects.toThrow("未返回 SKU ERP-0");
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
-  it("preserves unpaid and not-yet-uploaded local order reservations", async () => {
+  it("subtracts only paid orders not yet uploaded to ERP", async () => {
     const h = fixture(1);
     const reservations = [
       {
@@ -153,8 +153,8 @@ describe("manual ERP inventory synchronization", () => {
         order: { updatedAt: new Date("2026-10-07T00:00:00Z") },
       },
     ];
-    h.prisma.commerceOrderItem.findMany.mockResolvedValue(reservations);
-    h.tx.commerceOrderItem.findMany.mockResolvedValue(reservations);
+    h.prisma.commerceOrderItem.findMany.mockImplementation(async (query: any) => query.where.order.status === "PENDING_PAYMENT" ? [] : reservations);
+    h.tx.commerceOrderItem.findMany.mockImplementation(async (query: any) => query.where.order.status === "PENDING_PAYMENT" ? [] : reservations);
     await h.run();
     expect(h.tx.commerceSku.updateMany.mock.calls[0]![0].data).toEqual({
       stock: 1,
@@ -163,19 +163,14 @@ describe("manual ERP inventory synchronization", () => {
       h.prisma.commerceOrderItem.findMany.mock.calls[0]![0].where.order,
     ).toEqual({
       executionOwner: "NEW_SYSTEM",
-      OR: [
-        { status: "PENDING_PAYMENT" },
-        {
-          status: { in: ["PAID", "WAITING_FULFILLMENT"] },
-          erpOrderId: null,
-          erpStatus: null,
-        },
-      ],
+      status: { in: ["PAID", "WAITING_FULFILLMENT"] },
+      erpOrderId: null,
+      erpStatus: null,
     });
   });
   it("rejects changed reservations before updating stock", async () => {
     const h = fixture(1);
-    h.tx.commerceOrderItem.findMany.mockResolvedValue([
+    h.tx.commerceOrderItem.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
       {
         id: "new-item",
         skuId: "sku-0",
@@ -186,18 +181,25 @@ describe("manual ERP inventory synchronization", () => {
     await expect(h.run()).rejects.toThrow("订单占用已变化");
     expect(h.tx.commerceSku.updateMany).not.toHaveBeenCalled();
   });
-  it("does not overwrite stock when local reservations exceed ERP availability", async () => {
+  it("retains authorized paid backorder debt when ERP stock is insufficient", async () => {
     const h = fixture(1);
-    h.prisma.commerceOrderItem.findMany.mockResolvedValue([
-      {
-        id: "item-1",
-        skuId: "sku-0",
-        quantity: 4,
-        order: { updatedAt: new Date() },
-      },
-    ]);
-    await expect(h.run()).rejects.toThrow("订单占用超过聚水潭库存");
-    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    const rows = [{ id: "paid-item", skuId: "sku-0", quantity: 4, order: { updatedAt: new Date() } }];
+    for (const db of [h.prisma, h.tx]) db.commerceOrderItem.findMany.mockImplementation(async (query: any) => query.where.order.status === "PENDING_PAYMENT" ? [] : rows);
+    await h.run();
+    expect(h.tx.commerceSku.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { stock: -1 } }));
+  });
+  it("releases old unpaid holds and records payment stock policy atomically", async () => {
+    const h = fixture(1);
+    const rows = [{ id: "old-item", orderId: "11111111-1111-4111-8111-111111111111", skuId: "sku-0", quantity: 100, order: { updatedAt: new Date() } }];
+    for (const db of [h.prisma, h.tx]) db.commerceOrderItem.findMany.mockImplementation(async (query: any) => query.where.order.status === "PENDING_PAYMENT" ? rows : []);
+    await h.run();
+    expect(h.tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(h.tx.commerceSku.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { stock: 3 } }));
+    expect(h.tx.auditLog.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ entityId: "old-item" })] }));
+    h.tx.auditLog.findMany.mockResolvedValue([{ entityId: "old-item" }] as any);
+    h.tx.auditLog.createMany.mockClear();
+    await h.run();
+    expect(h.tx.auditLog.createMany).not.toHaveBeenCalled();
   });
   it("fetches only inventory and updates stock with optimistic concurrency protection", async () => {
     const h = fixture();
@@ -236,6 +238,13 @@ describe("manual ERP inventory synchronization", () => {
       },
       data: { stock: 3 },
     });
+  });
+  it("checks the SKU version even when releasing old holds leaves its number unchanged", async () => {
+    const h = fixture(1); h.skus[0]!.stock = 3;
+    const rows = [{ id: "old-item", orderId: "11111111-1111-4111-8111-111111111111", skuId: "sku-0", quantity: 2, order: { updatedAt: new Date() } }];
+    for (const db of [h.prisma, h.tx]) db.commerceOrderItem.findMany.mockImplementation(async (query: any) => query.where.order.status === "PENDING_PAYMENT" ? rows : []);
+    h.tx.commerceSku.updateMany.mockResolvedValue({ count: 0 });
+    await expect(h.run()).rejects.toThrow("商品库存或资料已变化");
   });
   it("supports batching and all inventory pages before any writes", async () => {
     const h = fixture(101);

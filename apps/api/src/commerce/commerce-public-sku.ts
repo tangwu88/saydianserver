@@ -14,7 +14,7 @@ export function publicSku(sku: {
     image: sku.image,
     salePriceCents: sku.salePriceCents,
     marketPriceCents: sku.marketPriceCents,
-    stock: sku.stock,
+    stock: Math.max(0, sku.stock),
     enabled: sku.enabled,
   };
 }

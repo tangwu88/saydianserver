@@ -56,9 +56,11 @@ function harness(paymentStatus?: string) {
       }),
     },
     commerceOrderItem: {
+      findMany: vi.fn(async () => state.order.items),
       update: vi.fn(async ({ where, data }: any) => Object.assign(state.order.items.find((item: any) => item.id === where.id), data)),
       count: vi.fn().mockResolvedValue(0),
     },
+    commerceSku: { update: vi.fn().mockResolvedValue({ stock: 10 }) },
     paymentIntent: {
       create: vi.fn(async ({ data }: any) => {
         const record = { ...data, id: "offline-payment", createdAt: new Date(), updatedAt: new Date() };
@@ -71,7 +73,7 @@ function harness(paymentStatus?: string) {
       findUnique: vi.fn(async ({ where }: any) => state.keys.find((item: any) => item.userId === where.userId_scope_key.userId && item.scope === where.userId_scope_key.scope && item.key === where.userId_scope_key.key)),
       create: vi.fn(async ({ data }: any) => { state.keys.push(data); return data; }),
     },
-    auditLog: { create: vi.fn(async ({ data }: any) => { state.audits.push(data); return data; }) },
+    auditLog: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn(async ({ data }: any) => { state.audits.push(data); return data; }) },
   };
   const prisma: any = { ...tx, $transaction: vi.fn((run: any) => run(tx)) };
   return { state, tx, service: new AdminService(prisma, {} as any) };
@@ -111,6 +113,7 @@ describe("super-admin pending-order manual payment", () => {
 
   it("records verified offline receipt as a distinct succeeded payment and advances the order once", async () => {
     const h = harness();
+    h.tx.auditLog.findMany.mockResolvedValue([{ entityId: "item-1" }, { entityId: "item-2" }]);
     const result = await h.service.manuallySettleCommerceOrder(orderId, input({
       action: "CONFIRM_OFFLINE_PAID",
       payableCents: 9_000,
@@ -119,6 +122,7 @@ describe("super-admin pending-order manual payment", () => {
     }), current, "request-paid");
     expect(result).toMatchObject({ status: "PAID", payableCents: 9_000, discountCents: 1_100, version: 3, reused: false });
     expect(result.paidAt).toBeInstanceOf(Date);
+    expect(h.tx.commerceSku.update).toHaveBeenCalledTimes(2);
     expect(h.tx.paymentIntent.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       channel: "OFFLINE_MANUAL",
       status: "SUCCEEDED",

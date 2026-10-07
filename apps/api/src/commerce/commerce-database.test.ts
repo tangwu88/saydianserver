@@ -33,25 +33,36 @@ describe.runIf(enabled)("local PostgreSQL transaction acceptance", () => {
   afterAll(async () => {
     if (!prisma) return;
     // Exact random IDs created by this test, no broad table truncation.
-    const orders = await prisma.commerceOrder.findMany({ where: { userId: { in: members } }, select: { id: true } });
+    const orders = await prisma.commerceOrder.findMany({ where: { userId: { in: members } }, select: { id: true, items: { select: { id: true } } } });
     const ids = orders.map(row => row.id);
     const payments = await prisma.paymentIntent.findMany({ where: { userId: { in: members } }, select: { id: true } });
     await prisma.paymentRefund.deleteMany({ where: { paymentIntentId: { in: payments.map(row => row.id) } } });
     await prisma.paymentIntent.deleteMany({ where: { id: { in: payments.map(row => row.id) } } });
     await prisma.commercePointLedger.deleteMany({ where: { userId: { in: members } } });
+    await prisma.auditLog.deleteMany({ where: { entityId: { in: [...ids, ...orders.flatMap(order => order.items.map(item => item.id))] } } });
     await prisma.commerceOrder.deleteMany({ where: { id: { in: ids } } });
     await prisma.commerceProduct.deleteMany({ where: { id: productId } });
     await prisma.user.deleteMany({ where: { id: { in: members } } });
     await prisma.$disconnect();
   });
 
-  it("last unit accepts only one concurrent order and never makes inventory negative", async () => {
-    const attempts = await Promise.allSettled(["A", "B"].map(key => store.createOrder(members[0]!, { addressId, items: [{ skuId, quantity: 1 }], idempotencyKey: `${suffix}-${key}` })));
-    const successful = attempts.filter(item => item.status === "fulfilled");
-    expect(successful).toHaveLength(1);
-    winningOrderId = (successful[0] as PromiseFulfilledResult<{ id: string }>).value.id;
-    expect((await prisma.commerceSku.findUniqueOrThrow({ where: { id: skuId } })).stock).toBe(0);
-    expect(await prisma.commerceOrder.count({ where: { userId: members[0]! } })).toBe(1);
+  it("unpaid orders do not hold the last unit; verified payments deduct once and permit backorders", async () => {
+    const orders = [];
+    for (const key of ["A", "B"]) orders.push(await store.createOrder(members[0]!, { addressId, items: [{ skuId, quantity: 1 }], idempotencyKey: `${suffix}-${key}` }));
+    winningOrderId = orders[0]!.id;
+    expect((await prisma.commerceSku.findUniqueOrThrow({ where: { id: skuId } })).stock).toBe(1);
+    const billing = new BillingService(prisma as PrismaService, {} as any, {} as any);
+    for (const order of orders) {
+      const paymentNo = `STOCK-${order.id}`;
+      await prisma.paymentIntent.create({ data: { userId: members[0]!, businessType: BusinessType.COMMERCE_ORDER,
+        businessId: order.id, commerceOrderId: order.id, paymentNo, channel: PaymentChannel.WECHAT_H5,
+        status: PaymentStatus.PENDING, amountCents: order.payableCents, description: "synthetic stock acceptance",
+        idempotencyKey: paymentNo, providerMerchantId: "LOCAL-MERCHANT", providerAppId: "LOCAL-APP" } });
+      const payload = { mchid: "LOCAL-MERCHANT", appid: "LOCAL-APP", amount: { currency: "CNY" } };
+      await billing.markPaid(paymentNo, `TX-${order.id}`, order.payableCents, payload);
+      await billing.markPaid(paymentNo, `TX-${order.id}`, order.payableCents, payload);
+    }
+    expect((await prisma.commerceSku.findUniqueOrThrow({ where: { id: skuId } })).stock).toBe(-1);
   });
 
   it("does not let a different member use another member's address", async () => {

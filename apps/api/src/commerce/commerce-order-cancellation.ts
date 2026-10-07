@@ -2,6 +2,7 @@ import { ConflictException } from "@nestjs/common";
 import { CommerceOrderStatus, Prisma } from "@prisma/client";
 import { requireCommerceOwner } from "./commerce-policy";
 import { financialSnapshot } from "./commerce-finance";
+import { deferredStockItems } from "./commerce-payment-stock";
 
 type CancellableOrder = Prisma.CommerceOrderGetPayload<{
   include: { items: true };
@@ -43,7 +44,9 @@ export async function cancelCommerceOrderInTransaction(
     },
   });
   if (!changed.count) throw new ConflictException("订单状态已改变，请刷新后重试");
+  const deferred = await deferredStockItems(tx, order.items);
   for (const item of order.items) {
+    if (deferred.has(item.id)) continue;
     await tx.commerceSku.update({
       where: { id: item.skuId },
       data: { stock: { increment: item.quantity } },

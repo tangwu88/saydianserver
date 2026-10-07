@@ -1,3 +1,4 @@
+import { deductCommercePaymentStock } from "../commerce/commerce-payment-stock";
 import {
   BadRequestException,
   ConflictException,
@@ -2740,6 +2741,7 @@ export class AdminService {
               paidAt: changedAt,
             },
           });
+          await deductCommercePaymentStock(tx, id);
           await onCommerceOrderPaid(tx, id);
           const erpItems = await tx.commerceOrderItem.count({
             where: { orderId: id, product: { source: "ERP" } },

@@ -6,7 +6,8 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { IntegrationState, ProductStatus } from "@prisma/client";
+import { IntegrationState, Prisma, ProductStatus } from "@prisma/client";
+import { deferredStockItems, markPaymentStockItems } from "../commerce/commerce-payment-stock";
 import { createHash } from "node:crypto";
 import { safeObject } from "../common/crypto";
 import { markIntegrationVerified } from "../common/integration-health";
@@ -418,14 +419,9 @@ async function performJushuitanInventorySync(
     skuId: { in: skus.map((sku) => sku.id) },
     order: {
       executionOwner: "NEW_SYSTEM" as const,
-      OR: [
-        { status: "PENDING_PAYMENT" as const },
-        {
-          status: { in: ["PAID" as const, "WAITING_FULFILLMENT" as const] },
-          erpOrderId: null,
-          erpStatus: null,
-        },
-      ],
+      status: { in: ["PAID" as const, "WAITING_FULFILLMENT" as const] },
+      erpOrderId: null,
+      erpStatus: null,
     },
   };
   const reservationSelect = {
@@ -438,6 +434,14 @@ async function performJushuitanInventorySync(
     where: reservationWhere,
     select: reservationSelect,
     orderBy: { id: "asc" },
+  });
+  const pendingWhere = {
+    skuId: { in: skus.map(sku => sku.id) },
+    order: { executionOwner: "NEW_SYSTEM", status: "PENDING_PAYMENT" as const },
+  };
+  const pendingSelect = { ...reservationSelect, orderId: true } as const;
+  const pending = await prisma.commerceOrderItem.findMany({
+    where: pendingWhere, select: pendingSelect, orderBy: { id: "asc" },
   });
   const reserved = new Map<string, number>();
   for (const item of reservations)
@@ -460,18 +464,21 @@ async function performJushuitanInventorySync(
       );
     const available = inventoryStock(row);
     const held = reserved.get(sku.id) ?? 0;
-    if (held > available) {
-      throw new ConflictException({
-        errorKey: "inventory_sync_reservation_conflict",
-        message: `SKU ${sku.erpSkuId} 的本站订单占用超过聚水潭库存；本次未更新，请先核对订单与库存`,
-      });
-    }
+    // Paid backorders retain their debt until ERP replenishment; unpaid orders hold nothing.
     return { ...sku, newStock: available - held };
   });
   await markIntegrationVerified(prisma, "jushuitan");
   const changed = updates.filter((sku) => sku.newStock !== sku.stock);
   await prisma.$transaction(
     async (tx) => {
+      const orderIds = [...new Set([...pending.map(item => item.orderId)])].sort();
+      if (orderIds.length) await tx.$queryRaw(Prisma.sql`SELECT id FROM "CommerceOrder" WHERE id IN (${Prisma.join(orderIds.map(id => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`);
+      const currentPending = await tx.commerceOrderItem.findMany({
+        where: pendingWhere, select: pendingSelect, orderBy: { id: "asc" },
+      });
+      if (JSON.stringify(currentPending) !== JSON.stringify(pending)) throw new ConflictException({
+        errorKey: "inventory_sync_concurrent_change", message: "同步期间待付款订单已变化；本次未更新，请重新同步",
+      });
       const currentReservations = await tx.commerceOrderItem.findMany({
         where: reservationWhere,
         select: reservationSelect,
@@ -485,7 +492,15 @@ async function performJushuitanInventorySync(
           message: "同步期间订单占用已变化；本次未更新，请重新同步",
         });
       }
-      for (const sku of changed) {
+      // ERP stock replaces historical checkout holds. Persist that evidence in the
+      // same transaction so later payment/cancellation cannot deduct/return twice.
+      const deferred = await deferredStockItems(tx, pending);
+      const releasedSkuIds = new Set(pending.filter(item => !deferred.has(item.id)).map(item => item.skuId));
+      for (const orderId of orderIds) await markPaymentStockItems(tx, orderId,
+        pending.filter(item => item.orderId === orderId && !deferred.has(item.id)));
+      // Even an unchanged number needs a SKU CAS when releasing a historical
+      // hold: policy evidence must not commit against a concurrent stock edit.
+      for (const sku of updates.filter(sku => sku.newStock !== sku.stock || releasedSkuIds.has(sku.id))) {
         const result = await tx.commerceSku.updateMany({
           where: {
             id: sku.id,

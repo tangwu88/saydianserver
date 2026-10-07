@@ -41,6 +41,7 @@ import {
 import { commerceOrderListFilter } from "./commerce-order-filter";
 import { afterSaleEvidenceReferences } from "./commerce-evidence";
 import { cancelCommerceOrderInTransaction } from "./commerce-order-cancellation";
+import { markPaymentStockItems } from "./commerce-payment-stock";
 
 type CreateOrderInput = {
   addressId: string;
@@ -656,12 +657,7 @@ export class CommerceStoreService {
               },
             });
           }
-          for (const sku of skus) {
-            await tx.commerceSku.update({
-              where: { id: sku.id },
-              data: { stock: { decrement: normalized.get(sku.id)! } },
-            });
-          }
+          await markPaymentStockItems(tx, order.id, order.items);
           if (couponClaimId) {
             await tx.commerceCouponClaim.update({
               where: { id: couponClaimId },
@@ -1430,7 +1426,7 @@ function productCard(product: {
     sales: product.sales,
     priceCents: available[0]?.salePriceCents ?? 0,
     marketPriceCents: available[0]?.marketPriceCents ?? null,
-    stock: available.reduce((sum, sku) => sum + sku.stock, 0),
+    stock: available.reduce((sum, sku) => sum + Math.max(0, sku.stock), 0),
     defaultSku: available[0] ? publicSku(available[0]) : null,
   };
 }
