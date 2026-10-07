@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   HttpException,
+  InternalServerErrorException,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -141,9 +142,22 @@ export async function syncJushuitanInventory(
   prisma: PrismaService,
   integrationSecrets: IntegrationSecretsService,
 ) {
-  return withJushuitanDiagnostics(prisma, () =>
-    performJushuitanInventorySync(prisma, integrationSecrets),
-  );
+  try {
+    return await withJushuitanDiagnostics(prisma, () =>
+      performJushuitanInventorySync(prisma, integrationSecrets),
+    );
+  } catch (error) {
+    if (error instanceof HttpException) throw error;
+    // Only expose a structured Prisma code, never a database message or URL.
+    const code = (error as { code?: unknown } | null)?.code;
+    const diagnostic = typeof code === "string" && /^P\d{4}$/.test(code)
+      ? `（数据库错误码 ${code}）`
+      : "";
+    throw new InternalServerErrorException({
+      errorKey: "inventory_sync_internal",
+      message: `本站库存同步执行失败${diagnostic}；请联系管理员核查本次请求，勿将其视为同步成功`,
+    });
+  }
 }
 
 async function withJushuitanDiagnostics<T>(
@@ -385,14 +399,18 @@ async function performJushuitanInventorySync(
     take: 5001,
   });
   if (skus.length > 5000) {
-    throw new BadRequestException(
-      "待同步 SKU 超过 5000 个，请联系管理员分批处理",
-    );
+    throw new BadRequestException({
+      errorKey: "inventory_sync_invalid_skus",
+      message: "待同步 SKU 超过 5000 个，请联系管理员分批处理",
+    });
   }
   if (!skus.length) return { productCount: 0, skuCount: 0, updatedSkuCount: 0 };
   const ids = skus.map((sku) => sku.erpSkuId.trim());
   if (ids.some((id) => !id || /[,\r\n]/.test(id))) {
-    throw new BadRequestException("ERP SKU 编码无效，请先核对商品资料");
+    throw new BadRequestException({
+      errorKey: "inventory_sync_invalid_skus",
+      message: "ERP SKU 编码无效，请先核对商品资料",
+    });
   }
   const settings = await jushuitanSettings(prisma, integrationSecrets);
   let rows: Record<string, unknown>[];
@@ -443,9 +461,10 @@ async function performJushuitanInventorySync(
     const available = inventoryStock(row);
     const held = reserved.get(sku.id) ?? 0;
     if (held > available) {
-      throw new ConflictException(
-        `SKU ${sku.erpSkuId} 的本站订单占用超过聚水潭库存；本次未更新，请先核对订单与库存`,
-      );
+      throw new ConflictException({
+        errorKey: "inventory_sync_reservation_conflict",
+        message: `SKU ${sku.erpSkuId} 的本站订单占用超过聚水潭库存；本次未更新，请先核对订单与库存`,
+      });
     }
     return { ...sku, newStock: available - held };
   });
@@ -461,9 +480,10 @@ async function performJushuitanInventorySync(
       if (
         JSON.stringify(currentReservations) !== JSON.stringify(reservations)
       ) {
-        throw new ConflictException(
-          "同步期间订单占用已变化；本次未更新，请重新同步",
-        );
+        throw new ConflictException({
+          errorKey: "inventory_sync_concurrent_change",
+          message: "同步期间订单占用已变化；本次未更新，请重新同步",
+        });
       }
       for (const sku of changed) {
         const result = await tx.commerceSku.updateMany({
@@ -478,9 +498,10 @@ async function performJushuitanInventorySync(
           data: { stock: sku.newStock },
         });
         if (result.count !== 1) {
-          throw new ConflictException(
-            "同步期间商品库存或资料已变化；本次未更新，请重新同步",
-          );
+          throw new ConflictException({
+            errorKey: "inventory_sync_concurrent_change",
+            message: "同步期间商品库存或资料已变化；本次未更新，请重新同步",
+          });
         }
       }
     },

@@ -1842,7 +1842,7 @@ export const apiCatalog = {
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "实时同步聚水潭库存",
       "request": "无参数；同步未归档ERP商品的启用SKU，最多5000个",
-      "response": "返回商品数、SKU数及更新SKU数；从ERP库存扣除尚未同步ERP的本站订单占用，只更新库存；缺失或无效数量不补零，订单或SKU并发变化时整次回滚；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误",
+      "response": "返回商品数、SKU数及更新SKU数；从ERP库存扣除尚未同步ERP的本站订单占用，只更新库存；缺失或无效数量不补零，订单或SKU并发变化时整次回滚；400/409分别返回SKU校验、订单占用或并发冲突的受控中文诊断及inventory_sync_* errorKey；500返回inventory_sync_internal，可含结构化Prisma错误码，不回显内部错误原文；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误",
       "dependency": "聚水潭库存查询；本地SKU库存与订单占用；管理员审计",
       "successStatus": 201,
       "contract": {

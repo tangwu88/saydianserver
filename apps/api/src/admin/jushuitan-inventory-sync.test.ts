@@ -64,6 +64,42 @@ afterEach(() => {
 });
 
 describe("manual ERP inventory synchronization", () => {
+  it.each([
+    ["invalid-sku", 400, "inventory_sync_invalid_skus", "ERP SKU 编码无效"],
+    ["too-many", 400, "inventory_sync_invalid_skus", "超过 5000"],
+    ["reservations", 409, "inventory_sync_reservation_conflict", "订单占用超过"],
+    ["order-change", 409, "inventory_sync_concurrent_change", "订单占用已变化"],
+    ["stock-change", 409, "inventory_sync_concurrent_change", "商品库存或资料已变化"],
+    ["database", 500, "inventory_sync_internal", "数据库错误码 P2022"],
+    ["unexpected", 500, "inventory_sync_internal", "本站库存同步执行失败"],
+  ] as const)("preserves a safe HTTP diagnostic for local failure %s", async (failure, httpStatus, errorKey, message) => {
+    const h = fixture(failure === "too-many" ? 5001 : 1);
+    const privateMessage = "synthetic-private-database-url";
+    if (failure === "invalid-sku") h.skus[0]!.erpSkuId = "invalid,sku";
+    if (failure === "reservations") h.prisma.commerceOrderItem.findMany.mockResolvedValueOnce([{ id: "item", skuId: "sku-0", quantity: 4, order: { updatedAt: new Date() } }] as any);
+    if (failure === "order-change") h.tx.commerceOrderItem.findMany.mockResolvedValueOnce([{ id: "item", skuId: "sku-0", quantity: 1, order: { updatedAt: new Date() } }] as any);
+    if (failure === "stock-change") h.tx.commerceSku.updateMany.mockResolvedValueOnce({ count: 0 });
+    if (failure === "database") h.prisma.commerceSku.findMany.mockRejectedValueOnce(Object.assign(new Error(privateMessage), { code: "P2022" }));
+    if (failure === "unexpected") h.prisma.$transaction.mockRejectedValueOnce(Object.assign(new Error(privateMessage), { code: privateMessage }));
+    let exception: unknown;
+    try { await h.run(); } catch (error) { exception = error; }
+    const json = vi.fn();
+    const status = vi.fn().mockReturnValue({ json });
+    new SafeHttpExceptionFilter().catch(exception, {
+      switchToHttp: () => ({
+        getRequest: () => ({ originalUrl: "/api/saydian-app/admin/v1/commerce-products/inventory-sync", requestId: "synthetic-request" }),
+        getResponse: () => ({ status }),
+      }),
+    } as any);
+    expect(status).toHaveBeenCalledWith(httpStatus);
+    const body = json.mock.calls[0]![0];
+    expect(body).toMatchObject({ errorKey, requestId: "synthetic-request" });
+    expect(body.message).toContain(message);
+    expect(JSON.stringify(body)).not.toContain(privateMessage);
+    expect(body.message).not.toContain("The request could not be completed");
+    expect(h.prisma.integrationConfig.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ lastError: expect.anything() }) }));
+    if (!["stock-change", "unexpected"].includes(failure)) expect(h.tx.commerceSku.updateMany).not.toHaveBeenCalled();
+  });
   it.each(["configuration", "credentials", "secret-store", "permission", "provider", "network", "missing-inventory"])(
     "returns a useful safe HTTP diagnostic for %s instead of the generic English error",
     async (failure) => {
