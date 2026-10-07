@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { IntegrationState, Prisma, UserStatus } from "@prisma/client";
+import { wechatMiniExchangeError } from './wechat-mini-error';
 import { compare, hash } from "bcryptjs";
 import { randomInt, randomUUID } from "node:crypto";
 import { sign } from "jsonwebtoken";
@@ -522,7 +523,7 @@ export class AuthService {
     const openId = String(result.openid ?? "").trim();
     const unionId = String(result.unionid ?? "").trim() || null;
     if (!response.ok || Number(result.errcode ?? 0) !== 0 || !/^[A-Za-z0-9_-]{8,128}$/.test(openId)) {
-      throw new UnauthorizedException("微信登录失败，请稍后重试");
+      throw wechatMiniExchangeError(result.errcode);
     }
     await markIntegrationVerified(this.prisma, "wechat_mini");
     return { openId, unionId };

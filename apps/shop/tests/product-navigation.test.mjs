@@ -51,6 +51,7 @@ async function page(realmName, value = product(), options = {}) {
   if (options.user) { realm.mallStorage.set("saidian-user", options.user); realm.mallStorage.set("saidian-token", "synthetic-token"); }
   if (options.draft) { realm.mallStorage.set("checkout-draft", structuredClone(options.draft)); realm.mallStorage.set("checkout-owner", options.owner ?? options.user?.id); }
   const component = evaluate(script.content, {
+    "../../product-rich-text": evaluate(readFileSync(new URL('../src/product-rich-text.ts', import.meta.url), 'utf8'), {}),
     "../../mini-poster": { miniPosterEnvironment: () => false },
     vue, "../../realm": realm, "../../components/DesktopHeader.vue": { default: { render: () => null } },
     "../../static/saidian-brand-logo.png": { default: "data:image/png;base64,c2F5ZGlhbi1sb2dv" },

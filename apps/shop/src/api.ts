@@ -184,7 +184,10 @@ function request<T>(
           resolve(response.data as T);
         }
         else {
-          const message = (response.data as any)?.message ?? (response.data as any)?.error?.message ?? "请求失败";
+          let message = (response.data as any)?.message ?? (response.data as any)?.error?.message ?? "请求失败";
+          if (response.statusCode === 401 && /^\/auth\/wechat\/mini(?:\/bind)?$/.test(path) && message === "Please sign in again.") {
+            message = "微信登录验证失败，请重新点击微信登录。若仍失败，请核对后台与开发工具的 AppID，以及对应小程序的 AppSecret。";
+          }
           if (response.statusCode === 401 && options.auth && allowRefresh) {
             try {
               const session = await refreshMallSession(token, requestStamp);

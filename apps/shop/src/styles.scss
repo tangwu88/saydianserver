@@ -1,4 +1,4 @@
-:root {
+@mixin mall-theme {
   --green: #005bad;
   --deep: #005bad;
   --mint: #eef6ff;
@@ -7,9 +7,22 @@
   --muted: #69717b;
   --line: #e5e7eb;
 }
+/* #ifdef H5 */
+:root { @include mall-theme; }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+page { @include mall-theme; }
+/* #endif */
+/* #ifdef H5 */
 * {
   box-sizing: border-box;
 }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+view, text, image, button, input, textarea, rich-text, canvas, scroll-view, swiper, swiper-item {
+  box-sizing: border-box;
+}
+/* #endif */
 .desktop-header {
   display: none;
 }
@@ -43,10 +56,12 @@
 }
 
 /* H5 tab bar: larger touch targets and icons while preserving safe-area space. */
+/* #ifdef H5 */
 uni-tabbar .uni-tabbar-bottom { min-height: 66px; padding-bottom: env(safe-area-inset-bottom); }
 uni-tabbar .uni-tabbar__item { min-height: 64px; }
 uni-tabbar .uni-tabbar__icon { width: 27px !important; height: 27px !important; margin-top: 6px; }
 uni-tabbar .uni-tabbar__label { font-size: 13px !important; line-height: 20px; }
+/* #endif */
 .primary-btn,
 .outline-btn,
 .danger-btn {

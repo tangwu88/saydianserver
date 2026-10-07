@@ -233,7 +233,8 @@ function shop() {
   border: 1px solid var(--line);
   border-radius: 10rpx;
 }
-.counter > * {
+.counter button,
+.counter b {
   min-width: 28px;
   height: 44px;
   display: flex;

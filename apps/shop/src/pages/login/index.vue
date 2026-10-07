@@ -99,7 +99,7 @@ async function miniLogin(){
   if(busy.value)return;
   if(!agreementAccepted.value)return toast("请先阅读并同意协议");
   if(!capabilities.value?.login?.wechatMini?.enabled)return toast("微信小程序登录暂不可用");
-  busy.value=true;
+  busy.value=true;error.value="";
   try{
     if(bindMini.value && mallStorage.get("saidian-token")){await bindCurrentMini();toast("当前会员微信已绑定");}
     else{
@@ -107,7 +107,7 @@ async function miniLogin(){
       if(result?.requiresAccountBinding){bindMini.value=true;error.value="请先使用手机号或邮箱验证码登录，再绑定当前微信。";return;}
     }
     await bindReferral();uni.reLaunch({url:safeMallRoute(mallStorage.get("saidian-post-login-route"))});
-  }catch(e){toast(e);}finally{busy.value=false;}
+  }catch(e){error.value=e instanceof Error?e.message:"微信登录失败，请重试";toast(e);}finally{busy.value=false;}
 }
 function help(section:string){uni.navigateTo({url:"/pages/help/index?section="+section});}
 function browse(){uni.switchTab({url:"/pages/home/index"});}

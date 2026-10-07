@@ -50,7 +50,7 @@
       ></view
     ><view class="container detail card"
       ><view class="section-title">商品详情</view
-      ><rich-text v-if="product.detailHtml" :nodes="product.detailHtml" /><view
+      ><rich-text v-if="product.detailHtml" class="product-rich-text" :nodes="responsiveProductHtml(product.detailHtml)" /><view
         v-else
         class="empty"
         >暂无更多商品详情</view
@@ -73,6 +73,7 @@
 </template>
 <script setup lang="ts">
 import { mallStorage } from "../../realm";
+import { responsiveProductHtml } from "../../product-rich-text";
 defineOptions({ inheritAttrs: false });
 import { onLoad, onShow, onShareAppMessage } from "@dcloudio/uni-app";
 import { computed, ref, getCurrentInstance } from "vue";
@@ -282,7 +283,10 @@ async function toggleFavorite() {
   background: #fff;
   border-radius: 24rpx;
 }
+.product-rich-text { display: block; width: 100%; max-width: 100%; overflow-wrap: anywhere; }
+/* #ifdef H5 */
 .detail :deep(img) { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+/* #endif */
 .thumbs {
   white-space: nowrap;
   margin-top: 16rpx;
@@ -373,7 +377,8 @@ async function toggleFavorite() {
   border-radius: 12rpx;
   overflow: hidden;
 }
-.quantity view > * {
+.quantity view > button,
+.quantity view > b {
   width: 70rpx;
   height: 62rpx;
   display: flex;
