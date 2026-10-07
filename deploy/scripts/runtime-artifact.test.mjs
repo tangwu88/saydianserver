@@ -116,6 +116,57 @@ test("probe rejects invalid revision, artifact ID or missing auth before any req
   }
 });
 
+test("download retries transient metadata and range failures without restarting completed ranges", async () => {
+  const root = await mkdtemp(join(tmpdir(), "saydian-retry-test-"));
+  try {
+    const archive = new Uint8Array(total);
+    for (let from = 0; from < total; from += 4 * size)
+      archive.fill(from / size, from, Math.min(from + 4 * size, total));
+    const digest = `sha256:${createHash("sha256").update(archive).digest("hex")}`;
+    const source = fixture({ metadata: { digest } });
+    let metadataCalls = 0;
+    const ranges = new Map(), progress = [], waits = [];
+    const request = async (url, init) => {
+      if (url.endsWith("/123") && metadataCalls++ === 0) throw new TypeError("temporary network error");
+      if (init.headers.range) {
+        const count = (ranges.get(init.headers.range) ?? 0) + 1;
+        ranges.set(init.headers.range, count);
+        if (init.headers.range.startsWith("bytes=0-")) {
+          if (count === 1) throw new TypeError("temporary network error");
+          if (count === 2) return new Response(new Uint8Array(2), {
+            status: 206, headers: { "content-range": `bytes 0-${4 * size - 1}/${total}` },
+          });
+        }
+      }
+      return source.request(url, init);
+    };
+    const output = join(root, "runtime.zip");
+    const result = await downloadArtifact(revision, artifactId, token, output, request,
+      event => progress.push(event), async ms => { waits.push(ms); });
+    assert.equal(result.verified, true);
+    assert.deepEqual(new Uint8Array(await readFile(output)), archive);
+    assert.equal(ranges.get(`bytes=0-${4 * size - 1}`), 3);
+    assert.equal(ranges.get(`bytes=${4 * size}-${8 * size - 1}`), 1);
+    assert.equal(ranges.get(`bytes=${8 * size}-${total - 1}`), 1);
+    assert.equal(progress.filter(event => event.downloadRetry).length, 3);
+    assert.deepEqual(waits.sort((a,b) => a-b), [1000,1000,2000]);
+    assert.doesNotMatch(JSON.stringify(progress), /fixture-secret|signature=|https:/);
+    assert.deepEqual(await readdir(root), ["runtime.zip"]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("download exhausts bounded retries and still rejects invalid range responses without an output", async () => {
+  const root = await mkdtemp(join(tmpdir(), "saydian-retry-bound-test-"));
+  try {
+    const source = fixture({ rangeStatus: 200 });
+    await assert.rejects(downloadArtifact(revision, artifactId, token, join(root, "runtime.zip"),
+      source.request, () => {}, async () => {}));
+    const ranges = source.calls.filter(call => call.init.headers.range);
+    assert.equal(ranges.length, 15);
+    assert.deepEqual(await readdir(root), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("probe rejects missing, expired, misnamed or malformed artifact metadata", async () => {
   for (const options of [
     { metadataStatus: 404 },

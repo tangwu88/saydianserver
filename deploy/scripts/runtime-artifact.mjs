@@ -4,6 +4,19 @@ import { pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { createReadStream } from "node:fs";
 import { mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
+
+async function retryDownload(operation, signal, wait, progress) {
+  for (let attempt = 0; ; attempt++) {
+    signal.throwIfAborted();
+    try { return await operation(); }
+    catch (error) {
+      if (signal.aborted || attempt === 4) throw error;
+      progress({ downloadRetry: attempt + 1 });
+      await wait(1000 * 2 ** attempt, signal);
+    }
+  }
+}
 
 async function artifactInfo(revision, artifactId, token, request, signal) {
   assert(/^[a-f0-9]{40}$/.test(revision) && /^[1-9][0-9]*$/.test(artifactId) && token);
@@ -15,7 +28,7 @@ async function artifactInfo(revision, artifactId, token, request, signal) {
   const metadataResponse = await request(endpoint, {
     headers,
     redirect: "manual",
-    signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]),
   });
   assert(metadataResponse.ok);
   const metadata = await metadataResponse.json();
@@ -30,7 +43,7 @@ async function artifactInfo(revision, artifactId, token, request, signal) {
     const redirect = await request(`${endpoint}/zip`, {
       headers,
       redirect: "manual",
-      signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]),
     });
     assert(redirect.status === 302);
     const url = new URL(redirect.headers.get("location"));
@@ -103,10 +116,13 @@ export async function downloadArtifact(
   outputPath,
   request = fetch,
   progress = () => {},
+  retryWait = (ms, signal) => delay(ms, undefined, { signal }),
 ) {
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(3600000)]);
-  const { metadata, location } = await artifactInfo(revision, artifactId, token, request, signal);
+  const { metadata, location } = await retryDownload(
+    () => artifactInfo(revision, artifactId, token, request, signal), signal, retryWait, progress,
+  );
   const partSize = 4 * 1024 ** 2,
     count = Math.ceil(metadata.size_in_bytes / partSize);
   const scratch = await mkdtemp(join(dirname(outputPath), "https-parts-"));
@@ -122,13 +138,17 @@ export async function downloadArtifact(
             const index = cursor++,
               from = index * partSize;
             // GitHub redirect URLs expire after a minute: renew for every new range.
-            const bytes = await rangeBytes(
-              request,
-              await location(),
-              from,
-              Math.min(from + partSize, metadata.size_in_bytes) - 1,
-              metadata.size_in_bytes,
-              signal,
+            const bytes = await retryDownload(
+              async () => rangeBytes(
+                request,
+                await location(),
+                from,
+                Math.min(from + partSize, metadata.size_in_bytes) - 1,
+                metadata.size_in_bytes,
+                AbortSignal.any([signal, AbortSignal.timeout(180000)]),
+              ),
+              signal, retryWait,
+              (event) => progress({ ...event, rangeIndex: index }),
             );
             await writeFile(join(scratch, String(index)), bytes, {
               flag: "wx",
