@@ -99,6 +99,18 @@ describe("commerce administration", () => {
     expect(tx.commerceProduct.update).not.toHaveBeenCalled();
     expect(tx.commerceProduct.findUniqueOrThrow).not.toHaveBeenCalled();
   });
+  it("preserves existing paid backorder stock during a price edit but rejects invented negative stock", async () => {
+    const updatedAt = new Date();
+    const product = { id: "p", skus: [{ id: "s", stock: -2, updatedAt }] };
+    const tx = { commerceSku: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      commerceProduct: { update: vi.fn(), findUniqueOrThrow: vi.fn().mockResolvedValue(product) } };
+    const prisma = { commerceProduct: { findUnique: vi.fn().mockResolvedValue(product) }, $transaction: vi.fn(async (run: any) => run(tx)) };
+    const service = new AdminService(prisma as any, {} as any);
+    const sku = { id: "s", updatedAt: updatedAt.toISOString(), salePriceCents: 100, stock: -2 };
+    await service.quickUpdateCommerceProductSkus("p", { skus: [sku] });
+    expect(tx.commerceSku.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ stock: -2 }) }));
+    await expect(service.quickUpdateCommerceProductSkus("p", { skus: [{ ...sku, stock: -3 }] })).rejects.toThrow("库存");
+  });
   it("deletes an unused product and clears temporary cart and favorite references", async () => {
     const product = { id: "p", name: "误导入商品", skus: [{ id: "s1" }, { id: "s2" }], _count: { orderItems: 0, reviews: 0 } };
     const tx = {

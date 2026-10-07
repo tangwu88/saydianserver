@@ -1939,7 +1939,7 @@
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "快速修改商品SKU售价与库存",
-      "request": "id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数}]}；每次1至100条",
+      "request": "id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数，或原样保留当前超卖负数}]}；每次1至100条",
       "response": "原子更新并返回商品；版本过期409且不部分保存；ERP商品后续同步可能覆盖手工值",
       "dependency": "主库商城/聚水潭",
       "successStatus": 200,

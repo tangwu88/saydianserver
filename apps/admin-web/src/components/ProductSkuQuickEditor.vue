@@ -68,7 +68,8 @@ function priceInCents(value: number | undefined): number {
   return cents;
 }
 
-function validStock(value: number | undefined): number {
+function validStock(value: number | undefined, originalStock: number): number {
+  if (value === originalStock && originalStock < 0) return originalStock;
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 2_147_483_647) {
     throw new Error("库存必须是0至2147483647之间的整数");
   }
@@ -81,7 +82,7 @@ async function saveAdjustments(): Promise<void> {
   try {
     const skus = drafts.value.map((sku) => {
       const salePriceCents = priceInCents(sku.priceYuan);
-      const stock = validStock(sku.stock);
+      const stock = validStock(sku.stock, sku.originalStock);
       const image = sku.image.trim();
       return { id: sku.id, updatedAt: sku.updatedAt, salePriceCents, stock, image: image || null,
         changed: salePriceCents !== sku.originalSalePriceCents || stock !== sku.originalStock || image !== sku.originalImage };
@@ -155,7 +156,7 @@ async function saveAdjustments(): Promise<void> {
             v-if="editing"
             v-model="scope.row.stock"
             :aria-label="`${scope.row.erpSkuId} 库存`"
-            :min="0"
+            :min="Math.min(0, scope.row.originalStock)"
             :max="2147483647"
             :precision="0"
             :step="1"
@@ -163,7 +164,7 @@ async function saveAdjustments(): Promise<void> {
             controls-position="right"
             class="stock-input"
           />
-          <span v-else>{{ scope.row.stock }}</span>
+          <span v-else>{{ scope.row.stock }}<small v-if="scope.row.stock < 0">（待补货 {{ -scope.row.stock }}）</small></span>
         </template>
       </el-table-column>
     </el-table>

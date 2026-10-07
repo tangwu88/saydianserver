@@ -46,6 +46,16 @@ function harness() {
 }
 
 describe("product SKU quick editor", () => {
+  it("preserves backorder debt while editing an image and rejects fabricated negative stock", async () => {
+    const h = harness(); h.product.skus[0]!.stock = -2;
+    h.startEditing(); h.drafts.value[0].image = "https://cdn.example.invalid/watch.png";
+    await h.saveAdjustments();
+    expect(h.api.patch).toHaveBeenCalledWith(expect.any(String), { skus: [expect.objectContaining({ stock: -2 })] });
+    h.startEditing(); h.drafts.value[0].stock = -3;
+    h.api.patch.mockClear(); await h.saveAdjustments();
+    expect(h.api.patch).not.toHaveBeenCalled();
+    expect(h.ElMessage.error).toHaveBeenCalledWith(expect.stringContaining("库存"));
+  });
   it("edits in yuan and submits integer cents, stock and stale-write timestamp", async () => {
     const h = harness();
     h.startEditing();

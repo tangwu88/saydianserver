@@ -2147,7 +2147,7 @@ export class AdminService {
               sku.marketPriceCents == null
                 ? null
                 : integerCents(sku.marketPriceCents, "市场价"),
-            stock: integerCents(sku.stock ?? current?.stock ?? 0, "库存"),
+            stock: editableStock(sku.stock ?? current?.stock ?? 0, current?.stock),
             enabled: sku.enabled !== false,
           };
           if (!skuData.erpSkuId)
@@ -2275,7 +2275,7 @@ export class AdminService {
         id,
         expectedUpdatedAt,
         salePriceCents: integerCents(sku.salePriceCents, "销售价格", 1),
-        stock: integerCents(sku.stock, "库存"),
+        stock: editableStock(sku.stock, product.skus.find(item => item.id === id)?.stock),
         image: Object.prototype.hasOwnProperty.call(sku, "image")
           ? nullableText(sku.image)
           : undefined,
@@ -3851,4 +3851,11 @@ function nonNegativeInteger(value: unknown, label: string): number {
     throw new BadRequestException(`${label}必须是非负整数`);
   }
   return number;
+}
+
+function editableStock(value: unknown, current?: number): number {
+  // Preserve existing backorder debt when only images/prices are edited.
+  // Administrators can enter physical stock >= 0, but cannot invent negative debt.
+  if (current !== undefined && current < 0 && Number(value) === current) return current;
+  return integerCents(value, "库存");
 }

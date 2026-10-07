@@ -744,7 +744,7 @@ async function openEdit(row: Row): Promise<void> {
   const nextForm: Row = {
     ...row,
     roles: Array.isArray(row.roles) && row.roles.length ? [...row.roles] : [row.role ?? "READ_ONLY"],
-    skus: Array.isArray(row.skus) ? row.skus.map((sku: Row) => ({ ...sku, _originalImage: String(sku.image ?? "") })) : [],
+    skus: Array.isArray(row.skus) ? row.skus.map((sku: Row) => ({ ...sku, _originalStock: Number(sku.stock ?? 0), _originalImage: String(sku.image ?? "") })) : [],
     _isNew: false,
     publicConfigText: row.publicConfig ? JSON.stringify(row.publicConfig, null, 2) : "{}",
     secretsText: "",
@@ -1823,7 +1823,7 @@ onBeforeUnmount(() => {
                     ><template #default="scope"><el-input-number v-if="form.source === 'LOCAL'" v-model="scope.row.salePriceCents" :min="1" controls-position="right" style="width: 120px" /><span v-else>{{ scope.row.salePriceCents }}</span></template
                   ></el-table-column>
                   <el-table-column label="库存" width="130"
-                    ><template #default="scope"><el-input-number v-if="form.source === 'LOCAL'" v-model="scope.row.stock" :min="0" controls-position="right" style="width: 105px" /><span v-else>{{ scope.row.stock }}</span></template
+                    ><template #default="scope"><el-input-number v-if="form.source === 'LOCAL'" v-model="scope.row.stock" :min="Math.min(0, scope.row._originalStock ?? 0)" controls-position="right" style="width: 105px" /><span v-else>{{ scope.row.stock }}</span></template
                   ></el-table-column>
                   <el-table-column v-if="form.source === 'LOCAL'" label="启用" width="65"
                     ><template #default="scope"><el-switch v-model="scope.row.enabled" /></template
