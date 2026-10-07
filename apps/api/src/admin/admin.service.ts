@@ -36,6 +36,7 @@ import {
   sha256,
 } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { validateWechatMiniSettings } from "./wechat-mini-settings";
 
 import {
   globalError,
@@ -1535,6 +1536,7 @@ export class AdminService {
       throw new BadRequestException("不能同时更新并清除密钥");
     }
     const publicConfig = safeObject(body.publicConfig) as Prisma.InputJsonValue;
+    if (key === "wechat_mini") await validateWechatMiniSettings(this.prisma, this.integrationSecrets, body, state);
     await this.prisma.integrationConfig.upsert({
       where: { key },
       create: {

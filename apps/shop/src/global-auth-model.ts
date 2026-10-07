@@ -29,8 +29,8 @@ export function validGlobalIdentifier(value: string, channel?: "email" | "sms") 
 export function validNewPassword(value: string) { return value.length >= 8 && new TextEncoder().encode(value).length <= 72; }
 export function globalLegalPath(value: unknown): string {
   if (typeof value !== "string" || !/^\/api\/saydian-app\/v2\/content\/legal\/(user_agreement|privacy_policy)\?[^#]*$/.test(value) || /[\\\r\n]/.test(value)) throw new Error("协议暂时无法查看，请稍后重试。");
-  const url = new URL(value, "https://app.saydian.cn");
-  if (!url.searchParams.get("version") || !url.searchParams.get("locale")) throw new Error("协议已更新，请刷新后重试。");
+  const pairs = value.split("?", 2)[1]!.split("&").map(pair => pair.split("=", 2));
+  if (!pairs.some(([key, val]) => key === "version" && val) || !pairs.some(([key, val]) => key === "locale" && val)) throw new Error("协议已更新，请刷新后重试。");
   return "/global" + value;
 }
 export {

@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **380 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **381 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -88,7 +88,7 @@
 | `POST /api/v1/site/refresh` | 旧版刷新 | public | 表单 refresh_token | LegacySession | 核心服务 |
 | `POST /api/v1/site/logout` | 旧版退出 | member | 无请求体 | {logged_out:true} | 核心服务 |
 
-## 商城 H5/小程序兼容接口（70）
+## 商城 H5/小程序兼容接口（71）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -102,16 +102,17 @@
 | `POST /api/saidian-mall/v1/auth/wechat/h5/phone-code` | 微信授权后申请手机号登记凭证 | public | {bindTicket,identifier:E.164手机号,locale?,expectedMode?:test}；自动申请临时凭证必须传expectedMode=test | {challengeId,expiresIn,retryAfter,maskedIdentifier,mode:test/sms,sent,verificationRequired}；test不发短信、不返回已发送提示；expectedMode不符在发送前拒绝 | 仅global；临时模式需独立显式开关；test用途不被注册/重置/原验证码绑定端点接受 |
 | `POST /api/saidian-mall/v1/auth/wechat/h5/bind-phone` | 微信手机号登记或核验后登录 | public | {bindTicket,challengeId,code:6位数字,consentVersion,locale?,product?,ageConfirmed?}；Say Ring新会员必须product=say-ring且ageConfirmed=true，不收集出生日期 | raw会话；Say Ring缺少年龄确认返回400 minimum_age_confirmation_required；user含phoneTestMode/phoneVerified/phoneVerificationStatus。正式短信验证码即为手机号凭证，不再要求旧账号密码；临时模式不验证手机号，仅原微信账号或未占用号码新建，冲突不合并 | test会话只准账号读取/退出/H5刷新，关闭开关即失效；正式短信才可标记手机号已验证 |
 | `GET /api/saidian-mall/v1/auth/wechat/h5/account` | 读取H5当前会员安全资料 | member | Authorization: Bearer会员令牌 | raw安全会员资料；手机号掩码和真实核验状态；不返回其他会员或微信OpenID | 临时phone-test令牌只在此读接口/退出被接受；不能用于App、交易、健康或后台 |
-| `GET /api/saidian-mall/v1/storefront/capabilities` | 商城公开能力与维护状态 | public | query:locale?，query:product?；无请求体 | 登录、支付、积分和维护状态及不可用原因；global checkout含enabled/countryCodes:[CN]/currency:CNY/minimumCashCents；五H5支付渠道独立enabled/reason；不返回密钥 | 真实配置、密钥、回调地址及出站/只读门禁共同决定支付就绪；未配置不开放；不代表已取得供应商回执；global登录与未核验/临时账号限制不变 |
+| `GET /api/saidian-mall/v1/storefront/capabilities` | 商城公开能力与维护状态 | public | query:locale?，query:product?，query:client?；client=mini 可选，省略为H5；locale/product可选 | 登录、支付、积分和维护状态；mini只返回wechat_mini支付和login.wechatMini；不返回密钥 | 小程序独立配置、支付开关、登录与支付AppID一致及维护/出站门禁共同决定就绪；H5与App渠道不变；就绪不代表真实供应商验收 |
 | `GET /api/saidian-mall/v1/payments/:id` | 查询本人支付状态 | member | path:id；id=支付单UUID | raw支付记录；只有服务端确认成功才算付款完成 | 核心服务 |
 | `POST /api/saidian-mall/v1/auth/sms/request` | 商城短信登录验证码 | public | {mobile,usage?:login\|bind_mobile} | 发送状态；只有非生产ALLOW_TEST_OTP显式启用时返回开发验证码 | 短信供应商或隔离开发测试 |
 | `POST /api/saidian-mall/v1/auth/sms/login` | 商城短信登录 | public | {mobile,code,consentVersion,referralCode?} | 商城兼容会话；会员身份与主系统统一 | 短信供应商 |
 | `POST /api/saidian-mall/v1/auth/code/request` | 商城统一登录验证码 | public | {channel:sms\|email,identifier,locale?} | 手机号走国内sms集成（支持阿里云直连），邮箱与国际手机号返回一次性challengeId；不返回正式验证码 | 通道真实配置、频率限制和维护门禁 |
 | `POST /api/saidian-mall/v1/auth/code/login` | 商城手机号或邮箱验证码登录 | public | {channel:sms\|email,identifier,code,challengeId?,consentVersion,locale?,product?,ageConfirmed?,referralCode?}；国际 Say Ring 新会员必须product=say-ring且ageConfirmed=true，不收集出生日期 | 验证成功后返回商城raw会话；账号不存在时自动建立无密码会员；Say Ring缺少年龄确认返回400 minimum_age_confirmation_required | 验证码一次消费；停用账号拒绝；国内手机号使用sms记录，邮箱和国际手机号使用challengeId |
-| `POST /api/saidian-mall/v1/auth/wechat/mini` | 商城小程序微信登录 | public | {code,consentVersion,referralCode?} | 商城兼容会话；未验证配置时返回暂不可用 | 微信小程序 |
+| `POST /api/saidian-mall/v1/auth/wechat/mini` | 商城小程序微信登录 | public | {code,consentVersion,consentAccepted:true,locale?,referralCode?} | 已验证会员返回商城兼容会话；未关联已验证会员返回requiresAccountBinding:true，不创建匿名账号；未配置暂不可用 | wechat_mini独立凭证和当前已发布协议；小程序平台返回的OpenID/UnionID，不能由客户端提供 |
+| `POST /api/saidian-mall/v1/auth/wechat/mini/bind` | 当前已验证会员绑定小程序微信 | member | 鉴权；{code,consentVersion,consentAccepted:true,locale?} | {bound:true}；绑定冲突返回409，不合并账号或替换会话 | 微信小程序凭证、当前协议与已验证手机号/邮箱；锁定会员后逐项检查OpenID/UnionID归属 |
 | `POST /api/saidian-mall/v1/auth/refresh` | 轮换商城刷新令牌 | public | {refreshToken} | 新商城兼容会话 | 核心服务 |
 | `POST /api/saidian-mall/v1/auth/referral` | 锁定商城推荐关系 | member | {referralCode} | 推荐关系；已有关系不覆盖 | 核心服务 |
-| `GET /api/saidian-mall/v1/storefront/bootstrap` | 商城首页初始化 | public | query:ref?；ref=员工推荐号，可选 | 轮播、分类、精选商品、公开客服配置与capabilities | 主库商城 |
+| `GET /api/saidian-mall/v1/storefront/bootstrap` | 商城首页初始化 | public | query:ref?，query:client?；ref=员工推荐号，可选；client=mini可选 | 轮播、分类、精选商品、公开客服配置与对应容器capabilities | 主库商城 |
 | `GET /api/saidian-mall/v1/storefront/feedback` | 商城会员读取自己的反馈与客服回复 | member | 会员Bearer会话 | 最多100条，仅按当前登录userId返回；含问题、状态、replyContent和repliedAt，不返回后台管理员身份 | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/feedback` | 商城会员提交问题反馈 | member | {category,content:5–2000字,contact?:联系方式,attachments?:本人有效文件UUID数组} | {id,status}；服务端绑定当前登录会员，不能代替他人提交 | 主库客服反馈 |
 | `GET /api/saidian-mall/v1/storefront/products` | 商城商品列表 | public | query:*；page、pageSize、keyword、categoryId | 可售商品分页 | 主库商城 |

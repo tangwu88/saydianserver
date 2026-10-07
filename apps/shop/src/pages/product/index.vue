@@ -1,4 +1,8 @@
 <template>
+  <!-- #ifdef MP-WEIXIN -->
+  <canvas canvas-id="mall-product-poster" style="position:fixed;left:-10000px;width:750px;height:1080px" />
+  <view class="container"><button v-if="product" class="outline-btn" open-type="share">分享商品给微信好友</button></view>
+  <!-- #endif -->
   <DesktopHeader /><view v-if="posterVisible" class="poster-overlay" role="dialog" aria-modal="true" aria-label="商品分享海报" @click="closePoster"><view class="poster-card" @click.stop><view class="poster-heading"><b>分享商品</b><button aria-label="关闭分享海报" @click="closePoster"><UniIcons type="closeempty" color="currentColor" size="22" /></button></view><view v-if="posterBusy" class="poster-loading">正在生成分享海报…</view><image v-else-if="posterUrl" class="share-poster" :src="posterUrl" mode="widthFix"/><view v-else class="error-state">{{ posterError || '海报暂时无法生成' }}</view><text class="poster-tip">长按海报可保存，发送给好友后可扫码打开商品。</text><view class="poster-actions"><button class="outline-btn" :disabled="posterBusy || !posterUrl" @click="previewPoster"><UniIcons type="image-filled" color="currentColor" size="18" />长按上图保存</button><button class="primary-btn" :disabled="posterBusy" @click="copyShareLink"><UniIcons type="link" color="currentColor" size="18" />复制商品链接</button></view></view></view><view v-if="recovery" class="container recovery-entry"><text>上次下单结果待确认</text><button class="outline-btn" :disabled="busy" @click="restoreCheckout">恢复上次下单</button></view><view v-if="product" class="page"
     ><view class="container product-shortcuts"><button @click="goHome"><UniIcons type="home-filled" color="currentColor" size="18" />商城首页</button><button aria-label="分享商品" :disabled="posterBusy" @click="shareProduct"><UniIcons type="redo-filled" color="currentColor" size="18" />分享商品</button><button @click="goCart"><UniIcons type="cart-filled" color="currentColor" size="18" />购物车</button></view
     ><view class="container product-layout"
@@ -70,8 +74,9 @@
 <script setup lang="ts">
 import { mallStorage } from "../../realm";
 defineOptions({ inheritAttrs: false });
-import { onLoad, onShow } from "@dcloudio/uni-app";
-import { computed, ref } from "vue";
+import { onLoad, onShow, onShareAppMessage } from "@dcloudio/uni-app";
+import { computed, ref, getCurrentInstance } from "vue";
+import { buildMiniPoster, miniPosterEnvironment } from '../../mini-poster';
 import QRCode from "qrcode";
 import UniIcons from "@dcloudio/uni-ui/lib/uni-icons/uni-icons.vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
@@ -79,6 +84,10 @@ import saidianBrandLogo from "../../static/saidian-brand-logo.png";
 import { api, money, toast, requireLogin, clearCheckoutState, mallSessionStamp } from "../../api";
 import { currentPurchaseReferral, isLoggedIn } from "../../session";
 const id = ref(''), error = ref(''), busy = ref(false), posterVisible = ref(false), posterBusy = ref(false), posterUrl = ref(''), posterError = ref('');
+const posterScope = getCurrentInstance()?.proxy;
+if (miniPosterEnvironment()) onShareAppMessage(() => ({ title: String(product.value?.displayName || product.value?.name || '赛电商城'),
+  path: '/pages/product/index?id=' + encodeURIComponent(id.value) + (mallStorage.get('saidian-ref') ? '&ref=' + encodeURIComponent(String(mallStorage.get('saidian-ref'))) : ''),
+  ...(currentImage.value ? { imageUrl: currentImage.value } : {}), }));
 const recovery = ref<{ userId: string; key: string; session: string } | null>(null);
 const product = ref<any>(),
   selectedSku = ref<any>(),
@@ -107,7 +116,10 @@ function goHome(){uni.switchTab({url:'/pages/home/index'});}
 function goCart(){uni.switchTab({url:'/pages/cart/index'});}
 function productShareUrl() {
   const route = `#/pages/product/index?id=${encodeURIComponent(id.value)}`;
-  if (typeof location === 'undefined') return route;
+  if (typeof location === 'undefined') {
+    const referral = currentPurchaseReferral(String(mallStorage.get('saidian-user')?.id || '') || undefined);
+    return 'https://app.saydian.cn/saidian-mall/' + (referral ? '?ref=' + encodeURIComponent(referral) : '') + route;
+  }
   const referral = currentPurchaseReferral(String(mallStorage.get('saidian-user')?.id || '') || undefined);
   return `${location.origin}${location.pathname}${referral ? `?ref=${encodeURIComponent(referral)}` : ''}${route}`;
 }
@@ -129,6 +141,8 @@ async function shareProduct() {
 function closePoster(){posterVisible.value=false;}
 function previewPoster(){if(posterUrl.value)uni.previewImage({current:posterUrl.value,urls:[posterUrl.value]});}
 async function buildSharePoster():Promise<string>{
+  if (miniPosterEnvironment()) return buildMiniPoster('mall-product-poster', posterScope, { title: String(product.value.displayName || product.value.name || '赛电商品'),
+    price: money(selectedSku.value?.salePriceCents), image: currentImage.value, qrText: productShareUrl(), subtitle: '扫码打开商城网页，或用微信分享' });
   if(typeof document==='undefined')return QRCode.toDataURL(productShareUrl(),{width:720,margin:3,color:{dark:'#111827',light:'#ffffff'}});
   const canvas=document.createElement('canvas');canvas.width=750;canvas.height=1080;const ctx=canvas.getContext('2d');if(!ctx)throw new Error('canvas unavailable');
   ctx.fillStyle='#f3f5f8';ctx.fillRect(0,0,750,1080);ctx.fillStyle='#ffffff';roundRect(ctx,35,35,680,1010,32);ctx.fill();

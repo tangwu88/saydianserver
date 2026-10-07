@@ -23,10 +23,10 @@
   "tabBar": {
     "color": "#69717b", "selectedColor": "#005bad", "backgroundColor": "#ffffff", "borderStyle": "white",
     "list": [
-      { "pagePath": "pages/home/index", "text": "首页", "iconPath": "static/tab-home.svg", "selectedIconPath": "static/tab-home-active.svg" },
-      { "pagePath": "pages/category/index", "text": "分类", "iconPath": "static/tab-category.svg", "selectedIconPath": "static/tab-category-active.svg" },
-      { "pagePath": "pages/cart/index", "text": "购物车", "iconPath": "static/tab-cart.svg", "selectedIconPath": "static/tab-cart-active.svg" },
-      { "pagePath": "pages/profile/index", "text": "我的", "iconPath": "static/tab-profile.svg", "selectedIconPath": "static/tab-profile-active.svg" }
+      { "pagePath": "pages/home/index", "text": "首页", "iconPath": "static/tab-home.png", "selectedIconPath": "static/tab-home-active.png" },
+      { "pagePath": "pages/category/index", "text": "分类", "iconPath": "static/tab-category.png", "selectedIconPath": "static/tab-category-active.png" },
+      { "pagePath": "pages/cart/index", "text": "购物车", "iconPath": "static/tab-cart.png", "selectedIconPath": "static/tab-cart-active.png" },
+      { "pagePath": "pages/profile/index", "text": "我的", "iconPath": "static/tab-profile.png", "selectedIconPath": "static/tab-profile-active.png" }
     ]
   },
   "globalStyle": { "navigationBarTextStyle": "black", "navigationBarTitleText": "赛电商城", "navigationBarBackgroundColor": "#ffffff", "backgroundColor": "#f5f7f8" }

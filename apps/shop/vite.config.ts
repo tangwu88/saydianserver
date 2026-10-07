@@ -8,6 +8,14 @@ const uni =
 
 const realm = resolveMallConfig(process.env, process.env.UNI_PLATFORM === "mp-weixin");
 const publicBase = realm.publicBase;
+if (process.env.UNI_PLATFORM === "mp-weixin" && process.env.VITE_WECHAT_MINI_APP_ID) {
+  const appId = process.env.VITE_WECHAT_MINI_APP_ID;
+  if (!/^wx[A-Za-z0-9]{8,64}$/.test(appId)) throw new Error("微信小程序构建 AppID 不正确");
+  if (process.env.UNI_INPUT_DIR) {
+    const manifest = parseManifestJsonOnce(process.env.UNI_INPUT_DIR);
+    manifest["mp-weixin"] = { ...manifest["mp-weixin"], appid: appId };
+  }
+}
 if (process.env.UNI_PLATFORM === "h5") {
   process.env.UNI_H5_BASE = publicBase;
   // Uni reads this cached manifest for compiler/runtime options. Do not change the source file.
@@ -21,6 +29,11 @@ export default defineConfig({
   plugins: [{
     name: "saydian-realm-manifest", enforce: "pre",
     transform(code, id) {
+      if (process.env.UNI_PLATFORM === "mp-weixin" && process.env.VITE_WECHAT_MINI_APP_ID && id.endsWith("manifest-json-js")) {
+        const manifest = JSON.parse(code);
+        manifest["mp-weixin"] = { ...manifest["mp-weixin"], appid: process.env.VITE_WECHAT_MINI_APP_ID };
+        return { code: JSON.stringify(manifest), map: null };
+      }
       if (realm.realm === "global" && process.env.UNI_PLATFORM === "h5" && id.endsWith("pages-json-js")) {
         const pages = JSON.parse(code);
         pages.tabBar.selectedColor = "#D20B27";

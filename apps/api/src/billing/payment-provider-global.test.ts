@@ -149,7 +149,6 @@ describe("global payment adapter boundary", () => {
     { businessType: "HEALTH_REPORT" },
     { businessType: "HEALTH_MEMBERSHIP" },
     { businessType: undefined },
-    { channel: PaymentChannel.WECHAT_MINI },
     { channel: PaymentChannel.WECHAT_H5 },
     { channel: PaymentChannel.WECHAT_NATIVE },
   ])(
@@ -374,6 +373,16 @@ function billingFixture(currency = "CNY") {
   return { service, db, providers, resolve, input };
 }
 describe("global payment reservation preflight", () => {
+  it('rejects mini payments from a browser before resolving or reserving an order', async () => {
+    const h = billingFixture();
+    await expect(h.service.createPayment('user', { ...h.input, channel: 'wechat_mini', platform: 'h5' }, {})).rejects.toMatchObject({ status: 400, response: { errorKey: 'payment_channel_unavailable' } });
+    expect(h.resolve).not.toHaveBeenCalled(); expect(h.db.$transaction).not.toHaveBeenCalled();
+  });
+  it('permits only the mini rail in a mini container and still requires actual provider configuration', async () => {
+    const h = billingFixture();
+    await expect(h.service.createPayment('user', { ...h.input, channel: 'wechat_mini', platform: 'mini_program' }, {})).rejects.toThrow('synthetic unconfigured');
+    expect(h.providers.identity).toHaveBeenCalledWith(PaymentChannel.WECHAT_MINI); expect(h.db.$transaction).not.toHaveBeenCalled();
+  });
   it("rejects foreign currency before identity or pending intent reservation", async () => {
     const h = billingFixture("USD");
     await expect(
@@ -388,7 +397,6 @@ describe("global payment reservation preflight", () => {
   it.each([
     { businessType: "health_membership" },
     { businessType: "health_report" },
-    { channel: "wechat_mini" },
     { channel: "wechat_h5" },
     { channel: "wechat_native" },
   ])(

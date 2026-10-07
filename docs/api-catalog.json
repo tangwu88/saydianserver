@@ -8537,14 +8537,20 @@
           "name": "product",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "client",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "商城公开能力与维护状态",
-      "request": "无请求体",
-      "response": "登录、支付、积分和维护状态及不可用原因；global checkout含enabled/countryCodes:[CN]/currency:CNY/minimumCashCents；五H5支付渠道独立enabled/reason；不返回密钥",
-      "dependency": "真实配置、密钥、回调地址及出站/只读门禁共同决定支付就绪；未配置不开放；不代表已取得供应商回执；global登录与未核验/临时账号限制不变",
+      "request": "client=mini 可选，省略为H5；locale/product可选",
+      "response": "登录、支付、积分和维护状态；mini只返回wechat_mini支付和login.wechatMini；不返回密钥",
+      "dependency": "小程序独立配置、支付开关、登录与支付AppID一致及维护/出站门禁共同决定就绪；H5与App渠道不变；就绪不代表真实供应商验收",
       "successStatus": 200,
       "contract": {
         "status": "request-reviewed",
@@ -9707,9 +9713,41 @@
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "商城小程序微信登录",
-      "request": "{code,consentVersion,referralCode?}",
-      "response": "商城兼容会话；未验证配置时返回暂不可用",
-      "dependency": "微信小程序",
+      "request": "{code,consentVersion,consentAccepted:true,locale?,referralCode?}",
+      "response": "已验证会员返回商城兼容会话；未关联已验证会员返回requiresAccountBinding:true，不创建匿名账号；未配置暂不可用",
+      "dependency": "wechat_mini独立凭证和当前已发布协议；小程序平台返回的OpenID/UnionID，不能由客户端提供",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.bindWechatMini",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/auth/wechat/mini/bind",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "当前已验证会员绑定小程序微信",
+      "request": "鉴权；{code,consentVersion,consentAccepted:true,locale?}",
+      "response": "{bound:true}；绑定冲突返回409，不合并账号或替换会话",
+      "dependency": "微信小程序凭证、当前协议与已验证手机号/邮箱；锁定会员后逐项检查OpenID/UnionID归属",
       "successStatus": 201,
       "contract": {
         "status": "unreviewed",
@@ -9884,13 +9922,19 @@
           "name": "ref",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "client",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "商城首页初始化",
-      "request": "ref=员工推荐号，可选",
-      "response": "轮播、分类、精选商品、公开客服配置与capabilities",
+      "request": "ref=员工推荐号，可选；client=mini可选",
+      "response": "轮播、分类、精选商品、公开客服配置与对应容器capabilities",
       "dependency": "主库商城",
       "successStatus": 200,
       "contract": {

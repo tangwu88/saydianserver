@@ -1,7 +1,7 @@
 <template><view class="evidence"><view class="title">{{ readonly?'售后图片':'问题图片（选填）' }} <text>{{ rows.length }}/9</text></view><view v-if="!readonly" class="muted">仅用于处理本次售后，最多 9 张，每张不超过 10MB，支持 JPG / PNG / WebP。</view><view v-if="notice" class="notice" role="alert">{{ notice }}</view><view class="images"><view v-for="row in rows" :key="row.key" class="image-row"><image v-if="row.src" :src="row.src" mode="aspectFit"/><view v-else class="placeholder">{{ row.status==='uploading'?'正在上传':'售后图片' }}</view><text>{{ row.status==='uploading'?'上传中 '+row.progress+'%':row.status==='failed'?'上传失败':'已上传' }}</text><text v-if="row.error" class="failure">{{ row.error }}</text><button v-if="!readonly && row.status==='failed'" size="mini" :disabled="locked || !enabled" @click="retry(row)">重试上传</button><button v-if="row.id && !row.src" size="mini" :disabled="previewing.has(row.key)" @click="showPreview(row)">重新读取图片</button><button v-if="!readonly && !locked" size="mini" @click="remove(row)">移除</button></view></view><button v-if="!readonly" class="outline-btn" :disabled="locked || !enabled || choosing || rows.length>=9" @click="choose">{{ choosing?'正在选择…':'添加问题图片' }}</button><view v-if="locked && !readonly" class="muted">申请结果待确认，图片已随原申请锁定，不会重新上传。</view></view></template>
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue';
-import { createAfterSaleImageClient, evidenceFile, validEvidenceIds, type EvidenceFile } from '../after-sale-images';
+import { createAfterSaleImageClient, evidenceFile, selectedEvidenceFile, validEvidenceIds, type EvidenceFile } from '../after-sale-images';
 const props=defineProps<{modelValue:string[];locked?:boolean;readonly?:boolean}>();
 const emit=defineEmits<{(event:'update:modelValue',value:string[]):void;(event:'blocked',value:boolean):void}>();
 type Row={key:string;file?:EvidenceFile;id?:string;status:'uploading'|'failed'|'done';progress:number;src:string;error:string};
@@ -17,6 +17,19 @@ onBeforeUnmount(()=>{active=false;if(timer)clearInterval(timer);client.cancel();
 async function upload(row:Row){if(props.readonly||props.locked||!enabled.value||!current()||!row.file)return;row.status='uploading';row.error='';row.progress=0;changed();try{const value=await client.upload(row.file,p=>{if(current()&&rows.value.some(x=>x.key===row.key))row.progress=p;});if(!current()||!rows.value.some(x=>x.key===row.key))return;row.id=value.id;row.status='done';row.progress=100;delete row.file;changed();void showPreview(row);}catch{if(current()&&rows.value.some(x=>x.key===row.key)){row.status='failed';row.error='图片上传失败，请重试或移除。';changed();}}}
 function retry(row:Row){if(!props.readonly&&row.status==='failed')void upload(row);}
 function remove(row:Row){if(props.readonly||props.locked||!current())return;if(row.src)client.release(row.src);rows.value=rows.value.filter(x=>x.key!==row.key);changed();}
-function choose(){if(props.readonly||props.locked||!enabled.value||!current()||choosing.value||rows.value.length>=9)return;choosing.value=true;emit('blocked',true);uni.chooseImage({count:9-rows.value.length,sizeType:['original'],sourceType:['album','camera'],success(result){if(!current()||props.readonly||props.locked)return;const selected=Array.isArray(result.tempFiles)?result.tempFiles:[];for(const value of selected.slice(0,9-rows.value.length)){try{const file=evidenceFile(value);const row:Row={key:'image-'+Date.now()+'-'+Math.random().toString(36).slice(2),file,status:'uploading',progress:0,src:'',error:''};rows.value.push(row);void upload(rows.value[rows.value.length-1]!);}catch(e){notice.value=e instanceof Error?e.message:'图片不可用';}}},fail(e){if(current()&&!String(e.errMsg).includes('cancel'))notice.value='无法选择图片，请重试';},complete(){if(current()){choosing.value=false;changed();}}});}
+function choose(){
+  if(props.readonly||props.locked||!enabled.value||!current()||choosing.value||rows.value.length>=9)return;
+  choosing.value=true;emit('blocked',true);let resolving=false;
+  const done=()=>{if(current()){choosing.value=false;changed();}};
+  const add=(file:EvidenceFile)=>{if(!current()||props.readonly||props.locked||rows.value.length>=9)return;rows.value.push({key:'image-'+Date.now()+'-'+Math.random().toString(36).slice(2),file,status:'uploading',progress:0,src:'',error:''});void upload(rows.value[rows.value.length-1]!);};
+  uni.chooseImage({count:9-rows.value.length,sizeType:['original'],sourceType:['album','camera'],success(result){
+    if(!current()||props.readonly||props.locked)return;
+    const selected=Array.isArray(result.tempFiles)?result.tempFiles:[],pending:Promise<void>[]=[];
+    for(const value of selected.slice(0,9-rows.value.length)){try{add(evidenceFile(value));}catch{
+      pending.push(selectedEvidenceFile(value).then(add).catch(()=>{if(current())notice.value='请选择不超过 10MB 的 JPG、PNG 或 WebP 图片';}));
+    }}
+    if(pending.length){resolving=true;void Promise.all(pending).finally(done);}
+  },fail(e){if(current()&&!String(e.errMsg).includes('cancel'))notice.value='无法选择图片，请重试';},complete(){if(!resolving)done();}});
+}
 </script>
 <style scoped>.evidence{margin-top:20px;border:1px solid var(--line);padding:14px;border-radius:8px}.title{font-weight:600;display:flex;justify-content:space-between}.muted{font-size:12px;line-height:1.7;color:#667085}.images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0}.image-row{min-width:0;display:flex;flex-direction:column;gap:5px;font-size:12px;overflow-wrap:anywhere}.image-row image,.placeholder{width:100%;height:110px;background:#f4f6f8}.placeholder{display:flex;align-items:center;justify-content:center}.image-row button{margin:0;min-height:36px;font-size:12px}.failure,.notice{color:#a82435;font-size:12px;line-height:1.6}.outline-btn{margin-top:10px;min-height:44px}@media(max-width:400px){.images{grid-template-columns:repeat(2,minmax(0,1fr))}}</style>

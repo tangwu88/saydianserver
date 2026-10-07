@@ -1,4 +1,8 @@
 <template>
+  <!-- #ifdef MP-WEIXIN -->
+  <canvas canvas-id="mall-promotion-poster" style="position:fixed;left:-10000px;width:750px;height:1080px" />
+  <button v-if="data?.promotion?.referralCode" class="outline-btn" open-type="share">分享商城给微信好友</button>
+  <!-- #endif -->
   <DesktopHeader />
   <view :class="['page', memberMode && 'saydian-app-surface promotion-surface']">
     <view :class="['container', memberMode && 'promotion-content']">
@@ -82,7 +86,11 @@
 <script setup lang="ts">
 import { mallStorage } from "../../realm";
 import { onLoad, onShow } from "@dcloudio/uni-app";
-import { ref } from "vue";
+import { ref, getCurrentInstance } from "vue";
+import { onShareAppMessage } from '@dcloudio/uni-app';
+import { buildMiniPoster, miniPosterEnvironment, miniPosterSource } from '../../mini-poster';
+const posterScope = getCurrentInstance()?.proxy;
+if (miniPosterEnvironment()) onShareAppMessage(() => ({ title: '赛电商城', path: '/pages/home/index?ref=' + encodeURIComponent(String(data.value?.promotion?.referralCode || '')) }));
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import EmployeeWithdrawalPanel from "../../components/EmployeeWithdrawalPanel.vue";
 import saidianBrandLogo from "../../static/saidian-brand-logo.png";
@@ -173,7 +181,7 @@ async function load() {
   busy.value=true;
   loadError.value="";
   try {
-    const query=new URLSearchParams({range,page:String(page.value),pageSize:'10',...(range==='custom'?{from:from.value,to:to.value}:{})});
+    const query=Object.entries({range,page:String(page.value),pageSize:'10',...(range==='custom'?{from:from.value,to:to.value}:{})}).map(([key,value])=>encodeURIComponent(key)+'='+encodeURIComponent(value)).join('&');
     data.value = await promoterApi('/dashboard?'+query);
     couponLoadError.value="";
     try { coupons.value = await promoterApi("/coupons"); }
@@ -289,13 +297,14 @@ async function preview() {
     const poster = await buildPromotionPoster();
     uni.previewImage({ current: poster, urls: [poster] });
   } catch {
-    uni.previewImage({ current: fallback, urls: [fallback] });
+    previewQr(fallback);
   } finally {
     uni.hideLoading();
   }
 }
 async function buildPromotionPoster(): Promise<string> {
   const promotion = data.value?.promotion;
+  if (miniPosterEnvironment()) return buildMiniPoster('mall-promotion-poster', posterScope, { title: '赛电商城', subtitle: '推荐号 ' + String(promotion?.referralCode || ''), qrDataUrl: promotion?.qrDataUrl });
   const fallback = promotion?.posterDataUrl || promotion?.qrDataUrl;
   if (typeof document === "undefined") return fallback;
   const [logo, qr] = await Promise.all([loadPosterImage(saidianBrandLogo), loadPosterImage(promotion?.qrDataUrl)]);
@@ -373,7 +382,7 @@ function posterDrawContain(ctx: CanvasRenderingContext2D, image: HTMLImageElemen
   ctx.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
 }
 function previewQr(url?: string) {
-  if (url) uni.previewImage({ urls: [url] });
+  if (url) { const local = miniPosterSource(url); uni.previewImage({ urls: [local.path], complete: () => local.release() }); }
 }
 async function previewCouponGift(gift: any, coupon: any) {
   if (!gift?.qrDataUrl) return;
@@ -388,6 +397,7 @@ async function previewCouponGift(gift: any, coupon: any) {
   }
 }
 async function buildCouponPoster(gift: any, coupon: any): Promise<string> {
+  if (miniPosterEnvironment()) return buildMiniPoster('mall-promotion-poster', posterScope, { title: String(coupon?.name || '赛电商城优惠券'), price: money(coupon?.value), subtitle: '扫码打开商城网页领取', qrDataUrl: gift.qrDataUrl, footer: '每张分享券仅限一人领取' });
   if (typeof document === "undefined") return gift.qrDataUrl;
   const [logo, qr] = await Promise.all([loadPosterImage(saidianBrandLogo), loadPosterImage(gift.qrDataUrl)]);
   if (!qr) throw new Error("二维码不可用");

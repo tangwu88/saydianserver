@@ -1,4 +1,7 @@
 <template>
+  <!-- #ifdef MP-WEIXIN -->
+  <view v-if="user" class="container"><button class="outline-btn" @click="go('/pages/login/index?bindMini=1')">绑定当前会员微信支付</button><text class="small">手机或邮箱登录的会员，可在此绑定小程序微信身份。</text></view>
+  <!-- #endif -->
   <GlobalAccount v-if="isGlobalMall" :user="user" :error="accountError" :loading="accountLoading" :recent-orders="recentOrders" :recent-orders-loading="recentOrdersLoading" :recent-orders-error="recentOrdersError" @logout="logout" @refresh="loadAccount" /><template v-else>
   <DesktopHeader /><view class="page"
     ><view class="container profile-layout"

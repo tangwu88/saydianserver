@@ -142,8 +142,9 @@ export class CommerceCompatibilityController {
   storefrontCapabilities(
     @Query("locale") locale?: string,
     @Query("product") product?: string,
+    @Query("client") client?: string,
   ) {
-    return this.capabilities.publicCapabilities(locale, "h5", product);
+    return this.capabilities.publicCapabilities(locale, client === "mini" ? "mini" : "h5", product);
   }
 
   @Get("payments/:id")
@@ -196,14 +197,25 @@ export class CommerceCompatibilityController {
   }
 
   @Post("auth/wechat/mini")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   loginWechatMini(@Body() input: unknown) {
     const body = safeObject(input);
     return this.auth.loginWechatMini({
       code: String(body.code ?? ""),
       consentVersion: String(body.consentVersion ?? ""),
       consentSource: "commerce_mini_program",
+      consentAccepted: body.consentAccepted === true,
+      locale: body.locale,
       ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}),
     });
+  }
+
+  @Post("auth/wechat/mini/bind")
+  @UseGuards(UserAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  bindWechatMini(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    const body = safeObject(input);
+    return this.auth.bindWechatMini(user.id, { code: String(body.code ?? ''), consentVersion: String(body.consentVersion ?? ''), consentAccepted: body.consentAccepted === true, locale: body.locale, consentSource: 'commerce_mini_binding' });
   }
 
   @Post("auth/refresh")
@@ -223,13 +235,13 @@ export class CommerceCompatibilityController {
   }
 
   @Get("storefront/bootstrap")
-  async bootstrap(@Query("ref") referralCode?: string) {
+  async bootstrap(@Query("ref") referralCode?: string, @Query("client") client?: string) {
     const suffix = referralCode
       ? `?referralCode=${encodeURIComponent(referralCode)}`
       : "";
     const [storefront, capabilities] = await Promise.all([
       this.commerce.publicGet(`/storefront/bootstrap${suffix}`),
-      this.capabilities.publicCapabilities(),
+      this.capabilities.publicCapabilities(client === "mini" ? "zh-Hans" : undefined, client === "mini" ? "mini" : "h5"),
     ]);
     return { ...storefront, capabilities };
   }

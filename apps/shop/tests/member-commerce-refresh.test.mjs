@@ -12,8 +12,11 @@ test("member avatars, tab icons and fixed product actions are present in both st
   const pages = JSON.parse(read("pages.json"));
   assert.equal(pages.tabBar.list.length, 4);
   for (const item of pages.tabBar.list) {
-    assert.match(item.iconPath, /^static\/tab-[a-z-]+\.svg$/);
-    assert.match(item.selectedIconPath, /^static\/tab-[a-z-]+-active\.svg$/);
+    for (const path of [item.iconPath, item.selectedIconPath]) {
+      const icon = readFileSync(resolve(source, path));
+      assert.equal(icon.subarray(1, 4).toString(), 'PNG');
+      assert.ok(icon.length < 40960);
+    }
   }
   const product = read("pages/product/index.vue");
   assert.match(product, /class="fixed-buy-bar"/);

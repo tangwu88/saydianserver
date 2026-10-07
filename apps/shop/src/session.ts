@@ -59,9 +59,7 @@ export function captureReferral(explicitReferral?: string): void {
     (route?.options?.scene
       ? decodeURIComponent(String(route.options.scene)).split(".")[0]
       : "") ||
-    new URLSearchParams(
-      typeof location !== "undefined" ? location.hash.split("?")[1] || "" : "",
-    ).get("ref") ||
+    (typeof location !== "undefined" ? new URLSearchParams(location.hash.split("?")[1] || "").get("ref") : "") ||
     locationSearch;
   const normalized = String(ref || "").trim();
   if (isGlobalMall) {

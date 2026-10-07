@@ -236,6 +236,10 @@ export class BillingService {
       currency: resolved.currency,
     });
     const identity = await this.providers.identity(channel);
+    if (channel === PaymentChannel.WECHAT_MINI) {
+      const payer = await this.prisma.user.findUnique({ where: { id: userId }, select: { wechatOpenId: true } });
+      if (!payer?.wechatOpenId) throw new BadRequestException("请先使用该小程序微信登录后再付款");
+    }
     const integrationKey = paymentIntegrationKeyForNewIntent(channel);
     if (channel === PaymentChannel.WECHAT_JSAPI) {
       if (!identity.appId)

@@ -43,6 +43,9 @@ import {
   requireGlobalWechatPhoneTest,
 } from "./global-wechat-policy";
 import { isOwnPromoter } from "../common/member-promoter-identity";
+import { wechatMiniConfiguration } from "../common/wechat-mini-config";
+import { globalLegalBundle } from "./global-legal";
+import { businessWritesPaused, shouldPauseWorkers } from "@saydian/app-contracts";
 
 const accessLifetimeSeconds = 15 * 60;
 const refreshLifetimeMs = 30 * 24 * 60 * 60 * 1000;
@@ -54,6 +57,7 @@ export interface RegisterInput {
   consentVersion: string;
   consentSource: string;
 }
+type WechatMiniLoginInput = { code: string; consentVersion: string; consentSource: string; referralCode?: string; locale?: unknown; consentAccepted?: boolean };
 
 @Injectable()
 export class AuthService {
@@ -501,34 +505,15 @@ export class AuthService {
     return this.mallSession(await this.issueSession(user.id));
   }
 
-  async loginWechatMini(input: {
-    code: string;
-    consentVersion: string;
-    consentSource: string;
-    referralCode?: string;
-  }) {
-    if (process.env.WECHAT_MINI_LOGIN_ENABLED !== "true") {
-      throw new ServiceUnavailableException("微信小程序登录尚未启用");
-    }
+  private async exchangeWechatMini(input: WechatMiniLoginInput) {
+    if (businessWritesPaused(process.env) || shouldPauseWorkers(process.env)) throw new ServiceUnavailableException("系统维护中，小程序登录暂不可用");
+    if (input.consentAccepted !== true) throw new BadRequestException("请先阅读并同意用户协议与隐私政策");
     const code = input.code.trim();
-    if (!code) throw new BadRequestException("微信登录凭证缺失");
+    if (!code || code.length > 512) throw new BadRequestException("微信登录凭证缺失或无效");
     this.assertConsentVersion(input.consentVersion);
-    const integration = await this.prisma.integrationConfig.findUnique({
-      where: { key: "wechat_pay" },
-    });
-    if (!integration || integration.state !== IntegrationState.CONFIGURED) {
-      throw new ServiceUnavailableException("微信登录暂时无法使用，请稍后再试");
-    }
-    const publicConfig = safeJsonObject(integration.publicConfig);
-    const secrets = await this.integrationSecrets.resolve("wechat_pay", {
-      appIdMini: "WECHAT_PAY_APP_ID_MINI",
-      appSecretMini: "WECHAT_MINI_APP_SECRET",
-    });
-    const appId = secrets.appIdMini ?? String(publicConfig.appIdMini ?? "");
-    const appSecret = secrets.appSecretMini ?? "";
-    if (!appId || !appSecret) {
-      throw new ServiceUnavailableException("微信登录暂时无法使用，请稍后再试");
-    }
+    const legal = await globalLegalBundle(this.prisma, input.locale ?? "zh-Hans");
+    if (!legal || legal.consentVersion !== input.consentVersion) throw new BadRequestException("协议已更新，请重新阅读并同意");
+    const { appId, appSecret } = await wechatMiniConfiguration(this.prisma, this.integrationSecrets);
     const response = await fetch(
       `https://api.weixin.qq.com/sns/jscode2session?appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(appSecret)}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`,
       { signal: AbortSignal.timeout(15_000) },
@@ -536,10 +521,35 @@ export class AuthService {
     const result = safeJsonObject(await response.json().catch(() => ({})));
     const openId = String(result.openid ?? "").trim();
     const unionId = String(result.unionid ?? "").trim() || null;
-    if (!response.ok || !openId) {
+    if (!response.ok || Number(result.errcode ?? 0) !== 0 || !/^[A-Za-z0-9_-]{8,128}$/.test(openId)) {
       throw new UnauthorizedException("微信登录失败，请稍后重试");
     }
-    await markIntegrationVerified(this.prisma, "wechat_pay");
+    await markIntegrationVerified(this.prisma, "wechat_mini");
+    return { openId, unionId };
+  }
+
+  async bindWechatMini(userId: string, input: WechatMiniLoginInput) {
+    const { openId, unionId } = await this.exchangeWechatMini(input);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId}::uuid FOR UPDATE`;
+      const [user, owner, unionOwner] = await Promise.all([
+        tx.user.findUnique({ where: { id: userId } }),
+        tx.user.findUnique({ where: { wechatOpenId: openId } }),
+        unionId ? tx.user.findUnique({ where: { wechatUnionId: unionId } }) : null,
+      ]);
+      if (!user || user.status !== UserStatus.ACTIVE || (!user.mobileVerifiedAt && !user.emailVerifiedAt)) throw new UnauthorizedException('请先使用已验证的手机号或邮箱登录');
+      if ((owner && owner.id !== userId) || (unionOwner && unionOwner.id !== userId)
+        || (user.wechatOpenId && user.wechatOpenId !== openId) || (unionId && user.wechatUnionId && user.wechatUnionId !== unionId)) {
+        throw new ConflictException('微信已关联其他账号，请联系客服核验，不能自动合并账号');
+      }
+      await tx.user.update({ where: { id: userId }, data: { wechatOpenId: openId, ...(unionId ? { wechatUnionId: unionId } : {}) } });
+      await this.recordLegalConsent(tx, userId, input.consentVersion, 'commerce_mini_binding');
+      return { bound: true };
+    });
+  }
+
+  async loginWechatMini(input: WechatMiniLoginInput) {
+    const { openId, unionId } = await this.exchangeWechatMini(input);
     const employee = input.referralCode
       ? await this.prisma.commerceEmployee.findFirst({
           where: { referralCode: input.referralCode, active: true },
@@ -559,8 +569,8 @@ export class AuthService {
       if (existing && existing.status !== UserStatus.ACTIVE) {
         throw new UnauthorizedException("账号不可用，请联系客服核验状态");
       }
-      const saved = existing
-        ? await tx.user.update({
+      if (!existing || (!existing.mobileVerifiedAt && !existing.emailVerifiedAt)) return null;
+      const saved = await tx.user.update({
             where: { id: existing.id },
             data: {
               wechatOpenId: openId,
@@ -568,14 +578,6 @@ export class AuthService {
               ...(existing.referralEmployeeId || !employee
                 ? {}
                 : { referralEmployeeId: employee.id }),
-            },
-          })
-        : await tx.user.create({
-            data: {
-              wechatOpenId: openId,
-              ...(unionId ? { wechatUnionId: unionId } : {}),
-              nickname: "微信用户",
-              ...(employee ? { referralEmployeeId: employee.id } : {}),
             },
           });
       await this.recordLegalConsent(
@@ -586,6 +588,7 @@ export class AuthService {
       );
       return saved;
     });
+    if (!user) return { requiresAccountBinding: true };
     return this.mallSession(await this.issueSession(user.id));
   }
 

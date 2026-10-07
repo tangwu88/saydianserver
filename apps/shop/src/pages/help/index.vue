@@ -1,5 +1,5 @@
 <template>
-  <GlobalHelp v-if="isGlobalMall && ['agreement', 'privacy'].includes(active)" :key="active" :initial-section="active" />
+  <GlobalHelp v-if="['agreement', 'privacy'].includes(active)" :key="active" :initial-section="active" />
   <template v-else>
     <DesktopHeader />
     <view class="page">
@@ -150,13 +150,13 @@ function orders(): void { uni.navigateTo({ url: "/pages/orders/index" }); }
 function callService(): void { if (/^[+\d -]{5,30}$/.test(String(service.phone))) uni.makePhoneCall({ phoneNumber: String(service.phone) }); else toast("客服电话格式尚未配置正确"); }
 function openService(): void {
   try {
-    const url = new URL(String(service.wecomUrl));
-    if (url.protocol !== "https:" || url.hostname !== "work.weixin.qq.com" || url.username || url.password) throw new Error("企业客服地址未正确配置");
+    const target = String(service.wecomUrl);
+    if (!/^https:\/\/work\.weixin\.qq\.com\//.test(target) || /[\\\s]/.test(target)) throw new Error("企业客服地址未正确配置");
     /* #ifdef H5 */
-    location.assign(url.href);
+    location.assign(target);
     /* #endif */
     /* #ifndef H5 */
-    uni.setClipboardData({ data: url.href });
+    uni.setClipboardData({ data: target });
     /* #endif */
   } catch (cause) { toast(cause); }
 }

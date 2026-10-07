@@ -7,6 +7,13 @@ const provider = (value: string, label: string) => p('provider', '接入方式',
 const url = (key: string, label: string, hint: string, extra: Partial<ConfigField> = {}) => p(key, label, hint, { kind: 'url', ...extra });
 const appIdentity = [s('appId', '应用编号（AppID）', '从对应微信应用的开发资料中复制；不同类型应用不能混用。'), s('appSecret', '应用密钥（AppSecret）', '由该微信应用的管理员提供，不是微信登录密码。')];
 export const integrationDefinitions: IntegrationDefinition[] = [
+  { key: 'wechat_mini', title: '商城微信小程序', group: '登录与消息', short: '小', purpose: '配置微信小程序登录，并单独控制小程序支付。', prepare: '准备微信公众平台小程序 AppID 和 AppSecret，源码 manifest.json 与开发者工具须使用同一 AppID。', note: '凭证加密保存且不回显。支付还需在“微信支付（H5 / 小程序）”填写同一小程序 AppID 和商户资料，并在微信商户平台绑定。域名清单仅作配置交接，必须同时在微信公众平台设置；保存此页不会替你更改微信平台。已有小程序账号时更换 AppID 需独立核验。', fields: [
+    ...appIdentity,
+    p('paymentEnabled', '启用小程序支付', '默认关闭；商户关联和登录、支付 AppID 一致后再启用。', { kind: 'boolean', defaultValue: 'false' }),
+    p('requestDomains', 'request 合法域名', '一行一个域名，例如 app.saydian.cn；在微信公众平台同步设置，不含协议或路径。', { kind: 'list' }),
+    p('uploadDomains', 'uploadFile 合法域名', '售后图片上传使用 app.saydian.cn，在微信公众平台同步设置。', { kind: 'list' }),
+    p('downloadDomains', 'downloadFile 合法域名', '商品和海报图片实际使用的域名，在微信公众平台同步设置。', { kind: 'list' }),
+  ] },
   { key: 'sms', title: '短信验证码', group: '登录与消息', short: '短', purpose: '发送注册、登录和绑定手机的验证码。', prepare: '阿里云直连需准备 RAM 用户的 AccessKey ID、AccessKey Secret、已审核通过的短信签名名称和验证码模板 Code；模板变量必须为 code。也可继续使用现有短信中转接口。', note: '请使用仅有短信发送权限的 RAM 用户，不要使用阿里云主账号 AccessKey。保存不会发送测试短信；首次真实发送成功后才会显示验证通过。', fields: [
     p('provider', '接入方式', '阿里云直连会由本服务调用官方 SendSms 接口；短信中转接口用于兼容现有服务。', { required: true, defaultValue: 'aliyun', options: [{ value: 'aliyun', label: '阿里云短信（直连）' }, { value: 'webhook', label: '短信中转接口' }] }),
     s('accessKeyId', 'AccessKey ID', '从阿里云 RAM 用户的 AccessKey 中复制；不要填写账号名。', { providers: ['aliyun'] }),
@@ -26,14 +33,14 @@ export const integrationDefinitions: IntegrationDefinition[] = [
   { key: 'wechat_official', title: '商城微信登录', group: '登录与消息', short: '商', purpose: '在微信内打开商城时使用公众号网页授权。', prepare: '准备公众号 AppID、AppSecret 和授权返回地址；公众号网页授权域名需由维护人员核对。', note: '返回地址须与服务器配置的商城地址同源，不带问号参数或 #。要使用微信内支付，还需与微信支付中的公众号 AppID 一致。', fields: [...appIdentity, url('redirectUri', '授权返回地址', '由维护人员提供的商城授权返回页面地址，不是接口地址。', { required: true })] },
   { key: 'push', title: 'App 消息推送', group: '登录与消息', short: '推', purpose: '通过极光推送向手机发送通知。', prepare: '准备极光推送应用的 AppKey 和 Master Secret，并确认 App 已接入同一推送应用。', note: '保存后需要维护人员重启消息任务服务才能加载新配置。此页不发送测试通知。', fields: [provider('jpush', '极光推送'), s('appKey', '应用标识（AppKey）', '从极光应用资料复制。'), s('masterSecret', '服务端密钥（Master Secret）', '从同一极光应用资料复制，仅在服务器使用。')] },
   { key: 'say_ring_push', title: 'Say Ring 极光推送', group: '登录与消息', short: '戒', purpose: '只向 Say Ring（cn.saydian.ring）发送通知，不与其他 App 的推送身份混用。', prepare: '在极光控制台为 Android 包名 cn.saydian.ring 创建或选择独立应用，准备该应用的 AppKey 和 Master Secret。', note: 'AppKey 还必须写入 Say Ring 安装包的受保护构建配置；后台与安装包必须使用同一个极光应用。保存后需要维护人员重启消息任务服务，此页不会主动发送测试通知。', fields: [provider('jpush', '极光推送'), s('appKey', 'Say Ring AppKey', '从包名 cn.saydian.ring 对应的极光应用资料复制。'), s('masterSecret', 'Say Ring Master Secret', '仅供服务端调用极光接口，加密保存且不会回显。')] },
-  { key: 'wechat_pay', title: '微信支付（H5 / 小程序）', group: '支付收款', short: '付', purpose: '接收商城网页和小程序的微信付款并处理退款。', prepare: '准备微信商户号、商户证书序列号、商户私钥、微信平台公钥及编号、API v3 密钥，以及公众号或小程序 AppID。', note: '此处保留现有 H5、小程序和扫码支付资料，不供手机 App 支付读取。小程序 AppSecret 还用于小程序登录。', fields: [
+  { key: 'wechat_pay', title: '微信支付（H5 / 小程序）', group: '支付收款', short: '付', purpose: '接收商城网页和小程序的微信付款并处理退款。', prepare: '准备微信商户号、商户证书序列号、商户私钥、微信平台公钥及编号、API v3 密钥，以及公众号或小程序 AppID。', note: '此处保留现有 H5、小程序和扫码支付资料，不供手机 App 支付读取。小程序登录凭证请在“商城微信小程序”中单独配置。', fields: [
     s('merchantId', '微信商户号', '商户收款账户编号，不是 AppID。'), s('serialNo', '商户证书序列号', '与下面商户私钥配套的证书序列号。'),
     s('apiV3Key', 'API v3 密钥', '微信商户平台设置的 32 字节密钥，不是商户登录密码。'),
     s('privateKeyPem', '商户私钥', '粘贴完整 PEM 内容，包括 BEGIN / END 两行。', { kind: 'pem' }),
     s('platformSerialNo', '微信平台公钥编号或证书序列号', '须与下面用于验证微信通知的公钥匹配。'), s('platformPublicKeyPem', '微信平台公钥', '不是商户私钥。粘贴完整公钥或平台证书 PEM。', { kind: 'pem' }),
     s('appIdOfficial', '公众号 AppID（微信内 / H5 / 扫码）', '微信内支付应与“商城微信登录”的公众号 AppID 相同。', { required: false }),
     s('appIdApp', '历史 AppID（仅存量交易）', '只用于迁移前已创建 App 交易的查单、关单和退款；新 App 支付不会读取此项。', { required: false, advanced: true }),
-    s('appIdMini', '小程序 AppID', '需要小程序支付或登录时填写，不要填公众号 AppID。', { required: false }), s('appSecretMini', '小程序 AppSecret', '需要小程序微信登录时填写；替换时请保留仍在使用的这项资料。', { required: false }),
+    s('appIdMini', '小程序 AppID', '小程序支付时填写，须与“商城微信小程序”的 AppID 一致。', { required: false }), s('appSecretMini', '历史小程序 AppSecret', '仅保留历史资料；新小程序登录请在“商城微信小程序”中配置。', { required: false, advanced: true }),
     url('notifyUrl', '付款通知地址', '通常留空，由服务器生成；自定义时请由维护人员核对。', { advanced: true }), url('refundNotifyUrl', '退款通知地址', '通常留空，由服务器生成。', { advanced: true }),
   ] },
   { key: 'wechat_pay_app', title: 'App 微信支付', group: '支付收款', short: '微', purpose: '仅接收手机 App 内发起的微信付款并处理退款。', prepare: '准备移动应用对应的微信商户号、移动应用 AppID、商户私钥、平台公钥和 API v3 密钥。', note: '默认未配置，不读取也不回退使用“微信支付（H5 / 小程序）”中的任何凭据。', fields: [
@@ -108,6 +115,10 @@ export function validateIntegrationDraft(row: IntegrationRow, definition: Integr
     if (f.kind === 'list' && value.split(/[\n,，]+/).filter(v => v.trim()).some(v => !/^(?:[a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+(?::\d+)?$/.test(v.trim()))) errors[f.key] = '每行填写一个域名，不带协议、路径或通配符。';
   }
   if (definition.key === 'wechat_pay' && draft.replaceSecrets && !['appIdMini', 'appIdOfficial'].some(key => String(draft.values[key] ?? '').trim())) errors.appIdOfficial = '请至少填写公众号或小程序 AppID。';
+  if (definition.key === 'wechat_mini') for (const key of ['requestDomains', 'uploadDomains', 'downloadDomains']) {
+    const domains = String(draft.values[key] || '').split(/[\n,，]+/).filter(value => value.trim());
+    if (domains.length > 30 || domains.some(value => !/^(?:[a-z0-9-]+\.)+[a-z]{2,63}$/i.test(value.trim()))) errors[key] = '请输入域名，不含协议、端口、路径或通配符。';
+  }
   return errors;
 }
 export function integrationPayload(row: IntegrationRow, definition: IntegrationDefinition, draft: IntegrationDraft): { state: string; publicConfig: Record<string, unknown>; secrets?: Record<string, string> } {

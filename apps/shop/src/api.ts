@@ -92,11 +92,12 @@ function isWeixinMiniProgram(): boolean {
   return false;
 }
 
-export async function ensureMiniProgramSession(force = false): Promise<any> {
+export async function ensureMiniProgramSession(force = false, consent?: { accepted: boolean; version: string; locale?: string }): Promise<any> {
   if (isGlobalMall) throw new Error("请在浏览器中登录。");
   if (!isWeixinMiniProgram()) throw new Error("当前环境不是微信小程序");
   if (!force && mallStorage.get("saidian-token"))
     return mallStorage.get("saidian-user");
+  if (!consent?.accepted || !consent.version) throw new Error("请先阅读并同意用户协议与隐私政策");
   if (miniLoginPromise) return miniLoginPromise;
   const login = (async () => {
     const result: any = await new Promise((resolve, reject) =>
@@ -107,10 +108,13 @@ export async function ensureMiniProgramSession(force = false): Promise<any> {
       method: "POST",
       data: {
         code: result.code,
-        consentVersion: COMMERCE_CONSENT_VERSION,
+        consentVersion: consent.version,
+        consentAccepted: true,
+        locale: consent.locale || "zh-Hans",
         referralCode: String(mallStorage.get("saidian-ref") || ""),
       },
     });
+    if (response.requiresAccountBinding) return response;
     await saveMallSession(response);
     return response.user;
   })();
@@ -132,6 +136,9 @@ export async function api<T = any>(
     sessionStamp?: string;
   } = {},
 ): Promise<T> {
+  if (isWeixinMiniProgram() && ["/storefront/capabilities", "/storefront/bootstrap"].includes(path.split("?")[0]!)) {
+    path += (path.includes("?") ? "&" : "?") + "client=mini&locale=zh-Hans";
+  }
   if (isGlobalMall && !globalApiAllowed(path, options.method || "GET")) throw new Error(globalCommerceNotice);
   if (isGlobalMall && options.auth && mallStorage.get("saidian-user")?.phoneTestMode === true && path.split("?")[0] !== "/auth/wechat/h5/account") {
     throw Object.assign(new Error("购买前请使用已验证的手机号或邮箱登录，当前账号登录状态已保留。"), { status: 403, errorKey: "account_verification_required" });
@@ -139,11 +146,6 @@ export async function api<T = any>(
   let expectedStamp = options.sessionStamp ?? mallSessionStamp();
   if (options.auth && sessionSyncStarted && identityStamp() !== observedSession) throw changedSession();
   let token = String(mallStorage.get("saidian-token") || "");
-  if (options.auth && !token && isWeixinMiniProgram()) {
-    await ensureMiniProgramSession();
-    if (options.sessionStamp === undefined) expectedStamp = mallSessionStamp();
-    token = String(mallStorage.get("saidian-token") || "");
-  }
   if (options.auth && !token) { requireLogin(); throw new Error("请先登录"); }
   if ((options.auth || path.startsWith("/auth/")) && !currentSession(expectedStamp)) throw changedSession();
   return request<T>(path, options, token, true, expectedStamp);

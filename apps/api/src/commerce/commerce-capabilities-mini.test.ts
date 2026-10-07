@@ -17,12 +17,26 @@ function fixture(input: { mini?: string; official?: string; oauth?: string; conf
   const configured = input.oauth ? vi.fn().mockResolvedValue({ appId: input.oauth })
     : vi.fn().mockRejectedValue(new Error("Official OAuth unconfigured"));
   const verification = { capabilities: vi.fn().mockResolvedValue({ email: false, sms: false, smsCountries: [] }) };
-  return { service: new CommerceCapabilitiesService(db as any, secrets as any, { configured, globalCapabilities: vi.fn().mockResolvedValue({ wechatH5: { enabled: Boolean(input.oauth) } }) } as any, verification as any), secrets };
+  const official = { configured, globalCapabilities: vi.fn().mockResolvedValue({ wechatH5: { enabled: Boolean(input.oauth) }, consentVersion: 'published-v1', legal: { userAgreement: {}, privacyPolicy: {} } }) };
+  return { service: new CommerceCapabilitiesService(db as any, secrets as any, official as any, verification as any), secrets, db, official };
 }
 const payment = (result: Awaited<ReturnType<CommerceCapabilitiesService["publicCapabilities"]>>, channel: string) =>
   result.payments.find(item => item.channel === channel);
 
 describe("retained legacy payment configuration does not activate unused channels", () => {
+  it('advertises only the explicitly enabled mini rail with matching dedicated credentials', async () => {
+    const h = fixture({ mini: miniAppId });
+    const rows = await h.db.integrationConfig.findMany();
+    h.db.integrationConfig.findMany.mockResolvedValue([...rows, { key: 'wechat_mini', state: 'CONFIGURED', publicConfig: { paymentEnabled: true } }] as any);
+    const pay = await h.secrets.resolve();
+    h.secrets.resolve.mockImplementation(async (key?: string) => key === 'wechat_mini' ? { appId: miniAppId, appSecret: 'synthetic-mini-secret-32' } as any : pay);
+    const result = await h.service.publicCapabilities('zh-Hans', 'mini');
+    expect(result.payments).toEqual([{ channel: 'wechat_mini', environments: ['mini'], enabled: true }]);
+    expect(result.login.wechatMini).toEqual({ enabled: true });
+    expect(JSON.stringify(result)).not.toMatch(/appId|appSecret|merchantId|synthetic/);
+    h.db.integrationConfig.findMany.mockResolvedValue(rows);
+    expect((await h.service.publicCapabilities('zh-Hans', 'mini')).payments[0]?.enabled).toBe(false);
+  });
   beforeEach(() => {
     vi.stubEnv("NODE_ENV", "development"); vi.stubEnv("H5_DEMO_ENABLED", "true"); vi.stubEnv("ALLOW_TEST_OTP", "false");
     vi.stubEnv("MAINTENANCE_READ_ONLY", "false"); vi.stubEnv("BUSINESS_WRITES_PAUSED", "false"); vi.stubEnv("WORKER_OUTBOUND_PAUSED", "false");

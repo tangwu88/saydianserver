@@ -103,6 +103,7 @@ async function fixture(
   };
   const prisma = {
     $transaction: async (operation: any) => operation(tx),
+    globalLegalDocument: { findMany: async () => ['user_agreement', 'privacy_policy'].map(documentType => ({ documentType, version: input.consentVersion, contentHtml: '<p>Synthetic policy</p>', locale: 'zh-Hans' })) },
     integrationConfig: {
       findUnique: async () => ({
         state:
@@ -119,8 +120,8 @@ async function fixture(
     {} as any,
     {
       resolve: async () => ({
-        appIdMini: "wxSynthetic20260909",
-        appSecretMini: "synthetic-test-only-secret",
+        appId: "wxSynthetic20260909",
+        appSecret: "synthetic-test-only-secret",
       }),
     } as any,
     {
@@ -204,6 +205,7 @@ async function fixture(
   }
   try {
     await run({
+      disableMini: () => { options.configured = false; },
       auth,
       calls,
       user: () => saved,
@@ -228,7 +230,8 @@ describe("WeChat sign-in cannot reactivate inactive consumer identities", () => 
   for (const kind of ["mini", "app"] as Kind[]) {
     it(`${kind} remains disabled unless independently enabled`, async () => {
       await fixture({ kind }, async h => {
-        delete process.env[kind === "mini" ? "WECHAT_MINI_LOGIN_ENABLED" : "LEGACY_WECHAT_APP_LOGIN_ENABLED"];
+        if (kind === 'mini') h.disableMini();
+        else delete process.env.LEGACY_WECHAT_APP_LOGIN_ENABLED;
         await assert.rejects(h.login(), (error: any) => error.getStatus?.() === 503);
         assert.equal(h.calls.fetches + h.calls.exchanges + h.calls.sessions.length, 0);
       });
@@ -309,6 +312,7 @@ describe("WeChat sign-in cannot reactivate inactive consumer identities", () => 
       async () => {
         await fixture({ kind }, async (h) => {
           const session = await h.login();
+          if(kind === 'mini'){assert.deepEqual(session,{requiresAccountBinding:true});assert.equal(h.calls.creates.length+h.calls.updates.length+h.calls.consents.length+h.calls.sessions.length,0);return;}
           assert.equal(h.calls.creates.length, 1);
           assert.equal(Object.hasOwn(h.calls.creates[0].data, "mobile"), false);
           assert.equal(
@@ -329,6 +333,7 @@ describe("WeChat sign-in cannot reactivate inactive consumer identities", () => 
           async (h) => {
             const session = await h.login();
             assert.equal(h.user().mobileVerifiedAt, null);
+            if(kind === 'mini'){assert.deepEqual(session,{requiresAccountBinding:true});assert.equal(h.calls.updates.length+h.calls.consents.length+h.calls.sessions.length,0);return;}
             await h.guard(session, true);
           },
         );

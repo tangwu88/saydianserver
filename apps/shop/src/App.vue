@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onLaunch } from "@dcloudio/uni-app";
-import { ensureMiniProgramSession, startMallSessionSync } from "./api";
+import { startMallSessionSync } from "./api";
 import { bindReferral, captureReferral, isLoggedIn } from "./session";
 import { isGlobalMall } from "./realm";
 import { installGlobalNavigation } from "./global-navigation";
@@ -14,13 +14,9 @@ onLaunch((options) => {
       ? decodeURIComponent(String(query.scene)).split(".")[0]
       : undefined);
   captureReferral(referral);
-  if (!isGlobalMall) {
-    /* #ifdef MP-WEIXIN */
-    void ensureMiniProgramSession()
-      .then(() => bindReferral())
-      .catch(() => undefined);
-    /* #endif */
-  }
+  /* #ifdef MP-WEIXIN */
+  if (isLoggedIn()) void bindReferral();
+  /* #endif */
   /* #ifdef H5 */
   if (typeof location === "undefined") return;
   const pageUrl = new URL(location.href);

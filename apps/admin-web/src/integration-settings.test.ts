@@ -7,10 +7,12 @@ const definition = (key: string) => integrationDefinitions.find(row => row.key =
 const row = (key = 'sms', extra: Partial<IntegrationRow> = {}): IntegrationRow => ({ key, state: 'UNCONFIGURED', publicConfig: {}, ...extra });
 describe('plain-language integration settings', () => {
   it('covers all built-in services without conflating official and native WeChat', () => {
-    expect(new Set(integrationDefinitions.map(d => d.key)).size).toBe(16);
+    expect(new Set(integrationDefinitions.map(d => d.key)).size).toBe(17);
     expect(definition('wechat_official').fields.some(f => f.key === 'redirectUri')).toBe(true);
     expect(definition('wechat_login').fields.some(f => f.key === 'redirectUri')).toBe(false);
     expect(definition('say_ring_push').prepare).toContain('cn.saydian.ring');
+    expect(definition('wechat_mini').fields.find(f => f.key === 'appSecret')?.secret).toBe(true);
+    expect(definition('wechat_mini').fields.find(f => f.key === 'paymentEnabled')?.defaultValue).toBe('false');
   });
   it('does not let a saved status masquerade as a successful provider call', () => {
     expect(integrationStatus(row('sms', { state: 'CONFIGURED' })).label).toContain('待验证');

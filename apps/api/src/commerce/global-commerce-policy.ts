@@ -64,6 +64,7 @@ export const globalAppCommercePaymentChannels = [
 export const globalCommercePaymentChannels = [
   ...globalH5CommercePaymentChannels,
   ...globalAppCommercePaymentChannels,
+  "WECHAT_MINI",
 ] as const;
 
 export function globalCommercePaymentChannelAllowedForUserAgent(
@@ -71,6 +72,7 @@ export function globalCommercePaymentChannelAllowedForUserAgent(
   userAgent: string | undefined,
   platform?: string | null,
 ): boolean {
+  if (platform === "mini_program") return channel === "WECHAT_MINI";
   if (platform === "android" || platform === "ios") {
     return globalAppCommercePaymentChannels.some((value) => value === channel);
   }
@@ -102,7 +104,7 @@ export function globalPaymentConfigurationReady(
       paymentRsaKey(secret.privateKeyPem, true) &&
       paymentRsaKey(secret.platformPublicKeyPem, false) &&
       /^wx[A-Za-z0-9]{8,64}$/.test(
-        app ? (secret.appIdApp ?? "") : (secret.appIdOfficial ?? ""),
+        app ? (secret.appIdApp ?? "") : channel === "WECHAT_MINI" ? (secret.appIdMini ?? "") : (secret.appIdOfficial ?? ""),
       )
     );
   try {

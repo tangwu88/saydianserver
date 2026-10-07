@@ -17,6 +17,7 @@ import { safeObject } from "../common/crypto";
 import QRCode from "qrcode";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
+import { assertWechatMiniPayment } from "../common/wechat-mini-config";
 
 import { globalError } from "../auth/global-identity";
 import {
@@ -167,6 +168,7 @@ export class PaymentProviderService {
   async identity(
     channel: PaymentChannel,
     integrationKey = paymentIntegrationKeyForNewIntent(channel),
+    newPayment = true,
   ): Promise<{ merchantId: string | null; appId: string | null }> {
     if (
       channel === PaymentChannel.APPLE_IAP ||
@@ -205,6 +207,8 @@ export class PaymentProviderService {
         this.assertGlobalConfiguration(channel, config, secrets);
         if (channel === PaymentChannel.WECHAT_JSAPI)
           await this.assertGlobalOfficialApp(appId);
+        if (channel === PaymentChannel.WECHAT_MINI && newPayment)
+          await assertWechatMiniPayment(this.prisma, this.integrationSecrets, appId);
       }
       return { merchantId: secrets.merchantId, appId };
     }
@@ -270,7 +274,7 @@ export class PaymentProviderService {
     )
       return;
     const integrationKey = paymentIntegrationKeyForStoredIntent(intent);
-    const identity = await this.identity(intent.channel, integrationKey);
+    const identity = await this.identity(intent.channel, integrationKey, false);
     if (
       !intent.providerAppId ||
       intent.providerAppId !== identity.appId ||
@@ -588,6 +592,7 @@ export class PaymentProviderService {
     if (!appId) {
       throw new ServiceUnavailableException("微信支付暂时无法使用，请稍后再试");
     }
+    if (intent.channel === PaymentChannel.WECHAT_MINI) await assertWechatMiniPayment(this.prisma, this.integrationSecrets, appId);
     const path = wechatTransactionPath(intent.channel);
     const notifyUrl = String(
       publicConfig.notifyUrl ??

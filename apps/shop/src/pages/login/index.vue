@@ -10,7 +10,7 @@
 <button v-if="isWechat && !bindTicket" class="outline-btn wechat-login" :disabled="busy || !capabilities?.login?.wechatH5?.enabled" @click="officialLogin">微信授权登录</button>
 <text v-if="isWechat && capabilities && !capabilities.login.wechatH5.enabled" class="muted">{{ capabilities.login.wechatH5.reason }}</text>
 <!-- #endif -->
-<!-- #ifdef MP-WEIXIN --><button class="outline-btn" @click="miniLogin">微信小程序登录</button><!-- #endif -->
+<!-- #ifdef MP-WEIXIN --><button class="outline-btn" :loading="busy" :disabled="busy || !capabilities?.login?.wechatMini?.enabled" @click="miniLogin">{{ bindMini ? "绑定当前会员微信" : "微信小程序登录" }}</button><text v-if="capabilities && !capabilities.login?.wechatMini?.enabled" class="muted">{{ capabilities.login?.wechatMini?.reason || '微信小程序登录暂不可用' }}</text><!-- #endif -->
 <button class="text-button" @click="browse">先逛逛</button>
 </view></view></template></template>
 <script setup lang="ts">
@@ -22,11 +22,13 @@ import { api,saveMallSession,COMMERCE_CONSENT_VERSION,ensureMiniProgramSession,t
 import { bindReferral,captureReferral } from "../../session";import { safeMallRoute } from "../../commerce-model";
 const identifier=ref(""),code=ref(""),channel=ref<"sms"|"email">("sms"),challengeId=ref(""),agreementAccepted=ref(false),busy=ref(false),countdown=ref(0),devCode=ref(""),error=ref(""),bindTicket=ref(""),wechatProfileProof=ref(""),capabilities=ref<any>();
 const isWechat=typeof navigator!=="undefined" && /micromessenger/i.test(navigator.userAgent);
+const bindMini=ref(false);
 const enabled=computed(()=>bindTicket.value ? capabilities.value?.login?.sms?.enabled : capabilities.value?.login?.[channel.value]?.enabled);
 const capabilityReason=computed(()=>bindTicket.value ? capabilities.value?.login?.sms?.reason : capabilities.value?.login?.[channel.value]?.reason);
 let timer:ReturnType<typeof setInterval>|undefined;
 onUnload(()=>{if(timer)clearInterval(timer);});
-onLoad(async()=>{
+onLoad(async(options)=>{
+  bindMini.value=options?.bindMini==='1';
   if (isGlobalMall) return;
   /* #ifdef H5 */
   if(typeof navigator!=="undefined" && /wxwork/i.test(navigator.userAgent)){uni.reLaunch({url:"/pages/employee/index"});return;}
@@ -38,7 +40,7 @@ onLoad(async()=>{
     if(state && oauthCode){
       const context=sessionStorage.getItem("saidian-oauth:"+state);if(!context)throw new Error("授权校验已失效，请重新点击微信登录");
       const stored=JSON.parse(context);busy.value=true;
-      const response:any=await api("/auth/wechat/h5/login",{method:"POST",data:{code:oauthCode,state,codeVerifier:stored.verifier,consentVersion:COMMERCE_CONSENT_VERSION}});
+      const response:any=await api("/auth/wechat/h5/login",{method:"POST",data:{code:oauthCode,state,codeVerifier:stored.verifier,consentVersion:capabilities.value?.consentVersion || COMMERCE_CONSENT_VERSION}});
       sessionStorage.removeItem("saidian-oauth:"+state);
       const clean=new URL(location.href);clean.searchParams.delete("code");clean.searchParams.delete("state");history.replaceState(null,"",clean.href);
       if(response.requiresMobileBinding){bindTicket.value=response.bindTicket;wechatProfileProof.value=String(response.wechatProfileProof||"");agreementAccepted.value=true;channel.value="sms";resetCode();mallStorage.set("saidian-post-login-route",safeMallRoute(response.returnTo));}
@@ -66,11 +68,15 @@ async function login(){
   busy.value=true;error.value="";
   try{
     const path=bindTicket.value?"/auth/wechat/h5/bind-mobile":"/auth/code/login";
-    const response=await api(path,{method:"POST",data:{...(bindTicket.value?{mobile:value,bindTicket:bindTicket.value,wechatProfileProof:wechatProfileProof.value}:{channel:channel.value,identifier:value,...(challengeId.value?{challengeId:challengeId.value}:{})}),code:code.value,consentVersion:COMMERCE_CONSENT_VERSION,referralCode:String(mallStorage.get("saidian-ref")||"")}});
+    const response=await api(path,{method:"POST",data:{...(bindTicket.value?{mobile:value,bindTicket:bindTicket.value,wechatProfileProof:wechatProfileProof.value}:{channel:channel.value,identifier:value,...(challengeId.value?{challengeId:challengeId.value}:{})}),code:code.value,consentVersion:capabilities.value?.consentVersion || COMMERCE_CONSENT_VERSION,referralCode:String(mallStorage.get("saidian-ref")||"")}});
     await save(response);
   }catch(e){error.value=e instanceof Error?e.message:"登录失败";}finally{busy.value=false;}
 }
-async function save(response:any){await saveMallSession(response);await bindReferral();const route=safeMallRoute(response.returnTo||mallStorage.get("saidian-post-login-route"));mallStorage.remove("saidian-post-login-route");uni.reLaunch({url:route});}
+async function save(response:any){await saveMallSession(response);
+  /* #ifdef MP-WEIXIN */
+  if(bindMini.value)await bindCurrentMini();
+  /* #endif */
+  await bindReferral();const route=safeMallRoute(response.returnTo||mallStorage.get("saidian-post-login-route"));mallStorage.remove("saidian-post-login-route");uni.reLaunch({url:route});}
 function resetCode(){challengeId.value="";code.value="";devCode.value="";}
 function changeChannel(next:"sms"|"email"){if(busy.value||channel.value===next)return;channel.value=next;identifier.value="";resetCode();error.value="";}
 function loginIdentifier(){const value=identifier.value.trim();if(channel.value==="sms"||bindTicket.value){if(!/^1\d{10}$/.test(value)){toast("请输入11位手机号");return "";}}else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)||value.length>254){toast("请输入正确的邮箱地址");return "";}return value;}
@@ -85,7 +91,24 @@ async function officialLogin(){
   }catch(e){toast(e);}finally{busy.value=false;}
   /* #endif */
 }
-async function miniLogin(){if(!agreementAccepted.value)return toast("请先阅读并同意协议");try{await ensureMiniProgramSession(true);await bindReferral();uni.reLaunch({url:safeMallRoute(mallStorage.get("saidian-post-login-route"))});}catch(e){toast(e);}}
+async function bindCurrentMini(){
+  const result:any=await new Promise((resolve,reject)=>uni.login({provider:"weixin",success:resolve,fail:reject}));
+  await api("/auth/wechat/mini/bind",{method:"POST",auth:true,data:{code:result.code,consentVersion:capabilities.value.consentVersion,consentAccepted:true,locale:"zh-Hans"}});
+}
+async function miniLogin(){
+  if(busy.value)return;
+  if(!agreementAccepted.value)return toast("请先阅读并同意协议");
+  if(!capabilities.value?.login?.wechatMini?.enabled)return toast("微信小程序登录暂不可用");
+  busy.value=true;
+  try{
+    if(bindMini.value && mallStorage.get("saidian-token")){await bindCurrentMini();toast("当前会员微信已绑定");}
+    else{
+      const result=await ensureMiniProgramSession(true,{accepted:true,version:capabilities.value.consentVersion,locale:"zh-Hans"});
+      if(result?.requiresAccountBinding){bindMini.value=true;error.value="请先使用手机号或邮箱验证码登录，再绑定当前微信。";return;}
+    }
+    await bindReferral();uni.reLaunch({url:safeMallRoute(mallStorage.get("saidian-post-login-route"))});
+  }catch(e){toast(e);}finally{busy.value=false;}
+}
 function help(section:string){uni.navigateTo({url:"/pages/help/index?section="+section});}
 function browse(){uni.switchTab({url:"/pages/home/index"});}
 </script>

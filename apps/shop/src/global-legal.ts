@@ -1,7 +1,9 @@
 import { globalLegalPath } from "./global-auth-model";
+import { isGlobalMall } from "./realm";
 export type GlobalLegalDocument = { version: string; locale: string; title: string; contentHtml: string };
 export async function loadGlobalLegal(reference: any): Promise<GlobalLegalDocument> {
-  const url = globalLegalPath(reference?.path);
+  const path = globalLegalPath(reference?.path);
+  const url = isGlobalMall ? path : path.replace(/^\/global/, "https://app.saydian.cn");
   return new Promise((resolve, reject) => uni.request({
     url, method: "GET", timeout: 15000,
     success(response) {

@@ -35,7 +35,10 @@ export async function invokePayment(invoke: any): Promise<{qr?:string;pending?:b
   }
   /* #endif */
   /* #ifdef MP-WEIXIN */
-  if (invoke.type === "JSAPI") { await new Promise((resolve,reject)=>uni.requestPayment({...invoke,success:resolve,fail:reject})); return {pending:true}; }
+  if (invoke.type === "JSAPI") {
+    if (!invoke.timeStamp || !invoke.nonceStr || !/^prepay_id=\S+$/.test(String(invoke.package)) || invoke.signType !== 'RSA' || !invoke.paySign) throw new Error('支付参数无效，请在订单页重试');
+    await new Promise((resolve,reject)=>uni.requestPayment({provider:'wxpay',timeStamp:String(invoke.timeStamp),nonceStr:invoke.nonceStr,package:invoke.package,signType:'RSA',paySign:invoke.paySign,success:resolve,fail:()=>reject(new Error('微信支付未完成，可在订单页继续付款'))})); return {pending:true};
+  }
   /* #endif */
   throw new Error("当前环境不支持此支付方式");
 }

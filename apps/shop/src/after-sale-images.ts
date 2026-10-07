@@ -1,5 +1,10 @@
 import { api, API_BASE, mallSessionStamp } from './api';
 import { mallStorage, isGlobalMall } from './realm';
+declare const wx: { env: { USER_DATA_PATH: string }; getFileSystemManager(): {
+  writeFile(input: { filePath: string; data: ArrayBuffer; success(): void; fail(): void }): void;
+  unlink(input: { filePath: string; success?(): void; fail?(): void }): void;
+} };
+const miniImages = () => typeof wx !== 'undefined' && typeof wx.getFileSystemManager === 'function';
 
 export const IMAGE_LIMITS = { maxFiles: 9, maxBytes: 10 * 1024 * 1024, contentTypes: ['image/jpeg', 'image/png', 'image/webp'] };
 const root = '/storefront/after-sale-images';
@@ -16,9 +21,23 @@ export function evidenceFile(value: any): EvidenceFile {
   return { path, size, type };
 }
 export function validEvidenceIds(value: unknown): value is string[] { return Array.isArray(value) && value.length <= 9 && value.every(id => typeof id === 'string' && uuid.test(id)) && new Set(value).size === value.length; }
+export async function selectedEvidenceFile(value: any): Promise<EvidenceFile> {
+  try { return evidenceFile(value); } catch (error) {
+    if (!miniImages()) throw error;
+    const size = Number(value?.size), path = String(value?.path || value?.tempFilePath || '');
+    if (!path || !Number.isSafeInteger(size) || size <= 0 || size > IMAGE_LIMITS.maxBytes) throw error;
+    const info: any = await new Promise((resolve, reject) => uni.getImageInfo({ src: path, success: resolve, fail: reject }));
+    const type = ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' } as Record<string, string>)[String(info.type).toLowerCase()];
+    return evidenceFile({ path, size, type });
+  }
+}
 
 /** URLs are constructed here, never supplied by API responses or user input. */
 function endpoint(suffix = '') {
+  if (miniImages()) {
+    if (API_BASE !== 'https://app.saydian.cn/api/saidian-mall/v1' || (suffix && !/^\/[0-9a-f-]{36}$/i.test(suffix))) throw new Error('图片服务地址不安全，请联系管理员');
+    return API_BASE + root + suffix;
+  }
   if (typeof window === 'undefined') throw new Error('请在浏览器中上传售后图片');
   const url = new URL(API_BASE + root + suffix, window.location.origin);
   if (url.origin !== window.location.origin || !['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('图片服务地址不安全，请联系管理员');
@@ -31,8 +50,9 @@ export function createAfterSaleImageClient() {
   const aborts = new Set<() => void>(), urls = new Set<string>();
   const isCurrent = () => !cancelled && !!token && !!userId && stamp === mallSessionStamp() && userId === mallStorage.get('saidian-user')?.id && token === String(mallStorage.get('saidian-token') || '');
   const check = () => { if (!isCurrent()) throw new Error('账号或登录状态已变化，请重新打开售后页面'); if (isGlobalMall && mallStorage.get('saidian-user')?.phoneTestMode === true) throw new Error('请先使用已验证的手机号或邮箱登录'); };
-  const cancel = () => { if (cancelled) return; cancelled = true; for (const abort of aborts) abort(); aborts.clear(); for (const url of urls) URL.revokeObjectURL(url); urls.clear(); };
-  const release = (url: string) => { if (urls.delete(url)) URL.revokeObjectURL(url); };
+  const dispose = (url: string) => { if (miniImages()) wx.getFileSystemManager().unlink({ filePath: url, fail() {} }); else URL.revokeObjectURL(url); };
+  const cancel = () => { if (cancelled) return; cancelled = true; for (const abort of aborts) abort(); aborts.clear(); for (const url of urls) dispose(url); urls.clear(); };
+  const release = (url: string) => { if (urls.delete(url)) dispose(url); };
   return {
     isCurrent, cancel, release,
     async capabilities() { check(); try { const value: any = await api(root + '/capabilities', { auth: true, sessionStamp: stamp }); check(); return { ...IMAGE_LIMITS, enabled: value?.enabled === true, reason: value?.enabled === true ? '' : '暂时无法添加图片，您仍可提交文字说明。' }; } catch { check(); throw new Error('暂时无法添加图片，您仍可提交文字说明。'); } },
@@ -54,6 +74,31 @@ export function createAfterSaleImageClient() {
     },
     async preview(id: string) {
       check(); if (!uuid.test(id)) throw new Error('图片编号无效');
+      if (miniImages()) {
+        return new Promise<string>((resolve, reject) => {
+          let task: UniApp.RequestTask | undefined, settled = false;
+          const finish = (error?: Error, value?: string) => { if (settled) return; settled = true; aborts.delete(abort); error ? reject(error) : resolve(value!); };
+          const abort = () => { task?.abort(); finish(new Error('图片读取已取消')); };
+          aborts.add(abort);
+          task = uni.request({ url: endpoint('/' + id), header: { Authorization: 'Bearer ' + token }, responseType: 'arraybuffer', timeout: 15000,
+            success(response) {
+              try {
+                check();
+                if (response.statusCode !== 200) throw new Error('私有图片暂时无法读取');
+                const type = String(Object.entries(response.header || {}).find(([key]) => key.toLowerCase() === 'content-type')?.[1] || '').split(';')[0]!;
+                const data = response.data as ArrayBuffer;
+                if (!IMAGE_LIMITS.contentTypes.includes(type) || !(data instanceof ArrayBuffer) || data.byteLength <= 0 || data.byteLength > IMAGE_LIMITS.maxBytes) throw new Error('图片格式或大小无效');
+                const extension = type === 'image/jpeg' ? 'jpg' : type === 'image/png' ? 'png' : 'webp';
+                const path = wx.env.USER_DATA_PATH + '/after-sale-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + extension;
+                wx.getFileSystemManager().writeFile({ filePath: path, data,
+                  success() { if (!isCurrent() || settled) { dispose(path); finish(new Error('账号已变化，图片读取已取消')); } else { urls.add(path); finish(undefined, path); } },
+                  fail() { dispose(path); finish(new Error('私有图片暂时无法读取')); },
+                });
+              } catch (error) { finish(error instanceof Error ? error : new Error('私有图片暂时无法读取')); }
+            }, fail() { finish(new Error('私有图片暂时无法读取')); },
+          });
+        });
+      }
       const controller = new AbortController(), abort = () => controller.abort(); aborts.add(abort);
       try { const response = await fetch(endpoint('/' + id), { headers: { Authorization: 'Bearer ' + token }, credentials: 'omit', redirect: 'error', cache: 'no-store', signal: controller.signal }); check();
         if (response.status === 401) throw new Error('登录已失效，请重新登录查看图片');

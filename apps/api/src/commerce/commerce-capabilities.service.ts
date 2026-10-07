@@ -18,6 +18,7 @@ import {
   globalPaymentConfigurationReady,
 } from "./global-commerce-policy";
 import { GlobalVerificationDeliveryService } from "../auth/global-verification-delivery.service";
+import { wechatMiniConfiguration } from "../common/wechat-mini-config";
 
 type Capability = { enabled: boolean; reason?: string };
 type PaymentCapability = Capability & {
@@ -38,7 +39,7 @@ export class CommerceCapabilitiesService {
   // assertion. Creating a payment still validates the actual User.
   async publicCapabilities(
     locale?: string,
-    client: "h5" | "app" = "h5",
+    client: "h5" | "app" | "mini" = "h5",
     product?: unknown,
   ) {
     const readOnly = businessWritesPaused(process.env);
@@ -46,7 +47,7 @@ export class CommerceCapabilitiesService {
     const rows = await this.prisma.integrationConfig.findMany({
       where: {
         key: {
-          in: ["sms", "wechat_pay", "wechat_pay_app", "alipay", "alipay_app"],
+          in: ["sms", "wechat_pay", "wechat_pay_app", "alipay", "alipay_app", ...(client === "mini" ? ["wechat_mini"] : [])],
         },
       },
     });
@@ -54,6 +55,11 @@ export class CommerceCapabilitiesService {
     const verificationReady = await this.verificationDelivery.capabilities();
     const configured = (key: string) =>
       byKey.get(key)?.state === IntegrationState.CONFIGURED;
+    let mini: Awaited<ReturnType<typeof wechatMiniConfiguration>> | null = null;
+    let miniPayment = false;
+    if (client === "mini") {
+      try { mini = await wechatMiniConfiguration(this.prisma, this.secrets, byKey.get("wechat_mini") ?? null); } catch { mini = null; }
+    }
 
     let officialAppId: string | null = null;
     try {
@@ -75,10 +81,13 @@ export class CommerceCapabilitiesService {
           platformSerialNo: "WECHAT_PAY_PLATFORM_SERIAL_NO",
           apiV3Key: "WECHAT_PAY_API_V3_KEY",
           appIdOfficial: "WECHAT_PAY_APP_ID_OFFICIAL",
+          ...(client === "mini" ? { appIdMini: "WECHAT_PAY_APP_ID_MINI" } : {}),
         });
         const config = safeObject(byKey.get("wechat_pay")?.publicConfig);
         jsapi = globalPaymentConfigurationReady("WECHAT_JSAPI", config, secret, env("PUBLIC_BASE_URL", ""))
           && !!officialAppId && secret.appIdOfficial === officialAppId;
+        miniPayment = !!mini?.paymentEnabled && mini.appId === secret.appIdMini
+          && globalPaymentConfigurationReady("WECHAT_MINI", config, secret, env("PUBLIC_BASE_URL", ""));
       } catch {
         jsapi = false;
       }
@@ -183,9 +192,11 @@ export class CommerceCapabilitiesService {
         ),
       },
     ];
+    if (client === "mini") payments.push({ channel: "wechat_mini", environments: ["mini"],
+      ...capability(miniPayment && !outboundPaused, miniPayment && outboundPaused ? "交易维护中" : "小程序支付未启用或凭证未配置一致") });
     {
       const [official, marketConfig] = await Promise.all([
-        this.official.globalCapabilities(locale, product),
+        this.official.globalCapabilities(client === "mini" ? "zh-Hans" : locale, client === "mini" ? undefined : product),
         this.prisma.commerceBusinessConfig.findUnique({
           where: { key: "global.markets" },
         }),
@@ -216,6 +227,8 @@ export class CommerceCapabilitiesService {
           defaultChannel: "sms",
           wechatH5: official.wechatH5,
           wechatBinding: official.wechatBinding,
+          ...(client === "mini" ? { wechatMini: capability(!!mini && !!official.consentVersion && !!official.legal && !readOnly && !outboundPaused,
+            readOnly || outboundPaused ? "系统维护中" : !official.consentVersion || !official.legal ? "用户协议和隐私政策尚未发布" : "微信小程序登录未配置") } : {}),
         },
         payments: payments
           .filter(
@@ -223,10 +236,10 @@ export class CommerceCapabilitiesService {
               globalCommercePaymentChannels.some(
                 (channel) => channel.toLowerCase() === payment.channel,
               ) &&
-              (client === "app"
+              (client === "mini" ? payment.channel === "wechat_mini" : client === "app"
                 ? payment.environments.includes("android") ||
                   payment.environments.includes("ios")
-                : !payment.environments.includes("android") &&
+                : payment.channel !== "wechat_mini" && !payment.environments.includes("android") &&
                   !payment.environments.includes("ios")),
           )
           .map((payment) =>
