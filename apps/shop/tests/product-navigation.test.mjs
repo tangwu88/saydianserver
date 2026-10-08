@@ -53,6 +53,7 @@ async function page(realmName, value = product(), options = {}) {
   const component = evaluate(script.content, {
     "../../product-rich-text": evaluate(readFileSync(new URL('../src/product-rich-text.ts', import.meta.url), 'utf8'), {}),
     "../../mini-poster": { miniPosterEnvironment: () => false },
+    "../../mini-share": { miniSharePath: () => '', miniShareAsset: async () => ({}), copyMiniShareLink: async () => {} },
     vue, "../../realm": realm, "../../components/DesktopHeader.vue": { default: { render: () => null } },
     "../../static/saidian-brand-logo.png": { default: "data:image/png;base64,c2F5ZGlhbi1sb2dv" },
     "@dcloudio/uni-ui/lib/uni-icons/uni-icons.vue": { default: { render: () => null } },

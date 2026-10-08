@@ -1,6 +1,7 @@
 <template>
   <DesktopHeader />
   <view class="mobile-brand"><image :src="brandLogo" mode="aspectFit" /><text>赛电商城</text><button @click="go('/pages/search/index')">搜索</button></view>
+  <!-- #ifdef MP-WEIXIN --><view class="home-share-tools"><button open-type="share">分享商城</button><button :disabled="sharing" @click="copyHomeLink">复制小程序链接</button></view><!-- #endif -->
   <view class="page home-page"><view class="container">
     <view v-if="notice" class="store-notice">{{ notice }}</view>
     <view v-if="error" class="error-state"><text>{{ error }}</text><button class="outline-btn" @click="load">重新加载</button></view>
@@ -23,7 +24,10 @@
 </template>
 <script setup lang="ts">
 import { mallStorage } from "../../realm";
-import { onShow } from "@dcloudio/uni-app";
+import { onShow, onShareAppMessage } from "@dcloudio/uni-app";
+import { miniSharePath, copyMiniShareLink } from '../../mini-share';
+import { miniPosterEnvironment } from '../../mini-poster';
+import { toast } from '../../api';
 import { computed, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import ProductCard from "../../components/ProductCard.vue";
@@ -33,6 +37,13 @@ import { captureReferral } from "../../session";
 const state = storefront;
 const loading = ref(false);
 const error = ref("");
+const sharing = ref(false);
+if (miniPosterEnvironment()) onShareAppMessage(() => ({ title: '赛电商城', path: miniSharePath() }));
+async function copyHomeLink() {
+  if (sharing.value) return;
+  sharing.value = true;
+  try { await copyMiniShareLink(); } catch(e) { toast(e); } finally { sharing.value = false; }
+}
 const notice = computed(() => { const value = configValue("store.notice"); return typeof value === "string" ? value : value?.text || value?.notice || ""; });
 async function load() { loading.value = true; error.value = ""; try { await loadStorefront(); } catch (e) { error.value = e instanceof Error ? e.message : "商城暂时无法加载"; } finally { loading.value = false; } }
 onShow(() => { captureReferral(); void load(); });
@@ -50,6 +61,8 @@ function openBanner(banner: any) {
 }
 </script>
 <style scoped lang="scss">
+.home-share-tools{display:flex;justify-content:flex-end;gap:12px;padding:0 16px;background:#fff;}
+.home-share-tools button{padding:8px 0;margin:0;background:transparent;color:var(--green);font-size:13px;line-height:1.5;}
 .mobile-brand { display:flex; align-items:center; gap:12px; background:#fff; padding:12px 16px; color:var(--ink); }
 .mobile-brand image { width:122px; height:34px; }.mobile-brand>text { flex:1; font-size:16px; font-weight:600; }.mobile-brand button { background:#f1f2f4; font-size:14px; line-height:36px; margin:0; }
 .home-page { min-height:60vh; padding-top:12px; padding-bottom:20px; }

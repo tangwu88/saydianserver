@@ -163,6 +163,7 @@ describe("order list query compatibility", () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     ).orders(user, undefined, "pending_shipment");
     expect(commerce.orders.mock.calls).toEqual([
       ["member", undefined, "after_sales"],

@@ -18,6 +18,7 @@ function fixture() {
     globalAuth as any,
     {} as any,
     {} as any,
+    {} as any,
   );
   return { controller, auth, globalAuth };
 }

@@ -1,10 +1,13 @@
 <template>
   <!-- #ifdef MP-WEIXIN -->
   <canvas canvas-id="mall-product-poster" style="position:fixed;left:-10000px;width:750px;height:1080px" />
-  <view class="container"><button v-if="product" class="outline-btn" open-type="share">分享商品给微信好友</button></view>
   <!-- #endif -->
   <DesktopHeader /><view v-if="posterVisible" class="poster-overlay" role="dialog" aria-modal="true" aria-label="商品分享海报" @click="closePoster"><view class="poster-card" @click.stop><view class="poster-heading"><b>分享商品</b><button aria-label="关闭分享海报" @click="closePoster"><UniIcons type="closeempty" color="currentColor" size="22" /></button></view><view v-if="posterBusy" class="poster-loading">正在生成分享海报…</view><image v-else-if="posterUrl" class="share-poster" :src="posterUrl" mode="widthFix"/><view v-else class="error-state">{{ posterError || '海报暂时无法生成' }}</view><text class="poster-tip">长按海报可保存，发送给好友后可扫码打开商品。</text><view class="poster-actions"><button class="outline-btn" :disabled="posterBusy || !posterUrl" @click="previewPoster"><UniIcons type="image-filled" color="currentColor" size="18" />长按上图保存</button><button class="primary-btn" :disabled="posterBusy" @click="copyShareLink"><UniIcons type="link" color="currentColor" size="18" />复制商品链接</button></view></view></view><view v-if="recovery" class="container recovery-entry"><text>上次下单结果待确认</text><button class="outline-btn" :disabled="busy" @click="restoreCheckout">恢复上次下单</button></view><view v-if="product" class="page"
-    ><view class="container product-shortcuts"><button @click="goHome"><UniIcons type="home-filled" color="currentColor" size="18" />商城首页</button><button aria-label="分享商品" :disabled="posterBusy" @click="shareProduct"><UniIcons type="redo-filled" color="currentColor" size="18" />分享商品</button><button @click="goCart"><UniIcons type="cart-filled" color="currentColor" size="18" />购物车</button></view
+    ><view class="container product-shortcuts">
+      <!-- #ifdef H5 --><button @click="goHome"><UniIcons type="home-filled" color="currentColor" size="18" />商城首页</button><button aria-label="分享商品" :disabled="posterBusy" @click="shareProduct"><UniIcons type="redo-filled" color="currentColor" size="18" />分享商品</button><button @click="goCart"><UniIcons type="cart-filled" color="currentColor" size="18" />购物车</button><!-- #endif -->
+      <!-- #ifdef MP-WEIXIN --><button @click="goHome">首页</button><button open-type="share">分享</button><button @click="goCart">购物车</button><!-- #endif -->
+    </view
+    ><view class="mini-product-share-tools"><!-- #ifdef MP-WEIXIN --><button class="text-button" :disabled="posterBusy" @click="shareProduct">生成小程序海报</button><button class="text-button" @click="copyShareLink">复制小程序链接</button><!-- #endif --></view
     ><view class="container product-layout"
       ><view class="gallery"
         ><swiper v-if="images.length" class="product-carousel" :current="imageIndex" :autoplay="images.length > 1" :circular="images.length > 1" :indicator-dots="images.length > 1" :interval="5000" :duration="350" @change="onImageChange">
@@ -78,6 +81,7 @@ defineOptions({ inheritAttrs: false });
 import { onLoad, onShow, onShareAppMessage } from "@dcloudio/uni-app";
 import { computed, ref, getCurrentInstance } from "vue";
 import { buildMiniPoster, miniPosterEnvironment } from '../../mini-poster';
+import { miniSharePath, miniShareAsset, copyMiniShareLink } from '../../mini-share';
 import QRCode from "qrcode";
 import UniIcons from "@dcloudio/uni-ui/lib/uni-icons/uni-icons.vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
@@ -87,7 +91,7 @@ import { currentPurchaseReferral, isLoggedIn } from "../../session";
 const id = ref(''), error = ref(''), busy = ref(false), posterVisible = ref(false), posterBusy = ref(false), posterUrl = ref(''), posterError = ref('');
 const posterScope = getCurrentInstance()?.proxy;
 if (miniPosterEnvironment()) onShareAppMessage(() => ({ title: String(product.value?.displayName || product.value?.name || '赛电商城'),
-  path: '/pages/product/index?id=' + encodeURIComponent(id.value) + (mallStorage.get('saidian-ref') ? '&ref=' + encodeURIComponent(String(mallStorage.get('saidian-ref'))) : ''),
+  path: miniSharePath(id.value),
   ...(currentImage.value ? { imageUrl: currentImage.value } : {}), }));
 const recovery = ref<{ userId: string; key: string; session: string } | null>(null);
 const product = ref<any>(),
@@ -124,7 +128,11 @@ function productShareUrl() {
   const referral = currentPurchaseReferral(String(mallStorage.get('saidian-user')?.id || '') || undefined);
   return `${location.origin}${location.pathname}${referral ? `?ref=${encodeURIComponent(referral)}` : ''}${route}`;
 }
-function copyShareLink() {
+async function copyShareLink() {
+  if (miniPosterEnvironment()) {
+    try { await copyMiniShareLink(id.value); } catch (e) { toast(e); }
+    return;
+  }
   uni.setClipboardData({
     data: productShareUrl(),
     success: () => uni.showToast({ title: '商品链接已复制', icon: 'none' }),
@@ -136,14 +144,18 @@ async function shareProduct() {
   if (posterUrl.value || posterBusy.value) return;
   posterBusy.value = true; posterError.value = '';
   try { posterUrl.value = await buildSharePoster(); }
-  catch { posterError.value = '海报生成失败，可先复制商品链接分享'; }
+  catch { posterError.value = miniPosterEnvironment() ? '小程序海报暂不可用，可通过顶部分享按钮发送商品卡片' : '海报生成失败，可先复制商品链接分享'; }
   finally { posterBusy.value = false; }
 }
 function closePoster(){posterVisible.value=false;}
 function previewPoster(){if(posterUrl.value)uni.previewImage({current:posterUrl.value,urls:[posterUrl.value]});}
 async function buildSharePoster():Promise<string>{
-  if (miniPosterEnvironment()) return buildMiniPoster('mall-product-poster', posterScope, { title: String(product.value.displayName || product.value.name || '赛电商品'),
-    price: money(selectedSku.value?.salePriceCents), image: currentImage.value, qrText: productShareUrl(), subtitle: '扫码打开商城网页，或用微信分享' });
+  if (miniPosterEnvironment()) {
+    const result = await miniShareAsset('code', id.value);
+    if (!result.codeDataUrl) throw new Error('小程序码暂不可用');
+    return buildMiniPoster('mall-product-poster', posterScope, { title: String(product.value.displayName || product.value.name || '赛电商品'),
+      price: money(selectedSku.value?.salePriceCents), image: currentImage.value, qrDataUrl: result.codeDataUrl, subtitle: '微信扫码进入小程序商品页' });
+  }
   if(typeof document==='undefined')return QRCode.toDataURL(productShareUrl(),{width:720,margin:3,color:{dark:'#111827',light:'#ffffff'}});
   const canvas=document.createElement('canvas');canvas.width=750;canvas.height=1080;const ctx=canvas.getContext('2d');if(!ctx)throw new Error('canvas unavailable');
   ctx.fillStyle='#f3f5f8';ctx.fillRect(0,0,750,1080);ctx.fillStyle='#ffffff';roundRect(ctx,35,35,680,1010,32);ctx.fill();
@@ -264,6 +276,12 @@ async function toggleFavorite() {
 .poster-overlay{position:fixed;inset:0;z-index:1200;background:rgba(13,24,34,.72);display:grid;place-items:center;padding:20px}.poster-card{width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;padding:18px;background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.24)}.poster-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.poster-heading>b{font-size:18px}.poster-heading button{width:40px;min-height:40px;margin:0;padding:0;background:#f4f6f8;color:#374151;line-height:40px}.poster-loading{min-height:240px;display:grid;place-items:center;color:var(--muted)}.share-poster{display:block;width:100%;border-radius:12px;background:#f4f6f8}.poster-tip{display:block;margin:12px 0;color:var(--muted);font-size:13px;line-height:1.6;text-align:center}.poster-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.poster-actions button{margin:0;min-height:46px;font-size:14px}.poster-actions button,.product-shortcuts button,.actions button{display:flex;align-items:center;justify-content:center;gap:7px}
 .product-shortcuts {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px;}
 .product-shortcuts button {margin:0;padding:0 16px;min-height:44px;line-height:44px;font-size:14px;background:#fff;color:var(--green);}
+/* #ifdef MP-WEIXIN */
+.product-shortcuts{display:flex;gap:10px;}
+.product-shortcuts button{flex:1;min-width:0;white-space:nowrap;height:44px;min-height:44px;padding:0 8px;line-height:44px;}
+.mini-product-share-tools{display:flex;justify-content:center;gap:16px;margin:0 0 12px;}
+.mini-product-share-tools .text-button{margin:0;padding:8px 0;background:transparent;font-size:12px;line-height:1.5;}
+/* #endif */
 .actions button{width:100%;min-width:0;min-height:52px;font-size:14px;line-height:1.5;padding:12px 4px;margin:0;white-space:nowrap;}.actions button[disabled]{opacity:.55;}.quantity button{width:44px;min-height:44px;margin:0;padding:0;background:#fff;font-size:20px;line-height:44px;}.quantity button::after{border:0;}
 .page{padding-bottom:calc(96px + env(safe-area-inset-bottom))}.fixed-buy-bar{position:fixed;z-index:900;left:0;right:0;bottom:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid var(--line);box-shadow:0 -10px 28px rgba(20,36,50,.12);backdrop-filter:blur(10px)}
 .missing-image {display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;}

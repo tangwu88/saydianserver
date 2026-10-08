@@ -14,6 +14,7 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+  "CommerceCompatibilityController.createMiniShare": entry("小程序分享码或链接", "{page:home|product,productId?:UUID,referral?:1-64位字母数字下划线横线,envVersion?:release|trial|develop,kind:code|link}；仅固定商城页面，商品须已上架", "code返回PNG/JPEG data URL；link返回微信HTTPS URL Link；不返回AppSecret或access_token，不回退H5二维码", "商城微信小程序已配置、微信页面已上传；公开接口按IP限流，缓存最多64项/10分钟"),
   "HealthReportsController.sleepAvailability": entry("检查 Say Ring 睡眠AI分析是否可用", "本人登录", "独立sleepAiEnabled开关、已配置且匹配告知供应商的AI、Worker与专属说明共同决定available；checks及unavailableReasons区分各项条件；返回say_ring_sleep_analysis授权，不读取HealthProfile或回显凭据", "既有AI与已核对说明；未真实调用不代表供应商联调通过"),
   "HealthReportsController.sleepAnalysisConsent": entry("单独同意或撤回 Say Ring 睡眠 AI 分析", "granted:boolean；同意时version须匹配当前已发布say_ring_sleep_analysis；本人登录", "返回当前analysisConsent；只修改本人的Say Ring睡眠ConsentRecord，不改Health App的HealthProfile授权；撤回后禁止新生成和生成中结果发布，不删除既有报告"),
   "HealthReportsController.sleepReport": entry("查询精确睡眠快照的AI报告", "sdkDate、sourceKey和sourceHash；后两者为64位SHA256", "{report:睡眠报告或null}；只返回本人同日期/设备来源/内容快照，READY且真实生成时才有AI sleepScore；不将设备评分替换为AI评分；兼容可选 generationAttempts 和 progressMessage，等待重试仍为 queued，失败为 failed；只读刷新不触发上传或重试"),

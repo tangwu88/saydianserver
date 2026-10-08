@@ -9201,6 +9201,38 @@
       }
     },
     {
+      "key": "CommerceCompatibilityController.createMiniShare",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/mini-share",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "小程序分享码或链接",
+      "request": "{page:home|product,productId?:UUID,referral?:1-64位字母数字下划线横线,envVersion?:release|trial|develop,kind:code|link}；仅固定商城页面，商品须已上架",
+      "response": "code返回PNG/JPEG data URL；link返回微信HTTPS URL Link；不返回AppSecret或access_token，不回退H5二维码",
+      "dependency": "商城微信小程序已配置、微信页面已上传；公开接口按IP限流，缓存最多64项/10分钟",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "CommerceCompatibilityController.payment",
       "method": "GET",
       "path": "/api/saidian-mall/v1/payments/:id",

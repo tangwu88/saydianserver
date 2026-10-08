@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { MiniShareService } from './mini-share.service';
 import { CommerceController } from "./commerce.controller";
 import { CommerceService } from "./commerce.service";
 import { CommerceStoreService } from "./commerce-store.service";
@@ -20,6 +21,7 @@ import { SupportModule } from "../support/support.module";
     CommerceEmployeeController,
   ],
   providers: [
+    MiniShareService,
     CommerceService,
     CommerceStoreService,
     EmployeePromotionService,

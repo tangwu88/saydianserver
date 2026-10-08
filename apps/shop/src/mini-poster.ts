@@ -9,8 +9,8 @@ export function posterUtf8(text: string) {
   return new Uint8Array((encodeURIComponent(text).match(/%[0-9A-F]{2}|[^%]/g) || []).map(value => value.startsWith('%') ? parseInt(value.slice(1), 16) : value.charCodeAt(0)));
 }
 export function miniPosterSource(source: string) {
-  if (!miniPosterEnvironment() || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(source)) return { path: source, release() {} };
-  const path = wx.env.USER_DATA_PATH + '/mall-poster-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.png';
+  if (!miniPosterEnvironment() || !/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(source)) return { path: source, release() {} };
+  const path = wx.env.USER_DATA_PATH + '/mall-poster-' + Date.now() + '-' + Math.random().toString(36).slice(2) + (source.startsWith('data:image/jpeg;') ? '.jpg' : '.png');
   wx.getFileSystemManager().writeFileSync(path, source.split(',')[1]!, 'base64');
   return { path, release() { wx.getFileSystemManager().unlink({ filePath: path, fail() {} }); } };
 }

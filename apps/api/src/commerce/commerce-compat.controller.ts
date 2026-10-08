@@ -16,6 +16,7 @@ import {
 import { ApiTags } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import { AuthService } from "../auth/auth.service";
+import { MiniShareService } from './mini-share.service';
 import { WechatH5AuthService } from "../auth/wechat-h5-auth.service";
 import { CommerceCapabilitiesService } from "./commerce-capabilities.service";
 import { Throttle } from "@nestjs/throttler";
@@ -48,6 +49,7 @@ export class CommerceCompatibilityController {
     private readonly globalAuth: GlobalAuthService,
     private readonly capabilities: CommerceCapabilitiesService,
     private readonly support: SupportService,
+    private readonly miniShare: MiniShareService,
   ) {}
 
   @Post("auth/password/login")
@@ -145,6 +147,12 @@ export class CommerceCompatibilityController {
     @Query("client") client?: string,
   ) {
     return this.capabilities.publicCapabilities(locale, client === "mini" ? "mini" : "h5", product);
+  }
+
+  @Post('storefront/mini-share')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  createMiniShare(@Body() input: unknown) {
+    return this.miniShare.create(input);
   }
 
   @Get("payments/:id")
