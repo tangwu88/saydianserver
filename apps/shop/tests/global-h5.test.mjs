@@ -1077,7 +1077,49 @@ test("Alipay browser form reports a redirect so callers do not query during page
   const { invokePayment } = harness({ document }).load("payments");
   const result = await invokePayment({ type: "FORM", url: "https://openapi.alipay.com/gateway.do", fields: { app_id: "synthetic", sign: "not-a-secret" } });
   assert.equal(result.pending, true);assert.equal(result.redirected, true);
-  assert.equal(submitted.length, 1);assert.equal(submitted[0].method, "POST");assert.equal(submitted[0].children.length, 2);
+  assert.equal(submitted.length, 1);assert.equal(submitted[0].method, "POST");
+  assert.equal(new URL(submitted[0].action).searchParams.get("app_id"), "synthetic");
+  assert.equal(new URL(submitted[0].action).searchParams.get("sign"), "not-a-secret");
+});
+
+test("Alipay H5 form declares UTF-8 before body decoding and preserves signed Chinese payment data", async () => {
+  for (const realm of ["domestic", "global"]) {
+    for (const gateway of ["openapi.alipay.com", "openapi.alipaydev.com", "openapi-sandbox.dl.alipaydev.com"]) {
+      const submitted = [];
+      const document = { addEventListener() {}, body: { appendChild() {} }, createElement(tag) {
+        if (tag === "input") return {};
+        return { children: [], appendChild(node) { this.children.push(node); }, submit() { submitted.push(this); } };
+      } };
+      const fields = {
+        app_id: "synthetic", method: "alipay.trade.wap.pay", charset: "utf-8", sign_type: "RSA2",
+        sign: "synthetic+signature/with=padding", timestamp: "2026-10-08 13:39:00", version: "1.0",
+        notify_url: "https://app.saydian.cn/callback?source=alipay&realm=" + realm,
+        return_url: "https://app.saydian.cn/orders?title=" + encodeURIComponent("赛电订单"),
+        biz_content: JSON.stringify({ subject: '赛电商城订单 SD-W9 Pro & "智能手表"', total_amount: "1398.00", out_trade_no: "synthetic-order" }),
+      };
+      const original = structuredClone(fields);
+      const { invokePayment } = harness({ realm, document }).load("payments");
+      await invokePayment({ type: "FORM", url: `https://${gateway}/gateway.do?charset=GBK`, fields });
+      assert.equal(submitted.length, 1);
+      const form = submitted[0], query = new URL(form.action).searchParams;
+      assert.equal(form.acceptCharset, "UTF-8");
+      assert.deepEqual(query.getAll("charset"), ["utf-8"]);
+      assert.equal(query.has("biz_content"), false);
+      const body = new URLSearchParams(form.children.map(input => [input.name, input.value]));
+      assert.equal(body.has("charset"), false);
+      // Model a browser's single form encoding and gateway's UTF-8 decoding.
+      assert.equal(new URLSearchParams(body.toString()).get("biz_content"), fields.biz_content);
+      assert.deepEqual(Object.fromEntries([...query, ...body]), original);
+      assert.deepEqual(fields, original);
+    }
+  }
+});
+
+test("Alipay form rejects untrusted gateways before appending or submitting a payment form", async () => {
+  const document = { addEventListener() {}, body: { appendChild() { assert.fail("untrusted form appended"); } },
+    createElement() { assert.fail("untrusted form created"); } };
+  const { invokePayment } = harness({ document }).load("payments");
+  await assert.rejects(invokePayment({ type: "FORM", url: "https://openapi.alipay.com.attacker.invalid/gateway.do", fields: { charset: "utf-8" } }), /支付跳转地址不受信任/);
 });
 test("account refresh updates safe verification status without touching domestic storage", async () => {
   const h = harness({

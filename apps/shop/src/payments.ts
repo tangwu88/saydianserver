@@ -21,8 +21,17 @@ export async function invokePayment(invoke: any): Promise<{qr?:string;pending?:b
   /* #ifdef H5 */
   if (invoke.type === "REDIRECT") { window.location.assign(paymentUrl(invoke.url)); return {pending:true,redirected:true}; }
   if (invoke.type === "FORM") {
-    const form = document.createElement("form"); form.method="POST"; form.action=paymentUrl(invoke.url);
-    for (const [key,value] of Object.entries(invoke.fields || {})) { const input=document.createElement("input");input.type="hidden";input.name=key;input.value=String(value);form.appendChild(input); }
+    const action = new URL(paymentUrl(invoke.url));
+    const alipay = ["openapi.alipay.com","openapi.alipaydev.com","openapi-sandbox.dl.alipaydev.com"].includes(action.hostname);
+    // Match Alipay's pageExecute transport: charset must be available before
+    // the gateway decodes the POST body. Preserve all signed parameter values.
+    const queryFields = new Set(["app_id","method","format","charset","sign_type","sign","timestamp","version","notify_url","return_url","auth_token","app_auth_token","app_cert_sn","alipay_root_cert_sn","ws_service_url"]);
+    const form = document.createElement("form"); form.method="POST"; form.acceptCharset="UTF-8";
+    for (const [key,value] of Object.entries(invoke.fields || {})) {
+      if (alipay && queryFields.has(key)) { action.searchParams.set(key,String(value)); continue; }
+      const input=document.createElement("input");input.type="hidden";input.name=key;input.value=String(value);form.appendChild(input);
+    }
+    form.action=action.href;
     document.body.appendChild(form);form.submit();return {pending:true,redirected:true};
   }
   if (invoke.type === "JSAPI") {
