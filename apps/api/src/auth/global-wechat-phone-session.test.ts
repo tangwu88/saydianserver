@@ -52,6 +52,7 @@ function harness() {
     weightKg: null,
     avatarUrl: null,
     legacyMemberId: null,
+    wechatOpenId: null as string | null,
   };
   let linked = true,
     sessions: any[] = [];
@@ -162,6 +163,15 @@ function harness() {
 }
 
 describe("limited international H5 phone-test session provenance", () => {
+  it("reports mini-program binding without exposing the WeChat identifier", async () => {
+    const h = harness();
+    await h.service.issuePhoneTestMallSession(userId);
+    expect((await h.service.mallAccount(userId, h.sessions[0].id)).wechatMiniBound).toBe(false);
+    h.user.wechatOpenId = "synthetic-mini-openid";
+    const account = await h.service.mallAccount(userId, h.sessions[0].id);
+    expect(account.wechatMiniBound).toBe(true);
+    expect(JSON.stringify(account)).not.toContain(h.user.wechatOpenId);
+  });
   it("persists test provenance and exposes only masked account status", async () => {
     const h = harness(),
       response = await h.service.issuePhoneTestMallSession(userId);

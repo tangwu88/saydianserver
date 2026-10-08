@@ -367,6 +367,7 @@ export class AuthService {
       phoneTestMode: isH5PhoneTestSession(session.accessJti),
       phoneVerified: Boolean(user.mobileVerifiedAt),
       phoneVerificationStatus: user.mobileVerifiedAt ? "verified" : "pending",
+      wechatMiniBound: Boolean(user.wechatOpenId),
     };
   }
 

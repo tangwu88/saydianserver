@@ -10,8 +10,9 @@
 <button v-if="isWechat && !bindTicket" class="outline-btn wechat-login" :disabled="busy || !capabilities?.login?.wechatH5?.enabled" @click="officialLogin">微信授权登录</button>
 <text v-if="isWechat && capabilities && !capabilities.login.wechatH5.enabled" class="muted">{{ capabilities.login.wechatH5.reason }}</text>
 <!-- #endif -->
-<!-- #ifdef MP-WEIXIN --><button class="outline-btn" :loading="busy" :disabled="busy || !capabilities?.login?.wechatMini?.enabled" @click="miniLogin">{{ bindMini ? "绑定当前会员微信" : "微信小程序登录" }}</button><text v-if="capabilities && !capabilities.login?.wechatMini?.enabled" class="muted">{{ capabilities.login?.wechatMini?.reason || '微信小程序登录暂不可用' }}</text><!-- #endif -->
-<button class="text-button" @click="browse">先逛逛</button>
+<!-- #ifdef MP-WEIXIN --><button class="outline-btn mini-wechat-login" :loading="busy" :disabled="busy || !capabilities?.login?.wechatMini?.enabled" @click="miniLogin">{{ bindMini ? "绑定当前会员微信" : "微信小程序登录" }}</button><text v-if="capabilities && !capabilities.login?.wechatMini?.enabled" class="muted">{{ capabilities.login?.wechatMini?.reason || '微信小程序登录暂不可用' }}</text><!-- #endif -->
+<!-- #ifdef H5 --><button class="text-button" @click="browse">先逛逛</button><!-- #endif -->
+<!-- #ifdef MP-WEIXIN --><view class="mini-browse" @click="browse">先逛逛</view><!-- #endif -->
 </view></view></template></template>
 <script setup lang="ts">
 import { mallStorage, isGlobalMall } from "../../realm";
@@ -123,6 +124,8 @@ function browse(){uni.switchTab({url:"/pages/home/index"});}
 .login-page .code-row{grid-template-columns:minmax(0,1fr) 130px;align-items:center;}
 .login-page .code-row .input{margin:0;}.login-page .code-row button{padding:10px;font-size:14px;}
 .login-page .agreement{font-size:12px;line-height:1.6;}
+.login-page .mini-wechat-login{margin-top:16px;}
+.login-page .mini-browse{text-align:center;margin-top:20px;padding:12px 0;color:var(--muted);font-size:15px;line-height:1.5;}
 /* #endif */
 </style>
 <style scoped>.login-page{display:flex;justify-content:center;padding-top:32px;}.login-card{max-width:480px;width:100%;height:max-content;padding:28px;}.login-logo{width:116px;height:46px;display:block;margin-bottom:24px;}h1{font-size:24px;margin:0 0 12px;}.login-tabs{display:flex;margin:24px 0;gap:12px;}.login-tabs button{flex:1;font-size:16px;background:#f1f2f4}.login-tabs .active{color:var(--green);background:var(--mint);}.form-label{display:block;margin:18px 0 8px;font-size:14px;}.input{margin-top:8px;height:46px;font-size:16px;}.code-row{display:grid;grid-template-columns:1fr 130px;gap:10px;}.code-row .input{margin:0;}.code-row button{height:46px;font-size:14px;}.agreement{display:flex;flex-wrap:wrap;align-items:center;gap:5px;font-size:14px;line-height:1.8;margin:22px 0;}.link{color:var(--green);}.wechat-login{margin-top:14px;}.muted{font-size:14px;line-height:1.6;}.notice{display:block;background:#fff8e6;padding:10px;font-size:14px;margin-top:14px;}.text-button{margin:18px auto 0;}</style>

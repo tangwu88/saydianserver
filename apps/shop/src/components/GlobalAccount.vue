@@ -13,7 +13,7 @@
       <view v-if="!user.phoneMasked && !user.emailMasked" class="detail-row"><text>联系方式</text><text class="muted">未提供</text></view>
     </view>
     <button v-else class="primary-btn" @click="login">登录 / 注册</button>
-    <view v-if="miniProgram && user" class="mini-member-actions"><button class="outline-btn" @click="go('/pages/login/index?bindMini=1')">绑定当前会员微信支付</button><text class="muted">手机或邮箱登录的会员，可在此绑定小程序微信身份。</text></view>
+    <view v-if="miniProgram && user && user.wechatMiniBound === false" class="mini-member-actions"><button class="outline-btn" @click="go('/pages/login/index?bindMini=1')">绑定当前会员微信支付</button><text class="muted">手机或邮箱登录的会员，可在此绑定小程序微信身份。</text></view>
     <view v-if="user?.phoneTestMode" class="verification-note">购买前需验证账号，请使用已验证的手机号或邮箱登录。<button class="text-button" @click="login">更换登录账号</button></view>
     <view v-if="user" class="app-panel recent-orders" aria-label="最近订单">
       <view class="recent-heading"><b>最近订单</b><button class="text-button" @click="go('/pages/orders/index')">查看全部 ›</button></view>
