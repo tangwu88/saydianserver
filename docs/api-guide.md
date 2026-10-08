@@ -21,6 +21,8 @@
 
 ## 2. 响应与错误
 
+通用 AI 对话 `/api/saydian-app/v2/ai/messages` 的供应商失败仍返回 HTTP 503（V1 保持 HTTP 200 业务包裹），增加固定 `AI_PROVIDER_*` 错误码。仅此组允许 `data={upstreamStatus,providerCode,durationMs}` 脱敏诊断：数字 HTTP 状态、3–6 位数字服务错误码、受限非负耗时；未知为 null。不含原始响应、问题、回复、密钥或账号。客户端不能把所有失败解释为手机网络故障，不能自动重发。配置未启用返回 `AI_NOT_CONFIGURED`，供应商响应失败不改变已保存用户提问的原有行为。
+
 V2/后台成功 `data` 外层：
 
 ```json

@@ -26,7 +26,42 @@ function errorMessage(exception: unknown): {
       : [exception.message];
   return {
     message: messages[0] ?? "请求失败",
-    data: messages.length > 1 ? { errors: { request: messages } } : null,
+    // Only the fixed AI diagnostic shape is public; never forward arbitrary data.
+    data:
+      typeof payload.errorKey === "string" &&
+      /^AI_PROVIDER_(AUTH|LIMIT|REJECTED|UNAVAILABLE|TIMEOUT|NETWORK|INVALID_RESPONSE)$/.test(
+        payload.errorKey,
+      )
+        ? safeAiDiagnostic(payload.data)
+        : messages.length > 1
+          ? { errors: { request: messages } }
+          : null,
+  };
+}
+
+function safeAiDiagnostic(input: unknown): Record<string, unknown> | null {
+  if (!input || typeof input !== "object") return null;
+  const value = input as Record<string, unknown>;
+  return {
+    upstreamStatus:
+      typeof value.upstreamStatus === "number" &&
+      Number.isInteger(value.upstreamStatus) &&
+      value.upstreamStatus >= 100 &&
+      value.upstreamStatus <= 599
+        ? value.upstreamStatus
+        : null,
+    providerCode:
+      typeof value.providerCode === "string" &&
+      /^\d{3,6}$/.test(value.providerCode)
+        ? value.providerCode
+        : null,
+    durationMs:
+      typeof value.durationMs === "number" &&
+      Number.isInteger(value.durationMs) &&
+      value.durationMs >= 0 &&
+      value.durationMs <= 300_000
+        ? value.durationMs
+        : null,
   };
 }
 

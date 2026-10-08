@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -12,13 +13,14 @@ import { IntegrationSecretsService } from "../common/integration-secrets.service
 import { markIntegrationVerified } from "../common/integration-health";
 
 import { globalLocale } from "../auth/global-identity";
-import { globalAiSystemPrompt } from "./global-content";
+import { callChatProvider } from "./ai-chat-provider";
 import { globalLegalBundle } from "../auth/global-legal";
 import { renderSayRingLegalPage } from "./say-ring-legal-page";
 import { contentProduct, contentProductFilter } from "./content-product";
 
 @Injectable()
 export class ContentService {
+  private readonly logger = new Logger(ContentService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly integrationSecrets: IntegrationSecretsService,
@@ -220,39 +222,9 @@ export class ContentService {
     },
     locale?: string,
   ): Promise<string> {
-    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${settings.apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: settings.model,
-        messages: [
-          {
-            role: "system",
-            content: globalAiSystemPrompt(locale),
-          },
-          { role: "user", content },
-        ],
-      }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!response.ok) {
-      throw new ServiceUnavailableException(
-        "AI健康管家暂时无法使用，请稍后再试",
-      );
-    }
-    const payload = safeObject(await response.json());
-    const choices = Array.isArray(payload.choices) ? payload.choices : [];
-    const first = safeObject(choices[0]);
-    const message = safeObject(first.message);
-    const reply = String(message.content ?? "").trim();
-    if (!reply)
-      throw new ServiceUnavailableException(
-        "AI健康管家暂时无法使用，请稍后再试",
-      );
-    return reply;
+    return callChatProvider(content, settings, locale, (failure) =>
+      this.logger.warn(failure),
+    );
   }
 
   private async aiSettings() {
@@ -267,9 +239,10 @@ export class ContentService {
       integration?.state !== IntegrationState.CONFIGURED ||
       provider === "disabled"
     ) {
-      throw new ServiceUnavailableException(
-        "AI健康管家暂时无法使用，请稍后再试",
-      );
+      throw new ServiceUnavailableException({
+        errorKey: "AI_NOT_CONFIGURED",
+        message: "AI service is not configured.",
+      });
     }
     const secrets = await this.integrationSecrets.resolve("ai", {
       apiKey: "AI_API_KEY",
@@ -284,9 +257,10 @@ export class ContentService {
       publicConfig.model ?? secrets.model ?? "configured-model",
     );
     if (!baseUrl || !apiKey) {
-      throw new ServiceUnavailableException(
-        "AI健康管家暂时无法使用，请稍后再试",
-      );
+      throw new ServiceUnavailableException({
+        errorKey: "AI_NOT_CONFIGURED",
+        message: "AI service is not configured.",
+      });
     }
     return { provider, baseUrl, apiKey, model };
   }
