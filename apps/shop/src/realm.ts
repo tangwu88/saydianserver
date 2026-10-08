@@ -5,6 +5,7 @@ miniProgram = true;
 /* #endif */
 export const mallConfig = resolveMallConfig(import.meta.env, miniProgram);
 export const isGlobalMall = mallConfig.realm === "global";
+export const isMiniProgram = miniProgram;
 export const mallStorageKey = (key: string) => realmKey(key, mallConfig.realm);
 export const mallStorage = {
   get: (key: string): any => uni.getStorageSync(mallStorageKey(key)),

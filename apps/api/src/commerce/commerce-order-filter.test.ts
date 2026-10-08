@@ -132,6 +132,21 @@ describe("order list query compatibility", () => {
       }),
     );
   });
+  it("keeps newly created unpaid orders first when merging Date objects with legacy ISO timestamps", async () => {
+    const current = [
+      { id: "cancelled-payment-order", orderNo: "new", status: "PENDING_PAYMENT", createdAt: new Date("2026-10-08T03:00:00Z") },
+      { id: "older-current", orderNo: "older", status: "PENDING_PAYMENT", createdAt: new Date("2026-09-16T03:00:00Z") },
+    ];
+    const legacy = [{ id: "legacy", legacyOrderId: "legacy-id", orderNo: "legacy", status: "PENDING_PAYMENT", legacyCreatedAt: new Date("2026-10-07T03:00:00Z") }];
+    const db = { legacyOrderProjection: { findMany: vi.fn().mockResolvedValue(legacy) } };
+    const store = { listOrders: vi.fn().mockResolvedValue(current) };
+    const service = new CommerceService(db as any, store as any, {} as any);
+    for (const status of [undefined, "PENDING_PAYMENT"]) {
+      const rows = await service.orders("member", status);
+      expect(rows.map(row => row.id)).toEqual(["cancelled-payment-order", "legacy", "older-current"]);
+      expect(rows[0]?.status).toBe("PENDING_PAYMENT");
+    }
+  });
   it("both public controllers preserve group and status as separate optional parameters", async () => {
     const commerce = { orders: vi.fn().mockResolvedValue([]) };
     const user = { id: "member", sessionId: "session" };

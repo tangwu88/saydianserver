@@ -1350,6 +1350,7 @@ test("global H5 manifest retains all four customer tabs and its independent rout
     "@dcloudio/vite-plugin-uni": { default: () => ({ name: "synthetic-uni" }) },
     "@dcloudio/uni-cli-shared": { parseManifestJsonOnce: () => ({}) },
     "./src/realm-config": h.load("realm-config"),
+    "./mini-style": { miniSelectors: value => value, miniVueStyles: value => value },
   };
   vm.runInNewContext(output, {
     module,
@@ -1361,7 +1362,7 @@ test("global H5 manifest retains all four customer tabs and its independent rout
     },
   });
   const config = module.exports.default,
-    transform = config.plugins[0].transform;
+    transform = config.plugins.find(plugin => plugin.name === "saydian-realm-manifest").transform;
   const pages = JSON.parse(transform(readFileSync(resolve(source, "pages.json"), "utf8"), "uni:pages-json-js").code);
   assert.deepEqual(
     pages.tabBar.list.map((tab) => tab.pagePath),

@@ -112,4 +112,17 @@ async function miniLogin(){
 function help(section:string){uni.navigateTo({url:"/pages/help/index?section="+section});}
 function browse(){uni.switchTab({url:"/pages/home/index"});}
 </script>
+<style scoped>
+/* #ifdef MP-WEIXIN */
+.login-page{--green:#d20b27;--deep:#980018;--mint:#ffe8ec;--ink:#171b2b;--muted:#5f6675;--line:#dde3ec;background:#f5f7fa;color:var(--ink);padding:24px 20px calc(96px + env(safe-area-inset-bottom));}
+.login-page .login-card{max-width:520px;border:0;background:transparent;padding:0;border-radius:0;}
+.login-page .input{width:100%;min-width:0;height:54px;margin:8px 0 0;border-radius:10px;padding:0 14px;background:#fff;}
+.login-page .primary-btn,.login-page .outline-btn{min-height:54px;height:auto;padding:14px 18px;border-radius:12px;line-height:1.5;font-size:16px;}
+.login-page .login-tabs button{border-radius:10px;min-height:48px;line-height:1.5;padding:12px;background:#fff;}
+.login-page .login-tabs .active{background:var(--mint);color:var(--green);}
+.login-page .code-row{grid-template-columns:minmax(0,1fr) 130px;align-items:center;}
+.login-page .code-row .input{margin:0;}.login-page .code-row button{padding:10px;font-size:14px;}
+.login-page .agreement{font-size:12px;line-height:1.6;}
+/* #endif */
+</style>
 <style scoped>.login-page{display:flex;justify-content:center;padding-top:32px;}.login-card{max-width:480px;width:100%;height:max-content;padding:28px;}.login-logo{width:116px;height:46px;display:block;margin-bottom:24px;}h1{font-size:24px;margin:0 0 12px;}.login-tabs{display:flex;margin:24px 0;gap:12px;}.login-tabs button{flex:1;font-size:16px;background:#f1f2f4}.login-tabs .active{color:var(--green);background:var(--mint);}.form-label{display:block;margin:18px 0 8px;font-size:14px;}.input{margin-top:8px;height:46px;font-size:16px;}.code-row{display:grid;grid-template-columns:1fr 130px;gap:10px;}.code-row .input{margin:0;}.code-row button{height:46px;font-size:14px;}.agreement{display:flex;flex-wrap:wrap;align-items:center;gap:5px;font-size:14px;line-height:1.8;margin:22px 0;}.link{color:var(--green);}.wechat-login{margin-top:14px;}.muted{font-size:14px;line-height:1.6;}.notice{display:block;background:#fff8e6;padding:10px;font-size:14px;margin-top:14px;}.text-button{margin:18px auto 0;}</style>

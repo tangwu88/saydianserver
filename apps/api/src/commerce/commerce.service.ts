@@ -329,7 +329,7 @@ export class CommerceService {
           source: "legacy",
         })),
     ].sort((left, right) =>
-      String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")),
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
     );
   }
 

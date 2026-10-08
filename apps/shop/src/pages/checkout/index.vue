@@ -13,6 +13,7 @@
   <text v-if="capabilities && !hasPayment" class="muted">支付暂不可用，请稍后再试。</text>
   <view v-if="paymentQr" class="payment-qr"><image :src="paymentQr" mode="aspectFit"/><text>请使用微信扫码完成支付</text></view><text v-if="paymentNote" class="payment-note" role="status">{{ paymentNote }}</text>
   <button class="primary-btn" :loading="submitting||quoting" :disabled="submitting||quoting||(!uncertain && (!quote||!address||capabilities?.checkout?.enabled === false||!hasPayment))||capabilities?.maintenance?.readOnly" @click="submit">{{ uncertain ? '查询并继续付款' : quoteNeedsConfirmation ? '确认金额并付款' : pendingOrderId ? '继续付款' : '立即付款' }}</button>
+  <button v-if="pendingOrderId" class="outline-btn pending-orders" @click="viewPendingOrders">查看待付款订单</button>
 </view></view></view></template>
 <script setup lang="ts">
 import { mallStorage } from "../../realm";
@@ -42,6 +43,7 @@ function selectCoupon(event:any){selectedCoupon.value=availableCoupons.value[Num
 async function redeemCouponCode(){const code=couponCode.value.trim().toUpperCase();if(couponBusy.value||submitting.value)return;couponError.value='';if(!/^[A-Z0-9_-]{4,32}$/.test(code)){couponError.value='请输入 4 至 32 位有效优惠码';return;}couponBusy.value=true;try{const claimed:any=await api('/storefront/coupons/code/claim',{method:'POST',auth:true,data:{code}});const claims:any[]=await api('/storefront/coupons',{auth:true});coupons.value=claims;selectedCoupon.value=claims.find(row=>row.id===claimed.id)||claims.find(row=>row.couponId===claimed.couponId);couponCode.value='';await refreshQuote();uni.showToast({title:'优惠券已使用',icon:'none'});}catch(e){couponError.value=e instanceof Error?e.message:'优惠码暂不可用';}finally{couponBusy.value=false;}}
 function maxPoints(){pointAmount.value=((quote.value?.maxPointCents||0)/100).toFixed(2);void refreshQuote();}
   function chooseAddress(){uni.navigateTo({url:addresses.value.length?"/pages/addresses/index?select=1":"/pages/address-edit/index"});}
+  function viewPendingOrders(){uni.navigateTo({url:'/pages/orders/index?status=PENDING_PAYMENT'});}
   function stopPaymentPoll(){if(paymentPoll)clearInterval(paymentPoll);paymentPoll=undefined;}
   async function checkSubmittedPayment(){if(!paymentId.value)return false;const result=await confirmPayment(paymentId.value);if(result.paid){stopPaymentPoll();clearCheckoutState();paymentNote.value="支付成功，正在打开订单列表…";uni.redirectTo({url:"/pages/orders/index"});return true;}paymentNote.value="支付结果确认中，本页会自动更新";return false;}
   function beginPaymentPoll(){stopPaymentPoll();paymentChecks=0;paymentPoll=setInterval(()=>{if(++paymentChecks>40){stopPaymentPoll();paymentNote.value="付款结果仍在确认中，可点击继续付款查询";return;}void checkSubmittedPayment().catch(()=>undefined);},3000);}

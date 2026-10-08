@@ -1,8 +1,5 @@
 <template>
-  <!-- #ifdef MP-WEIXIN -->
-  <view v-if="user" class="container"><button class="outline-btn" @click="go('/pages/login/index?bindMini=1')">绑定当前会员微信支付</button><text class="small">手机或邮箱登录的会员，可在此绑定小程序微信身份。</text></view>
-  <!-- #endif -->
-  <GlobalAccount v-if="isGlobalMall" :user="user" :error="accountError" :loading="accountLoading" :recent-orders="recentOrders" :recent-orders-loading="recentOrdersLoading" :recent-orders-error="recentOrdersError" @logout="logout" @refresh="loadAccount" /><template v-else>
+  <GlobalAccount v-if="isGlobalMall || isMiniProgram" :mini-program="isMiniProgram" :user="user" :error="accountError" :loading="accountLoading" :recent-orders="recentOrders" :recent-orders-loading="recentOrdersLoading" :recent-orders-error="recentOrdersError" @logout="logout" @refresh="loadAccount" /><template v-else>
   <DesktopHeader /><view class="page"
     ><view class="container profile-layout"
       ><view
@@ -51,7 +48,7 @@
   <StoreFooter />
 </template></template>
 <script setup lang="ts">
-import { mallStorage, isGlobalMall } from "../../realm";
+import { mallStorage, isGlobalMall, isMiniProgram } from "../../realm";
 import GlobalAccount from "../../components/GlobalAccount.vue";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import { ref } from "vue";
@@ -78,9 +75,9 @@ async function loadAccount() {
   const generation = ++accountGeneration;
   user.value = mallStorage.get("saidian-user") || null;
   accountError.value = ""; accountLoading.value = false; recentOrders.value = []; recentOrdersError.value = ""; recentOrdersLoading.value = false;
-  if (!isGlobalMall || !user.value) return;
+  if ((!isGlobalMall && !isMiniProgram) || !user.value) return;
   accountLoading.value = true;
-  try { const current = await refreshGlobalMallAccount(); if (generation === accountGeneration) user.value = current; }
+  try { const owner = user.value.id; const current = isGlobalMall ? await refreshGlobalMallAccount() : await api<any>('/auth/wechat/h5/account', { auth: true }); if (generation === accountGeneration && current?.id === owner) { user.value = current; if (isMiniProgram) mallStorage.set('saidian-user', current); } }
   catch (cause) { if (generation === accountGeneration) { user.value = mallStorage.get("saidian-user") || null; accountError.value = authErrorMessage(cause, "账号信息暂时无法更新，请重试。"); } }
   finally { if (generation === accountGeneration) accountLoading.value = false; }
   if (generation !== accountGeneration || !user.value) return;

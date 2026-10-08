@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import uniModule from "@dcloudio/vite-plugin-uni";
 import { parseManifestJsonOnce } from "@dcloudio/uni-cli-shared";
 import { resolveMallConfig } from "./src/realm-config";
+import { miniSelectors, miniVueStyles } from "./mini-style";
 
 const uni =
   (uniModule as unknown as { default?: typeof uniModule }).default ?? uniModule;
@@ -27,6 +28,13 @@ if (process.env.UNI_PLATFORM === "h5") {
 
 export default defineConfig({
   plugins: [{
+    name: "saydian-mini-style-compatibility", enforce: "pre",
+    transform(code, id) {
+      if (process.env.UNI_PLATFORM !== "mp-weixin") return;
+      if (id.endsWith(".vue")) return { code: miniVueStyles(code, id), map: null };
+      if (id.endsWith(".scss")) return { code: miniSelectors(code), map: null };
+    },
+  }, {
     name: "saydian-realm-manifest", enforce: "pre",
     transform(code, id) {
       if (process.env.UNI_PLATFORM === "mp-weixin" && process.env.VITE_WECHAT_MINI_APP_ID && id.endsWith("manifest-json-js")) {
@@ -46,6 +54,12 @@ export default defineConfig({
     },
   }, uni()],
   base: process.env.UNI_PLATFORM === "h5" ? publicBase : "/",
+  ...(process.env.UNI_PLATFORM === "mp-weixin" ? { css: {
+    postcss: { plugins: [{
+      postcssPlugin: "saydian-mini-selectors",
+      Rule(rule: { selector: string }) { rule.selector = miniSelectors(rule.selector + "{").slice(0, -1); },
+    }] },
+  } } : {}),
   server: {
     host: "127.0.0.1",
     strictPort: true,

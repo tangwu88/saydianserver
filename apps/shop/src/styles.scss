@@ -12,6 +12,13 @@
 /* #endif */
 /* #ifdef MP-WEIXIN */
 page { @include mall-theme; }
+.mini-b, .mini-strong { font-weight: 700; }
+.mini-em { font-style: italic; }
+.mini-h1, .mini-h2, .mini-h3, .mini-h4 { display: block; font-weight: 700; margin: 0 0 16px; }
+.mini-h1 { font-size: 24px; }
+.mini-h2 { font-size: 20px; }
+.mini-h3 { font-size: 18px; }
+.mini-node { box-sizing: border-box; }
 /* #endif */
 /* #ifdef H5 */
 * {
