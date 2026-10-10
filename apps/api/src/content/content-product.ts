@@ -1,6 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 
-export const CONTENT_PRODUCTS = ["shared", "saidian", "saydian-global", "say-ring"] as const;
+export const CONTENT_PRODUCTS = ["shared", "saidian", "saydian-global", "say-ring", "saydian-app-cn"] as const;
 export type ContentProduct = (typeof CONTENT_PRODUCTS)[number];
 
 export function contentProduct(value: unknown, fallback: ContentProduct = "saydian-global"): ContentProduct {

@@ -11,7 +11,7 @@ import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
 import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
 import ContentImageField from "../components/ContentImageField.vue";
 import ProductGalleryField from "../components/ProductGalleryField.vue";
-import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor, type DownloadManifestEditor } from "../global-download-setting";
+import { createCnDownloadDraft, cnDownloadManifestToEditor, cnDownloadEditorToManifest, createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor, type DownloadManifestEditor } from "../global-download-setting";
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "../download-setting";
 import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "../legal-document-editor";
 import { healthMetricLabel, healthRawJson, healthReadings, healthTime } from "../health-display";
@@ -81,13 +81,14 @@ const downloadPlatformOptions = [
   { key: "ios", label: "iPhone", packageLabel: "TestFlight / App Store" },
   { key: "harmonyos", label: "HarmonyOS", packageLabel: "HAP" },
 ] as const;
-const visibleDownloadPlatformOptions = computed(() => downloadPlatformOptions);
-const appUpdateSettingKeys = new Set(["app_update", "global_app_update", "say_ring_app_update"]);
+const visibleDownloadPlatformOptions = computed(() => form.value.key === "cn_app_update" ? downloadPlatformOptions.filter(platform => platform.key === "android") : downloadPlatformOptions);
+const appUpdateSettingKeys = new Set(["app_update", "global_app_update", "say_ring_app_update", "cn_app_update"]);
 const contentProductOptions = [
   { value: "shared", label: "通用内容" },
   { value: "saidian", label: "原赛电 App" },
   { value: "saydian-global", label: "Saydian Health" },
   { value: "say-ring", label: "Say Ring" },
+  { value: "saydian-app-cn", label: "赛电健康（简体中文版）" },
 ] as const;
 const contentProductLabel = (value: unknown): string => contentProductOptions.find((item) => item.value === value)?.label ?? String(value ?? "未分类");
 const settingProducts = (key: unknown): string[] => {
@@ -96,6 +97,7 @@ const settingProducts = (key: unknown): string[] => {
     app_update: ["saidian"],
     global_app_update: ["saydian-global"],
     say_ring_app_update: ["say-ring"],
+    cn_app_update: ["saydian-app-cn"],
     say_ring_app_display: ["say-ring"],
     say_ring_map: ["say-ring"],
   };
@@ -134,9 +136,9 @@ const supportEditorToValue = (editor: Row): Row => {
     ...(message ? { message } : {}),
   };
 };
-const createDownloadDraft = (key: unknown): DownloadManifestEditor => (String(key) === "say_ring_app_update" ? createSayRingDownloadDraft() : createGlobalDownloadDraft());
-const downloadManifestToEditor = (key: unknown, value: unknown): DownloadManifestEditor => key === "app_update" ? originalManifestToEditor(value) : key === "say_ring_app_update" ? sayRingDownloadManifestToEditor(value) : globalDownloadManifestToEditor(value);
-const downloadEditorToManifest = (key: unknown, editor: DownloadManifestEditor) => key === "app_update" ? originalEditorToManifest(editor) : key === "say_ring_app_update" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor);
+const createDownloadDraft = (key: unknown): DownloadManifestEditor => (String(key) === "cn_app_update" ? createCnDownloadDraft() : String(key) === "say_ring_app_update" ? createSayRingDownloadDraft() : createGlobalDownloadDraft());
+const downloadManifestToEditor = (key: unknown, value: unknown): DownloadManifestEditor => key === "cn_app_update" ? cnDownloadManifestToEditor(value) : key === "app_update" ? originalManifestToEditor(value) : key === "say_ring_app_update" ? sayRingDownloadManifestToEditor(value) : globalDownloadManifestToEditor(value);
+const downloadEditorToManifest = (key: unknown, editor: DownloadManifestEditor) => key === "cn_app_update" ? cnDownloadEditorToManifest(editor) : key === "app_update" ? originalEditorToManifest(editor) : key === "say_ring_app_update" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor);
 const titles: Record<string, string> = {
   members: "会员",
   care: "远程关爱",
@@ -391,6 +393,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
     { key: "app_update", name: "赛电 App 更新" },
     { key: "global_app_update", name: "SAYDIAN Health 更新" },
     { key: "say_ring_app_update", name: "Say Ring App 更新" },
+    { key: "cn_app_update", name: "赛电健康（简体中文版）App 更新" },
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
     { key: "say_ring_map", name: "Say Ring 运动地图" },
   ];
@@ -1100,7 +1103,7 @@ async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event
   try {
     const body = new FormData();
     body.append("file", file);
-    const product = form.value.key === "app_update" ? "saidian" : form.value.key === "global_app_update" ? "saydian-global" : "say-ring";
+    const product = form.value.key === "cn_app_update" ? "saydian-app-cn" : form.value.key === "app_update" ? "saidian" : form.value.key === "global_app_update" ? "saydian-global" : "say-ring";
     const uploaded = responseData<Row>(await api.post(`/app-packages?platform=${encodeURIComponent(platform)}&product=${encodeURIComponent(product)}`, body, { timeout: 5 * 60_000 }));
     const release = editor.releases[platform];
     release.destinationKind = "direct";
@@ -1993,7 +1996,7 @@ onBeforeUnmount(() => {
             <el-alert title="启用时至少填写客服电话或微信公众号；关闭后可保留联系方式，但 App 不会展示。" type="warning" :closable="false" />
           </template>
           <template v-else-if="isAppUpdateSetting(form.key) && form.downloadEditor">
-            <el-alert :title="form.key === 'say_ring_app_update' ? '仅更新 Say Ring。' : form.key === 'app_update' ? '仅更新原赛电下载页 /down/legacy，不影响 Health。' : '仅更新 Health 下载页 /down 与 /global/down。等待审核时不保存安装链接。'" type="warning" :closable="false" show-icon />
+            <el-alert :title="form.key === 'cn_app_update' ? '仅更新赛电健康简体中文版（cc.saidian.app），不影响其他 App。' : form.key === 'say_ring_app_update' ? '仅更新 Say Ring。' : form.key === 'app_update' ? '仅更新原赛电下载页 /down/legacy，不影响 Health。' : '仅更新 Health 下载页 /down 与 /global/down。等待审核时不保存安装链接。'" type="warning" :closable="false" show-icon />
             <el-form-item label="发布时间" class="download-published-at">
               <el-input v-model="form.downloadEditor.publishedAt" placeholder="ISO 8601，如 2026-09-06T00:00:00+08:00">
                 <template #append><el-button @click="setDownloadPublishedNow">设为现在</el-button></template>

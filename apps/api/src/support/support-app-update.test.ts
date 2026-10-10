@@ -289,73 +289,121 @@ describe("Say Ring package upload and download", () => {
     return { service, db, send, rows, file, bytes };
   }
 
-  it.each(["say-ring", "saidian", "saydian-global"])("stores and downloads packages for %s with a saveable manifest", async (product) => {
+  it.each(["say-ring", "saidian", "saydian-global"])(
+    "stores and downloads packages for %s with a saveable manifest",
+    async (product) => {
+      const h = packageFixture();
+      const uploaded = await h.service.uploadAdminAppPackage(
+        "admin-1",
+        h.file,
+        "android",
+        product,
+      );
+
+      expect(uploaded).toMatchObject({
+        fileName: expect.stringMatching(
+          new RegExp(`^${product}-android-\\d+-[a-f0-9]{8}\\.apk$`),
+        ),
+        url: expect.stringMatching(
+          new RegExp(
+            `^${product === "saidian" ? "" : "/global"}/api/saydian-app/v2/support/app-package/`,
+          ),
+        ),
+        sizeBytes: h.bytes.length,
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      });
+      expect(h.rows[0]).toMatchObject({
+        ownerUserId: null,
+        purpose: `app-package:${product}`,
+        contentType: "application/vnd.android.package-archive",
+      });
+      expect(h.send.mock.calls[0]![0].input).toMatchObject({
+        Bucket: "app-packages",
+        Key: expect.stringMatching(
+          new RegExp(`^app-packages/${product}/android/`),
+        ),
+      });
+
+      const downloaded = await h.service.publicAppPackage(uploaded.fileName);
+      expect(downloaded).toMatchObject({
+        contentType: "application/vnd.android.package-archive",
+        byteSize: h.bytes.length,
+        sha256: uploaded.sha256,
+      });
+      expect(h.send.mock.calls[1]![0].input.Key).toBe(h.rows[0].objectKey);
+      const manifest = structuredClone(validManifest);
+      manifest.releases[0]!.destination = { kind: "direct", ...uploaded };
+      // Only Android is available in this fixture, so other platforms need no package.
+      manifest.releases[2] = {
+        platform: "harmonyos",
+        versionName: "1.0.0",
+        buildNumber: 1,
+        status: "coming_soon",
+      } as any;
+      if (product === "saidian") {
+        expect(
+          parseDownloadManifest(manifest).releases[0]?.destination?.url,
+        ).toBe(uploaded.url);
+      } else {
+        const packageId =
+          product === "say-ring" ? "cn.saydian.ring" : "cn.saydian.app.global";
+        const globalManifest = {
+          ...manifest,
+          realm: "global",
+          releases: manifest.releases.map((r) => ({
+            ...r,
+            packageId:
+              r.platform === "harmonyos" ? `${packageId}.hm` : packageId,
+          })),
+        };
+        expect(
+          parseGlobalDownloadManifest(
+            globalManifest,
+            product as "say-ring" | "saydian-global",
+          ).releases[0]?.destination?.url,
+        ).toBe(uploaded.url);
+      }
+    },
+  );
+
+  it("keeps the existing default and rejects unknown products before storage", async () => {
     const h = packageFixture();
+    await expect(
+      h.service.uploadAdminAppPackage("admin-1", h.file, "android", "unknown"),
+    ).rejects.toThrow();
+    expect(h.send).not.toHaveBeenCalled();
     const uploaded = await h.service.uploadAdminAppPackage(
       "admin-1",
       h.file,
       "android",
-      product,
     );
-
-    expect(uploaded).toMatchObject({
-      fileName: expect.stringMatching(
-        new RegExp(`^${product}-android-\\d+-[a-f0-9]{8}\\.apk$`),
-      ),
-      url: expect.stringMatching(
-        new RegExp(`^${product === "saidian" ? "" : "/global"}/api/saydian-app/v2/support/app-package/`),
-      ),
-      sizeBytes: h.bytes.length,
-      sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
-    });
-    expect(h.rows[0]).toMatchObject({
-      ownerUserId: null,
-      purpose: `app-package:${product}`,
-      contentType: "application/vnd.android.package-archive",
-    });
-    expect(h.send.mock.calls[0]![0].input).toMatchObject({
-      Bucket: "app-packages",
-      Key: expect.stringMatching(new RegExp(`^app-packages/${product}/android/`)),
-    });
-
-    const downloaded = await h.service.publicAppPackage(uploaded.fileName);
-    expect(downloaded).toMatchObject({
-      contentType: "application/vnd.android.package-archive",
-      byteSize: h.bytes.length,
-      sha256: uploaded.sha256,
-    });
-    expect(h.send.mock.calls[1]![0].input.Key).toBe(h.rows[0].objectKey);
-    const manifest = structuredClone(validManifest);
-    manifest.releases[0]!.destination = { kind: "direct", ...uploaded };
-    // Only Android is available in this fixture, so other platforms need no package.
-    manifest.releases[2] = { platform: "harmonyos", versionName: "1.0.0", buildNumber: 1, status: "coming_soon" } as any;
-    if (product === "saidian") {
-      expect(parseDownloadManifest(manifest).releases[0]?.destination?.url).toBe(uploaded.url);
-    } else {
-      const packageId = product === "say-ring" ? "cn.saydian.ring" : "cn.saydian.app.global";
-      const globalManifest = { ...manifest, realm: "global", releases: manifest.releases.map(r => ({ ...r, packageId: r.platform === "harmonyos" ? `${packageId}.hm` : packageId })) };
-      expect(parseGlobalDownloadManifest(globalManifest, product as "say-ring" | "saydian-global").releases[0]?.destination?.url).toBe(uploaded.url);
-    }
-  });
-
-  it("keeps the existing default and rejects unknown products before storage", async () => {
-    const h = packageFixture();
-    await expect(h.service.uploadAdminAppPackage("admin-1", h.file, "android", "unknown")).rejects.toThrow();
-    expect(h.send).not.toHaveBeenCalled();
-    const uploaded = await h.service.uploadAdminAppPackage("admin-1", h.file, "android");
     expect(uploaded.fileName).toMatch(/^say-ring-/);
     h.rows[0].purpose = "app-package:saidian";
-    await expect(h.service.publicAppPackage(uploaded.fileName)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      h.service.publicAppPackage(uploaded.fileName),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it.each(["saidian", "saydian-global", "say-ring"])("uploads HarmonyOS packages for %s", async (product) => {
-    const h = packageFixture();
-    const uploaded = await h.service.uploadAdminAppPackage("admin-1", { ...h.file, originalname: "app.hap" }, "harmonyos", product);
-    expect(uploaded.fileName).toMatch(new RegExp(`^${product}-harmonyos-.*\\.hap$`));
-    const downloaded = await h.service.publicAppPackage(uploaded.fileName);
-    expect(downloaded.contentType).toBe("application/octet-stream");
-    expect(h.send.mock.calls[1]![0].input.Key).toContain(`app-packages/${product}/harmonyos/`);
-  });
+  it.each(["saidian", "saydian-global", "say-ring"])(
+    "uploads HarmonyOS packages for %s",
+    async (product) => {
+      const h = packageFixture();
+      const uploaded = await h.service.uploadAdminAppPackage(
+        "admin-1",
+        { ...h.file, originalname: "app.hap" },
+        "harmonyos",
+        product,
+      );
+      expect(uploaded.fileName).toMatch(
+        new RegExp(`^${product}-harmonyos-.*\\.hap$`),
+      );
+      const downloaded = await h.service.publicAppPackage(uploaded.fileName);
+      expect(downloaded.contentType).toBe("application/octet-stream");
+      expect(h.send.mock.calls[1]![0].input.Key).toContain(
+        `app-packages/${product}/harmonyos/`,
+      );
+    },
+  );
 
   it("rejects a mismatched platform, extension, header, and size before storage", async () => {
     const h = packageFixture();
@@ -387,5 +435,89 @@ describe("Say Ring package upload and download", () => {
       h.service.publicAppPackage("missing.apk"),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(h.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("Chinese app isolated updates", () => {
+  function cnManifest() {
+    return {
+      ...validManifest,
+      product: "saydian-app-cn",
+      realm: "global",
+      releases: validManifest.releases.map((release) =>
+        release.platform === "android"
+          ? {
+              ...release,
+              packageId: "cc.saidian.app",
+              destination: {
+                ...release.destination!,
+                url: "/global/down/files/saydian-app-cn-fixture.apk",
+                fileName: "saydian-app-cn-fixture.apk",
+              },
+            }
+          : {
+              platform: release.platform,
+              versionName: release.versionName,
+              buildNumber: release.buildNumber,
+              status: "coming_soon",
+              packageId: release.platform === "ios" ? "" : "cc.saidian.app.hm",
+            },
+      ),
+    };
+  }
+  it("reads only cn_app_update without falling back to other products", async () => {
+    vi.stubEnv("APP_REALM", "global");
+    const findUnique = vi.fn(async ({ where }: any) =>
+      where.key === "cn_app_update"
+        ? { public: true, value: cnManifest() }
+        : null,
+    );
+    const service = new SupportService(
+      { appSetting: { findUnique } } as never,
+      {} as never,
+    );
+    await expect(
+      service.appUpdateConfig("saydian-app-cn"),
+    ).resolves.toMatchObject({
+      product: "saydian-app-cn",
+      releases: [
+        { packageId: "cc.saidian.app" },
+        { status: "coming_soon" },
+        { status: "coming_soon" },
+      ],
+    });
+    expect(findUnique).toHaveBeenCalledExactlyOnceWith({
+      where: { key: "cn_app_update" },
+    });
+  });
+  it("rejects another product, package or package filename", () => {
+    const value = cnManifest();
+    for (const invalid of [
+      { ...value, product: "saydian-global" },
+      { ...value, product: undefined },
+      {
+        ...value,
+        releases: value.releases.map((r) =>
+          r.platform === "android" ? { ...r, packageId: "cn.saydian.ring" } : r,
+        ),
+      },
+      {
+        ...value,
+        releases: value.releases.map((r) =>
+          r.platform === "android"
+            ? {
+                ...r,
+                destination: {
+                  ...("destination" in r ? r.destination : {}),
+                  url: "/global/down/files/say-ring-fixture.apk",
+                },
+              }
+            : r,
+        ),
+      },
+    ])
+      expect(() =>
+        parseGlobalDownloadManifest(invalid, "saydian-app-cn"),
+      ).toThrow();
   });
 });

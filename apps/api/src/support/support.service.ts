@@ -183,10 +183,12 @@ export class SupportService implements OnModuleInit {
       .trim()
       .toLowerCase();
     let key = "app_update";
-    let globalProduct: "saydian-global" | "say-ring" = "saydian-global";
+    let globalProduct: "saydian-global" | "say-ring" | "saydian-app-cn" = "saydian-global";
     if (product) {
       if (product === "saydian-global") {
         key = "global_app_update";
+      } else if (product === "saydian-app-cn") {
+        key = "cn_app_update"; globalProduct = "saydian-app-cn";
       } else if (product === "say-ring") {
         key = "say_ring_app_update";
         globalProduct = "say-ring";
@@ -366,12 +368,13 @@ export class SupportService implements OnModuleInit {
     productInput: string = "say-ring",
   ) {
     const product = String(productInput ?? "say-ring");
-    if (!["saidian", "saydian-global", "say-ring"].includes(product)) {
+    if (!["saidian", "saydian-global", "say-ring", "saydian-app-cn"].includes(product)) {
       throw new BadRequestException("请选择有效的 App");
     }
     const platform = String(platformInput ?? "")
       .trim()
       .toLowerCase();
+    if (product === "saydian-app-cn" && platform !== "android") throw new BadRequestException("中文版目前仅发布安卓安装包");
     const extension =
       platform === "android" ? "apk" : platform === "harmonyos" ? "hap" : "";
     if (
@@ -446,7 +449,7 @@ export class SupportService implements OnModuleInit {
     const file = await this.prisma.fileObject.findFirst({
       where: {
         originalName: fileName,
-        purpose: `app-package:${fileName.startsWith("saidian-") ? "saidian" : fileName.startsWith("saydian-global-") ? "saydian-global" : "say-ring"}`,
+        purpose: `app-package:${fileName.startsWith("saydian-app-cn-") ? "saydian-app-cn" : fileName.startsWith("saidian-") ? "saidian" : fileName.startsWith("saydian-global-") ? "saydian-global" : "say-ring"}`,
         status: "ACTIVE",
       },
       orderBy: { createdAt: "desc" },

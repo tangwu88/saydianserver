@@ -1853,6 +1853,7 @@ export class AdminService {
             "app_update",
             "global_app_update",
             "say_ring_app_update",
+            "cn_app_update",
             "say_ring_app_display",
             "say_ring_map",
           ],
@@ -1868,6 +1869,7 @@ export class AdminService {
       "app_update",
       "global_app_update",
       "say_ring_app_update",
+      "cn_app_update",
       "say_ring_app_display",
       "say_ring_map",
     ];
@@ -1942,10 +1944,13 @@ export class AdminService {
     if (
       key === "app_update" ||
       key === "global_app_update" ||
-      key === "say_ring_app_update"
+      key === "say_ring_app_update" ||
+      key === "cn_app_update"
     ) {
       try {
-        value = (key === "global_app_update"
+        value = (key === "cn_app_update"
+          ? parseGlobalDownloadManifest(value, "saydian-app-cn")
+          : key === "global_app_update"
           ? parseGlobalDownloadManifest(value)
           : key === "say_ring_app_update"
             ? parseGlobalDownloadManifest(value, "say-ring")

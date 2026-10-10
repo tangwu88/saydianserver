@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   createGlobalDownloadDraft,
+  createCnDownloadDraft,
+  cnDownloadEditorToManifest,
+  cnDownloadManifestToEditor,
   globalDownloadEditorToManifest,
   globalDownloadManifestFromPublicData,
   globalDownloadManifestToEditor,
@@ -262,5 +265,20 @@ describe("international download settings", () => {
     const saved = product === "say-ring" ? sayRingDownloadEditorToManifest(editor) : globalDownloadEditorToManifest(editor);
     const reopened = product === "say-ring" ? sayRingDownloadManifestToEditor(saved) : globalDownloadManifestToEditor(saved);
     expect(reopened.releases.android).toMatchObject({ fileName, url, sizeBytes: 123, sha256: "a".repeat(64) });
+  });
+});
+
+
+describe("Chinese app update editor", () => {
+  it("publishes only Android with its own product and package identity", () => {
+    const editor = createCnDownloadDraft();
+    editor.publishedAt = "2026-10-10T00:00:00Z";
+    editor.releases.android = {...editor.releases.android, status: "available", versionName: "1.0.1", buildNumber: 1016, url: "/global/down/files/saydian-app-cn-fixture.apk", fileName: "saydian-app-cn-fixture.apk", sizeBytes: 12345, sha256: "a".repeat(64)};
+    const saved = cnDownloadEditorToManifest(editor);
+    expect(saved.product).toBe("saydian-app-cn");
+    expect(saved.releases[0]).toMatchObject({platform: "android", packageId: "cc.saidian.app", buildNumber: 1016});
+    expect(saved.releases.slice(1).every(release => release.status === "coming_soon" && !release.destination)).toBe(true);
+    expect(cnDownloadManifestToEditor(saved).releases.android.url).toBe(editor.releases.android.url);
+    expect(() => cnDownloadManifestToEditor({...saved, product: "say-ring"})).toThrow();
   });
 });

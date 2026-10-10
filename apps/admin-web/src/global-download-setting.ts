@@ -221,3 +221,40 @@ export function sayRingDownloadEditorToManifest(
       : editor;
   return editorToManifest(normalized, sayRingPackageIds);
 }
+
+const cnPackageIds = {
+  android: "cc.saidian.app",
+  ios: "",
+  harmonyos: "cc.saidian.app.hm",
+} as const;
+export const createCnDownloadDraft = createGlobalDownloadDraft;
+export function cnDownloadManifestToEditor(input: unknown) {
+  if ((input as Record<string, unknown>)?.product !== "saydian-app-cn")
+    throw new Error("中文版产品标识不一致");
+  return manifestToEditor(input, cnPackageIds);
+}
+export function cnDownloadEditorToManifest(editor: DownloadManifestEditor) {
+  const android = editor.releases.android;
+  const normalized = {
+    ...editor,
+    releases: {
+      ...editor.releases,
+      ...Object.fromEntries(
+        ["ios", "harmonyos"].map((platform) => [
+          platform,
+          {
+            ...editor.releases[platform as "ios" | "harmonyos"],
+            status: "coming_soon" as const,
+            versionName: android.versionName,
+            buildNumber: android.buildNumber,
+            url: "",
+          },
+        ]),
+      ),
+    },
+  };
+  return {
+    ...editorToManifest(normalized, cnPackageIds),
+    product: "saydian-app-cn",
+  };
+}
