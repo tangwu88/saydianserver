@@ -26,7 +26,12 @@ function service(stateValue: IntegrationState = IntegrationState.CONFIGURED) {
   const secrets = {
     resolve: vi.fn(async () => ({ appSecret: "server-only-secret-value" })),
   } as unknown as IntegrationSecretsService;
-  return { auth: new WechatAppAuthService(prisma, secrets), updateMany };
+  return {
+    auth: new WechatAppAuthService(prisma, secrets),
+    updateMany,
+    prisma,
+    secrets,
+  };
 }
 
 afterEach(() => {
@@ -35,6 +40,56 @@ afterEach(() => {
 });
 
 describe("native WeChat authorization", () => {
+  it("uses only CN credentials for a CN exchange and verifies only its integration", async () => {
+    const h = service();
+    vi.mocked(h.prisma.integrationConfig.findUnique).mockResolvedValue({
+      state: IntegrationState.CONFIGURED,
+      publicConfig: { appId: "wxc9426c8d822c1302" },
+    } as never);
+    vi.mocked(h.secrets.resolve).mockResolvedValue({
+      appSecret: "cn-only-synthetic-secret",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "synthetic-token",
+            openid: "cn-open-id",
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ openid: "cn-open-id" })),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(
+      (
+        await h.auth.exchange({
+          code: "one-time-code",
+          state,
+          platform: "android",
+          appProduct: "saydian-app-cn",
+        })
+      ).appId,
+    ).toBe("wxc9426c8d822c1302");
+    expect(h.prisma.integrationConfig.findUnique).toHaveBeenCalledWith({
+      where: { key: "cn_wechat_login" },
+    });
+    expect(h.secrets.resolve).toHaveBeenCalledWith("cn_wechat_login", {
+      appId: "CN_WECHAT_LOGIN_APP_ID",
+      appSecret: "CN_WECHAT_LOGIN_APP_SECRET",
+    });
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("appid")).toBe("wxc9426c8d822c1302");
+    expect(url.searchParams.get("secret")).toBe("cn-only-synthetic-secret");
+    expect(h.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ key: "cn_wechat_login" }),
+      }),
+    );
+  });
+
   it("accepts only a fresh client state", () => {
     expect(isFreshWechatAppState(state, now)).toBe(true);
     expect(isFreshWechatAppState(state, now + 10 * 60 * 1_000)).toBe(true);
@@ -106,10 +161,14 @@ describe("native WeChat authorization", () => {
   it("maps an already-used or invalid provider code to a fresh authorization request", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(JSON.stringify({ errcode: 40163, errmsg: "code been used" }), {
-          status: 200,
-        }),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ errcode: 40163, errmsg: "code been used" }),
+            {
+              status: 200,
+            },
+          ),
       ),
     );
     const { auth } = service();
@@ -125,7 +184,10 @@ describe("native WeChat authorization", () => {
         .fn()
         .mockResolvedValueOnce(
           new Response(
-            JSON.stringify({ access_token: "token", openid: "expected-open-id" }),
+            JSON.stringify({
+              access_token: "token",
+              openid: "expected-open-id",
+            }),
             { status: 200 },
           ),
         )

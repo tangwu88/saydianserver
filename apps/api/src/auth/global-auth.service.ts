@@ -4,7 +4,13 @@ import { hash } from "bcryptjs";
 import { randomInt, randomUUID } from "node:crypto";
 import { PrismaService } from "../common/prisma.service";
 import { env, envBoolean } from "../common/environment";
-import { isUuid, normalizedMobile, safeObject, secureEqual, sha256 } from "../common/crypto";
+import {
+  isUuid,
+  normalizedMobile,
+  safeObject,
+  secureEqual,
+  sha256,
+} from "../common/crypto";
 
 import { AuthService } from "./auth.service";
 import { GlobalVerificationDeliveryService } from "./global-verification-delivery.service";
@@ -35,7 +41,11 @@ export class GlobalAuthService {
     private readonly wechatApp?: GlobalWechatAppService,
   ) {}
 
-  async capabilities(locale?: string, productInput?: unknown) {
+  async capabilities(
+    locale?: string,
+    productInput?: unknown,
+    appProduct?: unknown,
+  ) {
     const product = globalLegalProduct(productInput);
     const ready = await this.delivery.capabilities();
     const legal = await globalLegalBundle(this.prisma, locale, product);
@@ -47,6 +57,7 @@ export class GlobalAuthService {
           legalReady: Boolean(legal),
           deliveryOpen,
           smsReady: ready.sms,
+          appProduct,
         })
       : {
           enabled: false,

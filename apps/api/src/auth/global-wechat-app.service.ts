@@ -30,6 +30,8 @@ import {
   wechatProfileBackfill,
 } from "./wechat-h5-profile";
 
+import { wechatAppConfiguration } from "./wechat-app-product";
+
 const bindingPurpose = "wechat_bind";
 const ticketLifetimeMs = 5 * 60_000;
 
@@ -57,7 +59,9 @@ export class GlobalWechatAppService {
     legalReady: boolean;
     deliveryOpen: boolean;
     smsReady: boolean;
+    appProduct?: unknown;
   }) {
+    wechatAppConfiguration(options.appProduct);
     if (!options.legalReady || !options.deliveryOpen) {
       return {
         enabled: false,
@@ -65,7 +69,9 @@ export class GlobalWechatAppService {
         phoneBindingAvailable: false,
       };
     }
-    const appId = await this.configuredAppId().catch(() => null);
+    const appId = await this.configuredAppId(options.appProduct).catch(
+      () => null,
+    );
     return {
       enabled: Boolean(appId),
       appId,
@@ -92,6 +98,7 @@ export class GlobalWechatAppService {
       code: String(body.code ?? ""),
       state: String(body.state ?? ""),
       platform: String(body.platform ?? ""),
+      appProduct: body.appProduct,
     });
     const linked = await this.prisma.wechatOfficialIdentity.findUnique({
       where: {
@@ -108,7 +115,11 @@ export class GlobalWechatAppService {
       if (linked.user.mobileVerifiedAt) {
         const userId = await this.prisma
           .$transaction(async (tx) => {
-            await this.currentConfiguration(tx, identity.appId);
+            await this.currentConfiguration(
+              tx,
+              identity.appId,
+              body.appProduct,
+            );
             await lockUser(tx, linked.userId);
             await lockIdentity(tx, identity.appId, identity.openId);
             const current = await tx.wechatOfficialIdentity.findUnique({
@@ -131,8 +142,10 @@ export class GlobalWechatAppService {
             await tx.user.update({
               where: { id: current.userId },
               data: {
-                wechatAppOpenId: identity.openId,
-                ...(identity.unionId
+                ...(body.appProduct === "saydian-app-cn"
+                  ? {}
+                  : { wechatAppOpenId: identity.openId }),
+                ...(body.appProduct !== "saydian-app-cn" && identity.unionId
                   ? { wechatUnionId: identity.unionId }
                   : {}),
                 ...wechatProfileBackfill(current.user, profile),
@@ -169,7 +182,11 @@ export class GlobalWechatAppService {
   async requestPhoneCode(input: unknown) {
     this.requireAvailable();
     const body = safeObject(input);
-    const ticket = await this.ticket(body.bindTicket);
+    const ticket = await this.ticket(
+      body.bindTicket,
+      this.prisma,
+      body.appProduct,
+    );
     const identity = globalIdentity("sms", body.identifier);
     const locale = globalLocale(body.locale);
     const legal = await this.legal(body.consentVersion, locale, body.product);
@@ -182,9 +199,9 @@ export class GlobalWechatAppService {
       Math.min(ticket.expiresAt.valueOf(), now.valueOf() + ticketLifetimeMs),
     );
     await this.prisma.$transaction(async (tx) => {
-      await this.currentConfiguration(tx, ticket.appId);
+      await this.currentConfiguration(tx, ticket.appId, body.appProduct);
       await tx.$queryRaw`SELECT "tokenHash" FROM "CommerceWechatBindTicket" WHERE "tokenHash" = ${ticket.tokenHash} FOR UPDATE`;
-      await this.ticket(body.bindTicket, tx);
+      await this.ticket(body.bindTicket, tx, body.appProduct);
       for (const key of [
         sha256(`sms:${identity.identifier}`),
         sha256(`wechat-app-bind-ticket:${ticket.tokenHash}`),
@@ -256,14 +273,18 @@ export class GlobalWechatAppService {
   async bindPhone(input: unknown) {
     this.requireAvailable();
     const body = safeObject(input);
-    const ticket = await this.ticket(body.bindTicket);
+    const ticket = await this.ticket(
+      body.bindTicket,
+      this.prisma,
+      body.appProduct,
+    );
     const challengeId = String(body.challengeId ?? "");
     const code = String(body.code ?? "");
     if (!isUuid(challengeId) || !/^\d{6}$/.test(code)) throw invalidCode();
     const result = await this.prisma
       .$transaction(
         async (tx) => {
-          await this.currentConfiguration(tx, ticket.appId);
+          await this.currentConfiguration(tx, ticket.appId, body.appProduct);
           await tx.$queryRaw`SELECT id FROM "GlobalVerificationChallenge" WHERE id = ${challengeId}::uuid FOR UPDATE`;
           const challenge = await tx.globalVerificationChallenge.findUnique({
             where: { id: challengeId },
@@ -307,8 +328,12 @@ export class GlobalWechatAppService {
                   })
                 : null,
               tx.user.findUnique({ where: { mobile: identity.identifier } }),
-              tx.user.findUnique({ where: { wechatAppOpenId: ticket.openId } }),
-              ticket.unionId
+              body.appProduct === "saydian-app-cn"
+                ? null
+                : tx.user.findUnique({
+                    where: { wechatAppOpenId: ticket.openId },
+                  }),
+              body.appProduct !== "saydian-app-cn" && ticket.unionId
                 ? tx.user.findUnique({
                     where: { wechatUnionId: ticket.unionId },
                   })
@@ -335,12 +360,21 @@ export class GlobalWechatAppService {
             if (user.mobile && user.mobile !== identity.identifier)
               throw conflict();
             if (
+              body.appProduct !== "saydian-app-cn" &&
               user.wechatAppOpenId &&
               user.wechatAppOpenId !== ticket.openId
             ) {
               throw conflict();
             }
+            if (body.appProduct === "saydian-app-cn") {
+              const appIdentity = await tx.wechatOfficialIdentity.findFirst({
+                where: { userId: user.id, appId: ticket.appId },
+              });
+              if (appIdentity && appIdentity.openId !== ticket.openId)
+                throw conflict();
+            }
             if (
+              body.appProduct !== "saydian-app-cn" &&
               user.wechatUnionId &&
               ticket.unionId &&
               user.wechatUnionId !== ticket.unionId
@@ -382,8 +416,12 @@ export class GlobalWechatAppService {
           const userData = {
             mobile: identity.identifier,
             mobileVerifiedAt: new Date(),
-            wechatAppOpenId: ticket.openId,
-            ...(ticket.unionId ? { wechatUnionId: ticket.unionId } : {}),
+            ...(body.appProduct === "saydian-app-cn"
+              ? {}
+              : { wechatAppOpenId: ticket.openId }),
+            ...(body.appProduct !== "saydian-app-cn" && ticket.unionId
+              ? { wechatUnionId: ticket.unionId }
+              : {}),
           };
           const saved = user
             ? await tx.user.update({
@@ -481,17 +519,18 @@ export class GlobalWechatAppService {
     return document;
   }
 
-  private async configuredAppId() {
+  private async configuredAppId(appProduct?: unknown) {
+    const configuration = wechatAppConfiguration(appProduct);
     const integration = await this.prisma.integrationConfig.findUnique({
-      where: { key: "wechat_login" },
+      where: { key: configuration.key },
       select: { state: true, publicConfig: true },
     });
     if (integration?.state !== IntegrationState.CONFIGURED) return null;
     const publicConfig = safeObject(integration.publicConfig);
-    const secrets = await this.integrationSecrets.resolve("wechat_login", {
-      appId: "WECHAT_LOGIN_APP_ID",
-      appSecret: "WECHAT_LOGIN_APP_SECRET",
-    });
+    const secrets = await this.integrationSecrets.resolve(
+      configuration.key,
+      configuration.environment,
+    );
     const appId = String(secrets.appId ?? publicConfig.appId ?? "").trim();
     const appSecret = String(secrets.appSecret ?? "").trim();
     return /^wx[A-Za-z0-9]{8,64}$/.test(appId) && appSecret.length >= 16
@@ -502,15 +541,17 @@ export class GlobalWechatAppService {
   private async currentConfiguration(
     tx: Prisma.TransactionClient,
     expectedAppId: string,
+    appProduct?: unknown,
   ) {
-    await tx.$queryRaw`SELECT id FROM "IntegrationConfig" WHERE key = 'wechat_login' FOR SHARE`;
+    const configuration = wechatAppConfiguration(appProduct);
+    await tx.$queryRaw`SELECT id FROM "IntegrationConfig" WHERE key = ${configuration.key} FOR SHARE`;
     const integration = await tx.integrationConfig.findUnique({
-      where: { key: "wechat_login" },
+      where: { key: configuration.key },
       select: { state: true },
     });
     if (
       integration?.state !== IntegrationState.CONFIGURED ||
-      (await this.configuredAppId()) !== expectedAppId
+      (await this.configuredAppId(appProduct)) !== expectedAppId
     ) {
       throw globalError(
         503,
@@ -523,6 +564,7 @@ export class GlobalWechatAppService {
   private async ticket(
     value: unknown,
     db: Prisma.TransactionClient = this.prisma,
+    appProduct?: unknown,
   ): Promise<AppTicket> {
     if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
       throw invalidTicket();
@@ -533,7 +575,7 @@ export class GlobalWechatAppService {
     if (!row || row.consumedAt || row.expiresAt <= new Date()) {
       throw invalidTicket();
     }
-    const configured = await this.configuredAppId();
+    const configured = await this.configuredAppId(appProduct);
     if (!configured || row.appId !== configured) throw invalidTicket();
     return { ...row, product: row.product || defaultGlobalLegalProduct };
   }

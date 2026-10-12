@@ -4369,14 +4369,20 @@ export const apiCatalog = {
           "name": "product",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "appProduct",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/auth/auth.controller.ts",
       "summary": "国际账号可用能力",
-      "request": "Say Ring明确product=say-ring，省略时为saydian-global；仅APP_REALM=global",
-      "response": "{realm,product,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},login:{email,sms,wechatApp:{enabled,appId,phoneBindingAvailable}},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；Say Ring只返回say_ring_*文档；微信仅返回公开AppID",
-      "dependency": "国际独立数据库、对应产品已审协议、验证码渠道及微信移动应用配置",
+      "request": "Say Ring明确product=say-ring，省略时为saydian-global；中文版另传appProduct=saydian-app-cn，仅选择cn_wechat_login，不改变账号/协议product；仅APP_REALM=global",
+      "response": "{realm,product,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},login:{email,sms,wechatApp:{enabled,appId,phoneBindingAvailable}},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；Say Ring只返回say_ring_*文档；微信仅返回公开AppID，中文版未配置不回退原有微信配置",
+      "dependency": "国际独立数据库、对应产品已审协议、验证码渠道及独立微信移动应用配置",
       "successStatus": 200,
       "contract": {
         "status": "request-reviewed",

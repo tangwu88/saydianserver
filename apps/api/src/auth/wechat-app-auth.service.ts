@@ -9,6 +9,7 @@ import { PrismaService } from "../common/prisma.service";
 import { safeObject } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
+import { wechatAppConfiguration } from "./wechat-app-product";
 
 const stateMaxAgeMs = 10 * 60 * 1000;
 const providerTimeoutMs = 15_000;
@@ -34,6 +35,7 @@ export class WechatAppAuthService {
     code: string;
     state: string;
     platform: string;
+    appProduct?: unknown;
   }): Promise<WechatAppIdentity> {
     const code = input.code.trim();
     const state = input.state.trim();
@@ -48,24 +50,27 @@ export class WechatAppAuthService {
       throw new UnauthorizedException("微信授权已失效，请重新授权");
     }
 
+    const configuration = wechatAppConfiguration(input.appProduct);
     const integration = await this.prisma.integrationConfig.findUnique({
-      where: { key: "wechat_login" },
+      where: { key: configuration.key },
     });
     if (!integration || integration.state !== IntegrationState.CONFIGURED) {
       throw new ServiceUnavailableException("微信登录暂时无法使用，请稍后再试");
     }
     const publicConfig = safeObject(integration.publicConfig);
-    const secrets = await this.integrationSecrets.resolve("wechat_login", {
-      appId: "WECHAT_LOGIN_APP_ID",
-      appSecret: "WECHAT_LOGIN_APP_SECRET",
-    });
+    const secrets = await this.integrationSecrets.resolve(
+      configuration.key,
+      configuration.environment,
+    );
     const appId = (secrets.appId ?? String(publicConfig.appId ?? "")).trim();
     const appSecret = (secrets.appSecret ?? "").trim();
     if (!/^wx[A-Za-z0-9]{8,64}$/.test(appId) || appSecret.length < 16) {
       throw new ServiceUnavailableException("微信登录暂时无法使用，请稍后再试");
     }
 
-    const accessUrl = new URL("https://api.weixin.qq.com/sns/oauth2/access_token");
+    const accessUrl = new URL(
+      "https://api.weixin.qq.com/sns/oauth2/access_token",
+    );
     accessUrl.searchParams.set("appid", appId);
     accessUrl.searchParams.set("secret", appSecret);
     accessUrl.searchParams.set("code", code);
@@ -77,16 +82,23 @@ export class WechatAppAuthService {
     }
     const accessToken = String(access.access_token ?? "").trim();
     const openId = boundedIdentifier(access.openid);
-    if (providerError || !accessToken || accessToken.length > 2_048 || !openId) {
+    if (
+      providerError ||
+      !accessToken ||
+      accessToken.length > 2_048 ||
+      !openId
+    ) {
       throw new ServiceUnavailableException("微信登录暂时无法使用，请稍后再试");
     }
 
     const profile = await this.fetchProfile(accessToken, openId);
     const profileOpenId = boundedIdentifier(profile.openid);
-    const trustedProfile = !profileOpenId || profileOpenId === openId ? profile : {};
+    const trustedProfile =
+      !profileOpenId || profileOpenId === openId ? profile : {};
     const unionId =
-      boundedIdentifier(trustedProfile.unionid) ?? boundedIdentifier(access.unionid);
-    await markIntegrationVerified(this.prisma, "wechat_login");
+      boundedIdentifier(trustedProfile.unionid) ??
+      boundedIdentifier(access.unionid);
+    await markIntegrationVerified(this.prisma, configuration.key);
     return {
       appId,
       openId,
@@ -122,7 +134,9 @@ export class WechatAppAuthService {
         signal: AbortSignal.timeout(providerTimeoutMs),
       });
       if (!response.ok) {
-        throw new ServiceUnavailableException("微信登录暂时无法使用，请稍后再试");
+        throw new ServiceUnavailableException(
+          "微信登录暂时无法使用，请稍后再试",
+        );
       }
       return safeObject(await response.json().catch(() => ({})));
     } catch (error) {

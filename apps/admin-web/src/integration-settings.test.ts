@@ -11,7 +11,9 @@ describe('plain-language integration settings', () => {
     expect(() => miniPaymentAppIdPayload('')).toThrow();
   });
   it('covers all built-in services without conflating official and native WeChat', () => {
-    expect(new Set(integrationDefinitions.map(d => d.key)).size).toBe(17);
+    expect(new Set(integrationDefinitions.map(d => d.key)).size).toBe(18);
+    expect(definition('cn_wechat_login').purpose).toContain('cc.saidian.app');
+    expect(definition('cn_wechat_login').fields.find(f => f.key === 'appSecret')?.secret).toBe(true);
     expect(definition('wechat_official').fields.some(f => f.key === 'redirectUri')).toBe(true);
     expect(definition('wechat_login').fields.some(f => f.key === 'redirectUri')).toBe(false);
     expect(definition('say_ring_push').prepare).toContain('cn.saydian.ring');

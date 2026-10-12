@@ -167,7 +167,9 @@ function harness() {
       }),
       findFirst: vi.fn(
         async ({ where }: any) =>
-          identities.find((item) => item.unionId === where.unionId) ?? null,
+          identities.find((item) =>
+            Object.entries(where).every(([key, value]) => item[key] === value),
+          ) ?? null,
       ),
       create: vi.fn(async ({ data }: any) => {
         const row = { id: randomUUID(), ...data };
@@ -233,10 +235,117 @@ function harness() {
     tickets,
     challenges,
     prisma,
+    integrationSecrets,
+    wechat,
   };
 }
 
 describe("global native WeChat phone binding", () => {
+  it("keeps CN capabilities separate and never falls back to legacy configuration", async () => {
+    const h = harness();
+    h.prisma.integrationConfig.findUnique.mockImplementation(
+      async ({ where }: any) =>
+        where.key === "wechat_login"
+          ? { state: "CONFIGURED", publicConfig: {} }
+          : null,
+    );
+    expect(
+      await h.service.capability({
+        legalReady: true,
+        deliveryOpen: true,
+        smsReady: true,
+        appProduct: "saydian-app-cn",
+      }),
+    ).toEqual({ enabled: false, appId: null, phoneBindingAvailable: false });
+    expect(h.integrationSecrets.resolve).not.toHaveBeenCalled();
+    expect(
+      (
+        await h.service.capability({
+          legalReady: true,
+          deliveryOpen: true,
+          smsReady: true,
+        })
+      ).appId,
+    ).toBe(appId);
+    await expect(
+      h.service.capability({
+        legalReady: true,
+        deliveryOpen: true,
+        smsReady: true,
+        appProduct: "unknown",
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("binds CN to an existing verified phone without overwriting another App's OpenID", async () => {
+    const h = harness();
+    const cnId = "wxc9426c8d822c1302";
+    h.wechat.exchange.mockResolvedValue({ ...identity, appId: cnId });
+    h.integrationSecrets.resolve.mockImplementation(async (key: string) => ({
+      appId: key === "cn_wechat_login" ? cnId : appId,
+      appSecret: "synthetic-secret-long-enough",
+    }));
+    const user = {
+      id: randomUUID(),
+      status: "ACTIVE",
+      mobile: "+8613812345678",
+      mobileVerifiedAt: new Date(),
+      wechatAppOpenId: "legacy-app-open-id",
+      wechatUnionId: "legacy-app-union-id",
+      nickname: "Existing member",
+    };
+    h.users.push(user);
+    const input = {
+      appProduct: "saydian-app-cn",
+      locale: "zh-Hans",
+      consentVersion: "legal-v1",
+    };
+    const pending: any = await h.service.login({
+      ...input,
+      code: "one-time-code",
+      state: `sd_${Date.now()}_01234567-89ab-cdef-0123456789ab`,
+      platform: "android",
+      consentAccepted: true,
+    });
+    await expect(
+      h.service.requestPhoneCode({
+        bindTicket: pending.bindTicket,
+        identifier: user.mobile,
+        consentVersion: "legal-v1",
+      }),
+    ).rejects.toThrow();
+    expect(h.delivery.send).not.toHaveBeenCalled();
+    const challenge: any = await h.service.requestPhoneCode({
+      ...input,
+      bindTicket: pending.bindTicket,
+      identifier: user.mobile,
+    });
+    const session: any = await h.service.bindPhone({
+      ...input,
+      bindTicket: pending.bindTicket,
+      challengeId: challenge.challengeId,
+      code: h.delivery.send.mock.calls[0][0].code,
+    });
+    expect(session.member.id).toBe(user.id);
+    expect(user.wechatAppOpenId).toBe("legacy-app-open-id");
+    expect(user.wechatUnionId).toBe("legacy-app-union-id");
+    expect(h.identities[0]).toMatchObject({
+      userId: user.id,
+      appId: cnId,
+      openId: identity.openId,
+    });
+    const next: any = await h.service.login({
+      ...input,
+      code: "next-code",
+      state: `sd_${Date.now()}_01234567-89ab-cdef-0123456789ab`,
+      platform: "android",
+      consentAccepted: true,
+    });
+    expect(next.member.id).toBe(user.id);
+    expect(next.requiresPhoneBinding).toBeUndefined();
+    expect(user.wechatAppOpenId).toBe("legacy-app-open-id");
+  });
+
   it("advertises only the public AppID when login and SMS are ready", async () => {
     const h = harness();
     const capability = await h.service.capability({

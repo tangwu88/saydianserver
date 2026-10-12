@@ -22,8 +22,9 @@ export class AuthController {
   capabilities(
     @Query("locale") locale?: string,
     @Query("product") product?: string,
+    @Query("appProduct") appProduct?: string,
   ) {
-    return this.globalAuth.capabilities(locale, product);
+    return this.globalAuth.capabilities(locale, product, appProduct);
   }
 
   @Post("verification-code")
