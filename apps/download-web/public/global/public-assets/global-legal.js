@@ -104,7 +104,7 @@ async function loadDocument() {
     );
     document.querySelector("#page-title").textContent =
       documentData.title || fallbackTitle;
-    document.title = `${documentData.title || fallbackTitle} · SAYDIAN Health`;
+    document.title = `${documentData.title || fallbackTitle} · SayDian`;
     document.querySelector("#document-meta").textContent =
       `Version ${documentData.version} · ${documentData.locale}`;
     document.querySelector("#document-content").innerHTML = safeHtml(
