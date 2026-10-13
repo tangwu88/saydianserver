@@ -36,6 +36,12 @@ async function registerVerified(mobile, nickname) {
   })).json;
 }
 try {
+  for (const prefix of ["", "/global"]) {
+    const promotion = await request(prefix + "/api/saydian-app/vip/v1/public/promotion/deployment-check-never-a-partner");
+    check(promotion.status, 404);
+    check(promotion.json.code, 404);
+    check(promotion.json.message, "品牌伙伴推广链接已失效");
+  }
   await prisma.globalLegalDocument.createMany({ data: ["say_ring_user_agreement", "say_ring_privacy_policy", "say_ring_sleep_analysis"].map(documentType => ({
     documentType, version: legalPageVersion, locale: "zh-Hans", title: "Say Ring synthetic legal page",
     contentHtml: `<p>${documentType}: synthetic current published text</p>`, active: true, reviewed: true, publishedAt: new Date(),

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -55,7 +55,7 @@ if(tool==='curl') {
 if(tool==='docker') {
  if(a[0]==='pull') { if(mode==='pull-failed') process.exit(1); fs.writeFileSync(process.env.FIXTURE_ROOT+'/pulled','1'); process.exit(0); }
  if(a[0]==='image') { if(a.includes('{{.Id}}') && mode!=='cached' && !fs.existsSync(process.env.FIXTURE_ROOT+'/pulled')) process.exit(1); console.log(a.includes('{{.Id}}')?imageId:revision); }
- else if(a[0]==='inspect') console.log(a.join(' ').includes('.Config.Env')?'["POSTGRES_USER=global_owner","POSTGRES_DB=saydian_global","POSTGRES_PASSWORD=synthetic-test-only"]':a.join(' ').includes('.Image')?(fs.existsSync(process.env.FIXTURE_ROOT+'/changed')?imageId:'sha256:'+'e'.repeat(64)):imageId);
+ else if(a[0]==='inspect') console.log(a.join(' ').includes('.Config.Env')?(a.at(-1).includes('postgres')?'["POSTGRES_USER=global_owner","POSTGRES_DB=saydian_global","POSTGRES_PASSWORD=synthetic-test-only"]':JSON.stringify(['APP_REVISION='+'f'.repeat(40)])):a.join(' ').includes('.Image')?(fs.existsSync(process.env.FIXTURE_ROOT+'/changed')?imageId:'sha256:'+'e'.repeat(64)):imageId);
  else if(a[0]==='run') {
   const helper=a.find(v=>v.startsWith('/release/scripts/'));
   if(helper?.endsWith('unified-preflight.mjs')) console.log(JSON.stringify({pending:mode.startsWith('restore-')?['reviewed-migration']:[]}));
@@ -76,7 +76,9 @@ if(tool==='docker') {
     writeWindowsInstallDouble(bin);
     const log = join(root, "calls.log");
     const result = spawnSync(bashCommand, shellArgs(bin, script), { encoding: "utf8", timeout: 30_000, env: shellEnvironment(bin, { RELEASE_SHA: revision, RELEASE_SOURCE: shellPath(source), FIXTURE_NATIVE_SOURCE: source, GATEWAY_CONFIG_PATH: shellPath(gateway), GITHUB_TOKEN: "synthetic-job-token", FIXTURE_MODE: mode, FIXTURE_LOG: log, FIXTURE_ROOT: root, FIXTURE_SHELL_ROOT: shellPath(root), FIXTURE_BIN: bin }) });
-    return { status: result.status, output: result.stdout + result.stderr, calls: existsSync(log) ? readFileSync(log, "utf8") : "" };
+    const backups = join(state, "backups"), backup = existsSync(backups) ? readdirSync(backups)[0] : undefined;
+    const rollbackImages = backup && existsSync(join(backups, backup, "images.json")) ? JSON.parse(readFileSync(join(backups, backup, "images.json"), "utf8")) : undefined;
+    return { status: result.status, output: result.stdout + result.stderr, calls: existsSync(log) ? readFileSync(log, "utf8") : "", rollbackImages };
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 test("ordinary publication cannot perform an implicit first cutover", () => {
@@ -122,6 +124,10 @@ test("new partner runtime table or route failure rolls back the application rele
   const result = run("vip-api-failed");
   assert.notEqual(result.status, 0);
   assert.match(result.calls, /backups\/[^\n]+images.json up -d --no-build --pull never/);
+  for (const name of ["global-api", "global-worker"]) {
+    assert.equal(result.rollbackImages.services[name].image, "sha256:" + "e".repeat(64));
+    assert.equal(result.rollbackImages.services[name].environment.APP_REVISION, "f".repeat(40));
+  }
 });
 test("an exact locally cached image skips registry transfer but still verifies the release", () => {
   const result = run("cached"); assert.equal(result.status, 0, result.output);

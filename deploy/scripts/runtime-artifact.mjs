@@ -4,6 +4,31 @@ import { pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { createReadStream } from "node:fs";
 import { mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
+
+class ArtifactTransferError extends Error {
+  constructor(code, status) {
+    super(code);
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function retryable(error) {
+  return error instanceof TypeError || error?.name === "TimeoutError" ||
+    error?.name === "AbortError" || error?.code === "range_truncated" ||
+    error instanceof ArtifactTransferError && [403, 408, 429, 500, 502, 503, 504].includes(error.status);
+}
+
+function safeFailure(error) {
+  return {
+    code: error instanceof ArtifactTransferError ? error.code :
+      error?.name === "AssertionError" ? "integrity_validation" :
+      error?.name === "TimeoutError" ? "request_timeout" :
+      error?.name === "AbortError" ? "request_aborted" : "network_or_io_failure",
+    ...(error instanceof ArtifactTransferError && Number.isInteger(error.status) ? { status: error.status } : {}),
+  };
+}
 
 async function artifactInfo(revision, artifactId, token, request, signal) {
   assert(/^[a-f0-9]{40}$/.test(revision) && /^[1-9][0-9]*$/.test(artifactId) && token);
@@ -32,7 +57,7 @@ async function artifactInfo(revision, artifactId, token, request, signal) {
       redirect: "manual",
       signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
     });
-    assert(redirect.status === 302);
+    if (redirect.status !== 302) throw new ArtifactTransferError("redirect_status", redirect.status);
     const url = new URL(redirect.headers.get("location"));
     assert(url.protocol === "https:" && !url.username && !url.password);
     assert(/(?:\.blob\.core\.windows\.net|\.actions\.githubusercontent\.com)$/.test(url.hostname));
@@ -48,7 +73,8 @@ async function rangeBytes(request, location, from, to, total, signal) {
     redirect: "manual",
     signal,
   });
-  assert(response.status === 206 && response.headers.get("content-range") === `bytes ${from}-${to}/${total}`);
+  if (response.status !== 206) throw new ArtifactTransferError("range_status", response.status);
+  assert(response.headers.get("content-range") === `bytes ${from}-${to}/${total}`);
   const size = to - from + 1;
   const contentLength = response.headers.get("content-length");
   assert(contentLength === null || contentLength === String(size));
@@ -63,7 +89,7 @@ async function rangeBytes(request, location, from, to, total, signal) {
       bytes.set(value, offset);
       offset += value.length;
     }
-    assert(offset === size);
+    if (offset !== size) throw new ArtifactTransferError("range_truncated");
   } finally {
     await reader.cancel();
   }
@@ -107,7 +133,7 @@ export async function downloadArtifact(
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(3600000)]);
   const { metadata, location } = await artifactInfo(revision, artifactId, token, request, signal);
-  const partSize = 4 * 1024 ** 2,
+  const partSize = 1024 ** 2,
     count = Math.ceil(metadata.size_in_bytes / partSize);
   const scratch = await mkdtemp(join(dirname(outputPath), "https-parts-"));
   let cursor = 0,
@@ -122,14 +148,24 @@ export async function downloadArtifact(
             const index = cursor++,
               from = index * partSize;
             // GitHub redirect URLs expire after a minute: renew for every new range.
-            const bytes = await rangeBytes(
-              request,
-              await location(),
-              from,
-              Math.min(from + partSize, metadata.size_in_bytes) - 1,
-              metadata.size_in_bytes,
-              signal,
-            );
+            let bytes;
+            for (let attempt = 0; attempt < 4; attempt++) {
+              try {
+                bytes = await rangeBytes(
+                  request,
+                  await location(),
+                  from,
+                  Math.min(from + partSize, metadata.size_in_bytes) - 1,
+                  metadata.size_in_bytes,
+                  AbortSignal.any([signal, AbortSignal.timeout(600000)]),
+                );
+                break;
+              } catch (error) {
+                if (signal.aborted || !retryable(error) || attempt === 3) throw error;
+                progress({ event: "range_retry", rangeIndex: index, nextAttempt: attempt + 2, ...safeFailure(error) });
+                await delay(1000 * (attempt + 1), undefined, { signal });
+              }
+            }
             await writeFile(join(scratch, String(index)), bytes, {
               flag: "wx",
               mode: 0o600,
@@ -190,7 +226,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
           )
         : await probeArtifact(...args);
     console.log(JSON.stringify(result));
-  } catch {
+  } catch (error) {
+    console.error(JSON.stringify({ event: "artifact_transfer_failed", ...safeFailure(error) }));
     console.error("HTTPS artifact verification failed; no images imported or applications changed.");
     process.exitCode = 1;
   }

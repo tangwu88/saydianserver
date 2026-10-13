@@ -30,10 +30,17 @@ node_tool() {
 }
 sql() { docker exec -i "$1" sh -ec 'exec psql -X -qAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'; }
 pin_images() {
-  local prefix=$1 project=$2 result='{"services":{}}' name id
+  local prefix=$1 project=$2 result='{"services":{}}' name id previous_revision
   for name in api worker admin; do
     id=$(docker inspect -f '{{.Image}}' "$project-$prefix$name-1")
     result=$(jq --arg name "$prefix$name" --arg image "$id" '.services[$name]={image:$image}' <<< "$result")
+    if [[ "$name" != admin ]]; then
+      previous_revision=$(docker inspect -f '{{json .Config.Env}}' "$project-$prefix$name-1" | jq -r '[.[] | select(startswith("APP_REVISION=")) | ltrimstr("APP_REVISION=")][0] // empty')
+      if [[ -n "$previous_revision" ]]; then
+        [[ "$previous_revision" =~ ^[a-f0-9]{40}$ ]]
+        result=$(jq --arg name "$prefix$name" --arg revision "$previous_revision" '.services[$name].environment.APP_REVISION=$revision' <<< "$result")
+      fi
+    fi
   done
   printf '%s\n' "$result"
 }

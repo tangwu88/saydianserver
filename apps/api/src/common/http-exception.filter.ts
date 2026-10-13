@@ -93,13 +93,13 @@ export class SafeHttpExceptionFilter implements ExceptionFilter {
       typeof raw.errorKey === "string"
         ? raw.errorKey
         : undefined;
-    const legacy = isLegacyPath(
-      request.originalUrl || request.url || request.path,
-    );
+    const path = request.originalUrl || request.url || request.path;
+    const legacy = isLegacyPath(path);
+    const partner = /^\/(?:global\/)?api\/saydian-app\/vip\/v1(?:\/|\?|$)/.test(path);
     response.status(legacy ? HttpStatus.OK : status).json({
       code: status,
       message:
-        !errorKey && /[\u3400-\u9fff]/.test(details.message)
+        !partner && !errorKey && /[\u3400-\u9fff]/.test(details.message)
           ? status === 401
             ? "Please sign in again."
             : status === 503
