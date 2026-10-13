@@ -167,3 +167,67 @@ test("probe propagates aborted network requests and never falls back to a write 
     { name: "AbortError" },
   );
 });
+
+function archiveFixture() {
+  const archive = new Uint8Array(total);
+  archive.fill(4, 4 * size, 8 * size);
+  archive.fill(8, 8 * size);
+  const digest = `sha256:${createHash("sha256").update(archive).digest("hex")}`;
+  return { archive, digest, ...fixture({ metadata: { digest } }) };
+}
+
+test("late transient range failure retries a fresh URL and retains completed ranges", async () => {
+  const root = await mkdtemp(join(tmpdir(), "saydian-retry-test-"));
+  try {
+    const source = archiveFixture(), progress = [], ranges = new Map();
+    let failed = false;
+    const request = async (url, init) => {
+      const range = init.headers?.range;
+      if (range) ranges.set(range, (ranges.get(range) ?? 0) + 1);
+      if (range?.startsWith(`bytes=${8 * size}-`) && !failed) {
+        failed = true;
+        throw new TypeError("private signed URL and fixture-secret must never be logged");
+      }
+      return source.request(url, init);
+    };
+    const output = join(root, "runtime.zip");
+    const result = await downloadArtifact(revision, artifactId, token, output, request, event => progress.push(event));
+    assert.equal(result.verified, true);
+    assert.deepEqual(new Uint8Array(await readFile(output)), source.archive);
+    assert.equal(ranges.get(`bytes=0-${4 * size - 1}`), 1);
+    assert.equal(ranges.get(`bytes=${4 * size}-${8 * size - 1}`), 1);
+    assert.equal(ranges.get(`bytes=${8 * size}-${total - 1}`), 2);
+    assert.equal(source.calls.filter(call => call.url.endsWith("/zip")).length, 4);
+    assert.equal(progress.filter(event => event.event === "range_retry").length, 1);
+    assert.doesNotMatch(JSON.stringify(progress), /fixture-secret|signed URL|signature=|https:/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("transient HTTP failures are bounded and leave no unverified output", async () => {
+  const root = await mkdtemp(join(tmpdir(), "saydian-bounded-test-"));
+  try {
+    const source = archiveFixture(), progress = [];
+    let attempts = 0;
+    const request = async (url, init) => {
+      if (init.headers?.range?.startsWith(`bytes=${8 * size}-`)) {
+        attempts++;
+        return new Response("temporary unavailable", { status: 503 });
+      }
+      return source.request(url, init);
+    };
+    await assert.rejects(downloadArtifact(revision, artifactId, token, join(root, "runtime.zip"), request, event => progress.push(event)));
+    assert.equal(attempts, 4);
+    assert.equal(progress.filter(event => event.event === "range_retry").length, 3);
+    assert.deepEqual(await readdir(root), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("wrong range integrity never retries or creates an archive", async () => {
+  const root = await mkdtemp(join(tmpdir(), "saydian-integrity-test-"));
+  try {
+    const progress = [];
+    await assert.rejects(downloadArtifact(revision, artifactId, token, join(root, "runtime.zip"), fixture({ contentRange: "bytes 0-1/2" }).request, event => progress.push(event)));
+    assert.equal(progress.filter(event => event.event === "range_retry").length, 0);
+    assert.deepEqual(await readdir(root), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
