@@ -35,7 +35,9 @@ function fixture(options = {}) {
     assert.equal(init.headers.authorization, undefined);
     assert.equal(init.redirect, "manual");
     const [, from, to] = init.headers.range.match(/^bytes=(\d+)-(\d+)$/);
-    const bytes = new Uint8Array(options.bodySize ?? Number(to) - Number(from) + 1).fill(Number(from) / size);
+    const bytes = new Uint8Array(options.bodySize ?? Number(to) - Number(from) + 1);
+    for (let offset = 0; offset < bytes.length; offset++)
+      bytes[offset] = Math.floor((Number(from) + offset) / size);
     return new Response(bytes, {
       status: options.rangeStatus ?? 206,
       headers: {
@@ -64,8 +66,8 @@ test("full HTTPS download verifies the whole archive digest and removes only its
   const root = await mkdtemp(join(tmpdir(), "saydian-https-test-"));
   try {
     const archive = new Uint8Array(total);
-    for (let from = 0; from < total; from += 4 * size)
-      archive.fill(from / size, from, Math.min(from + 4 * size, total));
+    for (let from = 0; from < total; from += size)
+      archive.fill(from / size, from, Math.min(from + size, total));
     const digest = `sha256:${createHash("sha256").update(archive).digest("hex")}`;
     const progress = [],
       output = join(root, "runtime.zip");
@@ -170,8 +172,8 @@ test("probe propagates aborted network requests and never falls back to a write 
 
 function archiveFixture() {
   const archive = new Uint8Array(total);
-  archive.fill(4, 4 * size, 8 * size);
-  archive.fill(8, 8 * size);
+  for (let from = 0; from < total; from += size)
+    archive.fill(from / size, from, Math.min(from + size, total));
   const digest = `sha256:${createHash("sha256").update(archive).digest("hex")}`;
   return { archive, digest, ...fixture({ metadata: { digest } }) };
 }
@@ -194,10 +196,9 @@ test("late transient range failure retries a fresh URL and retains completed ran
     const result = await downloadArtifact(revision, artifactId, token, output, request, event => progress.push(event));
     assert.equal(result.verified, true);
     assert.deepEqual(new Uint8Array(await readFile(output)), source.archive);
-    assert.equal(ranges.get(`bytes=0-${4 * size - 1}`), 1);
-    assert.equal(ranges.get(`bytes=${4 * size}-${8 * size - 1}`), 1);
-    assert.equal(ranges.get(`bytes=${8 * size}-${total - 1}`), 2);
-    assert.equal(source.calls.filter(call => call.url.endsWith("/zip")).length, 4);
+    for (const [range, attempts] of ranges)
+      assert.equal(attempts, range.startsWith(`bytes=${8 * size}-`) ? 2 : 1);
+    assert.equal(source.calls.filter(call => call.url.endsWith("/zip")).length, ranges.size + 1);
     assert.equal(progress.filter(event => event.event === "range_retry").length, 1);
     assert.doesNotMatch(JSON.stringify(progress), /fixture-secret|signed URL|signature=|https:/);
   } finally { await rm(root, { recursive: true, force: true }); }

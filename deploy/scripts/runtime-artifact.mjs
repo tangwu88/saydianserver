@@ -133,7 +133,7 @@ export async function downloadArtifact(
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(3600000)]);
   const { metadata, location } = await artifactInfo(revision, artifactId, token, request, signal);
-  const partSize = 4 * 1024 ** 2,
+  const partSize = 1024 ** 2,
     count = Math.ceil(metadata.size_in_bytes / partSize);
   const scratch = await mkdtemp(join(dirname(outputPath), "https-parts-"));
   let cursor = 0,
@@ -157,7 +157,7 @@ export async function downloadArtifact(
                   from,
                   Math.min(from + partSize, metadata.size_in_bytes) - 1,
                   metadata.size_in_bytes,
-                  AbortSignal.any([signal, AbortSignal.timeout(120000)]),
+                  AbortSignal.any([signal, AbortSignal.timeout(600000)]),
                 );
                 break;
               } catch (error) {
