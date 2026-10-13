@@ -96,6 +96,7 @@ const rules: FormRules = Object.fromEntries(
     field,
     [
       {
+        required: true,
         trigger: "blur",
         validator: (
           _rule: unknown,

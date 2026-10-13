@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import ts from "typescript";
-import { computed, reactive, ref } from "vue";
+import {
+  computed,
+  reactive,
+  ref,
+  createRenderer,
+  h as node,
+  nextTick,
+} from "vue";
 import axios from "axios";
 import { describe, expect, it, vi } from "vitest";
 import { readCheckout, saveCheckout, clearCheckout } from "./checkout-recovery";
@@ -18,6 +26,9 @@ import {
 } from "./checkout-form";
 import { safeReturnPath } from "./navigation";
 import { recognizeAddress } from "./address-recognition";
+const { ElForm, ElFormItem, ID_INJECTION_KEY } = createRequire(import.meta.url)(
+  "element-plus",
+) as typeof import("element-plus");
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -143,7 +154,7 @@ function harness(view: string, store = memoryStorage()) {
   };
   const exports =
     view === "Products"
-      ? "load, review, purchase, quantities, address, addressForm, submittedRequest, submitting, quoteStale, checkoutError, balance, fillAddress, undoAddress, pastedAddress, addressNotice"
+      ? "load, review, purchase, quantities, address, addressForm, submittedRequest, submitting, quoteStale, checkoutError, balance, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
       : "load, create, viewRecharge, poll, pendingInput, form, currentRecharge, payment, paymentError, pollError, paying";
   const state = new Function(
     ...Object.keys(deps),
@@ -174,6 +185,90 @@ function networkError(status?: number) {
 }
 
 describe("partner checkout recovery and user-facing failures", () => {
+  it("keeps restored empty addresses quiet and reports Chinese errors on validation", async () => {
+    // Mount real Element Plus form items. Their required prop used to append an
+    // English change validator, which the earlier form stub could not detect.
+    type Host = { parent?: Host; children: Host[]; text?: string };
+    const host = (): Host => ({ children: [] });
+    const renderer = createRenderer<Host, Host>({
+      createElement: host,
+      createText: (text) => ({ children: [], text }),
+      createComment: host,
+      insert(child, parent, anchor) {
+        if (child.parent)
+          child.parent.children = child.parent.children.filter(
+            (n) => n !== child,
+          );
+        child.parent = parent;
+        const index = anchor ? parent.children.indexOf(anchor) : -1;
+        parent.children.splice(
+          index < 0 ? parent.children.length : index,
+          0,
+          child,
+        );
+      },
+      remove(child) {
+        if (child.parent)
+          child.parent.children = child.parent.children.filter(
+            (n) => n !== child,
+          );
+      },
+      setText: (el, text) => {
+        el.text = text;
+      },
+      setElementText: (el, text) => {
+        el.text = text;
+      },
+      parentNode: (el) => el.parent ?? null,
+      nextSibling: (el) =>
+        el.parent?.children[el.parent.children.indexOf(el) + 1] ?? null,
+      patchProp() {},
+    });
+    const state = harness("Products"),
+      fields = new Map<string, any>();
+    const app = renderer.createApp({
+      render: () =>
+        node(
+          ElForm,
+          { model: state.address, rules: state.rules, ref: state.addressForm },
+          () =>
+            addressFields.map((field) =>
+              node(
+                ElFormItem,
+                {
+                  prop: field,
+                  label: field,
+                  required: true,
+                  ref: (item: any) => {
+                    if (item) fields.set(field, item);
+                  },
+                },
+                () => field,
+              ),
+            ),
+        ),
+    });
+    app.provide(ID_INJECTION_KEY, { prefix: 1, current: 0 });
+    app.mount(host());
+    try {
+      await nextTick();
+      state.pastedAddress.value =
+        "张三 13800138000 广东省深圳市南山区测试路1号";
+      state.fillAddress();
+      await nextTick();
+      state.undoAddress();
+      await nextTick();
+      for (const field of addressFields) {
+        const item = fields.get(field);
+        await expect(item.validate("change")).resolves.toBe(true);
+        expect(item.validateMessage).toBe("");
+        await expect(item.validate("blur")).rejects.toBeDefined();
+        expect(item.validateMessage).toBe(addressError(field, ""));
+      }
+    } finally {
+      app.unmount();
+    }
+  });
   it("fills pasted address without mixing the old recipient and allows undo", async () => {
     const h = await readyCheckout(),
       previous = { ...h.address };
@@ -185,7 +280,9 @@ describe("partner checkout recovery and user-facing failures", () => {
     expect(h.addressNotice.value).toContain("联系电话");
     h.undoAddress();
     expect({ ...h.address }).toEqual(previous);
-    expect(h.api.post.mock.calls.every(([url]: [string]) => url === "/quote")).toBe(true);
+    expect(
+      h.api.post.mock.calls.every(([url]: [string]) => url === "/quote"),
+    ).toBe(true);
   });
   it("does not change an uncertain payment or apply multiple-recipient input", async () => {
     const h = await readyCheckout(),
