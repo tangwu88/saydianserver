@@ -166,6 +166,28 @@ try {
   const adminLogin = await request(admin + "/auth/login", { method: "POST", body: { username: process.env.ADMIN_BOOTSTRAP_USERNAME, password: process.env.ADMIN_BOOTSTRAP_PASSWORD } });
   check(adminLogin.json.code, 200);
   const adminToken = adminLogin.json.data.token;
+  const partnerLevels = (await request(admin + "/partner-levels", { token: adminToken })).json.data;
+  const partnerInput = { username: "fixture-partner-manual", name: "Synthetic manual funds", password, levelId: partnerLevels.find(level => level.active).id };
+  for (const prefix of ["", "/global"]) {
+    const invalidPartner = await request(prefix + admin + "/partners", { method: "POST", token: adminToken, body: { ...partnerInput, password: "short" } });
+    check(invalidPartner.status, 400); check(invalidPartner.json.message, "密码须为10至128个字符");
+  }
+  const fixturePartner = (await request(admin + "/partners", { method: "POST", token: adminToken, body: partnerInput })).json.data;
+  const manualInput = { amountCents: 1234, reason: "Synthetic receipt only", referenceNo: "SYNTHETIC-RECEIPT", idempotencyKey: "synthetic-http-manual" };
+  const manualRoute = admin + "/partner-finance/" + fixturePartner.id;
+  const manualFirst = await request(manualRoute + "/balance-recharge", { method: "POST", token: adminToken, body: manualInput });
+  check(manualFirst.status, 201); check(manualFirst.json.data.type, "MANUAL_RECHARGE");
+  check((await request(manualRoute + "/balance-recharge", { method: "POST", token: adminToken, body: manualInput })).json.data.id, manualFirst.json.data.id);
+  check((await request(manualRoute + "/wallet", { token: adminToken })).json.data.balanceCents, 1234);
+  const manualLogs = (await request(manualRoute + "/ledger", { token: adminToken })).json.data.items;
+  check(manualLogs[0].balanceBeforeCents, 0); check(manualLogs[0].balanceAfterCents, 1234);
+  check(manualLogs[0].operatorUsername, process.env.ADMIN_BOOTSTRAP_USERNAME); check(manualLogs[0].referenceNo, "SYNTHETIC-RECEIPT");
+  const financeAccount = { username: "fixture-partner-finance", displayName: "Synthetic finance", password, roles: ["FINANCE"], active: true };
+  check((await request(admin + "/admin-users", { method: "POST", token: adminToken, body: financeAccount })).json.code, 200);
+  const financeToken = (await request(admin + "/auth/login", { method: "POST", body: { username: financeAccount.username, password } })).json.data.token;
+  for (const path of ["/balance-recharge", "/deposit"]) check((await request(manualRoute + path, { method: "POST", token: financeToken, body: manualInput })).status, 403);
+  check((await request(manualRoute + "/wallet", { token: adminToken })).json.data.balanceCents, 1234);
+
   const zhCategory = await request(admin + "/article-categories", { method: "POST", token: adminToken, body: { name: "Chinese fixture" } });
   check(zhCategory.json.code, 200); check(zhCategory.json.data.locale, "zh-Hans");
   const contentInput = { title: "Chinese fixture", contentHtml: "<p>Synthetic only</p>", categoryId: zhCategory.json.data.id, status: "PUBLISHED" };

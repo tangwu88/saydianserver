@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { api, data, errorMessage } from "../api";
 import { date } from "../present";
+import { Search, Refresh, User, Share } from "@element-plus/icons-vue";
+import PageError from "../components/PageError.vue";
+import EmptyState from "../components/EmptyState.vue";
 import {
   healthMetricLabel,
   healthReadings,
   healthTime,
 } from "@saydian/app-contracts";
+const error = ref(""),
+  detailError = ref(""),
+  deviceError = ref(""),
+  reportError = ref(""),
+  deviceBusy = ref(false),
+  reportBusy = ref(false);
 const search = ref(""),
   page = ref(1),
   total = ref(0),
@@ -32,10 +41,19 @@ const device = ref<any>(),
   child = reactive({ items: [] as any[], total: 0, page: 1 }),
   detailBusy = ref(false);
 let detailRequest = 0,
-  listRequest = 0;
+  listRequest = 0,
+  deviceRequest = 0,
+  reportRequest = 0;
+onBeforeUnmount(() => {
+  listRequest++;
+  detailRequest++;
+  deviceRequest++;
+  reportRequest++;
+});
 async function load() {
   const request = ++listRequest;
   busy.value = true;
+  error.value = "";
   try {
     const result = data(
       await api.get("/members", {
@@ -47,13 +65,17 @@ async function load() {
       total.value = result.total;
     }
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    if (request === listRequest) error.value = errorMessage(cause);
   } finally {
     if (request === listRequest) busy.value = false;
   }
 }
 onMounted(load);
 async function openMember(row: any) {
+  deviceRequest++;
+  reportRequest++;
+  deviceDialog.value = false;
+  reportDialog.value = false;
   selected.value = row;
   drawer.value = true;
   tab.value = "profile";
@@ -70,6 +92,7 @@ async function loadDetails() {
   const id = selected.value.id,
     request = ++detailRequest;
   detailBusy.value = true;
+  detailError.value = "";
   try {
     if (tab.value === "profile") {
       const result = data(await api.get(`/members/${id}/profile`));
@@ -103,7 +126,8 @@ async function loadDetails() {
       profile.value = null;
       devices.value = [];
       health.value = [];
-      ElMessage.error(errorMessage(cause));
+      reports.value = [];
+      detailError.value = errorMessage(cause);
     }
   } finally {
     if (request === detailRequest) detailBusy.value = false;
@@ -117,6 +141,10 @@ async function openDevice(row: any) {
   await loadDevice();
 }
 async function loadDevice() {
+  const request = ++deviceRequest;
+  deviceBusy.value = true;
+  deviceError.value = "";
+  child.total = 0;
   child.items = [];
   try {
     const result = data(
@@ -124,10 +152,13 @@ async function loadDevice() {
         params: { page: child.page, pageSize: 30 },
       }),
     );
+    if (request !== deviceRequest) return;
     child.items = result.items;
     child.total = result.total;
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    if (request === deviceRequest) deviceError.value = errorMessage(cause);
+  } finally {
+    if (request === deviceRequest) deviceBusy.value = false;
   }
 }
 async function downloadEcg(id: string) {
@@ -145,13 +176,21 @@ async function downloadEcg(id: string) {
     ElMessage.error(errorMessage(cause));
   }
 }
+const selectedReportId = ref("");
 async function openReport(id: string) {
+  const request = ++reportRequest;
+  selectedReportId.value = id;
   reportDetail.value = null;
   reportDialog.value = true;
+  reportBusy.value = true;
+  reportError.value = "";
   try {
-    reportDetail.value = data(await api.get(`/reports/${id}`));
+    const result = data(await api.get(`/reports/${id}`));
+    if (request === reportRequest) reportDetail.value = result;
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    if (request === reportRequest) reportError.value = errorMessage(cause);
+  } finally {
+    if (request === reportRequest) reportBusy.value = false;
   }
 }
 function reportText(value: unknown): string[] {
@@ -175,11 +214,11 @@ function changeDeviceTab() {
   <section class="page">
     <div class="page-head">
       <div>
-        <h1>会员与健康档案</h1>
-        <p>查看归属您的会员资料、设备及历史测量记录</p>
+        <h1>我的会员</h1>
       </div>
       <el-tag type="info">{{ total }} 位会员</el-tag>
     </div>
+    <PageError :message="error" @retry="load" />
     <div class="panel">
       <form
         class="toolbar"
@@ -192,44 +231,58 @@ function changeDeviceTab() {
           v-model="search"
           placeholder="搜索昵称、会员编号、手机号或邮箱"
           clearable
+          :prefix-icon="Search"
+          aria-label="搜索会员"
+          @clear="
+            page = 1;
+            load();
+          "
           style="max-width: 360px"
-        /><el-button native-type="submit" type="primary">查询</el-button
-        ><el-button @click="load">刷新</el-button>
+        /><el-button native-type="submit" type="primary">搜索</el-button
+        ><el-button :icon="Refresh" :loading="busy" @click="load"
+          >刷新</el-button
+        >
       </form>
-      <el-table :data="items" v-loading="busy"
-        ><el-table-column
-          prop="memberNo"
-          label="会员编号"
-          width="120"
-        /><el-table-column
-          prop="nickname"
-          label="昵称"
-          min-width="150"
-        /><el-table-column label="联系方式" min-width="220"
-          ><template #default="scope"
-            ><div>{{ scope.row.mobile || "—" }}</div>
-            <span class="muted">{{ scope.row.email || "" }}</span></template
-          ></el-table-column
-        ><el-table-column label="设备" width="80"
-          ><template #default="scope">{{
-            scope.row._count.devices
-          }}</template></el-table-column
-        ><el-table-column label="健康记录" width="100"
-          ><template #default="scope">{{
-            scope.row._count.healthRecords
-          }}</template></el-table-column
-        ><el-table-column label="注册时间" min-width="180"
-          ><template #default="scope">{{
-            date(scope.row.createdAt)
-          }}</template></el-table-column
-        ><el-table-column label="操作" width="110" fixed="right"
-          ><template #default="scope"
-            ><el-button text type="primary" @click="openMember(scope.row)"
-              >查看档案</el-button
-            ></template
-          ></el-table-column
-        ></el-table
-      ><el-pagination
+      <div v-loading="busy">
+        <EmptyState
+          v-if="!items.length && !busy && !error"
+          :title="search ? '未找到会员' : '还没有会员'"
+          :description="
+            search
+              ? '试试姓名、手机号或会员编号。'
+              : '分享专属二维码，新会员注册后会显示在这里。'
+          "
+          ><router-link
+            v-if="!search"
+            to="/promotion"
+            class="action-link primary"
+            ><el-icon><Share /></el-icon>邀请会员</router-link
+          ></EmptyState
+        >
+        <div class="member-grid">
+          <article v-for="member in items" :key="member.id" class="record-card">
+            <div class="record-head">
+              <div class="member-name">
+                <el-icon :size="22"><User /></el-icon
+                ><b>{{ member.nickname || "未填写昵称" }}</b>
+              </div>
+              <el-button type="primary" plain @click="openMember(member)"
+                >查看档案</el-button
+              >
+            </div>
+            <p class="member-contact">
+              {{ member.mobile || member.email || "未填写联系方式" }}
+            </p>
+            <p class="muted member-meta">
+              {{ member.memberNo }} · {{ member._count.devices }} 台设备 ·
+              {{ member._count.healthRecords }} 条健康记录
+            </p>
+            <small class="muted">注册于 {{ date(member.createdAt) }}</small>
+          </article>
+        </div>
+      </div>
+      <el-pagination
+        v-if="total > 30"
         v-model:current-page="page"
         :page-size="30"
         :total="total"
@@ -243,6 +296,10 @@ function changeDeviceTab() {
       size="min(900px, 100vw)"
       @closed="
         detailRequest++;
+        deviceRequest++;
+        reportRequest++;
+        deviceDialog = false;
+        reportDialog = false;
         profile = null;
         health = [];
         devices = [];
@@ -254,7 +311,8 @@ function changeDeviceTab() {
           label="健康与测量记录"
           name="health" /><el-tab-pane label="健康报告" name="reports"
       /></el-tabs>
-      <div v-loading="detailBusy">
+      <PageError :message="detailError" @retry="loadDetails" />
+      <div v-loading="detailBusy" :aria-busy="detailBusy">
         <dl v-if="tab === 'profile' && profile" class="facts">
           <div>
             <dt>会员编号</dt>
@@ -402,8 +460,19 @@ function changeDeviceTab() {
             @current-change="loadDetails"
         /></template></div
     ></el-drawer>
-    <el-dialog v-model="reportDialog" title="会员健康报告" width="760px"
-      ><template v-if="reportDetail"
+    <el-dialog
+      v-model="reportDialog"
+      title="会员健康报告"
+      width="760px"
+      @closed="
+        reportRequest++;
+        reportDetail = null;
+      "
+      ><PageError
+        :message="reportError"
+        @retry="openReport(selectedReportId)" />
+      <div v-if="reportBusy" class="empty" role="status">正在加载报告…</div>
+      <template v-if="reportDetail"
         ><p class="muted">
           {{ String(reportDetail.windowStart).slice(0, 10) }} 至
           {{ String(reportDetail.windowEnd).slice(0, 10) }}
@@ -428,11 +497,17 @@ function changeDeviceTab() {
       v-model="deviceDialog"
       :title="device?.displayName || '设备记录'"
       width="900px"
-      ><el-tabs v-model="deviceTab" @tab-change="changeDeviceTab"
+      @closed="
+        deviceRequest++;
+        child.items = [];
+      "
+      ><PageError :message="deviceError" @retry="loadDevice" /><el-tabs
+        v-model="deviceTab"
+        @tab-change="changeDeviceTab"
         ><el-tab-pane label="连接记录" name="connections" /><el-tab-pane
           label="测量记录"
           name="measurements" /></el-tabs
-      ><el-table :data="child.items"
+      ><el-table :data="child.items" v-loading="deviceBusy"
         ><el-table-column label="时间" width="180"
           ><template #default="scope">{{
             date(scope.row.connectedAt || scope.row.observedAt)
@@ -468,3 +543,38 @@ function changeDeviceTab() {
     /></el-dialog>
   </section>
 </template>
+
+<style scoped>
+.member-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 14px;
+}
+.member-grid .record-card {
+  margin: 0;
+}
+.member-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.member-name .el-icon {
+  color: #b82237;
+}
+.member-name b {
+  overflow-wrap: anywhere;
+}
+.member-contact {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  margin: 0 0 12px;
+}
+.member-meta {
+  font-size: 13px;
+  line-height: 1.7;
+}
+.record-head {
+  flex-wrap: wrap;
+}
+</style>

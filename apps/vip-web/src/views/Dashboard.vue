@@ -1,192 +1,275 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { ElMessage } from "element-plus";
+import {
+  Share,
+  ShoppingCart,
+  Box,
+  User,
+  Wallet,
+  ArrowRight,
+} from "@element-plus/icons-vue";
 import { api, data, errorMessage } from "../api";
 import { money } from "../present";
+import PageError from "../components/PageError.vue";
 const overview = ref<any>(),
-  busy = ref(true);
-onMounted(async () => {
+  busy = ref(true),
+  error = ref("");
+const actions = [
+  {
+    path: "/promotion",
+    title: "邀请会员",
+    hint: "复制链接 · 保存二维码",
+    icon: Share,
+  },
+  {
+    path: "/products",
+    title: "采购商品",
+    hint: "选规格 · 余额付款",
+    icon: ShoppingCart,
+  },
+  {
+    path: "/orders",
+    title: "查看订单",
+    hint: "采购记录 · 发货物流",
+    icon: Box,
+  },
+];
+async function load() {
+  busy.value = true;
+  error.value = "";
   try {
     overview.value = data(await api.get("/dashboard"));
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    error.value = errorMessage(cause);
   } finally {
     busy.value = false;
   }
-});
+}
+onMounted(load);
 </script>
 <template>
   <section class="page" v-loading="busy">
     <div class="page-head">
-      <div>
-        <h1>
-          {{ overview?.name ? `${overview.name}，欢迎回来` : "平台概览" }}
-        </h1>
-        <p>查看会员服务、分销采购与账户资金</p>
-      </div>
+      <h1>{{ overview?.name ? `${overview.name}，你好` : "首页" }}</h1>
       <el-tag v-if="overview?.level" type="info">{{
         overview.level.name
       }}</el-tag>
     </div>
+    <PageError :message="error" @retry="load" />
     <el-alert
       v-if="overview?.preview"
-      title="当前为本地演示，会员资料与资金金额均为合成测试数据。"
+      title="本地演示：以下为合成测试数据"
       type="info"
       :closable="false"
-      style="margin-bottom: 20px"
+      class="section-space"
     />
+    <div class="quick-links">
+      <router-link
+        v-for="action in actions"
+        :key="action.path"
+        :to="action.path"
+        class="panel quick-link"
+        ><el-icon class="action-icon"><component :is="action.icon" /></el-icon>
+        <div>
+          <b>{{ action.title }}</b
+          ><small>{{ action.hint }}</small>
+        </div>
+        <el-icon><ArrowRight /></el-icon
+      ></router-link>
+    </div>
     <div class="overview-grid">
       <article class="balance-card">
-        <span>可消费余额</span
+        <span
+          ><el-icon><Wallet /></el-icon>可用余额</span
         ><strong>{{ money(overview?.wallet?.balanceCents) }}</strong>
-        <p>保证金独立管理，采购从余额扣款</p>
-        <router-link to="/wallet"
-          ><el-button>在线充值 →</el-button></router-link
-        >
+        <div class="button-row">
+          <router-link to="/wallet" class="action-link">充值</router-link
+          ><router-link to="/ledger" class="balance-detail"
+            >收支明细</router-link
+          >
+        </div>
       </article>
-      <article class="panel metric-card">
-        <span>所属会员</span><strong>{{ overview?.memberCount ?? "—" }}</strong
-        ><router-link to="/members">查看会员档案 →</router-link>
-      </article>
-      <article class="panel metric-card">
-        <span>采购订单</span><strong>{{ overview?.orderCount ?? "—" }}</strong
-        ><router-link to="/orders">查看采购记录 →</router-link>
-      </article>
-      <article class="panel metric-card">
-        <span>保证金</span
-        ><strong>{{ money(overview?.wallet?.depositCents) }}</strong
-        ><router-link to="/deposit">查看保证金记录 →</router-link>
-      </article>
+      <router-link to="/members" class="panel metric-card"
+        ><span
+          ><el-icon><User /></el-icon>我的会员</span
+        ><strong>{{ overview?.memberCount ?? "—" }}<small> 人</small></strong
+        ><span class="metric-link"
+          >查看档案 <el-icon><ArrowRight /></el-icon></span
+      ></router-link>
+      <router-link to="/orders" class="panel metric-card"
+        ><span
+          ><el-icon><Box /></el-icon>采购订单</span
+        ><strong>{{ overview?.orderCount ?? "—" }}<small> 笔</small></strong
+        ><span class="metric-link"
+          >查看订单 <el-icon><ArrowRight /></el-icon></span
+      ></router-link>
     </div>
     <div class="panel">
-      <h2>常用服务</h2>
-      <div class="quick-links">
-        <router-link to="/promotion"
-          ><b>专属推广二维码</b
-          ><span>邀请新会员，建立专属服务关系</span></router-link
-        ><router-link to="/products"
-          ><b>按分销价采购</b
-          ><span>查看当前等级价格，使用余额下单</span></router-link
-        ><router-link to="/ledger"
-          ><b>查询资金明细</b
-          ><span>充值、消费和退款记录随时可查</span></router-link
-        >
-      </div>
-    </div>
-    <div class="panel account-card">
-      <h2>伙伴账户</h2>
-      <dl class="facts">
+      <dl class="facts account-facts">
         <div>
-          <dt>伙伴编号</dt>
-          <dd>{{ overview?.partnerNo || "—" }}</dd>
+          <dt>累计采购</dt>
+          <dd>{{ money(overview?.purchaseCents) }}</dd>
+        </div>
+        <div>
+          <dt>保证金</dt>
+          <dd>
+            <router-link to="/deposit"
+              >{{ money(overview?.wallet?.depositCents) }} · 查看</router-link
+            >
+          </dd>
         </div>
         <div>
           <dt>登录账号</dt>
           <dd>{{ overview?.username || "—" }}</dd>
         </div>
-        <div>
-          <dt>累计采购</dt>
-          <dd>{{ money(overview?.purchaseCents) }}</dd>
-        </div>
       </dl>
+      <details class="quiet-details">
+        <summary>账户信息</summary>
+        <p>伙伴编号：{{ overview?.partnerNo || "—" }}</p>
+      </details>
     </div>
   </section>
 </template>
 <style scoped>
-.overview-grid {
-  display: grid;
-  grid-template-columns: 1.8fr 1fr 1fr 1fr;
-  gap: 18px;
-  margin-bottom: 22px;
-}
-.balance-card {
-  border-radius: 14px;
-  padding: 26px;
-  background: #be2038;
-  color: white;
-}
-.balance-card > span {
-  color: #ffd9df;
-  font-size: 13px;
-}
-.balance-card strong {
-  display: block;
-  font-size: 35px;
-  margin: 20px 0 12px;
-}
-.balance-card p {
-  font-size: 12px;
-  color: #f0b8c3;
-  margin-bottom: 22px;
-}
-.balance-card .el-button {
-  background: white;
-  border: 0;
-  color: #a91f33;
-}
-.metric-card {
-  margin-bottom: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 26px 20px;
-}
-.metric-card > span {
-  color: #788397;
-  font-size: 13px;
-}
-.metric-card strong {
-  font-size: 28px;
-  margin: 23px 0;
-}
-.metric-card a {
-  font-size: 12px;
-  margin-top: auto;
-}
 .quick-links {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
-  margin-top: 22px;
 }
-.quick-links a {
-  border: 1px solid #e8ebf1;
-  border-radius: 10px;
-  padding: 22px;
+.quick-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
   color: #18212f;
 }
-.quick-links a:hover {
-  border-color: #d98c98;
+.quick-link .action-icon {
+  font-size: 25px;
+  color: #c9223b;
+  background: #fcebed;
+  border-radius: 10px;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
 }
-.quick-links b,
-.quick-links span {
+.quick-link > div {
+  flex: 1;
+}
+.quick-link b {
+  font-size: 16px;
+}
+.quick-link small {
   display: block;
-}
-.quick-links span {
   font-size: 12px;
-  color: #788397;
-  margin-top: 11px;
-  line-height: 1.7;
+  color: #637084;
+  margin-top: 8px;
 }
-.account-card .facts {
+.quick-link > .el-icon:last-child {
+  color: #8995a6;
+}
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.balance-card {
+  background: #bc2038;
+  border-radius: 14px;
+  padding: 24px;
+  color: #fff;
+}
+.balance-card > span,
+.metric-card > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.balance-card strong,
+.metric-card strong {
+  display: block;
+  font-size: 32px;
+  margin: 18px 0;
+}
+.balance-card .action-link {
+  background: white;
+  color: #a31b30;
+  min-width: 92px;
+}
+.balance-detail {
+  color: white;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.metric-card {
   margin: 0;
+  padding: 24px;
+  color: #18212f;
+}
+.metric-card > span {
+  color: #637084;
+}
+.metric-card strong small {
+  font-weight: 400;
+  font-size: 14px;
+}
+.metric-card .metric-link {
+  color: #b82237;
+  font-size: 13px;
+}
+.account-facts {
+  margin-bottom: 16px;
+}
+.quiet-details {
+  border-top: 1px solid #e8ebf1;
+  padding-top: 14px;
 }
 @media (max-width: 1150px) {
-  .overview-grid {
-    grid-template-columns: 1fr 1fr;
+  .quick-links {
+    gap: 10px;
+  }
+  .quick-link {
+    padding: 16px;
+    flex-wrap: wrap;
+  }
+  .quick-link > .el-icon:last-child {
+    display: none;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 650px) {
   .quick-links {
     grid-template-columns: 1fr;
   }
+  .quick-link {
+    flex-wrap: nowrap;
+    margin-bottom: 0;
+    padding: 14px 16px;
+  }
+  .quick-links {
+    margin-bottom: 20px;
+  }
+  .quick-link small {
+    margin-top: 4px;
+  }
+  .quick-link > .el-icon:last-child {
+    display: block;
+  }
   .overview-grid {
-    gap: 12px;
+    grid-template-columns: 1fr 1fr;
   }
   .balance-card {
-    grid-column: 1 / -1;
+    grid-column: 1/-1;
+  }
+  .balance-card strong {
+    font-size: 34px;
+    margin: 14px 0;
+  }
+  .metric-card {
+    padding: 18px;
   }
   .metric-card strong {
-    font-size: 23px;
+    font-size: 28px;
   }
 }
 </style>

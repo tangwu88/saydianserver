@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import type { FormInstance, FormRules } from "element-plus";
+import {
+  Search,
+  ShoppingCart,
+  Delete,
+  Wallet,
+  Picture,
+  MagicStick,
+} from "@element-plus/icons-vue";
 import { api, data, errorMessage, requestKey } from "../api";
 import { money } from "../present";
 import {
@@ -9,18 +18,37 @@ import {
   saveCheckout,
   clearCheckout,
 } from "../checkout-recovery";
+import {
+  addressFields,
+  addressError,
+  isDefiniteOrderFailure,
+} from "../checkout-form";
 import type { PartnerCheckoutInput } from "@saydian/app-contracts";
+import PageError from "../components/PageError.vue";
+import EmptyState from "../components/EmptyState.vue";
 import axios from "axios";
+import {
+  recognizeAddress,
+  type RecognizedAddress,
+} from "../address-recognition";
 const products = ref<any[]>([]),
   page = ref(1),
   total = ref(0),
   search = ref(""),
   level = ref(""),
   busy = ref(false),
+  reviewing = ref(false),
   quantities = reactive<Record<string, number>>({}),
+  catalog = reactive<Record<string, any>>({}),
   quote = ref<any>(),
   checkout = ref(false),
-  submitting = ref(false);
+  submitting = ref(false),
+  error = ref(""),
+  checkoutError = ref(""),
+  quoteStale = ref(false),
+  balance = ref<number>(),
+  submittedRequest = ref<PartnerCheckoutInput | null>(null),
+  addressForm = ref<FormInstance>();
 const address = reactive({
     recipientName: "",
     recipientMobile: "",
@@ -32,30 +60,108 @@ const address = reactive({
     postalCode: "",
   }),
   buyerRemark = ref("");
+const pastedAddress = ref(""),
+  addressNotice = ref(""),
+  addressIncomplete = ref(false);
+const previousAddress = ref<RecognizedAddress>();
+function fillAddress() {
+  if (submitting.value || submittedRequest.value) return;
+  const result = recognizeAddress(pastedAddress.value);
+  if (result.error || !result.recognized) {
+    addressIncomplete.value = true;
+    addressNotice.value =
+      result.error || "暂未识别，请检查内容或在下方手动填写";
+    return;
+  }
+  previousAddress.value = { ...address };
+  // Replace the entire recipient: never mix a new address with the old person's phone.
+  Object.assign(address, result.fields);
+  addressForm.value?.clearValidate();
+  addressIncomplete.value =
+    result.missing.length > 0 || result.warnings.length > 0;
+  addressNotice.value = result.missing.length
+    ? `已填写识别到的信息，还需补充：${result.missing.join("、")}`
+    : result.warnings.join("；") || "已自动填写，请核对收货信息";
+}
+function undoAddress() {
+  if (submitting.value || submittedRequest.value || !previousAddress.value)
+    return;
+  Object.assign(address, previousAddress.value);
+  previousAddress.value = undefined;
+  addressNotice.value = "";
+  addressForm.value?.clearValidate();
+}
+const rules: FormRules = Object.fromEntries(
+  addressFields.map((field) => [
+    field,
+    [
+      {
+        trigger: "blur",
+        validator: (
+          _rule: unknown,
+          value: unknown,
+          done: (error?: Error) => void,
+        ) => {
+          const error = addressError(field, value);
+          done(error ? new Error(error) : undefined);
+        },
+      },
+    ],
+  ]),
+);
 const selected = computed(() =>
   Object.entries(quantities)
     .filter(([, quantity]) => quantity > 0)
     .map(([skuId, quantity]) => ({ skuId, quantity })),
 );
+const itemCount = computed(() =>
+  selected.value.reduce((sum, item) => sum + item.quantity, 0),
+);
+const subtotal = computed(() =>
+  selected.value.reduce(
+    (sum, item) =>
+      sum + (catalog[item.skuId]?.distributionPriceCents ?? 0) * item.quantity,
+    0,
+  ),
+);
+const insufficient = computed(
+  () =>
+    balance.value != null &&
+    quote.value &&
+    balance.value < quote.value.payableCents,
+);
 const router = useRouter();
 let checkoutKey = "",
-  submittedRequest: PartnerCheckoutInput | null = null,
-  partnerId = "";
+  partnerId = "",
+  listRequest = 0,
+  alive = true;
+onBeforeUnmount(() => {
+  alive = false;
+  listRequest++;
+});
 async function load() {
+  const request = ++listRequest;
   busy.value = true;
+  error.value = "";
   try {
     const result = data(
       await api.get("/products", {
         params: { search: search.value, page: page.value },
       }),
     );
+    if (request !== listRequest) return;
     products.value = result.items;
     total.value = result.total;
     level.value = result.level;
+    for (const product of products.value)
+      for (const sku of product.skus) {
+        catalog[sku.id] = { ...sku, name: product.name };
+        quantities[sku.id] ??= 0;
+      }
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    if (request === listRequest) error.value = errorMessage(cause);
   } finally {
-    busy.value = false;
+    if (request === listRequest) busy.value = false;
   }
 }
 onMounted(async () => {
@@ -63,82 +169,110 @@ onMounted(async () => {
     partnerId = data(await api.get("/auth/me")).id;
     const pending = readCheckout(sessionStorage, partnerId);
     if (pending) {
-      submittedRequest = pending.input;
+      submittedRequest.value = pending.input;
       checkoutKey = pending.input.idempotencyKey;
       quote.value = pending.quote;
       Object.assign(address, pending.input.address);
       buyerRemark.value = pending.input.buyerRemark || "";
+      for (const item of pending.input.items)
+        quantities[item.skuId] = item.quantity;
       checkout.value = true;
     }
+    balance.value = data(await api.get("/wallet")).balanceCents;
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    error.value = errorMessage(cause);
   }
-  await load();
+  if (alive) await load();
 });
+function available(product: any) {
+  return product.skus.filter((sku: any) => sku.purchasable);
+}
 async function review() {
-  if (submittedRequest) {
+  if (reviewing.value) return;
+  if (submittedRequest.value) {
     checkout.value = true;
     return;
   }
   if (!selected.value.length) {
-    ElMessage.info("请选择采购数量");
+    ElMessage.info("请先选择商品数量");
     return;
   }
+  reviewing.value = true;
+  checkoutError.value = "";
   try {
-    quote.value = data(await api.post("/quote", { items: selected.value }));
+    if (!partnerId) partnerId = data(await api.get("/auth/me")).id;
+    const [quoted, wallet] = await Promise.all([
+      api.post("/quote", { items: selected.value }),
+      api.get("/wallet"),
+    ]);
+    if (!alive) return;
+    quote.value = data(quoted);
+    balance.value = data(wallet).balanceCents;
     checkoutKey = requestKey();
-    submittedRequest = null;
+    quoteStale.value = false;
     checkout.value = true;
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    checkoutError.value = errorMessage(cause);
+    ElMessage.error(checkoutError.value);
+  } finally {
+    reviewing.value = false;
   }
 }
+function clearCart() {
+  if (submittedRequest.value) return;
+  Object.keys(quantities).forEach((key) => delete quantities[key]);
+}
 async function purchase() {
-  if (submitting.value) return;
-  if (
-    !address.recipientName ||
-    !address.recipientMobile ||
-    !address.province ||
-    !address.city ||
-    !address.addressDetail
-  ) {
-    ElMessage.warning("请填写完整收货信息");
+  if (submitting.value || !quote.value || quoteStale.value || !partnerId)
     return;
-  }
   submitting.value = true;
-  // Retain one exact request through an uncertain network result; re-opening creates a fresh quote.
-  submittedRequest ??= {
-    items: quote.value.lines.map((line: any) => ({
-      skuId: line.skuId,
-      quantity: line.quantity,
-    })),
-    address: { ...address },
-    buyerRemark: buyerRemark.value,
-    expectedQuote: quote.value.fingerprint,
-    idempotencyKey: checkoutKey,
-  };
-  saveCheckout(sessionStorage, {
-    partnerId,
-    input: submittedRequest,
-    quote: quote.value,
-  });
+  checkoutError.value = "";
   try {
-    await api.post("/orders", submittedRequest);
-    clearCheckout(sessionStorage, partnerId, checkoutKey);
-    submittedRequest = null;
-    ElMessage.success("采购成功，已从余额扣款");
+    if (!submittedRequest.value) {
+      if (!(await addressForm.value?.validate().catch(() => false))) return;
+      if (insufficient.value) {
+        checkoutError.value = "余额不足，请先充值";
+        return;
+      }
+      const input: PartnerCheckoutInput = {
+        items: quote.value.lines.map((line: any) => ({
+          skuId: line.skuId,
+          quantity: line.quantity,
+        })),
+        address: { ...address },
+        buyerRemark: buyerRemark.value,
+        expectedQuote: quote.value.fingerprint,
+        idempotencyKey: checkoutKey,
+      };
+      try {
+        saveCheckout(sessionStorage, { partnerId, input, quote: quote.value });
+      } catch {
+        checkoutError.value = "浏览器无法保存订单状态，请允许本站存储后再付款";
+        return;
+      }
+      submittedRequest.value = input;
+    }
+    await api.post("/orders", submittedRequest.value);
+    try {
+      clearCheckout(sessionStorage, partnerId, checkoutKey);
+    } catch {}
+    submittedRequest.value = null;
     checkout.value = false;
-    Object.keys(quantities).forEach((key) => delete quantities[key]);
+    clearCart();
+    ElMessage.success("采购成功，已从余额扣款");
     await router.push("/orders");
   } catch (cause) {
     if (
       axios.isAxiosError(cause) &&
-      [400, 404, 409, 422].includes(cause.response?.status ?? 0)
+      isDefiniteOrderFailure(cause.response?.status)
     ) {
-      clearCheckout(sessionStorage, partnerId, checkoutKey);
-      submittedRequest = null;
+      try {
+        clearCheckout(sessionStorage, partnerId, checkoutKey);
+      } catch {}
+      submittedRequest.value = null;
+      quoteStale.value = true;
     }
-    ElMessage.error(errorMessage(cause));
+    checkoutError.value = errorMessage(cause);
   } finally {
     submitting.value = false;
   }
@@ -147,12 +281,10 @@ async function purchase() {
 <template>
   <section class="page">
     <div class="page-head">
-      <div>
-        <h1>分销采购</h1>
-        <p>按当前分销等级价格采购，付款后进入发货流程</p>
-      </div>
-      <el-tag type="info">{{ level || "正在加载等级" }}</el-tag>
+      <h1>商品采购</h1>
+      <el-tag v-if="level" type="info">{{ level }} · 分销价</el-tag>
     </div>
+    <PageError :message="error" @retry="load" />
     <div class="panel">
       <form
         class="toolbar"
@@ -163,54 +295,79 @@ async function purchase() {
       >
         <el-input
           v-model="search"
+          :prefix-icon="Search"
           clearable
-          placeholder="搜索商品"
+          placeholder="搜索商品名称"
+          aria-label="搜索商品名称"
           style="max-width: 320px"
-        /><el-button native-type="submit" type="primary">查询</el-button
-        ><router-link to="/wallet"
-          ><el-button>余额与充值</el-button></router-link
+          @clear="
+            page = 1;
+            load();
+          "
+        /><el-button native-type="submit" type="primary">搜索</el-button
+        ><router-link to="/wallet" class="wallet-link"
+          ><el-icon><Wallet /></el-icon>余额 {{ money(balance) }}</router-link
         >
       </form>
-      <div class="product-list" v-loading="busy">
+      <div v-loading="busy">
         <article v-for="product in products" :key="product.id" class="product">
           <img
             v-if="product.coverImage"
             :src="product.coverImage"
             :alt="product.name"
-          />
-          <div v-else class="product-placeholder">SAYDIAN</div>
+            loading="lazy"
+          /><el-icon v-else class="product-placeholder"><Picture /></el-icon>
           <div class="product-main">
             <h2>{{ product.name }}</h2>
-            <el-tag size="small" type="info">{{
-              product.fulfillmentSource === "LOCAL" ? "自营商品" : "统一供货"
-            }}</el-tag>
-            <p class="muted">{{ product.subtitle }}</p>
-            <div v-for="sku in product.skus" :key="sku.id" class="sku-row">
-              <span
-                >{{ sku.specification || "默认规格"
-                }}<small v-if="sku.stock < 0">付款后安排补货</small></span
-              ><b :class="{ price: sku.purchasable }">{{
-                sku.purchasable
-                  ? money(sku.distributionPriceCents)
-                  : "暂未设置分销价"
-              }}</b
+            <div
+              v-for="sku in available(product)"
+              :key="sku.id"
+              class="sku-row"
+            >
+              <div>
+                {{ sku.specification || "默认规格"
+                }}<small v-if="sku.stock <= 0">可下单，需安排补货</small>
+              </div>
+              <b class="price">{{ money(sku.distributionPriceCents) }}</b
               ><el-input-number
-                v-if="sku.purchasable"
                 v-model="quantities[sku.id]"
                 :min="0"
                 :max="9999"
                 :precision="0"
-                controls-position="right"
-                size="small"
-                aria-label="采购数量"
-              /><span v-else class="muted">暂不可采购</span>
+                :disabled="!!submittedRequest"
+                :aria-label="`${product.name} ${sku.specification || '默认规格'} 数量`"
+              />
             </div>
+            <details
+              v-if="product.skus.some((sku: any) => !sku.purchasable)"
+              class="quiet-details"
+            >
+              <summary>
+                {{ product.skus.length - available(product).length }}
+                个规格暂不可采购
+              </summary>
+              <p
+                v-for="sku in product.skus.filter(
+                  (sku: any) => !sku.purchasable,
+                )"
+                :key="sku.id"
+              >
+                {{ sku.specification || "默认规格" }} · 暂无分销价
+              </p>
+            </details>
             <p v-if="!product.skus.length" class="muted">暂无可采购规格</p>
           </div>
         </article>
-        <el-empty v-if="!products.length && !busy" description="暂无商品" />
+        <EmptyState
+          v-if="!products.length && !busy && !error"
+          :title="search ? '未找到相关商品' : '暂无可采购商品'"
+          :description="
+            search ? '试试其他名称，或清空搜索。' : '商品上架后会显示在这里。'
+          "
+        />
       </div>
       <el-pagination
+        v-if="total > 30"
         v-model:current-page="page"
         :total="total"
         :page-size="30"
@@ -219,82 +376,141 @@ async function purchase() {
       />
     </div>
     <div class="checkout-bar">
-      <span>已选 {{ selected.length }} 个规格</span
-      ><el-button
-        type="primary"
-        size="large"
-        :disabled="!selected.length && !submittedRequest"
-        @click="review"
-        >确认采购 →</el-button
-      >
+      <div>
+        <span>已选 {{ itemCount }} 件</span
+        ><strong v-if="itemCount">商品小计 {{ money(subtotal) }}</strong>
+      </div>
+      <div class="button-row">
+        <el-button
+          v-if="itemCount && !submittedRequest"
+          text
+          :icon="Delete"
+          @click="clearCart"
+          >清空</el-button
+        ><el-button
+          type="primary"
+          size="large"
+          :icon="ShoppingCart"
+          :loading="reviewing"
+          :disabled="!selected.length && !submittedRequest"
+          @click="review"
+          >{{ submittedRequest ? "核对上次订单" : "去结算" }}</el-button
+        >
+      </div>
     </div>
     <el-dialog
       v-model="checkout"
-      title="确认采购订单"
-      width="780px"
+      title="确认订单"
+      width="760px"
       :close-on-click-modal="false"
-      ><template v-if="quote"
-        ><el-alert
+      :close-on-press-escape="!submitting"
+      :show-close="!submitting"
+    >
+      <template v-if="quote">
+        <el-alert
           v-if="submittedRequest"
-          title="请继续核对上次采购请求，避免重复下单。"
+          title="上次付款结果待确认，请核对原订单，避免重复付款。"
           type="warning"
           :closable="false"
-          style="margin-bottom: 12px"
-        /><el-alert
-          :title="`当前分销等级：${quote.level}，订单将使用余额付款`"
-          type="info"
-          :closable="false"
-        /><el-table :data="quote.lines" style="margin: 18px 0"
-          ><el-table-column
-            prop="name"
-            label="商品"
-            min-width="150"
-          /><el-table-column
-            prop="specification"
-            label="规格"
-          /><el-table-column
-            prop="quantity"
-            label="数量"
-            width="75"
-          /><el-table-column label="金额" width="130"
-            ><template #default="scope">{{
-              money(scope.row.totalCents)
-            }}</template></el-table-column
-          ></el-table
-        ><el-form
+          class="section-space"
+        />
+        <div
+          v-for="line in quote.lines"
+          :key="line.skuId"
+          class="checkout-item"
+        >
+          <div>
+            <b>{{ line.name }}</b
+            ><small
+              >{{ line.specification || "默认规格" }} ·
+              {{ money(line.unitPriceCents) }} × {{ line.quantity }}</small
+            >
+          </div>
+          <strong>{{ money(line.totalCents) }}</strong>
+        </div>
+        <h2 class="address-title">收货地址</h2>
+        <div class="address-recognition">
+          <label for="paste-address">粘贴地址，快速填写</label>
+          <el-input
+            id="paste-address"
+            v-model="pastedAddress"
+            type="textarea"
+            :rows="2"
+            maxlength="1000"
+            placeholder="例：张三 13800138000 广东省深圳市南山区科技园路8号2栋1201"
+            :disabled="submitting || !!submittedRequest"
+          />
+          <div class="button-row">
+            <el-button
+              :icon="MagicStick"
+              type="primary"
+              plain
+              :disabled="
+                !pastedAddress.trim() || submitting || !!submittedRequest
+              "
+              @click="fillAddress"
+              >识别并填写</el-button
+            >
+            <el-button
+              v-if="previousAddress"
+              text
+              :disabled="submitting || !!submittedRequest"
+              @click="undoAddress"
+              >撤销填写</el-button
+            >
+          </div>
+          <p
+            v-if="addressNotice"
+            :class="['address-notice', { 'inline-error': addressIncomplete }]"
+            role="status"
+          >
+            {{ addressNotice }}
+          </p>
+        </div>
+        <el-form
+          ref="addressForm"
+          :model="address"
+          :rules="rules"
           label-position="top"
           :disabled="submitting || !!submittedRequest"
-          ><el-row :gutter="16"
-            ><el-col :span="12"
-              ><el-form-item label="收货人"
-                ><el-input
-                  v-model="address.recipientName"
-                  maxlength="80" /></el-form-item></el-col
-            ><el-col :span="12"
-              ><el-form-item label="手机号"
-                ><el-input
-                  v-model="address.recipientMobile"
-                  maxlength="30" /></el-form-item></el-col
-            ><el-col :span="8"
-              ><el-form-item label="省份"
-                ><el-input
-                  v-model="address.province"
-                  maxlength="80" /></el-form-item></el-col
-            ><el-col :span="8"
-              ><el-form-item label="城市"
-                ><el-input
-                  v-model="address.city"
-                  maxlength="80" /></el-form-item></el-col
-            ><el-col :span="8"
-              ><el-form-item label="区县"
-                ><el-input
-                  v-model="address.district"
-                  maxlength="80" /></el-form-item></el-col></el-row
-          ><el-form-item label="详细地址"
+          ><div class="address-grid">
+            <el-form-item label="收货人" prop="recipientName" required
+              ><el-input
+                v-model="address.recipientName"
+                maxlength="80"
+                autocomplete="shipping name" /></el-form-item
+            ><el-form-item label="联系电话" prop="recipientMobile" required
+              ><el-input
+                v-model="address.recipientMobile"
+                maxlength="30"
+                inputmode="tel"
+                autocomplete="shipping tel" /></el-form-item
+            ><el-form-item label="省份" prop="province" required
+              ><el-input
+                v-model="address.province"
+                maxlength="80"
+                placeholder="如：广东省"
+                autocomplete="shipping address-level1" /></el-form-item
+            ><el-form-item label="城市" prop="city" required
+              ><el-input
+                v-model="address.city"
+                maxlength="80"
+                placeholder="如：深圳市"
+                autocomplete="shipping address-level2" /></el-form-item
+            ><el-form-item label="区县"
+              ><el-input
+                v-model="address.district"
+                maxlength="80"
+                placeholder="如：南山区"
+            /></el-form-item>
+          </div>
+          <el-form-item label="详细地址" prop="addressDetail" required
             ><el-input
               v-model="address.addressDetail"
-              maxlength="300" /></el-form-item
-          ><el-form-item label="订单备注"
+              maxlength="300"
+              placeholder="街道、楼栋、门牌号"
+              autocomplete="shipping street-address" /></el-form-item
+          ><el-form-item label="备注（选填）"
             ><el-input v-model="buyerRemark" maxlength="500" /></el-form-item
         ></el-form>
         <div class="quote-totals">
@@ -302,112 +518,242 @@ async function purchase() {
             >商品 {{ money(quote.subtotalCents) }} + 运费
             {{ money(quote.shippingCents) }}</span
           ><strong>合计 {{ money(quote.payableCents) }}</strong>
+        </div>
+        <p class="balance-note">
+          余额 {{ money(balance)
+          }}<template v-if="!insufficient && balance != null">
+            · 付款后 {{ money(balance - quote.payableCents) }}</template
+          >
+        </p>
+        <el-alert
+          v-if="insufficient && !submittedRequest"
+          :title="`余额不足，还差 ${money(quote.payableCents - (balance ?? 0))}。充值后点击更新报价。`"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+        <p v-if="checkoutError" class="inline-error" role="alert">
+          {{ checkoutError }}
+        </p>
+      </template>
+      <template #footer
+        ><div class="button-row checkout-actions">
+          <el-button :disabled="submitting" @click="checkout = false"
+            >继续选购</el-button
+          ><a
+            v-if="insufficient && !submittedRequest"
+            href="/vip/wallet"
+            target="_blank"
+            rel="noopener"
+            class="action-link"
+            >打开充值页</a
+          ><el-button
+            v-if="(quoteStale || insufficient) && !submittedRequest"
+            :loading="reviewing"
+            @click="review"
+            >更新报价与余额</el-button
+          ><el-button
+            type="primary"
+            :loading="submitting"
+            :disabled="
+              !submittedRequest &&
+              (insufficient || quoteStale || balance == null)
+            "
+            @click="purchase"
+            >{{
+              submittedRequest
+                ? "核对原订单"
+                : `余额支付 ${money(quote?.payableCents)}`
+            }}</el-button
+          >
         </div></template
-      ><template #footer
-        ><el-button :disabled="submitting" @click="checkout = false"
-          >返回</el-button
-        ><el-button type="primary" :loading="submitting" @click="purchase"
-          >确认并支付</el-button
-        ></template
-      ></el-dialog
-    >
+      >
+    </el-dialog>
   </section>
 </template>
 <style scoped>
+.wallet-link {
+  margin-left: auto;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
 .product {
   display: flex;
-  gap: 22px;
-  padding: 26px 0;
-  border-bottom: 1px solid #e8ebf1;
-}
-.product:first-child {
-  padding-top: 8px;
+  gap: 20px;
+  padding: 24px 0;
+  border-bottom: 1px solid #edf0f4;
 }
 .product > img,
 .product-placeholder {
-  width: 130px;
-  height: 130px;
+  width: 100px;
+  height: 100px;
   object-fit: contain;
+  flex-shrink: 0;
+  border-radius: 9px;
   background: #f8f9fb;
-  border-radius: 10px;
 }
 .product-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #9da6b5;
-  font-size: 13px;
+  font-size: 36px;
+  color: #94a0b2;
 }
 .product-main {
   flex: 1;
   min-width: 0;
 }
 .product-main h2 {
-  margin-bottom: 8px;
-}
-.product-main > p {
-  font-size: 12px;
+  font-size: 17px;
+  line-height: 1.6;
+  margin-bottom: 10px;
 }
 .sku-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 180px 125px;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) 110px 150px;
+  gap: 14px;
   align-items: center;
   padding: 12px 0;
   font-size: 14px;
 }
 .sku-row small {
   display: block;
-  color: #b08044;
-  font-size: 11px;
-  margin-top: 6px;
+  color: #8a6127;
+  margin-top: 5px;
+  font-size: 12px;
+}
+.sku-row .el-input-number {
+  width: 150px;
 }
 .checkout-bar {
   position: sticky;
-  bottom: 14px;
+  bottom: 12px;
+  background: #fff;
+  border: 1px solid #dce1e9;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px #18212f12;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.checkout-bar strong {
+  display: block;
+  font-size: 14px;
+  color: #b82237;
+  margin-top: 5px;
+}
+.checkout-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 14px;
-  background: white;
-  padding: 18px 24px;
-  border: 1px solid #e8ebf1;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px #18212f0a;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf0f4;
+  font-size: 14px;
+}
+.checkout-item small {
+  display: block;
+  color: #637084;
+  margin-top: 6px;
+}
+.checkout-item > strong {
+  white-space: nowrap;
+}
+.address-title {
+  margin-top: 24px;
+  font-size: 18px;
+}
+.address-recognition {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+  border: 1px solid #e5e7ec;
+  border-radius: 10px;
+  background: #f5f6f9;
+}
+.address-recognition label {
+  font-weight: 600;
+}
+.address-notice {
+  margin: 0;
+  font-size: 13px;
+}
+.address-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
 }
 .quote-totals {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 15px;
-  margin-top: 18px;
+  align-items: center;
+  gap: 12px;
   font-size: 13px;
 }
 .quote-totals strong {
-  color: #c9223b;
-  font-size: 22px;
+  font-size: 23px;
+  color: #bc2038;
 }
-@media (max-width: 760px) {
-  .product {
-    flex-direction: column;
+.balance-note {
+  font-size: 13px;
+  text-align: right;
+  color: #637084;
+  margin-top: 12px;
+}
+.checkout-actions {
+  justify-content: flex-end;
+}
+.inline-error {
+  color: #af302c;
+  line-height: 1.6;
+  margin: 14px 0 0;
+}
+@media (max-width: 720px) {
+  .product > img,
+  .product-placeholder {
+    width: 72px;
+    height: 72px;
   }
-  .product > img {
-    width: 90px;
-    height: 90px;
+  .product {
+    gap: 12px;
   }
   .sku-row {
-    grid-template-columns: 1fr 120px;
+    grid-template-columns: 1fr 140px;
     gap: 10px;
   }
-  .sku-row > span:first-child {
-    grid-column: 1 / -1;
+  .sku-row > div {
+    grid-column: 1/-1;
   }
-  .sku-row b {
-    font-size: 13px;
+  .product-main h2 {
+    font-size: 15px;
   }
-  .quote-totals {
-    flex-direction: column;
-    align-items: flex-end;
+  .checkout-bar {
+    padding: 12px;
+  }
+  .checkout-bar .button-row {
+    gap: 0;
+  }
+  .wallet-link {
+    margin-left: 0;
+  }
+  .address-grid {
+    gap: 0 12px;
+  }
+}
+@media (max-width: 420px) {
+  .product {
+    flex-wrap: wrap;
+  }
+  .product-main {
+    flex-basis: 100%;
+  }
+  .checkout-bar .el-button {
+    padding: 10px;
+  }
+  .address-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

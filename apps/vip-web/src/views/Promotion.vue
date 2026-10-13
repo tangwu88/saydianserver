@@ -1,129 +1,161 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { CopyDocument, Download, User } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { api, data, errorMessage } from "../api";
-const promotion = ref<any>();
-onMounted(async () => {
+import PageError from "../components/PageError.vue";
+const promotion = ref<any>(),
+  busy = ref(false),
+  error = ref(""),
+  linkInput = ref<HTMLInputElement>();
+async function load() {
+  busy.value = true;
+  error.value = "";
   try {
     promotion.value = data(await api.get("/promotion"));
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    error.value = errorMessage(cause);
+  } finally {
+    busy.value = false;
   }
-});
+}
+onMounted(load);
 async function copy() {
+  if (!promotion.value) return;
   try {
     await navigator.clipboard.writeText(promotion.value.linkUrl);
-    ElMessage.success("推广链接已复制");
+    ElMessage.success("链接已复制，可直接发给会员");
   } catch {
-    ElMessage.info("请在下方选中链接复制");
+    linkInput.value?.focus();
+    linkInput.value?.select();
+    ElMessage.info("链接已选中，请长按或按 Ctrl/Cmd+C 复制");
   }
 }
 </script>
 <template>
-  <section class="page">
+  <section class="page promotion-page">
     <div class="page-head">
-      <div>
-        <h1>专属推广</h1>
-        <p>新会员通过二维码或链接注册后，归属您的品牌伙伴账户</p>
-      </div>
+      <h1>推广二维码</h1>
+      <router-link to="/members" class="action-link"
+        ><el-icon><User /></el-icon>查看会员</router-link
+      >
     </div>
-    <div class="panel promotion-panel">
+    <PageError :message="error" @retry="load" />
+    <div class="panel promotion-panel" v-loading="busy">
       <div class="qr-card">
-        <span class="muted">赛电品牌伙伴</span>
-        <h2>{{ promotion?.name || "正在加载" }}</h2>
+        <h2>{{ promotion?.name || "我的推广码" }}</h2>
         <img
           v-if="promotion"
           :src="promotion.qrDataUrl"
-          alt="品牌伙伴专属推广二维码"
-          width="260"
-          height="260"
+          alt="扫码注册会员"
+          width="224"
+          height="224"
         />
-        <p>扫码注册 · 开启健康服务</p>
-        <a
-          v-if="promotion"
-          :href="promotion.qrDataUrl"
-          :download="`赛电品牌伙伴-${promotion.partnerNo}.png`"
-          ><el-button>下载二维码</el-button></a
-        >
+        <p>扫码注册会员</p>
       </div>
-      <div class="promotion-info">
-        <el-tag>专属推广链接</el-tag>
-        <h2>邀请会员，提供持续服务</h2>
-        <p>
-          会员在 H5 完成注册后，可使用同一账号登录赛电
-          App。所属会员的健康档案、设备及测量记录可在会员页面查看。
-        </p>
-        <el-input
-          :model-value="promotion?.linkUrl || ''"
+      <div class="promotion-actions">
+        <h2>发给会员，即可邀请注册</h2>
+        <p class="muted">新注册会员会显示在“我的会员”中。</p>
+        <div class="button-row">
+          <el-button
+            type="primary"
+            size="large"
+            :icon="CopyDocument"
+            :disabled="!promotion"
+            @click="copy"
+            >复制邀请链接</el-button
+          ><a
+            v-if="promotion"
+            class="action-link"
+            :href="promotion.qrDataUrl"
+            :download="`赛电推广码-${promotion.partnerNo}.png`"
+            ><el-icon><Download /></el-icon>保存二维码</a
+          >
+        </div>
+        <label for="promotion-link" class="field-label">邀请链接</label
+        ><input
+          id="promotion-link"
+          ref="linkInput"
+          class="plain-input"
+          :value="promotion?.linkUrl || ''"
           readonly
-          aria-label="专属推广链接"
-        /><el-button
-          type="primary"
-          :disabled="!promotion"
-          @click="copy"
-          style="margin-top: 16px"
-          >复制链接</el-button
-        >
-        <p class="muted note">
-          已有账号登录不会改变品牌伙伴归属。二维码长期有效，账户停用后推广链接失效。
-        </p>
+          @focus="linkInput?.select()"
+        />
+        <details class="quiet-details">
+          <summary>推广规则</summary>
+          <p>已有会员登录不会改变归属。账户停用后，此二维码和链接将失效。</p>
+        </details>
       </div>
     </div>
   </section>
 </template>
 <style scoped>
+.promotion-page {
+  max-width: 1000px;
+}
 .promotion-panel {
   display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 48px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 32px;
   align-items: center;
-  padding: 36px;
 }
 .qr-card {
-  background: #fff8f9;
-  border: 1px solid #f1d8de;
-  border-radius: 12px;
-  padding: 28px;
   text-align: center;
-}
-.qr-card > span {
-  font-size: 12px;
+  padding: 16px;
+  border: 1px solid #e8ebf1;
+  border-radius: 12px;
 }
 .qr-card h2 {
-  margin: 12px 0 20px;
+  font-size: 18px;
+  margin: 0 0 12px;
 }
 .qr-card img {
+  display: block;
   max-width: 100%;
   height: auto;
+  margin: auto;
 }
 .qr-card p {
-  font-size: 13px;
-  color: #9b6370;
-  margin: 18px 0;
-}
-.promotion-info h2 {
-  font-size: 25px;
-  margin: 20px 0 16px;
-}
-.promotion-info p {
   font-size: 14px;
-  line-height: 1.9;
-  color: #788397;
-  margin-bottom: 24px;
+  margin: 10px 0 0;
 }
-.promotion-info .note {
-  font-size: 12px;
-  margin: 25px 0 0;
+.promotion-actions h2 {
+  font-size: 21px;
 }
-@media (max-width: 950px) {
+.promotion-actions > p {
+  font-size: 14px;
+}
+.button-row {
+  margin: 22px 0;
+  gap: 12px;
+}
+.field-label {
+  display: block;
+  font-size: 13px;
+  color: #5d6879;
+  margin-bottom: 8px;
+}
+.quiet-details {
+  margin-top: 18px;
+}
+@media (max-width: 680px) {
   .promotion-panel {
     grid-template-columns: 1fr;
-    gap: 28px;
-    padding: 24px;
+    gap: 22px;
   }
   .qr-card {
-    max-width: 340px;
+    width: 248px;
     margin: auto;
+  }
+  .promotion-actions h2 {
+    display: none;
+  }
+  .promotion-actions > p {
+    text-align: center;
+  }
+  .button-row {
+    justify-content: center;
+    margin: 12px 0 20px;
   }
 }
 </style>

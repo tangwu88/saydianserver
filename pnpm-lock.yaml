@@ -278,9 +278,15 @@ importers:
 
   apps/vip-web:
     dependencies:
+      '@element-plus/icons-vue':
+        specifier: 2.3.2
+        version: 2.3.2(vue@3.5.42(typescript@5.9.3))
       '@saydian/app-contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@vant/area-data':
+        specifier: 2.2.0
+        version: 2.2.0
       axios:
         specifier: ^1.11.0
         version: 1.20.0(debug@4.4.3(supports-color@5.5.0))(supports-color@5.5.0)

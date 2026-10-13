@@ -1,8 +1,22 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { api, data, errorMessage } from "../api";
 import { money, date, statuses } from "../present";
+import { Refresh, Van, CopyDocument } from "@element-plus/icons-vue";
+import PageError from "../components/PageError.vue";
+import EmptyState from "../components/EmptyState.vue";
+const error = ref(""),
+  detailError = ref(""),
+  logisticsError = ref(""),
+  detailBusy = ref(false),
+  selectedId = ref("");
+let listRequest = 0,
+  detailRequest = 0;
+onBeforeUnmount(() => {
+  listRequest++;
+  detailRequest++;
+});
 const orders = ref<any[]>([]),
   total = ref(0),
   page = ref(1),
@@ -11,80 +25,105 @@ const orders = ref<any[]>([]),
   logistics = ref<any[]>([]),
   drawer = ref(false);
 async function load() {
+  const request = ++listRequest;
   busy.value = true;
+  error.value = "";
   try {
     const result = data(
       await api.get("/orders", { params: { page: page.value } }),
     );
+    if (request !== listRequest) return;
     orders.value = result.items;
     total.value = result.total;
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    if (request === listRequest) error.value = errorMessage(cause);
   } finally {
-    busy.value = false;
+    if (request === listRequest) busy.value = false;
   }
 }
 onMounted(load);
 async function open(id: string) {
+  const request = ++detailRequest;
+  selectedId.value = id;
   detail.value = null;
   logistics.value = [];
+  detailError.value = "";
+  logisticsError.value = "";
   drawer.value = true;
+  detailBusy.value = true;
+  const [order, shipments] = await Promise.allSettled([
+    api.get(`/orders/${id}`),
+    api.get(`/orders/${id}/logistics`),
+  ]);
+  if (request !== detailRequest) return;
+  if (order.status === "fulfilled") detail.value = data(order.value);
+  else detailError.value = errorMessage(order.reason);
+  if (shipments.status === "fulfilled")
+    logistics.value = data(shipments.value).items;
+  else logisticsError.value = errorMessage(shipments.reason);
+  detailBusy.value = false;
+}
+async function copyTracking(value: string) {
   try {
-    const [order, shipments] = await Promise.all([
-      api.get(`/orders/${id}`),
-      api.get(`/orders/${id}/logistics`),
-    ]);
-    detail.value = data(order);
-    logistics.value = data(shipments).items;
-  } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    await navigator.clipboard.writeText(value);
+    ElMessage.success("运单号已复制");
+  } catch {
+    ElMessage.info("请选中运单号后复制");
   }
 }
 </script>
 <template>
   <section class="page">
     <div class="page-head">
-      <div>
-        <h1>采购订单</h1>
-        <p>查询采购记录、ERP 发货状态与物流信息</p>
+      <h1>我的订单</h1>
+      <div class="button-row">
+        <router-link to="/products" class="action-link primary"
+          >采购商品</router-link
+        ><el-button :icon="Refresh" :loading="busy" @click="load"
+          >刷新</el-button
+        >
       </div>
-      <el-button @click="load">刷新</el-button>
     </div>
-    <div class="panel">
-      <el-table :data="orders" v-loading="busy"
-        ><el-table-column
-          prop="orderNo"
-          label="订单号"
-          min-width="245"
-        /><el-table-column label="商品" min-width="230"
-          ><template #default="scope"
-            ><div v-for="item in scope.row.items" :key="item.id">
-              {{ item.nameSnapshot }} × {{ item.quantity }}
-            </div></template
-          ></el-table-column
-        ><el-table-column label="应付金额" width="130"
-          ><template #default="scope"
-            ><b>{{ money(scope.row.payableCents) }}</b></template
-          ></el-table-column
-        ><el-table-column label="状态" width="130"
-          ><template #default="scope"
-            ><el-tag
-              :type="scope.row.status === 'REFUNDED' ? 'info' : 'success'"
-              >{{ statuses[scope.row.status] || scope.row.status }}</el-tag
-            ></template
-          ></el-table-column
-        ><el-table-column label="下单时间" min-width="180"
-          ><template #default="scope">{{
-            date(scope.row.createdAt)
-          }}</template></el-table-column
-        ><el-table-column label="操作" width="120" fixed="right"
-          ><template #default="scope"
-            ><el-button text type="primary" @click="open(scope.row.id)"
-              >详情与物流</el-button
-            ></template
-          ></el-table-column
-        ></el-table
-      ><el-pagination
+    <PageError :message="error" @retry="load" />
+    <div class="panel" v-loading="busy">
+      <EmptyState
+        v-if="!orders.length && !busy && !error"
+        title="还没有采购订单"
+        description="选择商品并付款后，可在这里查看发货和物流。"
+        ><router-link to="/products" class="action-link primary"
+          >去选商品</router-link
+        ></EmptyState
+      >
+      <article v-for="order in orders" :key="order.id" class="record-card">
+        <div class="record-head">
+          <div>
+            <b class="record-number">{{ order.orderNo }}</b
+            ><small>{{ date(order.createdAt) }}</small>
+          </div>
+          <el-tag>{{ statuses[order.status] || order.status }}</el-tag>
+        </div>
+        <div v-for="item in order.items" :key="item.id" class="order-item">
+          <img
+            v-if="item.imageSnapshot"
+            :src="item.imageSnapshot"
+            :alt="item.nameSnapshot"
+          />
+          <div>
+            <b>{{ item.nameSnapshot }}</b
+            ><small>{{ item.specificationSnapshot || "默认规格" }}</small>
+          </div>
+          <span>× {{ item.quantity }}</span>
+        </div>
+        <div class="record-foot">
+          <span
+            >订单金额 <strong>{{ money(order.payableCents) }}</strong></span
+          ><el-button type="primary" plain :icon="Van" @click="open(order.id)"
+            >详情 / 物流</el-button
+          >
+        </div>
+      </article>
+      <el-pagination
+        v-if="total > 30"
         v-model:current-page="page"
         :total="total"
         :page-size="30"
@@ -92,93 +131,159 @@ async function open(id: string) {
         @current-change="load"
       />
     </div>
-    <el-drawer v-model="drawer" title="采购订单详情" size="min(820px, 100vw)"
-      ><template v-if="detail"
-        ><h2>{{ detail.orderNo }}</h2>
-        <el-tag>{{ statuses[detail.status] || detail.status }}</el-tag>
-        <dl class="facts" style="margin-top: 26px">
-          <div>
-            <dt>成交等级</dt>
-            <dd>{{ detail.partnerLevelSnapshot }}</dd>
-          </div>
-          <div>
-            <dt>余额付款</dt>
-            <dd>{{ money(detail.payableCents) }}</dd>
-          </div>
-          <div>
-            <dt>运费</dt>
-            <dd>{{ money(detail.shippingCents) }}</dd>
-          </div>
-          <div>
-            <dt>ERP 订单号</dt>
-            <dd>{{ detail.erpOrderId || "等待同步" }}</dd>
-          </div>
-          <div>
-            <dt>ERP 状态</dt>
-            <dd>{{ detail.erpStatus || "等待同步" }}</dd>
-          </div>
-          <div>
-            <dt>下单时间</dt>
-            <dd>{{ date(detail.createdAt) }}</dd>
-          </div>
-        </dl>
-        <h3>收货信息</h3>
-        <p>{{ detail.recipientName }} · {{ detail.recipientMobile }}</p>
-        <p class="muted">
-          {{ detail.province }} {{ detail.city }} {{ detail.district }}
-          {{ detail.addressDetail }}
-        </p>
-        <el-table :data="detail.items"
-          ><el-table-column prop="nameSnapshot" label="商品" /><el-table-column
-            prop="specificationSnapshot"
-            label="规格"
-          /><el-table-column
-            prop="quantity"
-            label="数量"
-            width="75"
-          /><el-table-column label="成交单价" width="120"
-            ><template #default="scope">{{
-              money(scope.row.unitPriceCents)
-            }}</template></el-table-column
-          ></el-table
-        >
-        <h3 style="margin-top: 30px">发货与物流</h3>
-        <el-empty v-if="!logistics.length" description="暂无发货记录" />
-        <div v-for="shipment in logistics" :key="shipment.id" class="shipment">
-          <b>{{ shipment.logisticsCompany }} · {{ shipment.trackingNo }}</b>
-          <p class="muted">发货时间：{{ date(shipment.shippedAt) }}</p>
-          <el-timeline v-if="shipment.traces.length"
-            ><el-timeline-item
-              v-for="(trace, index) in shipment.traces"
-              :key="index"
-              :timestamp="trace.time"
-              >{{ trace.description }}</el-timeline-item
-            ></el-timeline
-          >
-          <p v-else class="muted">暂无运输轨迹</p>
-        </div>
-        <template v-if="detail.afterSales.length"
-          ><h3 style="margin-top: 26px">售后记录</h3>
-          <el-table :data="detail.afterSales"
+    <el-drawer
+      v-model="drawer"
+      title="采购订单详情"
+      size="min(820px, 100vw)"
+      @closed="
+        detailRequest++;
+        detail = null;
+      "
+      ><div v-loading="detailBusy" :aria-busy="detailBusy">
+        <PageError :message="detailError" @retry="open(selectedId)" /><template
+          v-if="detail"
+          ><h2>{{ detail.orderNo }}</h2>
+          <el-tag>{{ statuses[detail.status] || detail.status }}</el-tag>
+          <dl class="facts" style="margin-top: 26px">
+            <div>
+              <dt>成交等级</dt>
+              <dd>{{ detail.partnerLevelSnapshot }}</dd>
+            </div>
+            <div>
+              <dt>余额付款</dt>
+              <dd>{{ money(detail.payableCents) }}</dd>
+            </div>
+            <div>
+              <dt>运费</dt>
+              <dd>{{ money(detail.shippingCents) }}</dd>
+            </div>
+            <div>
+              <dt>发货单号</dt>
+              <dd>{{ detail.erpOrderId || "等待同步" }}</dd>
+            </div>
+            <div>
+              <dt>发货处理</dt>
+              <dd>{{ detail.erpStatus || "等待同步" }}</dd>
+            </div>
+            <div>
+              <dt>下单时间</dt>
+              <dd>{{ date(detail.createdAt) }}</dd>
+            </div>
+          </dl>
+          <h3>收货信息</h3>
+          <p>{{ detail.recipientName }} · {{ detail.recipientMobile }}</p>
+          <p class="muted">
+            {{ detail.province }} {{ detail.city }} {{ detail.district }}
+            {{ detail.addressDetail }}
+          </p>
+          <el-table :data="detail.items"
             ><el-table-column
-              prop="afterSaleNo"
-              label="售后编号"
-            /><el-table-column label="状态"
+              prop="nameSnapshot"
+              label="商品"
+            /><el-table-column
+              prop="specificationSnapshot"
+              label="规格"
+            /><el-table-column
+              prop="quantity"
+              label="数量"
+              width="75"
+            /><el-table-column label="成交单价" width="120"
               ><template #default="scope">{{
-                statuses[scope.row.status] || scope.row.status
-              }}</template></el-table-column
-            ><el-table-column label="申请金额"
-              ><template #default="scope">{{
-                money(scope.row.requestedCents)
+                money(scope.row.unitPriceCents)
               }}</template></el-table-column
             ></el-table
+          >
+          <h3 style="margin-top: 30px">发货与物流</h3>
+          <PageError
+            :message="logisticsError"
+            @retry="open(selectedId)"
+          /><EmptyState
+            v-if="!logistics.length && !logisticsError"
+            title="等待发货"
+            description="发货后将在这里显示运单号和物流进度。"
+          />
+          <div
+            v-for="shipment in logistics"
+            :key="shipment.id"
+            class="shipment"
+          >
+            <div class="button-row">
+              <b class="record-number"
+                >{{ shipment.logisticsCompany }} · {{ shipment.trackingNo }}</b
+              ><el-button
+                v-if="shipment.trackingNo"
+                text
+                :icon="CopyDocument"
+                @click="copyTracking(shipment.trackingNo)"
+                >复制运单号</el-button
+              >
+            </div>
+            <p class="muted">发货时间：{{ date(shipment.shippedAt) }}</p>
+            <el-timeline v-if="shipment.traces?.length"
+              ><el-timeline-item
+                v-for="(trace, index) in shipment.traces"
+                :key="index"
+                :timestamp="trace.time"
+                >{{ trace.description }}</el-timeline-item
+              ></el-timeline
+            >
+            <p v-else class="muted">暂无运输轨迹</p>
+          </div>
+          <template v-if="detail.afterSales?.length"
+            ><h3 style="margin-top: 26px">售后记录</h3>
+            <el-table :data="detail.afterSales"
+              ><el-table-column
+                prop="afterSaleNo"
+                label="售后编号"
+              /><el-table-column label="状态"
+                ><template #default="scope">{{
+                  statuses[scope.row.status] || scope.row.status
+                }}</template></el-table-column
+              ><el-table-column label="申请金额"
+                ><template #default="scope">{{
+                  money(scope.row.requestedCents)
+                }}</template></el-table-column
+              ></el-table
+            ></template
           ></template
-        ></template
-      ></el-drawer
+        >
+      </div></el-drawer
     >
   </section>
 </template>
 <style scoped>
+.order-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+.order-item img {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  border-radius: 7px;
+}
+.order-item > div {
+  flex: 1;
+  min-width: 0;
+}
+.order-item b {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.order-item small {
+  display: block;
+  color: #637084;
+  margin-top: 5px;
+}
+.order-item > span {
+  white-space: nowrap;
+}
+.record-foot {
+  flex-wrap: wrap;
+}
+
 .shipment {
   border: 1px solid #e8ebf1;
   border-radius: 10px;

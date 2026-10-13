@@ -2,8 +2,19 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import { Refresh, Wallet, Lock, CreditCard } from "@element-plus/icons-vue";
 import { api, data, errorMessage, requestKey } from "../api";
 import { date, ledgerTypes, money, statuses } from "../present";
+import {
+  readRecharge,
+  saveRecharge,
+  clearRecharge,
+  terminalPayment,
+  channelLabel,
+} from "../recharge-recovery";
+import type { RechargeInput } from "../recharge-recovery";
+import PageError from "../components/PageError.vue";
+import EmptyState from "../components/EmptyState.vue";
 const route = useRoute(),
   router = useRouter();
 const depositMode = computed(() => route.path === "/deposit"),
@@ -13,37 +24,69 @@ const wallet = ref<any>(),
   recharges = ref<any[]>([]),
   page = ref(1),
   total = ref(0),
-  account = ref(""),
+  account = ref("BALANCE"),
   capabilities = ref<any[]>([]),
   busy = ref(false),
-  paying = ref(false);
+  paying = ref(false),
+  error = ref(""),
+  paymentError = ref(""),
+  pollError = ref(""),
+  pollBusy = ref(false);
+const selectedRechargeId = ref("");
 const form = reactive({ amount: 100, channel: "wechat_native" }),
   payment = ref<any>(),
   currentRecharge = ref<any>(),
-  payDialog = ref(false);
-let key = requestKey(),
-  pendingInput: unknown = null,
-  timer: ReturnType<typeof setInterval> | undefined,
-  pollBusy = false,
-  generation = 0;
-const title = computed(() =>
-  depositMode.value ? "保证金" : ledgerMode.value ? "资金流水" : "余额与充值",
+  payDialog = ref(false),
+  pendingInput = ref<RechargeInput | null>(null);
+const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const channels = computed(() =>
+  capabilities.value.filter(
+    (item) =>
+      item.channel === "wechat_native" ||
+      item.channel === (mobile ? "alipay_wap" : "alipay_page") ||
+      item.channel === pendingInput.value?.channel,
+  ),
 );
+const title = computed(() =>
+  depositMode.value ? "保证金" : ledgerMode.value ? "收支明细" : "余额充值",
+);
+const paymentStatus = computed(() =>
+  String(
+    payment.value?.status || currentRecharge.value?.status || "",
+  ).toLowerCase(),
+);
+let partnerId = "",
+  key: string = requestKey(),
+  timer: ReturnType<typeof setInterval> | undefined,
+  generation = 0,
+  listRequest = 0,
+  paymentRequest = 0;
 function stopPolling() {
   if (timer) clearInterval(timer);
   timer = undefined;
 }
 onBeforeUnmount(() => {
   generation++;
+  listRequest++;
+  paymentRequest++;
   stopPolling();
 });
 async function load() {
-  const request = generation;
+  const request = ++listRequest,
+    view = generation;
   busy.value = true;
+  error.value = "";
   try {
     const funds = data(await api.get("/wallet"));
-    if (request !== generation) return;
+    if (view !== generation || request !== listRequest) return;
     wallet.value = funds;
+    partnerId = funds.partnerId;
+    pendingInput.value = readRecharge(sessionStorage, partnerId);
+    if (pendingInput.value) {
+      form.amount = pendingInput.value.amountCents / 100;
+      form.channel = pendingInput.value.channel;
+      key = pendingInput.value.idempotencyKey;
+    }
     if (depositMode.value || ledgerMode.value) {
       const result = data(
         await api.get("/ledger", {
@@ -53,7 +96,7 @@ async function load() {
           },
         }),
       );
-      if (request === generation) {
+      if (view === generation && request === listRequest) {
         ledger.value = result.items;
         total.value = result.total;
       }
@@ -62,133 +105,182 @@ async function load() {
         api.get("/recharges", { params: { page: page.value } }),
         api.get("/payment-capabilities"),
       ]);
-      if (request === generation) {
-        recharges.value = data(records).items;
-        total.value = data(records).total;
-        capabilities.value = data(caps).items;
-        const available = capabilities.value.find((item) => item.enabled);
-        if (
-          !capabilities.value.some(
-            (item) => item.channel === form.channel && item.enabled,
-          ) &&
-          available
-        )
-          form.channel = available.channel;
-      }
+      if (view !== generation || request !== listRequest) return;
+      recharges.value = data(records).items;
+      total.value = data(records).total;
+      capabilities.value = data(caps).items;
+      const enabled = channels.value.filter((item) => item.enabled);
+      if (
+        !pendingInput.value &&
+        !enabled.some((item) => item.channel === form.channel)
+      )
+        form.channel = enabled[0]?.channel || "";
+      if (
+        mobile &&
+        !pendingInput.value &&
+        enabled.some((item) => item.channel === "alipay_wap")
+      )
+        form.channel = "alipay_wap";
     }
   } catch (cause) {
-    if (request === generation) ElMessage.error(errorMessage(cause));
+    if (view === generation && request === listRequest)
+      error.value = errorMessage(cause);
   } finally {
-    if (request === generation) busy.value = false;
+    if (view === generation && request === listRequest) busy.value = false;
   }
 }
 watch(
   () => route.path,
   async () => {
-    generation++;
+    const view = ++generation;
+    paymentRequest++;
     stopPolling();
     payDialog.value = false;
+    payment.value = null;
+    currentRecharge.value = null;
+    paymentError.value = "";
     page.value = 1;
-    pendingInput = null;
-    key = requestKey();
+    ledger.value = [];
+    recharges.value = [];
     await load();
-    if (route.params.id) await viewRecharge(String(route.params.id));
+    if (view === generation && route.params.id)
+      await viewRecharge(String(route.params.id));
   },
   { immediate: true },
 );
-function channelLabel(channel: string) {
-  return (
-    (
-      {
-        wechat_native: "微信扫码支付",
-        alipay_page: "支付宝网页支付",
-        alipay_wap: "支付宝手机支付",
-      } as Record<string, string>
-    )[channel.toLowerCase()] || channel
-  );
+function completedInput(recharge: any) {
+  const pending = pendingInput.value;
+  if (
+    pending &&
+    recharge.idempotencyKey ===
+      `partner-recharge-request:${partnerId}:${pending.idempotencyKey}`
+  ) {
+    clearRecharge(sessionStorage, partnerId, pending.idempotencyKey);
+    pendingInput.value = null;
+    key = requestKey();
+  }
 }
 async function create() {
-  if (paying.value) return;
+  if (paying.value || !partnerId) return;
   const amountCents = Math.round(Number(form.amount) * 100);
-  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
-    ElMessage.warning("请输入有效充值金额");
+  if (
+    !pendingInput.value &&
+    (!Number.isSafeInteger(amountCents) ||
+      amountCents <= 0 ||
+      amountCents > 2147483647)
+  ) {
+    paymentError.value = "请输入有效的充值金额";
     return;
   }
+  if (
+    !pendingInput.value &&
+    !channels.value.some(
+      (item) => item.channel === form.channel && item.enabled,
+    )
+  )
+    return;
   paying.value = true;
-  pendingInput ??= { amountCents, channel: form.channel, idempotencyKey: key };
+  paymentError.value = "";
+  const view = generation;
   try {
-    const recharge = data(await api.post("/recharges", pendingInput));
+    const input = pendingInput.value ?? {
+      amountCents,
+      channel: form.channel,
+      idempotencyKey: key,
+    };
+    try {
+      saveRecharge(sessionStorage, partnerId, input);
+    } catch {
+      paymentError.value = "浏览器无法保存充值状态，请允许本站存储后重试";
+      return;
+    }
+    pendingInput.value = input;
+    const recharge = data(await api.post("/recharges", input));
+    completedInput(recharge);
+    if (view !== generation) return;
     currentRecharge.value = recharge;
     payment.value = recharge.payment;
     payDialog.value = true;
-    pendingInput = null;
-    key = requestKey();
+    pollError.value = "";
     startPolling();
     await load();
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
-    await load();
+    if (view === generation) {
+      paymentError.value = errorMessage(cause);
+      await load();
+    }
   } finally {
     paying.value = false;
   }
 }
 async function viewRecharge(id: string) {
+  selectedRechargeId.value = id;
+  const request = ++paymentRequest,
+    view = generation;
   stopPolling();
+  currentRecharge.value = null;
+  payment.value = null;
+  pollError.value = "";
+  payDialog.value = true;
   try {
     const recharge = data(await api.get(`/recharges/${id}`));
+    if (request !== paymentRequest || view !== generation) return;
+    completedInput(recharge);
     currentRecharge.value = recharge;
     payment.value = recharge.payment;
-    payDialog.value = true;
-    if (
-      payment.value &&
-      !["succeeded", "closed", "failed"].includes(payment.value.status)
-    )
-      startPolling();
+    startPolling();
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    if (request === paymentRequest && view === generation)
+      pollError.value = errorMessage(cause);
   }
 }
 async function resume() {
   if (!currentRecharge.value || paying.value) return;
   paying.value = true;
+  const id = currentRecharge.value.id,
+    view = generation;
   try {
-    payment.value = data(
-      await api.post(`/recharges/${currentRecharge.value.id}/payment`),
-    );
+    const result = data(await api.post(`/recharges/${id}/payment`));
+    if (view !== generation || id !== currentRecharge.value?.id) return;
+    payment.value = result;
+    pollError.value = "";
     startPolling();
   } catch (cause) {
-    ElMessage.error(errorMessage(cause));
+    if (view === generation) pollError.value = errorMessage(cause);
   } finally {
     paying.value = false;
   }
 }
 function startPolling() {
   stopPolling();
-  if (!currentRecharge.value || payment.value?.status === "succeeded") return;
-  timer = setInterval(() => {
-    void poll();
-  }, 4000);
+  if (!currentRecharge.value || terminalPayment(paymentStatus.value)) return;
+  timer = setInterval(() => void poll(), 4000);
 }
 async function poll() {
-  if (!currentRecharge.value || pollBusy) return;
-  pollBusy = true;
+  if (!currentRecharge.value || pollBusy.value) return;
+  pollBusy.value = true;
   const id = currentRecharge.value.id,
-    request = generation;
+    view = generation;
   try {
     const result = data(await api.get(`/recharges/${id}`));
-    if (request !== generation || id !== currentRecharge.value?.id) return;
+    if (view !== generation || id !== currentRecharge.value?.id) return;
     currentRecharge.value = result;
     payment.value = result.payment;
-    if (result.payment?.status === "succeeded") {
+    pollError.value = "";
+    if (terminalPayment(paymentStatus.value)) {
       stopPolling();
-      ElMessage.success("充值已确认，余额已入账");
-      await load();
-    } else if (["closed", "failed"].includes(result.payment?.status))
+      if (paymentStatus.value === "succeeded") {
+        ElMessage.success("充值已到账");
+        await load();
+      }
+    } else if (payDialog.value && !timer) startPolling();
+  } catch (cause) {
+    if (view === generation && id === currentRecharge.value?.id) {
       stopPolling();
-  } catch {
-    stopPolling();
+      pollError.value = errorMessage(cause);
+    }
   } finally {
-    pollBusy = false;
+    pollBusy.value = false;
   }
 }
 function invokeAlipay() {
@@ -205,13 +297,15 @@ function invokeAlipay() {
       ].includes(url.hostname) ||
       url.pathname !== "/gateway.do" ||
       url.username ||
-      url.password
+      url.password ||
+      url.port
     )
       throw new Error();
     const formElement = document.createElement("form");
     formElement.method = "POST";
     formElement.action = url.toString();
     formElement.target = "_blank";
+    formElement.rel = "noopener noreferrer";
     Object.entries(invoke.fields || {}).forEach(([name, value]) => {
       const input = document.createElement("input");
       input.type = "hidden";
@@ -223,157 +317,188 @@ function invokeAlipay() {
     formElement.submit();
     formElement.remove();
   } catch {
-    ElMessage.error("支付页面暂不可用，请刷新充值状态");
+    pollError.value = "支付页面暂不可用，请刷新充值状态";
   }
 }
 function closePayment() {
   stopPolling();
+  paymentRequest++;
   if (route.params.id) void router.replace("/wallet");
 }
 </script>
 <template>
   <section class="page" v-loading="busy">
     <div class="page-head">
-      <div>
-        <h1>{{ title }}</h1>
-        <p>
-          {{
-            depositMode
-              ? "查看独立保证金余额及总后台登记记录"
-              : ledgerMode
-                ? "查看充值、采购消费、退款及保证金明细"
-                : "在线充值后，使用余额完成分销采购"
-          }}
-        </p>
-      </div>
-      <el-button @click="load">刷新</el-button>
+      <h1>{{ title }}</h1>
+      <el-button :icon="Refresh" :loading="busy" @click="load">刷新</el-button>
     </div>
+    <PageError :message="error" @retry="load" />
     <div class="funds">
       <article class="panel">
-        <span class="muted">可消费余额</span
-        ><strong>{{ money(wallet?.balanceCents) }}</strong>
+        <span class="muted"
+          ><el-icon><Wallet /></el-icon>可用余额</span
+        ><strong>{{ money(wallet?.balanceCents) }}</strong
+        ><router-link :to="ledgerMode ? '/wallet' : '/ledger'">{{
+          ledgerMode ? "余额充值" : "收支明细"
+        }}</router-link>
       </article>
       <article class="panel">
-        <span class="muted">保证金</span
+        <span class="muted"
+          ><el-icon><Lock /></el-icon>保证金</span
         ><strong>{{ money(wallet?.depositCents) }}</strong
-        ><small>独立记录，不用于采购付款</small>
+        ><router-link v-if="!depositMode" to="/deposit">查看记录</router-link
+        ><small v-else>由管理员登记，不用于采购</small>
       </article>
     </div>
     <div v-if="!depositMode && !ledgerMode" class="panel">
-      <h2>在线充值</h2>
+      <h2>充值金额</h2>
       <el-alert
-        v-if="!capabilities.some((item) => item.enabled)"
-        title="在线支付暂未配置，请联系赛电运营人员。"
-        type="info"
+        v-if="pendingInput"
+        title="上次充值结果待确认，请继续核对，避免重复充值。"
+        type="warning"
         :closable="false"
-        style="margin-bottom: 20px"
-      /><el-form inline :disabled="paying || !!pendingInput"
-        ><el-form-item label="充值金额（元）"
+        class="section-space"
+      />
+      <div class="amount-options">
+        <el-button
+          v-for="amount in [100, 500, 1000, 3000]"
+          :key="amount"
+          :type="form.amount === amount ? 'primary' : 'default'"
+          :plain="form.amount !== amount"
+          :disabled="paying || !!pendingInput"
+          @click="form.amount = amount"
+          >{{ money(amount * 100) }}</el-button
+        >
+      </div>
+      <el-form label-position="top" :disabled="paying || !!pendingInput"
+        ><el-form-item label="自定义金额（元）"
           ><el-input-number
             v-model="form.amount"
             :min="0.01"
             :max="21474836.47"
             :precision="2"
-            :step="100" /></el-form-item
+            :controls="false" /></el-form-item
         ><el-form-item label="支付方式"
-          ><el-select v-model="form.channel" style="width: 200px"
-            ><el-option
-              v-for="item in capabilities"
+          ><el-radio-group v-model="form.channel" class="channel-options"
+            ><el-radio-button
+              v-for="item in channels"
               :key="item.channel"
-              :label="channelLabel(item.channel)"
               :value="item.channel"
-              :disabled="!item.enabled" /></el-select></el-form-item></el-form
-      ><el-button
-        type="primary"
-        :disabled="
-          !capabilities.some(
-            (item) => item.channel === form.channel && item.enabled,
-          )
-        "
-        :loading="paying"
-        @click="create"
-        >{{ pendingInput ? "核对并继续原充值" : "创建充值" }}</el-button
+              :disabled="!item.enabled"
+              >{{ channelLabel(item.channel)
+              }}{{ item.enabled ? "" : "（暂不可用）" }}</el-radio-button
+            ></el-radio-group
+          ></el-form-item
+        ></el-form
       >
-      <p class="muted hint">支付成功后，余额以平台确认的入账结果为准。</p>
+      <el-alert
+        v-if="!busy && !channels.some((item) => item.enabled)"
+        title="在线充值暂不可用，请联系管理员。"
+        type="info"
+        :closable="false"
+        class="section-space"
+      />
+      <p v-if="paymentError" class="inline-error" role="alert">
+        {{ paymentError }}
+      </p>
+      <el-button
+        type="primary"
+        size="large"
+        :icon="CreditCard"
+        :loading="paying"
+        :disabled="
+          !partnerId ||
+          (!pendingInput &&
+            !channels.some(
+              (item) => item.channel === form.channel && item.enabled,
+            ))
+        "
+        @click="create"
+        >{{ pendingInput ? "核对上次充值" : "去付款" }}</el-button
+      >
     </div>
     <div class="panel">
-      <h2>
-        {{ depositMode ? "保证金记录" : ledgerMode ? "资金明细" : "充值记录" }}
-      </h2>
-      <div v-if="ledgerMode" class="toolbar">
-        <el-select
+      <div class="records-heading">
+        <h2>
+          {{
+            depositMode ? "保证金记录" : ledgerMode ? "收支记录" : "充值记录"
+          }}
+        </h2>
+        <el-radio-group
+          v-if="ledgerMode"
           v-model="account"
           @change="
             page = 1;
             load();
           "
-          style="width: 160px"
-          ><el-option label="全部账户" value="" /><el-option
-            label="消费余额"
-            value="BALANCE" /><el-option label="保证金" value="DEPOSIT"
-        /></el-select>
+          ><el-radio-button value="BALANCE">余额</el-radio-button
+          ><el-radio-button value="DEPOSIT"
+            >保证金</el-radio-button
+          ></el-radio-group
+        >
       </div>
-      <el-table v-if="depositMode || ledgerMode" :data="ledger"
-        ><el-table-column label="类型" min-width="130"
-          ><template #default="scope">{{
-            ledgerTypes[scope.row.type] || scope.row.type
-          }}</template></el-table-column
-        ><el-table-column label="账户" width="110"
-          ><template #default="scope">{{
-            scope.row.account === "BALANCE" ? "消费余额" : "保证金"
-          }}</template></el-table-column
-        ><el-table-column label="金额变动" min-width="130"
-          ><template #default="scope"
-            ><span :class="{ price: scope.row.deltaCents < 0 }"
-              >{{ scope.row.deltaCents > 0 ? "+" : ""
-              }}{{ money(scope.row.deltaCents) }}</span
-            ></template
-          ></el-table-column
-        ><el-table-column label="账户余额" min-width="130"
-          ><template #default="scope">{{
-            money(scope.row.balanceAfterCents)
-          }}</template></el-table-column
-        ><el-table-column
-          prop="reason"
-          label="说明"
-          min-width="230"
-        /><el-table-column label="时间" min-width="180"
-          ><template #default="scope">{{
-            date(scope.row.createdAt)
-          }}</template></el-table-column
-        ></el-table
-      ><el-table v-else :data="recharges"
-        ><el-table-column
-          prop="rechargeNo"
-          label="充值编号"
-          min-width="240"
-        /><el-table-column label="金额" width="140"
-          ><template #default="scope">{{
-            money(scope.row.amountCents)
-          }}</template></el-table-column
-        ><el-table-column label="方式" min-width="160"
-          ><template #default="scope">{{
-            channelLabel(scope.row.channel)
-          }}</template></el-table-column
-        ><el-table-column label="状态" width="100"
-          ><template #default="scope"
-            ><el-tag
-              :type="scope.row.status === 'SUCCEEDED' ? 'success' : 'info'"
-              >{{ statuses[scope.row.status] || scope.row.status }}</el-tag
-            ></template
-          ></el-table-column
-        ><el-table-column label="时间" min-width="180"
-          ><template #default="scope">{{
-            date(scope.row.createdAt)
-          }}</template></el-table-column
-        ><el-table-column label="操作" width="110"
-          ><template #default="scope"
-            ><el-button text type="primary" @click="viewRecharge(scope.row.id)"
-              >查看</el-button
-            ></template
-          ></el-table-column
-        ></el-table
-      ><el-pagination
+      <template v-if="depositMode || ledgerMode"
+        ><EmptyState
+          v-if="!ledger.length && !busy && !error"
+          :title="depositMode ? '暂无保证金记录' : '暂无收支记录'"
+        />
+        <article v-for="record in ledger" :key="record.id" class="record-card">
+          <div class="record-head">
+            <div>
+              <b>{{ ledgerTypes[record.type] || record.type }}</b
+              ><small>{{ date(record.createdAt) }}</small>
+            </div>
+            <strong :class="record.deltaCents > 0 ? 'positive' : 'price'"
+              >{{ record.deltaCents > 0 ? "+" : ""
+              }}{{ money(record.deltaCents) }}</strong
+            >
+          </div>
+          <p class="record-reason">{{ record.reason }}</p>
+          <div class="muted record-number">
+            {{ record.account === "DEPOSIT" ? "保证金" : "余额" }}：{{
+              money(record.balanceAfterCents)
+            }}
+          </div>
+        </article></template
+      >
+      <template v-else
+        ><EmptyState
+          v-if="!recharges.length && !busy && !error"
+          title="暂无在线充值记录"
+        />
+        <article
+          v-for="recharge in recharges"
+          :key="recharge.id"
+          class="record-card"
+        >
+          <div class="record-head">
+            <div>
+              <b>{{ channelLabel(recharge.channel) }}充值</b
+              ><small>{{ date(recharge.createdAt) }}</small>
+            </div>
+            <el-tag
+              :type="recharge.status === 'SUCCEEDED' ? 'success' : 'info'"
+              >{{ statuses[recharge.status] || recharge.status }}</el-tag
+            >
+          </div>
+          <div class="record-number muted">{{ recharge.rechargeNo }}</div>
+          <div class="record-foot">
+            <strong>{{ money(recharge.amountCents) }}</strong
+            ><el-button
+              type="primary"
+              plain
+              @click="viewRecharge(recharge.id)"
+              >{{
+                ["CREATED", "PENDING"].includes(recharge.status)
+                  ? "查看 / 继续付款"
+                  : "查看详情"
+              }}</el-button
+            >
+          </div>
+        </article></template
+      >
+      <el-pagination
+        v-if="total > 30"
         v-model:current-page="page"
         :total="total"
         :page-size="30"
@@ -383,46 +508,73 @@ function closePayment() {
     </div>
     <el-dialog
       v-model="payDialog"
-      title="充值支付"
+      title="充值付款"
       width="520px"
       @closed="closePayment"
-      ><div v-if="currentRecharge" class="payment">
+      ><PageError
+        :message="pollError"
+        @retry="
+          currentRecharge ? poll() : viewRecharge(String(route.params.id || ''))
+        "
+      />
+      <div v-if="currentRecharge" class="payment">
         <strong>{{ money(currentRecharge.amountCents) }}</strong>
-        <p class="muted">{{ currentRecharge.rechargeNo }}</p>
+        <p class="record-number muted">{{ currentRecharge.rechargeNo }}</p>
         <el-result
-          v-if="payment?.status === 'succeeded'"
+          v-if="paymentStatus === 'succeeded'"
           icon="success"
-          title="充值已入账"
-        /><template v-else
+          title="充值已到账"
+          ><template #extra
+            ><el-button type="primary" @click="payDialog = false"
+              >完成</el-button
+            ></template
+          ></el-result
+        ><el-result
+          v-else-if="['closed', 'failed'].includes(paymentStatus)"
+          icon="warning"
+          :title="paymentStatus === 'closed' ? '充值已关闭' : '支付未成功'"
+          ><template #extra
+            ><el-button @click="payDialog = false"
+              >返回充值</el-button
+            ></template
+          ></el-result
+        ><template v-else
           ><img
             v-if="payment?.invoke?.type === 'QR'"
             :src="payment.invoke.qrDataUrl"
-            alt="微信充值支付二维码"
-            width="260"
-            height="260"
+            alt="微信充值付款二维码"
+            width="240"
+            height="240"
           />
-          <p v-if="payment?.invoke?.type === 'QR'">请使用微信扫描二维码付款</p>
+          <p v-if="payment?.invoke?.type === 'QR'">请用微信扫码付款</p>
           <el-button
             v-if="payment?.invoke?.type === 'FORM'"
             type="primary"
             size="large"
             @click="invokeAlipay"
-            >前往支付宝付款</el-button
-          ><el-alert
-            v-if="payment && !['QR', 'FORM'].includes(payment?.invoke?.type)"
-            title="原支付结果待确认，请核对充值状态。"
-            type="info"
-            :closable="false"
-          /><el-button
-            v-if="!payment"
+            >打开支付宝付款</el-button
+          ><el-button
+            v-else-if="!payment"
             type="primary"
             :loading="paying"
             @click="resume"
-            >继续原充值</el-button
-          ><el-button style="margin-top: 16px" @click="poll"
-            >刷新充值状态</el-button
-          ></template
+            >继续付款</el-button
+          >
+          <p
+            v-else-if="!['QR', 'FORM'].includes(payment?.invoke?.type)"
+            class="muted"
+          >
+            正在核对支付结果
+          </p>
+          <div class="payment-refresh">
+            <el-button :icon="Refresh" :loading="pollBusy" @click="poll"
+              >我已付款，查询到账</el-button
+            >
+          </div></template
         >
+      </div>
+      <div v-else-if="!pollError" class="empty" role="status">
+        正在加载充值记录…
       </div></el-dialog
     >
   </section>
@@ -431,23 +583,59 @@ function closePayment() {
 .funds {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 16px;
 }
 .funds .panel {
-  padding: 28px;
+  padding: 24px;
+}
+.funds .muted {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
 }
 .funds strong {
   display: block;
-  font-size: 32px;
-  margin: 20px 0 10px;
+  font-size: 30px;
+  margin: 16px 0;
+}
+.funds a,
+.funds small {
+  font-size: 13px;
 }
 .funds small {
-  color: #99a2b2;
-  font-size: 12px;
+  color: #637084;
 }
-.hint {
-  font-size: 12px;
-  margin: 20px 0 0;
+.amount-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0;
+}
+.amount-options .el-button {
+  margin: 0;
+  min-width: 88px;
+}
+.channel-options {
+  display: flex;
+  flex-wrap: wrap;
+}
+.records-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.records-heading h2 {
+  margin: 0;
+}
+.record-reason {
+  font-size: 14px;
+  color: #4c5a6e;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
 }
 .payment {
   text-align: center;
@@ -455,25 +643,40 @@ function closePayment() {
 .payment > strong {
   display: block;
   font-size: 32px;
-  color: #c9223b;
+  color: #bc2038;
 }
 .payment > p {
-  font-size: 12px;
-  margin: 15px 0 25px;
+  font-size: 13px;
+  margin: 16px 0;
 }
 .payment img {
   max-width: 100%;
   height: auto;
 }
-@media (max-width: 760px) {
+.payment-refresh {
+  margin-top: 20px;
+}
+.inline-error {
+  color: #af302c;
+  line-height: 1.7;
+  font-size: 14px;
+}
+@media (max-width: 650px) {
   .funds {
     gap: 12px;
   }
   .funds .panel {
-    padding: 20px 16px;
+    padding: 18px 16px;
   }
   .funds strong {
-    font-size: 24px;
+    font-size: 26px;
+  }
+  .record-card {
+    padding: 16px;
+  }
+  .amount-options .el-button {
+    flex: 1;
+    min-width: 72px;
   }
 }
 </style>

@@ -15,7 +15,9 @@ api.interceptors.response.use(
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       sessionStorage.removeItem(partnerTokenKey);
       if (!location.pathname.endsWith("/login"))
-        location.assign(`${import.meta.env.BASE_URL}login`);
+        location.assign(
+          `${import.meta.env.BASE_URL}login?next=${encodeURIComponent(location.pathname.slice(import.meta.env.BASE_URL.length - 1))}`,
+        );
     }
     return Promise.reject(error);
   },

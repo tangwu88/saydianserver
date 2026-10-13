@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { api, data, errorMessage, partnerTokenKey } from "../api";
 const form = reactive({ username: "", password: "" }),
   busy = ref(false),
   error = ref("");
-const router = useRouter();
+import { safeReturnPath } from "../navigation";
+const router = useRouter(),
+  route = useRoute();
 async function login() {
   if (busy.value) return;
   if (!form.username.trim() || !form.password) {
@@ -18,7 +20,7 @@ async function login() {
     const result = data<{ token: string }>(await api.post("/auth/login", form));
     sessionStorage.setItem(partnerTokenKey, result.token);
     form.password = "";
-    await router.replace("/");
+    await router.replace(safeReturnPath(route.query.next));
   } catch (cause) {
     error.value = errorMessage(cause);
   } finally {
@@ -31,19 +33,17 @@ async function login() {
     <section class="brand-story">
       <div class="wordmark">SAYDIAN <span>赛电</span></div>
       <div class="story-content">
-        <span class="eyebrow">BRAND PARTNER</span>
         <h1>赛电品牌伙伴平台</h1>
-        <p>连接会员服务与产品分销，<br />与赛电一起，让健康触手可及。</p>
+
         <div class="story-line"></div>
         <small>会员服务 · 分销采购 · 资金管理</small>
       </div>
-      <div class="brand-circle"></div>
     </section>
     <section class="login-side">
       <form class="login-card" @submit.prevent="login">
         <span class="eyebrow">欢迎回来</span>
         <h2>品牌伙伴登录</h2>
-        <p class="muted">使用总后台为您开通的专属账户</p>
+        <p class="muted">请输入管理员为您开通的账号</p>
         <el-alert
           v-if="error"
           :title="error"

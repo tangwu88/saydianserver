@@ -338,7 +338,12 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
         mchid: "WRONG",
       }),
     ).rejects.toThrow("商户不匹配");
-    await expect(billing.markPaid(payment.paymentNo, `SYNTHETIC-${suffix}`, 1500, { ...receipt, amount: {} })).rejects.toThrow("币种不正确");
+    await expect(
+      billing.markPaid(payment.paymentNo, `SYNTHETIC-${suffix}`, 1500, {
+        ...receipt,
+        amount: {},
+      }),
+    ).rejects.toThrow("币种不正确");
     await Promise.all(
       Array.from({ length: 6 }, () =>
         billing.markPaid(
@@ -667,5 +672,133 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
     expect(stats.paidCents).toBe(external._sum.amountCents ?? 0);
     expect(stats.partnerRechargeCents).toBeGreaterThanOrEqual(1600);
     expect(stats.commerceTurnoverCents).toBeGreaterThanOrEqual(1500);
+  });
+  it("credits manual balance once under concurrent retries with immutable detailed audit", async () => {
+    const before = await partners.wallet(b.id),
+      payments = await prisma.paymentIntent.count();
+    const input = {
+      amountCents: 12345,
+      reason: "合成线下收款",
+      referenceNo: `RECEIPT-${suffix}`,
+      idempotencyKey: randomUUID(),
+    };
+    const [first, repeat] = await Promise.all([
+      admin.rechargeBalance(actorId, b.id, input, "synthetic-manual-1"),
+      admin.rechargeBalance(actorId, b.id, input, "synthetic-manual-retry"),
+    ]);
+    expect(first.id).toBe(repeat.id);
+    expect((await partners.wallet(b.id)).balanceCents).toBe(
+      before.balanceCents + 12345,
+    );
+    expect((await partners.wallet(b.id)).depositCents).toBe(
+      before.depositCents,
+    );
+    expect(await prisma.paymentIntent.count()).toBe(payments);
+    const audits = await prisma.auditLog.findMany({
+      where: { entityType: "PARTNER_LEDGER", entityId: first.id },
+    });
+    expect(audits).toHaveLength(1);
+    const audit = audits[0]!;
+    expect(audit.beforeJson).toMatchObject({
+      balanceCents: before.balanceCents,
+    });
+    expect(audit.afterJson).toMatchObject({
+      deltaCents: 12345,
+      balanceAfterCents: before.balanceCents + 12345,
+      reason: input.reason,
+      referenceNo: input.referenceNo,
+      operatorUsername: actorId,
+    });
+    expect(
+      (await admin.ledger(b.id, "BALANCE", 1)).items.find(
+        (row) => row.id === first.id,
+      ),
+    ).toMatchObject({
+      balanceBeforeCents: before.balanceCents,
+      auditId: audit.id,
+      operatorName: actorId,
+    });
+    await expect(
+      admin.rechargeBalance(
+        actorId,
+        b.id,
+        { ...input, amountCents: 1 },
+        "changed",
+      ),
+    ).rejects.toThrow("已提交");
+    await expect(
+      admin.rechargeBalance(
+        actorId,
+        b.id,
+        { ...input, reason: "changed" },
+        "changed",
+      ),
+    ).rejects.toThrow("已提交");
+    await expect(
+      admin.rechargeBalance(
+        actorId,
+        b.id,
+        { ...input, amountCents: -1, idempotencyKey: randomUUID() },
+        "negative",
+      ),
+    ).rejects.toThrow("正数");
+  });
+  it("records deposit once and rolls back money when the audit cannot be saved", async () => {
+    const before = await partners.wallet(b.id);
+    const input = {
+      deltaCents: 500,
+      type: "DEPOSIT_RECEIPT",
+      reason: "合成保证金",
+      referenceNo: "SYNTHETIC",
+      idempotencyKey: randomUUID(),
+    };
+    const [first, repeat] = await Promise.all([
+      admin.deposit(actorId, b.id, input, "deposit-1"),
+      admin.deposit(actorId, b.id, input, "deposit-retry"),
+    ]);
+    expect(first.id).toBe(repeat.id);
+    expect((await partners.wallet(b.id)).depositCents).toBe(
+      before.depositCents + 500,
+    );
+    expect((await partners.wallet(b.id)).balanceCents).toBe(
+      before.balanceCents,
+    );
+    expect(
+      await prisma.auditLog.count({
+        where: { entityType: "PARTNER_LEDGER", entityId: first.id },
+      }),
+    ).toBe(1);
+    const broken = new PartnerAdminService(
+      {
+        $transaction: (fn: any) =>
+          prisma.$transaction((tx) =>
+            fn(
+              new Proxy(tx, {
+                get(target, key) {
+                  if (key === "auditLog")
+                    return {
+                      create: async () => {
+                        throw new Error("synthetic audit failure");
+                      },
+                    };
+                  return Reflect.get(target, key);
+                },
+              }),
+            ),
+          ),
+      } as any,
+      partners,
+    );
+    await expect(
+      broken.rechargeBalance(
+        actorId,
+        b.id,
+        { amountCents: 100, reason: "rollback", idempotencyKey: randomUUID() },
+        "rollback",
+      ),
+    ).rejects.toThrow("synthetic audit failure");
+    expect((await partners.wallet(b.id)).balanceCents).toBe(
+      before.balanceCents,
+    );
   });
 });

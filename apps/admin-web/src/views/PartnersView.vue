@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
+import axios from "axios";
 import { ElMessage, ElMessageBox } from "element-plus";
+import type { FormInstance, FormRules } from "element-plus";
 import { canAdminResource } from "@saydian/app-contracts";
 import { api, getAdminRoles, readableError, responseData } from "../api";
+import {
+  partnerAccountErrors,
+  partnerAccountFields,
+} from "../partner-account-form";
 const route = useRoute(),
   resource = computed(() => route.path.slice(1)),
   levels = ref<any[]>([]),
@@ -25,6 +31,39 @@ const dialog = ref(false),
   ledger = ref<any[]>([]),
   financeTab = ref("ledger"),
   recharges = ref<any[]>([]);
+const pendingFunds = ref<{ url: string; body: Record<string, unknown> }>();
+const ledgerDetail = ref<any>();
+let financeRequest = 0;
+onBeforeUnmount(() => {
+  financeRequest++;
+});
+const accountForm = ref<FormInstance>();
+const accountRules = computed<FormRules>(() =>
+  dialogType.value === "account"
+    ? Object.fromEntries(
+        partnerAccountFields.map((field) => [
+          field,
+          [
+            {
+              trigger: field === "levelId" ? "change" : "blur",
+              validator: (
+                _rule: unknown,
+                _value: unknown,
+                done: (error?: Error) => void,
+              ) => {
+                const message = partnerAccountErrors(
+                  form,
+                  !edit.value,
+                  levels.value,
+                )[field];
+                done(message ? new Error(message) : undefined);
+              },
+            },
+          ],
+        ]),
+      )
+    : {},
+);
 const canManage = computed(() =>
     canAdminResource(getAdminRoles(), "partners", "write"),
   ),
@@ -50,6 +89,7 @@ function date(value: string) {
 }
 const ledgerLabels: Record<string, string> = {
   RECHARGE: "在线充值",
+  MANUAL_RECHARGE: "手动充值余额",
   PURCHASE: "采购消费",
   REFUND: "采购退款",
   DEPOSIT_RECEIPT: "保证金收取",
@@ -104,20 +144,24 @@ async function load() {
 }
 onMounted(load);
 async function loadFinance() {
+  const request = ++financeRequest,
+    selectedPartner = partnerId.value;
   funds.value = null;
   ledger.value = [];
   recharges.value = [];
-  if (!partnerId.value) return;
+  if (!selectedPartner) return;
   try {
     const [wallet, records, charges] = await Promise.all([
-      api.get(`/partner-finance/${partnerId.value}/wallet`),
-      api.get(`/partner-finance/${partnerId.value}/ledger`, {
+      api.get(`/partner-finance/${selectedPartner}/wallet`),
+      api.get(`/partner-finance/${selectedPartner}/ledger`, {
         params: { page: page.value },
       }),
-      api.get(`/partner-finance/${partnerId.value}/recharges`, {
+      api.get(`/partner-finance/${selectedPartner}/recharges`, {
         params: { page: page.value },
       }),
     ]);
+    if (request !== financeRequest || selectedPartner !== partnerId.value)
+      return;
     funds.value = responseData(wallet);
     ledger.value = responseData<any>(records).items;
     recharges.value = responseData<any>(charges).items;
@@ -126,10 +170,16 @@ async function loadFinance() {
         ? responseData<any>(records).total
         : responseData<any>(charges).total;
   } catch (cause) {
-    ElMessage.error(readableError(cause));
+    if (request === financeRequest) ElMessage.error(readableError(cause));
   }
 }
 function open(type: string, row?: any) {
+  if (pendingFunds.value) {
+    dialog.value = true;
+    ElMessage.info("请先核对上次资金登记结果");
+    return;
+  }
+  accountForm.value?.clearValidate();
   dialogType.value = type;
   edit.value = row ?? null;
   Object.keys(form).forEach((key) => delete form[key]);
@@ -170,11 +220,12 @@ function open(type: string, row?: any) {
       amount: row.price ? row.price.priceCents / 100 : undefined,
       enabled: row.price?.enabled ?? true,
     });
-  if (type === "deposit")
+  if (type === "deposit" || type === "balance")
     Object.assign(form, {
       amount: 0,
       type: "DEPOSIT_RECEIPT",
       reason: "",
+      referenceNo: "",
       idempotencyKey: crypto.randomUUID(),
     });
   dialog.value = true;
@@ -183,6 +234,11 @@ async function save() {
   if (saving.value) return;
   saving.value = true;
   try {
+    if (
+      dialogType.value === "account" &&
+      !(await accountForm.value?.validate().catch(() => false))
+    )
+      return;
     if (dialogType.value === "account") {
       if (edit.value)
         await api.patch(`/partners/${edit.value.id}`, { ...form });
@@ -198,20 +254,64 @@ async function save() {
         updatedAt: edit.value.price?.updatedAt ?? null,
       });
     } else {
+      if (!canFinance.value || !partnerId.value) {
+        ElMessage.error("仅超级管理员可以登记伙伴资金");
+        return;
+      }
       const amountCents = Math.round(Number(form.amount) * 100),
         deltaCents =
           form.type === "DEPOSIT_RETURN" ? -Math.abs(amountCents) : amountCents;
-      await api.post(`/partner-finance/${partnerId.value}/deposit`, {
-        deltaCents,
-        type: form.type,
-        reason: form.reason,
-        idempotencyKey: form.idempotencyKey,
-      });
+      if (!pendingFunds.value) {
+        if (
+          !Number.isSafeInteger(amountCents) ||
+          !amountCents ||
+          Math.abs(amountCents) > 2147483647 ||
+          (dialogType.value === "balance" && amountCents < 0) ||
+          !String(form.reason || "").trim()
+        ) {
+          ElMessage.warning("请填写有效金额和登记原因");
+          return;
+        }
+        const partner = partners.value.find(
+          (item) => item.id === partnerId.value,
+        );
+        try {
+          await ElMessageBox.confirm(
+            `${partner?.name || partnerId.value}：${dialogType.value === "balance" ? "可消费余额" : "保证金"} ${deltaCents > 0 ? "增加" : "减少"} ${money(Math.abs(deltaCents))}。原因：${String(form.reason).trim()}`,
+            "确认资金入账",
+            {
+              confirmButtonText: "确认入账",
+              cancelButtonText: "返回修改",
+              type: "warning",
+            },
+          );
+        } catch {
+          return;
+        }
+        pendingFunds.value = {
+          url: `/partner-finance/${partnerId.value}/${dialogType.value === "balance" ? "balance-recharge" : "deposit"}`,
+          body: {
+            ...(dialogType.value === "balance"
+              ? { amountCents }
+              : { deltaCents, type: form.type }),
+            reason: String(form.reason).trim(),
+            referenceNo: String(form.referenceNo || "").trim(),
+            idempotencyKey: form.idempotencyKey,
+          },
+        };
+      }
+      await api.post(pendingFunds.value.url, pendingFunds.value.body);
+      pendingFunds.value = undefined;
     }
     ElMessage.success("已保存");
     dialog.value = false;
     await load();
   } catch (cause) {
+    if (
+      axios.isAxiosError(cause) &&
+      [400, 404, 409, 422].includes(cause.response?.status ?? 0)
+    )
+      pendingFunds.value = undefined;
     ElMessage.error(readableError(cause));
   } finally {
     saving.value = false;
@@ -293,6 +393,7 @@ async function copyPromotion() {
       ><el-select
         v-if="resource === 'partner-finance'"
         v-model="partnerId"
+        :disabled="saving || !!pendingFunds"
         filterable
         remote
         :remote-method="loadPartners"
@@ -433,7 +534,13 @@ async function copyPromotion() {
           ><div class="funds">
             <el-card
               ><span class="muted">可消费余额</span>
-              <h2>{{ money(funds.balanceCents) }}</h2></el-card
+              <h2>{{ money(funds.balanceCents) }}</h2>
+              <el-button
+                v-if="canFinance"
+                type="primary"
+                @click="open('balance')"
+                >手动充值余额</el-button
+              ></el-card
             ><el-card
               ><span class="muted">保证金</span>
               <h2>{{ money(funds.depositCents) }}</h2>
@@ -452,7 +559,7 @@ async function copyPromotion() {
               loadFinance();
             "
             ><el-tab-pane label="资金流水" name="ledger" /><el-tab-pane
-              label="充值记录"
+              label="在线充值记录"
               name="recharges" /></el-tabs
           ><el-table v-if="financeTab === 'ledger'" :data="ledger" border stripe
             ><el-table-column label="账户" width="110"
@@ -467,18 +574,30 @@ async function copyPromotion() {
               ><template #default="scope">{{
                 money(scope.row.deltaCents)
               }}</template></el-table-column
-            ><el-table-column label="账户余额" width="140"
+            ><el-table-column label="变动后余额" width="140"
               ><template #default="scope">{{
                 money(scope.row.balanceAfterCents)
               }}</template></el-table-column
-            ><el-table-column
-              prop="reason"
-              label="说明"
-              min-width="220"
-            /><el-table-column label="时间" min-width="180"
+            ><el-table-column prop="operatorName" label="操作人" min-width="140"
+              ><template #default="scope"
+                >{{ scope.row.operatorName || "系统 / 历史记录" }}
+                <div class="muted">
+                  {{ scope.row.operatorUsername || "" }}
+                </div></template
+              ></el-table-column
+            ><el-table-column label="时间" min-width="180"
               ><template #default="scope">{{
                 date(scope.row.createdAt)
               }}</template></el-table-column
+            ><el-table-column label="详情" width="95" fixed="right"
+              ><template #default="scope"
+                ><el-button
+                  text
+                  type="primary"
+                  @click="ledgerDetail = scope.row"
+                  >查看日志</el-button
+                ></template
+              ></el-table-column
             ></el-table
           ><el-table v-else :data="recharges" border stripe
             ><el-table-column
@@ -514,6 +633,55 @@ async function copyPromotion() {
       />
     </div>
     <el-dialog
+      :model-value="!!ledgerDetail"
+      title="资金登记日志"
+      width="min(680px, 94vw)"
+      @close="ledgerDetail = null"
+    >
+      <el-descriptions v-if="ledgerDetail" :column="1" border>
+        <el-descriptions-item label="账户">{{
+          ledgerDetail.account === "BALANCE" ? "消费余额" : "保证金"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="类型">{{
+          ledgerLabels[ledgerDetail.type] || ledgerDetail.type
+        }}</el-descriptions-item>
+        <el-descriptions-item label="金额变动">{{
+          money(ledgerDetail.deltaCents)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="变动前余额">{{
+          money(ledgerDetail.balanceBeforeCents)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="变动后余额">{{
+          money(ledgerDetail.balanceAfterCents)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="操作人"
+          >{{ ledgerDetail.operatorName || "系统 / 历史记录" }}
+          {{ ledgerDetail.operatorUsername || "" }}</el-descriptions-item
+        >
+        <el-descriptions-item label="操作人 ID">{{
+          ledgerDetail.actorId || "—"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="登记原因">{{
+          ledgerDetail.reason
+        }}</el-descriptions-item>
+        <el-descriptions-item label="凭证编号">{{
+          ledgerDetail.referenceNo || "—"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="登记时间">{{
+          date(ledgerDetail.createdAt)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="流水编号">{{
+          ledgerDetail.id
+        }}</el-descriptions-item>
+        <el-descriptions-item label="审计编号">{{
+          ledgerDetail.auditId || "—"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="请求编号">{{
+          ledgerDetail.requestId || "—"
+        }}</el-descriptions-item>
+      </el-descriptions>
+    </el-dialog>
+    <el-dialog
       v-model="dialog"
       :title="
         {
@@ -521,19 +689,25 @@ async function copyPromotion() {
           level: '分销等级',
           price: '设置分销价',
           deposit: '保证金登记',
+          balance: '手动充值余额',
         }[dialogType]
       "
       width="560px"
       :close-on-click-modal="false"
-      ><el-form label-position="top" :disabled="saving"
+      ><el-form
+        ref="accountForm"
+        :model="form"
+        :rules="accountRules"
+        label-position="top"
+        :disabled="saving || !!pendingFunds"
         ><template v-if="dialogType === 'account'"
-          ><el-form-item v-if="!edit" label="登录账号"
+          ><el-form-item v-if="!edit" label="登录账号" prop="username" required
             ><el-input v-model="form.username" maxlength="80" /></el-form-item
-          ><el-form-item label="伙伴名称"
+          ><el-form-item label="伙伴名称" prop="name" required
             ><el-input v-model="form.name" maxlength="80" /></el-form-item
-          ><el-form-item label="联系方式"
+          ><el-form-item label="联系方式" prop="mobile"
             ><el-input v-model="form.mobile" maxlength="30" /></el-form-item
-          ><el-form-item label="分销等级"
+          ><el-form-item label="分销等级" prop="levelId" required
             ><el-select v-model="form.levelId" style="width: 100%"
               ><el-option
                 v-for="level in levels"
@@ -541,7 +715,11 @@ async function copyPromotion() {
                 :label="level.name"
                 :value="level.id"
                 :disabled="!level.active" /></el-select></el-form-item
-          ><el-form-item v-if="!edit" label="初始密码（至少10个字符）"
+          ><el-form-item
+            v-if="!edit"
+            label="初始密码（10至128个字符）"
+            prop="password"
+            required
             ><el-input
               v-model="form.password"
               type="password"
@@ -574,9 +752,14 @@ async function copyPromotion() {
             ><el-switch v-model="form.enabled" /></el-form-item></template
         ><template v-else
           ><el-alert
-            title="保证金独立登记，不增加可消费余额。"
+            :title="
+              dialogType === 'balance'
+                ? '确认已收款后登记，入账后伙伴可用于采购。'
+                : '保证金独立登记，不增加可消费余额。'
+            "
             type="info"
             :closable="false" /><el-form-item
+            v-if="dialogType === 'deposit'"
             label="登记类型"
             style="margin-top: 20px"
             ><el-select v-model="form.type"
@@ -591,16 +774,30 @@ async function copyPromotion() {
               :min="form.type === 'DEPOSIT_CORRECTION' ? -21474836.47 : 0.01"
               :max="21474836.47"
               :precision="2" /></el-form-item
-          ><el-form-item label="登记原因"
+          ><el-form-item label="登记原因" required
             ><el-input
               v-model="form.reason"
               type="textarea"
-              maxlength="300" /></el-form-item></template></el-form
+              maxlength="300" /></el-form-item
+          ><el-form-item label="收款凭证编号（可选）"
+            ><el-input
+              v-model="form.referenceNo"
+              maxlength="120"
+              placeholder="银行流水号、收据编号等" /></el-form-item
+          ><el-alert
+            v-if="pendingFunds"
+            title="上次登记结果尚未确认，请核对入账，勿重复新增。"
+            type="warning"
+            :closable="false" /></template></el-form
       ><template #footer
         ><el-button :disabled="saving" @click="dialog = false">取消</el-button
-        ><el-button type="primary" :loading="saving" @click="save"
-          >保存</el-button
-        ></template
+        ><el-button type="primary" :loading="saving" @click="save">{{
+          pendingFunds
+            ? "核对入账"
+            : dialogType === "balance" || dialogType === "deposit"
+              ? "确认登记"
+              : "保存"
+        }}</el-button></template
       ></el-dialog
     >
     <el-dialog

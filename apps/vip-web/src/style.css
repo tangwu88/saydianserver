@@ -40,7 +40,7 @@ h2 {
   font-size: 19px;
 }
 .muted {
-  color: #788397;
+  color: #637084;
 }
 .page {
   max-width: 1400px;
@@ -54,7 +54,7 @@ h2 {
   margin-bottom: 24px;
 }
 .page-head h1 {
-  margin: 0 0 8px;
+  margin: 0;
 }
 .page-head p {
   margin: 0;
@@ -113,6 +113,171 @@ h2 {
 }
 .el-dialog {
   max-width: calc(100vw - 28px);
+}
+.button-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 9px 16px;
+  border: 1px solid #dce1e9;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 14px;
+  line-height: 20px;
+}
+.action-link.primary {
+  background: #c9223b;
+  border-color: #c9223b;
+  color: white;
+}
+.action-link:hover {
+  border-color: #c9223b;
+}
+.plain-input {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #dce1e9;
+  border-radius: 7px;
+  color: #4b5769;
+  background: #fff;
+  font-size: 14px;
+}
+.quiet-details {
+  font-size: 13px;
+  color: #637084;
+}
+.quiet-details summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+.quiet-details p {
+  line-height: 1.7;
+  margin: 12px 0 0;
+}
+.empty-state {
+  text-align: center;
+  padding: 36px 16px;
+  color: #637084;
+}
+.empty-state > .el-icon {
+  color: #94a0b2;
+  margin-bottom: 14px;
+}
+.empty-state h2 {
+  font-size: 17px;
+  color: #364154;
+  margin-bottom: 10px;
+}
+.empty-state p {
+  font-size: 14px;
+  line-height: 1.7;
+  margin-bottom: 18px;
+}
+.page-error {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: #fff2f0;
+  border: 1px solid #fac8c2;
+  border-radius: 9px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  color: #a33125;
+  font-size: 14px;
+}
+.page-error > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.section-space {
+  margin-bottom: 20px;
+}
+.el-button {
+  min-height: 38px;
+}
+.el-button.is-text {
+  min-height: 36px;
+}
+.el-button--large {
+  min-height: 44px;
+}
+.el-pagination {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.el-input-number {
+  max-width: 100%;
+}
+.el-icon {
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible {
+  outline: 3px solid #c9223b;
+  outline-offset: 3px;
+}
+.record-card {
+  border: 1px solid #e1e6ee;
+  border-radius: 11px;
+  padding: 18px;
+  margin-top: 14px;
+  background: #fff;
+}
+.record-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.record-head > div {
+  min-width: 0;
+}
+.record-head small {
+  display: block;
+  color: #637084;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.record-number {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.record-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #edf0f4;
+}
+.record-foot strong {
+  font-size: 19px;
+}
+.positive {
+  color: #16734d;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
 }
 .record-values {
   white-space: normal;

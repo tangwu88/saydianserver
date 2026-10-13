@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **427 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **428 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -295,7 +295,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（126）
+## 管理后台接口（127）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -424,7 +424,8 @@
 | `GET /api/saydian-app/admin/v1/partner-finance/:id/wallet` | 查询品牌伙伴资金账户 | admin | path:id；id为伙伴UUID | 独立消费余额和保证金，整数分 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/admin/v1/partner-finance/:id/ledger` | 查询品牌伙伴资金账本 | admin | path:id，query:account?，query:page?；id为伙伴UUID、account?、page? | 不可变资金明细 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/admin/v1/partner-finance/:id/recharges` | 查询品牌伙伴充值记录 | admin | path:id，query:page?；id为伙伴UUID、page? | 充值状态与入账时间 | 主库；伙伴身份与会员/员工推广隔离 |
-| `POST /api/saydian-app/admin/v1/partner-finance/:id/deposit` | 登记品牌伙伴保证金 | admin: SUPER_ADMIN, FINANCE | path:id；id为伙伴UUID；{type:DEPOSIT_RECEIPT\|DEPOSIT_RETURN\|DEPOSIT_CORRECTION,deltaCents,reason,idempotencyKey} | 独立保证金流水；不得透支或增加消费余额；事务内审计 | 主库；伙伴身份与会员/员工推广隔离 |
+| `POST /api/saydian-app/admin/v1/partner-finance/:id/deposit` | 登记品牌伙伴保证金 | admin: SUPER_ADMIN | path:id；仅SUPER_ADMIN；id为伙伴UUID；{type:DEPOSIT_RECEIPT\|DEPOSIT_RETURN\|DEPOSIT_CORRECTION,deltaCents,reason,referenceNo?,idempotencyKey} | 独立保证金流水；不得透支或增加消费余额；记录操作人、凭证、变动前后余额；幂等审计 | 主库；伙伴身份与会员/员工推广隔离 |
+| `POST /api/saydian-app/admin/v1/partner-finance/:id/balance-recharge` | 手动充值品牌伙伴余额 | admin: SUPER_ADMIN | path:id；仅SUPER_ADMIN；id为伙伴UUID；{amountCents,reason,referenceNo?,idempotencyKey} | 正整数分入账；MANUAL_RECHARGE不可变流水及操作人快照/前后余额审计，同一请求只入账一次 | 不生成在线支付凭证；不计入支付渠道外部收款 |
 
 ## 品牌伙伴平台接口（29）
 

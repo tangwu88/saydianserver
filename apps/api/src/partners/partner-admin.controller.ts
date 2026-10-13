@@ -134,7 +134,7 @@ export class PartnerAdminController {
     return this.admin.recharges(id, page);
   }
   @Post("partner-finance/:id/deposit")
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.FINANCE)
+  @AdminRoles(AdminRole.SUPER_ADMIN)
   deposit(
     @CurrentAdmin() actor: Admin,
     @Param("id") id: string,
@@ -142,5 +142,15 @@ export class PartnerAdminController {
     @Req() request: RequestWithContext,
   ) {
     return this.admin.deposit(actor.id, id, body, request.requestId);
+  }
+  @Post("partner-finance/:id/balance-recharge")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  rechargeBalance(
+    @CurrentAdmin() actor: Admin,
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithContext,
+  ) {
+    return this.admin.rechargeBalance(actor.id, id, body, request.requestId);
   }
 }

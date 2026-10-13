@@ -25031,8 +25031,7 @@ export const apiCatalog = {
       "path": "/api/saydian-app/admin/v1/partner-finance/:id/deposit",
       "auth": "admin",
       "roles": [
-        "SUPER_ADMIN",
-        "FINANCE"
+        "SUPER_ADMIN"
       ],
       "parameters": [
         {
@@ -25051,8 +25050,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/partners/partner-admin.controller.ts",
       "summary": "登记品牌伙伴保证金",
-      "request": "id为伙伴UUID；{type:DEPOSIT_RECEIPT|DEPOSIT_RETURN|DEPOSIT_CORRECTION,deltaCents,reason,idempotencyKey}",
-      "response": "独立保证金流水；不得透支或增加消费余额；事务内审计",
+      "request": "仅SUPER_ADMIN；id为伙伴UUID；{type:DEPOSIT_RECEIPT|DEPOSIT_RETURN|DEPOSIT_CORRECTION,deltaCents,reason,referenceNo?,idempotencyKey}",
+      "response": "独立保证金流水；不得透支或增加消费余额；记录操作人、凭证、变动前后余额；幂等审计",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 201,
       "contract": {
@@ -25060,6 +25059,10 @@ export const apiCatalog = {
         "requestSchema": {
           "type": "object",
           "properties": {
+            "referenceNo": {
+              "type": "string",
+              "maxLength": 120
+            },
             "type": {
               "enum": [
                 "DEPOSIT_RECEIPT",
@@ -25118,6 +25121,108 @@ export const apiCatalog = {
           "required": [
             "id",
             "account",
+            "deltaCents",
+            "balanceAfterCents"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.rechargeBalance",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partner-finance/:id/balance-recharge",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "手动充值品牌伙伴余额",
+      "request": "仅SUPER_ADMIN；id为伙伴UUID；{amountCents,reason,referenceNo?,idempotencyKey}",
+      "response": "正整数分入账；MANUAL_RECHARGE不可变流水及操作人快照/前后余额审计，同一请求只入账一次",
+      "dependency": "不生成在线支付凭证；不计入支付渠道外部收款",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "amountCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "referenceNo": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 90,
+              "pattern": "^[A-Za-z0-9:_-]+$"
+            }
+          },
+          "required": [
+            "amountCents",
+            "reason",
+            "idempotencyKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account": {
+              "const": "BALANCE"
+            },
+            "type": {
+              "const": "MANUAL_RECHARGE"
+            },
+            "deltaCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "balanceAfterCents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "id",
+            "account",
+            "type",
             "deltaCents",
             "balanceAfterCents"
           ],

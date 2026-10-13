@@ -1,22 +1,23 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { Menu, SwitchButton } from "@element-plus/icons-vue";
 import { api, data, errorMessage, partnerTokenKey } from "../api";
 import { ElMessage } from "element-plus";
+import { menu, activeMenu } from "../navigation";
 const route = useRoute(),
   router = useRouter(),
   profile = ref<any>(),
-  open = ref(false);
-const menu = [
-  { path: "/", title: "平台概览", icon: "◈" },
-  { path: "/promotion", title: "专属推广", icon: "▣" },
-  { path: "/members", title: "会员与健康档案", icon: "◎" },
-  { path: "/products", title: "分销采购", icon: "▦" },
-  { path: "/orders", title: "采购订单", icon: "≡" },
-  { path: "/wallet", title: "余额与充值", icon: "◉" },
-  { path: "/ledger", title: "资金流水", icon: "↕" },
-  { path: "/deposit", title: "保证金", icon: "◇" },
-];
+  open = ref(false),
+  leaving = ref(false);
+const currentTitle = computed(
+  () =>
+    menu.find((item) => activeMenu(item.path, route.path))?.title ||
+    "品牌伙伴平台",
+);
+const shortcuts = menu.filter((item) =>
+  ["/", "/promotion", "/products", "/orders", "/wallet"].includes(item.path),
+);
 onMounted(async () => {
   try {
     profile.value = data(await api.get("/auth/me"));
@@ -25,59 +26,94 @@ onMounted(async () => {
   }
 });
 async function logout() {
+  if (leaving.value) return;
+  leaving.value = true;
   try {
     await api.post("/auth/logout");
+  } catch (cause) {
+    ElMessage.error(errorMessage(cause));
   } finally {
     sessionStorage.removeItem(partnerTokenKey);
     await router.replace("/login");
+    leaving.value = false;
   }
-}
-function active(path: string) {
-  return path === "/"
-    ? route.path === "/"
-    : route.path.startsWith(path) ||
-        (path === "/wallet" && route.path.startsWith("/recharges"));
 }
 </script>
 <template>
   <div class="layout">
-    <aside :class="['sidebar', { open }]">
+    <aside class="sidebar">
       <router-link to="/" class="brand"
         ><b>SAYDIAN <span>赛电</span></b
         ><small>品牌伙伴平台</small></router-link
       >
-      <div class="sidebar-label">工作空间</div>
-      <nav>
+      <nav aria-label="主导航">
         <router-link
           v-for="item in menu"
           :key="item.path"
           :to="item.path"
-          :class="{ selected: active(item.path) }"
-          @click="open = false"
-          ><span>{{ item.icon }}</span
+          :class="{ selected: activeMenu(item.path, route.path) }"
+          :aria-current="activeMenu(item.path, route.path) ? 'page' : undefined"
+          ><el-icon><component :is="item.icon" /></el-icon
           >{{ item.title }}</router-link
         >
       </nav>
-      <div class="sidebar-foot">
-        赛电品牌伙伴平台<br /><span>共享健康 · 携手成长</span>
-      </div>
     </aside>
-    <div v-if="open" class="overlay" @click="open = false"></div>
+    <el-drawer
+      v-model="open"
+      title="全部功能"
+      direction="ltr"
+      size="260px"
+      class="navigation-drawer"
+    >
+      <nav class="drawer-nav" aria-label="全部功能">
+        <router-link
+          v-for="item in menu"
+          :key="item.path"
+          :to="item.path"
+          :class="{ selected: activeMenu(item.path, route.path) }"
+          @click="open = false"
+          ><el-icon><component :is="item.icon" /></el-icon
+          >{{ item.title }}</router-link
+        >
+      </nav>
+    </el-drawer>
     <div class="workspace">
       <header class="topbar">
-        <button class="menu-toggle" @click="open = !open" aria-label="展开菜单">
-          ☰</button
-        ><span>赛电品牌伙伴平台</span>
+        <div class="topbar-title">
+          <el-button
+            class="menu-toggle"
+            :icon="Menu"
+            text
+            aria-label="打开全部功能"
+            :aria-expanded="open"
+            @click="open = true"
+          /><b>{{ currentTitle }}</b>
+        </div>
         <div class="identity">
           <span>{{ profile?.name || "品牌伙伴" }}</span
           ><el-tag v-if="profile?.level" type="info" size="small">{{
             profile.level.name
           }}</el-tag
-          ><el-button text @click="logout">退出</el-button>
+          ><el-button
+            text
+            :icon="SwitchButton"
+            :loading="leaving"
+            @click="logout"
+            >退出</el-button
+          >
         </div>
       </header>
-      <main><router-view /></main>
-      <footer>赛电 SAYDIAN · 品牌伙伴专属服务</footer>
+      <nav class="mobile-shortcuts" aria-label="快捷导航">
+        <router-link
+          v-for="item in shortcuts"
+          :key="item.path"
+          :to="item.path"
+          :class="{ selected: activeMenu(item.path, route.path) }"
+          ><el-icon><component :is="item.icon" /></el-icon
+          >{{ item.title }}</router-link
+        >
+      </nav>
+      <main id="main-content"><router-view /></main>
     </div>
   </div>
 </template>
@@ -86,148 +122,152 @@ function active(path: string) {
   min-height: 100vh;
 }
 .sidebar {
-  width: 228px;
+  width: 208px;
   position: fixed;
   inset: 0 auto 0 0;
   background: #18212e;
-  color: #b9c2ce;
+  color: #bec8d5;
   z-index: 30;
-  display: flex;
-  flex-direction: column;
+  overflow-y: auto;
 }
 .brand {
-  padding: 30px 24px 32px;
-  color: white;
+  display: block;
+  padding: 28px 22px;
+  color: #fff;
 }
 .brand b {
   font-size: 20px;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
 }
 .brand b span {
-  font-size: 15px;
-  letter-spacing: 0;
-  margin-left: 4px;
+  font-size: 14px;
   color: #eb9aa7;
 }
 .brand small {
   display: block;
   font-size: 12px;
-  color: #9ca9bc;
-  margin-top: 10px;
-  letter-spacing: 2px;
-}
-.sidebar-label {
-  font-size: 11px;
-  color: #66778e;
-  margin: 4px 26px 14px;
+  color: #b6c1d0;
+  margin-top: 9px;
 }
 nav {
-  padding: 0 13px;
+  padding: 8px 12px;
 }
 nav a {
   display: flex;
   gap: 12px;
   align-items: center;
-  color: #b8c2d0;
-  padding: 14px 14px;
-  font-size: 14px;
+  padding: 13px 14px;
   border-radius: 8px;
   margin-bottom: 5px;
+  color: inherit;
+  font-size: 15px;
 }
-nav a span {
-  width: 19px;
-  text-align: center;
-  font-size: 17px;
-  color: #8597ae;
+nav .el-icon {
+  font-size: 20px;
 }
 nav a:hover {
   background: #243144;
 }
 nav a.selected {
   background: #c9223b;
-  color: white;
-}
-nav a.selected span {
-  color: white;
-}
-.sidebar-foot {
-  margin-top: auto;
-  padding: 25px;
-  border-top: 1px solid #283346;
-  font-size: 12px;
-  line-height: 1.9;
-  color: #9ba8ba;
-}
-.sidebar-foot span {
-  font-size: 11px;
-  color: #5c6c82;
+  color: #fff;
 }
 .workspace {
-  margin-left: 228px;
+  margin-left: 208px;
 }
 .topbar {
-  height: 74px;
-  background: white;
+  min-height: 64px;
+  background: #fff;
   border-bottom: 1px solid #e8ebf1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 32px;
-  font-size: 14px;
+  padding: 10px 28px;
 }
+.topbar-title,
 .identity {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+.identity {
+  font-size: 14px;
+}
+.identity > span {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .workspace main {
-  padding: 32px;
-  min-height: calc(100vh - 126px);
+  padding: 28px;
+  min-height: calc(100vh - 64px);
 }
-.workspace footer {
-  font-size: 11px;
-  color: #a0a8b6;
-  text-align: center;
-  padding: 16px;
-}
-.menu-toggle {
+.menu-toggle,
+.mobile-shortcuts {
   display: none;
-  border: 0;
-  background: transparent;
-  font-size: 22px;
 }
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: #0006;
-  z-index: 25;
+.drawer-nav {
+  color: #18212f;
+}
+.drawer-nav a:hover {
+  background: #fcebed;
+}
+.drawer-nav a.selected:hover {
+  background: #c9223b;
 }
 @media (max-width: 950px) {
   .sidebar {
-    transform: translateX(-100%);
-    transition: transform 0.2s;
-  }
-  .sidebar.open {
-    transform: translateX(0);
+    display: none;
   }
   .workspace {
     margin-left: 0;
   }
   .menu-toggle {
-    display: block;
+    display: inline-flex;
   }
   .topbar {
-    padding: 0 16px;
-  }
-  .topbar > span {
-    display: none;
+    padding: 8px 14px;
   }
   .workspace main {
-    padding: 22px 16px;
+    padding: 20px 16px;
+  }
+  .mobile-shortcuts {
+    display: flex;
+    justify-content: space-around;
+    background: #fff;
+    border-bottom: 1px solid #e8ebf1;
+    padding: 6px;
+  }
+  .mobile-shortcuts a {
+    flex-direction: column;
+    gap: 5px;
+    padding: 8px 6px;
+    margin: 0;
+    font-size: 12px;
+    flex: 1;
+  }
+  .mobile-shortcuts a:hover {
+    background: #fcebed;
+  }
+  .mobile-shortcuts a.selected {
+    background: #fcebed;
+    color: #b82237;
+  }
+  .identity .el-tag {
+    display: none;
+  }
+}
+@media (max-width: 420px) {
+  .identity > span {
+    max-width: 82px;
   }
   .identity {
-    gap: 7px;
+    gap: 3px;
+  }
+  .topbar-title {
+    gap: 2px;
   }
 }
 </style>

@@ -10,6 +10,7 @@ import Orders from "./views/Orders.vue";
 import Finance from "./views/Finance.vue";
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  scrollBehavior: () => ({ top: 0 }),
   routes: [
     { path: "/login", component: Login },
     {
@@ -32,7 +33,8 @@ export const router = createRouter({
 });
 router.beforeEach((to) => {
   const loggedIn = !!sessionStorage.getItem(partnerTokenKey);
-  if (to.path !== "/login" && !loggedIn) return "/login";
+  if (to.path !== "/login" && !loggedIn)
+    return { path: "/login", query: { next: to.path } };
   if (to.path === "/login" && loggedIn) return "/";
   return true;
 });

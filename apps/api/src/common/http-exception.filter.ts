@@ -95,7 +95,9 @@ export class SafeHttpExceptionFilter implements ExceptionFilter {
         : undefined;
     const path = request.originalUrl || request.url || request.path;
     const legacy = isLegacyPath(path);
-    const partner = /^\/(?:global\/)?api\/saydian-app\/vip\/v1(?:\/|\?|$)/.test(path);
+    const partner =
+      /^\/(?:global\/)?api\/saydian-app\/vip\/v1(?:\/|\?|$)/.test(path) ||
+      /^\/(?:global\/)?api\/saydian-app\/admin\/v1\/(?:partners|partner-levels|partner-prices|partner-finance)(?:\/|\?|$)/.test(path);
     response.status(legacy ? HttpStatus.OK : status).json({
       code: status,
       message:

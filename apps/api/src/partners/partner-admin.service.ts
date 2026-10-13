@@ -466,6 +466,63 @@ export class PartnerAdminService {
     )
       throw new BadRequestException("保证金登记信息不正确");
     const idempotencyKey = `partner-deposit:${partnerId}:${partnerRequestKey(body.idempotencyKey)}`;
+    return this.recordFunds(
+      actorId,
+      partnerId,
+      "DEPOSIT",
+      type,
+      deltaCents,
+      idempotencyKey,
+      reason,
+      body.referenceNo,
+      requestId,
+    );
+  }
+
+  async rechargeBalance(
+    actorId: string,
+    partnerId: string,
+    input: unknown,
+    requestId: string,
+  ) {
+    const body = safeObject(input),
+      amountCents = Number(body.amountCents),
+      reason = text(body.reason, "充值原因", 300);
+    if (
+      !isUuid(partnerId) ||
+      !Number.isSafeInteger(amountCents) ||
+      amountCents <= 0 ||
+      amountCents > PARTNER_MAX_CENTS
+    )
+      throw new BadRequestException("充值金额须为有效的正数");
+    const key = `partner-manual-recharge:${partnerId}:${partnerRequestKey(body.idempotencyKey)}`;
+    return this.recordFunds(
+      actorId,
+      partnerId,
+      "BALANCE",
+      "MANUAL_RECHARGE",
+      amountCents,
+      key,
+      reason,
+      body.referenceNo,
+      requestId,
+    );
+  }
+
+  private recordFunds(
+    actorId: string,
+    partnerId: string,
+    account: "BALANCE" | "DEPOSIT",
+    type: string,
+    deltaCents: number,
+    idempotencyKey: string,
+    reason: string,
+    referenceInput: unknown,
+    requestId: string,
+  ) {
+    const referenceNo = String(referenceInput ?? "").trim();
+    if (referenceNo.length > 120)
+      throw new BadRequestException("收款凭证编号不能超过120个字符");
     return this.prisma.$transaction(async (tx) => {
       if (
         !(await tx.brandPartner.findUnique({
@@ -474,23 +531,69 @@ export class PartnerAdminService {
         }))
       )
         throw new NotFoundException("品牌伙伴不存在");
+      await tx.$queryRaw`SELECT "partnerId" FROM "PartnerWallet" WHERE "partnerId" = ${partnerId}::uuid FOR UPDATE`;
+      const existing = await tx.partnerLedger.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        if (
+          existing.partnerId !== partnerId ||
+          existing.account !== account ||
+          existing.type !== type ||
+          existing.deltaCents !== deltaCents ||
+          existing.reason !== reason ||
+          existing.actorId !== actorId ||
+          existing.referenceId !== (referenceNo || null)
+        )
+          throw new ConflictException(
+            "该登记已提交，不能使用同一请求修改金额或说明",
+          );
+        return existing;
+      }
+      const actor = await tx.adminUser.findUnique({
+        where: { id: actorId },
+        select: { username: true, displayName: true },
+      });
       const ledger = await postPartnerLedger(tx, {
         partnerId,
-        account: "DEPOSIT",
+        account,
         type,
         deltaCents,
         idempotencyKey,
         reason,
         actorId,
+        ...(referenceNo ? { referenceId: referenceNo } : {}),
       });
-      await this.audit(
-        tx,
-        actorId,
-        "PARTNER_DEPOSIT_RECORDED",
-        partnerId,
-        { ledgerId: ledger.id, deltaCents, type, reason },
-        requestId,
-      );
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId,
+          action:
+            account === "BALANCE"
+              ? "PARTNER_BALANCE_RECHARGED"
+              : "PARTNER_DEPOSIT_RECORDED",
+          entityType: "PARTNER_LEDGER",
+          entityId: ledger.id,
+          requestId,
+          beforeJson: {
+            partnerId,
+            account,
+            balanceCents: ledger.balanceAfterCents - deltaCents,
+          },
+          afterJson: {
+            partnerId,
+            ledgerId: ledger.id,
+            account,
+            type,
+            deltaCents,
+            balanceAfterCents: ledger.balanceAfterCents,
+            reason,
+            referenceNo,
+            operatorUsername: actor?.username ?? actorId,
+            operatorName: actor?.displayName ?? actorId,
+          },
+        },
+      });
       return ledger;
     });
   }
@@ -501,8 +604,38 @@ export class PartnerAdminService {
   wallet(id: string) {
     return this.partners.wallet(id);
   }
-  ledger(id: string, account: string, page: unknown) {
-    return this.partners.ledger(id, account, page);
+  async ledger(id: string, account: string, page: unknown) {
+    const result = await this.partners.ledger(id, account, page);
+    const audits = await this.prisma.auditLog.findMany({
+      where: {
+        entityType: "PARTNER_LEDGER",
+        entityId: { in: result.items.map((item) => item.id) },
+      },
+      select: {
+        id: true,
+        entityId: true,
+        actorId: true,
+        afterJson: true,
+        requestId: true,
+      },
+    });
+    return {
+      ...result,
+      items: result.items.map((item) => {
+        const audit = audits.find((row) => row.entityId === item.id),
+          snapshot = safeObject(audit?.afterJson);
+        return {
+          ...item,
+          balanceBeforeCents: item.balanceAfterCents - item.deltaCents,
+          operatorName: snapshot.operatorName ?? null,
+          operatorUsername: snapshot.operatorUsername ?? null,
+          actorId: audit?.actorId ?? null,
+          referenceNo: snapshot.referenceNo ?? null,
+          auditId: audit?.id ?? null,
+          requestId: audit?.requestId ?? null,
+        };
+      }),
+    };
   }
   recharges(id: string, page: unknown) {
     return this.partners.recharges(id, page);

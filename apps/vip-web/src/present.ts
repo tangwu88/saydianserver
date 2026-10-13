@@ -43,6 +43,7 @@ export const metrics: Record<string, string> = {
 };
 export const ledgerTypes: Record<string, string> = {
   RECHARGE: "在线充值",
+  MANUAL_RECHARGE: "后台充值",
   PURCHASE: "采购消费",
   REFUND: "采购退款",
   DEPOSIT_RECEIPT: "保证金收取",
