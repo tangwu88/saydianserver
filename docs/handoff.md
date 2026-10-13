@@ -160,7 +160,7 @@ git rev-list --left-right --count HEAD...origin/main
 1. 执行 `pwsh -NoProfile -File ./tools/Start-Change.ps1`，确认 `main`、工作区干净且 HEAD 与 `origin/main` 一致。
 2. 查看最近一次 `CI` 和 `Deploy production`；再请求 `/health/ready`，确认线上 `revision` 等于目标提交。
 3. 阅读最新的 `docs/implementation-log/`；历史日志只作证据，当前状态以本文件、Actions 和线上探针为准。
-4. 修改前保持生产只读；涉及 Prisma migration 时先备份、恢复演练和人工执行，自动发布不会代办。
+4. 保持生产原维护与业务开关；Prisma migration必须独立审查、备份和恢复演练，已验收的兼容迁移通过精确摘要门禁执行，未审迁移停止发布。
 5. 每轮完成后删除本轮产生的重复、废弃代码，保留兼容和安全边界；运行全量检查并用 `Publish-Change.ps1` 显式提交文件。
 
 ### P0：开放写入前
@@ -187,7 +187,7 @@ git rev-list --left-right --count HEAD...origin/main
 ## 8. 验收清单
 
 - [ ] `git status --short --branch` 干净，HEAD 与 `origin/main` 一致。
-- [ ] 接口目录 271 条校验、工具测试、类型、全量单元测试和全部应用构建通过；具体数量以当次输出为准。
+- [ ] 接口目录 427 条校验、工具测试、类型、全量单元测试和全部应用构建通过；具体数量以当次输出为准。
 - [ ] CI PostgreSQL 新库迁移/种子、HTTP 断言及 API/Worker/Admin+商城三镜像成功；记录 run URL 和提交 SHA。
 - [ ] 线上 `/health/ready` 的 `revision` 等于目标 SHA，API/Worker/Admin 容器均为该镜像。
 - [ ] 发布前后 `MAINTENANCE_READ_ONLY` 不变；没有重启商城、旧库或其他系统。
@@ -199,3 +199,10 @@ git rev-list --left-right --count HEAD...origin/main
 ## 9. 修改与提交规则
 
 修改前运行 `tools/Start-Change.ps1`；修改后使用 `tools/Publish-Change.ps1` 显式列文件。禁止 `git add .`、强推、覆盖他人改动或提交构建产物/密钥。源码提交通过 CI 后才可能发布；必须核对 Deploy job 和线上 revision，push 本身不代表部署。
+
+## 10. 赛电品牌伙伴平台上线状态（2026-10-13）
+
+- `/vip/` 已上线，main与国内/国际readiness版本为 `0fc95f9cb14c149bdb5213bcb633a24cb4b28c81`。CI `38412851102` 验证与自动部署均成功，公网12项和正式浏览器登录/跳转验收通过。
+- 账户、三级分销、分销价、资金及保证金在原总后台管理；新生产账户及消费余额不由本地演示数据导入，正式账户与价格由超级管理员维护。
+- 两份兼容迁移已完成，生产一致备份/隔离恢复验收通过，旧业务与维护开关保留。真实支付、退款和聚水潭供应商联调仍未验收。
+- 传输重试、伙伴中文错误与回退版本元数据修复已在运行代码中；完整过程、CI号、备份位置及模拟/真实验收边界见 [生产发布记录](implementation-log/2026-10-13-brand-partner-production-release.md)。最终回执提交在 `codex/brand-partner-release-acceptance`，运行源码在main，原用户预览记录另行保留。
