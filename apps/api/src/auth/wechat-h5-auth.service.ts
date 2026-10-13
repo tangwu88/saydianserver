@@ -1,3 +1,4 @@
+import { normalizedPartnerCode } from "../partners/partner-registration";
 import {
   BadRequestException,
   ConflictException,
@@ -131,11 +132,14 @@ export class WechatH5AuthService {
     returnTo: string;
     codeChallenge: string;
     referralCode?: string;
+    partnerCode?: string;
+    partnerNoticeVersion?: string;
     consentVersion?: string;
     locale?: unknown;
     product?: unknown;
   }) {
     requireGlobalWechatH5();
+    if (input.partnerCode && input.partnerNoticeVersion !== "partner-service-v1") throw new BadRequestException("请先确认品牌伙伴信息，或选择普通注册。");
     const returnTo = safeH5ReturnTo(input.returnTo);
     if (!/^[a-f0-9]{64}$/.test(input.codeChallenge))
       throw new BadRequestException("授权校验参数不正确");
@@ -154,6 +158,7 @@ export class WechatH5AuthService {
         ...(legal ? { product: legal.product } : {}),
         returnTo,
         referralCode: boundedReferral(input.referralCode),
+        ...(input.partnerCode ? { partnerCode: normalizedPartnerCode(input.partnerCode) } : {}),
         expiresAt: new Date(Date.now() + lifetimeSeconds * 1000),
       },
     });
@@ -250,6 +255,7 @@ export class WechatH5AuthService {
         product: stateProduct,
         returnTo: state.returnTo,
         referralCode: state.referralCode,
+        ...(state.partnerCode ? { partnerCode: state.partnerCode } : {}),
         expiresAt: new Date(Date.now() + lifetimeSeconds * 1000),
       },
     });

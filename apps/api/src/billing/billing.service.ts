@@ -48,7 +48,6 @@ import {
   type PaymentIntegrationKey,
 } from "./payment-provider.service";
 import {
-  onCommerceOrderPaid,
   onCommerceRefundSucceeded,
   onCommercePointsRefundSucceeded,
   afterSaleSettlementSnapshot,
@@ -56,7 +55,9 @@ import {
   allItemsReturned,
 } from "../commerce/commerce-finance";
 import { orderFulfillmentState } from "../commerce/commerce-finance";
-import { deductCommercePaymentStock } from "../commerce/commerce-payment-stock";
+import { completeCommercePayment } from "../commerce/commerce-payment-settlement";
+import { postPartnerLedger } from "../partners/partner-ledger";
+import { partnerNumber } from "../partners/partner-commerce.service";
 import {
   shouldDeferCallbacks,
   shouldPauseWorkers,
@@ -69,6 +70,7 @@ const businessTypeMap: Record<BusinessTypeContract, BusinessType> = {
   commerce_order: BusinessType.COMMERCE_ORDER,
   health_report: BusinessType.HEALTH_REPORT,
   health_membership: BusinessType.HEALTH_MEMBERSHIP,
+  partner_recharge: BusinessType.PARTNER_RECHARGE,
 };
 
 const paymentChannelMap: Record<PaymentChannelContract, PaymentChannel> = {
@@ -81,6 +83,7 @@ const paymentChannelMap: Record<PaymentChannelContract, PaymentChannel> = {
   alipay_page: PaymentChannel.ALIPAY_PAGE,
   alipay_app: PaymentChannel.ALIPAY_APP,
   apple_iap: PaymentChannel.APPLE_IAP,
+  partner_balance: PaymentChannel.PARTNER_BALANCE,
 };
 
 @Injectable()
@@ -188,6 +191,8 @@ export class BillingService {
     if (idempotencyKey.length < 8 || idempotencyKey.length > 160) {
       throw new BadRequestException("支付请求编号不正确");
     }
+    if (businessTypeInput === "partner_recharge" || channelInput === "partner_balance")
+      throw new BadRequestException("此支付业务须从品牌伙伴平台发起");
     const existing = await this.prisma.paymentIntent.findUnique({
       where: { idempotencyKey },
       include: { user: { select: { wechatOpenId: true } } },
@@ -299,7 +304,7 @@ export class BillingService {
     try {
       assertPaymentOutboundEnabled();
       const invoke = await this.providers.create(intent, {
-        wechatOpenId: intent.user.wechatOpenId,
+        wechatOpenId: intent.user?.wechatOpenId ?? null,
         ...(context.clientIp ? { clientIp: context.clientIp } : {}),
         appleProductId: resolved.appleProductId,
       });
@@ -329,9 +334,67 @@ export class BillingService {
     }
   }
 
-  async payment(userId: string, id: string): Promise<PaymentIntentContract> {
+  async partnerPaymentCapabilities() {
+    const channels = [PaymentChannel.WECHAT_NATIVE, PaymentChannel.ALIPAY_PAGE, PaymentChannel.ALIPAY_WAP];
+    return { items: await Promise.all(channels.map(async channel => {
+      try { assertPaymentOutboundEnabled(); await this.providers.identity(channel); return { channel: channel.toLowerCase(), enabled: true, reason: null }; }
+      catch { return { channel: channel.toLowerCase(), enabled: false, reason: "支付渠道尚未配置或暂不可用" }; }
+    })) };
+  }
+
+  async createPartnerRechargePayment(partnerId: string, rechargeId: string, context: { clientIp?: string } = {}) {
+    const recharge = await this.prisma.partnerRecharge.findFirst({ where: { id: rechargeId, partnerId } });
+    if (!recharge) throw new NotFoundException("充值记录不存在");
+    const idempotencyKey = `partner-payment:${recharge.id}`;
+    const previous = await this.prisma.paymentIntent.findUnique({ where: { idempotencyKey } });
+    if (previous) {
+      if (previous.partnerId !== partnerId || previous.partnerRechargeId !== rechargeId || previous.amountCents !== recharge.amountCents || previous.channel !== recharge.channel)
+        throw new ConflictException("充值支付请求不匹配");
+      return this.partnerPayment(partnerId, previous.id);
+    }
+    assertPaymentOutboundEnabled();
+    assertGlobalPaymentSupported({ channel: recharge.channel, businessType: BusinessType.PARTNER_RECHARGE, currency: "CNY" });
+    const identity = await this.providers.identity(recharge.channel);
+    const reserved = await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "PartnerRecharge" WHERE id = ${rechargeId}::uuid FOR UPDATE`;
+      const current = await tx.partnerRecharge.findUniqueOrThrow({ where: { id: rechargeId } });
+      if (current.partnerId !== partnerId || current.amountCents !== recharge.amountCents || current.channel !== recharge.channel)
+        throw new ConflictException("充值记录已变化");
+      const active = await tx.paymentIntent.findUnique({ where: { idempotencyKey } });
+      if (active) return { intent: active, dispatch: false };
+      const partner = await tx.brandPartner.findFirst({ where: { id: partnerId, active: true } });
+      if (!partner || current.status !== PaymentStatus.CREATED) throw new ConflictException("充值账户或记录不可用");
+      const intent = await tx.paymentIntent.create({ data: {
+        paymentNo: partnerNumber("VR"), partnerId, partnerRechargeId: recharge.id, businessType: BusinessType.PARTNER_RECHARGE,
+        businessId: recharge.id, channel: recharge.channel, integrationKey: paymentIntegrationKeyForNewIntent(recharge.channel),
+        amountCents: recharge.amountCents, currency: "CNY", description: `赛电品牌伙伴充值 ${recharge.rechargeNo}`, idempotencyKey,
+        providerMerchantId: identity.merchantId, providerAppId: identity.appId,
+      } });
+      return { intent, dispatch: true };
+    });
+    if (!reserved.dispatch) return serializePayment(reserved.intent);
+    try {
+      assertPaymentOutboundEnabled();
+      const invoke = await this.providers.create(reserved.intent, context);
+      await this.prisma.paymentIntent.updateMany({ where: { id: reserved.intent.id, status: PaymentStatus.CREATED },
+        data: { status: PaymentStatus.PENDING, providerPayload: invoke as Prisma.InputJsonValue } });
+    } catch (error) {
+      // An uncertain provider result retains its one original payment relationship.
+      await this.prisma.paymentIntent.updateMany({ where: { id: reserved.intent.id, status: PaymentStatus.CREATED },
+        data: { status: PaymentStatus.PENDING, providerPayload: { errorCode: "provider_result_unknown", reconciliationRequired: true } } });
+      throw error;
+    }
+    await this.prisma.partnerRecharge.updateMany({ where: { id: recharge.id, creditedAt: null, status: PaymentStatus.CREATED }, data: { status: PaymentStatus.PENDING } });
+    return serializePayment(await this.prisma.paymentIntent.findUniqueOrThrow({ where: { id: reserved.intent.id } }));
+  }
+
+  payment(userId: string, id: string) { return this.readPayment({ userId }, id); }
+
+  partnerPayment(partnerId: string, id: string) { return this.readPayment({ partnerId }, id); }
+
+  private async readPayment(owner: { userId: string } | { partnerId: string }, id: string): Promise<PaymentIntentContract> {
     const intent = await this.prisma.paymentIntent.findFirst({
-      where: { id, userId },
+      where: { id, ...owner },
     });
     if (!intent) throw new NotFoundException("支付记录不存在");
     if (
@@ -373,7 +436,7 @@ export class BillingService {
             },
           );
           const refreshed = await this.prisma.paymentIntent.findFirst({
-            where: { id, userId },
+            where: { id, ...owner },
           });
           if (refreshed) return serializePayment(refreshed);
         }
@@ -420,7 +483,7 @@ export class BillingService {
             },
           );
           const refreshed = await this.prisma.paymentIntent.findFirst({
-            where: { id, userId },
+            where: { id, ...owner },
           });
           if (refreshed) return serializePayment(refreshed);
         }
@@ -480,6 +543,7 @@ export class BillingService {
       });
     let order = await readOrder();
     if (!order) throw new NotFoundException("订单不存在");
+    if (!order.userId || order.partnerId) throw new ConflictException("品牌伙伴余额采购没有可关闭的外部支付");
     assertNewExecutionOwner(order);
     const previousRequest = await this.prisma.idempotencyRecord.findUnique({
       where: {
@@ -526,6 +590,7 @@ export class BillingService {
     await this.payment(order.userId, paymentId);
     order = await readOrder();
     if (!order) throw new NotFoundException("订单不存在");
+    if (!order.userId || order.partnerId) throw new ConflictException("品牌伙伴余额采购没有可关闭的外部支付");
     intent = order.paymentIntents[0];
     if (!intent) throw new NotFoundException("订单支付记录不存在");
     if (
@@ -551,6 +616,7 @@ export class BillingService {
           include: { paymentIntents: { where: { id: paymentId } } },
         });
         if (!lockedOrder) throw new NotFoundException("订单不存在");
+        if (!lockedOrder.userId || lockedOrder.partnerId) throw new ConflictException("品牌伙伴余额采购没有可关闭的外部支付");
         assertNewExecutionOwner(lockedOrder);
         const prior = await tx.idempotencyRecord.findUnique({
           where: {
@@ -846,6 +912,7 @@ export class BillingService {
       if (!intent) throw new NotFoundException("支付记录不存在");
       assertNewExecutionOwner(intent);
       if (intent.commerceOrder) assertNewExecutionOwner(intent.commerceOrder);
+      if (intent.businessType === BusinessType.PARTNER_RECHARGE) throw new ConflictException("充值退款尚未开放，请联系财务处理资金对账");
       const existing = await tx.paymentRefund.findUnique({
         where: { idempotencyKey },
       });
@@ -969,6 +1036,11 @@ export class BillingService {
             version: { increment: 1 },
           },
         });
+      }
+      if (intent.channel === PaymentChannel.PARTNER_BALANCE) {
+        const local = await tx.paymentRefund.findUniqueOrThrow({ where: { id: refund.id }, include: { paymentIntent: true } });
+        await this.completeRefundSettlement(tx, local, null, null);
+        return { intent, refund: await tx.paymentRefund.findUniqueOrThrow({ where: { id: refund.id } }), dispatch: false };
       }
       return { intent, refund, dispatch: true };
     });
@@ -1110,7 +1182,7 @@ export class BillingService {
           transaction,
           verified.environment,
           intent.id,
-          intent.userId,
+          intent.userId!,
         );
       },
     );
@@ -1248,10 +1320,14 @@ export class BillingService {
     });
     if (!intent) throw new NotFoundException("支付记录不存在");
     assertNewExecutionOwner(intent);
+    if (intent.channel === PaymentChannel.PARTNER_BALANCE) throw new BadRequestException("余额支付不接受外部支付回执");
     if (verification.integrationKey !== undefined) {
       assertPaymentIntegrationBinding(intent, verification.integrationKey);
     }
     assertProviderResultIdentity(intent, payload, false, verification);
+    if (intent.businessType === BusinessType.PARTNER_RECHARGE && intent.channel.startsWith("WECHAT") &&
+        safeObject(payload.amount).currency !== intent.currency)
+      throw new BadRequestException("充值回执币种不正确");
     if (
       !transactionId ||
       !Number.isSafeInteger(paidCents) ||
@@ -1299,59 +1375,22 @@ export class BillingService {
         intent.businessType === BusinessType.COMMERCE_ORDER &&
         intent.commerceOrderId
       ) {
-        const paidOrder = await tx.commerceOrder.updateMany({
-          where: {
-            id: intent.commerceOrderId,
-            status: CommerceOrderStatus.PENDING_PAYMENT,
-          },
-          data: {
-            status: CommerceOrderStatus.PAID,
-            paidAt: new Date(),
-            version: { increment: 1 },
-          },
-        });
-        if (!paidOrder.count) {
-          await tx.auditLog.create({
-            data: {
-              actorType: "provider",
-              actorId: transactionId,
-              action: "PAYMENT_ORDER_STATE_CONFLICT",
-              entityType: "commerce_order",
-              entityId: intent.commerceOrderId,
-              afterJson: {
-                paymentNo,
-                paidCents,
-                reconciliationRequired: true,
-                message:
-                  "款项已确认，订单状态不允许自动履约；未重新预占库存或推送ERP",
-              },
-            },
-          });
+        const paidOrder = await completeCommercePayment(tx, intent.commerceOrderId);
+        if (!paidOrder) {
+          await tx.auditLog.create({ data: { actorType: "provider", actorId: transactionId, action: "PAYMENT_ORDER_STATE_CONFLICT",
+            entityType: "commerce_order", entityId: intent.commerceOrderId,
+            afterJson: { paymentNo, paidCents, reconciliationRequired: true, message: "款项已确认，订单状态不允许自动履约" } } });
           return;
         }
-        await deductCommercePaymentStock(tx, intent.commerceOrderId);
-        await onCommerceOrderPaid(tx, intent.commerceOrderId);
-        const erpItems = await tx.commerceOrderItem.count({
-          where: {
-            orderId: intent.commerceOrderId,
-            product: { source: "ERP" },
-          },
-        });
-        if (erpItems) {
-          await tx.commerceIntegrationJob.upsert({
-            where: {
-              idempotencyKey: `jushuitan-order:${intent.commerceOrderId}`,
-            },
-            create: {
-              type: "JUSHUITAN_ORDER_PUSH",
-              idempotencyKey: `jushuitan-order:${intent.commerceOrderId}`,
-              aggregateType: "commerce_order",
-              aggregateId: intent.commerceOrderId,
-              payload: { orderId: intent.commerceOrderId },
-            },
-            update: {},
-          });
-        }
+      }
+      if (intent.businessType === BusinessType.PARTNER_RECHARGE) {
+        if (!intent.partnerId || !intent.partnerRechargeId) throw new ConflictException("品牌伙伴充值归属不正确");
+        const recharge = await tx.partnerRecharge.findUniqueOrThrow({ where: { id: intent.partnerRechargeId } });
+        if (recharge.partnerId !== intent.partnerId || recharge.amountCents !== paidCents || recharge.channel !== intent.channel || recharge.id !== intent.businessId)
+          throw new ConflictException("充值记录与支付凭证不匹配");
+        await postPartnerLedger(tx, { partnerId: intent.partnerId, account: "BALANCE", type: "RECHARGE", deltaCents: paidCents,
+          idempotencyKey: `partner-recharge:${recharge.id}`, referenceId: recharge.id, reason: `在线充值 ${recharge.rechargeNo}` });
+        await tx.partnerRecharge.update({ where: { id: recharge.id }, data: { status: PaymentStatus.SUCCEEDED, creditedAt: new Date() } });
       }
       if (
         intent.businessType === BusinessType.HEALTH_REPORT &&
@@ -1359,7 +1398,7 @@ export class BillingService {
       ) {
         await this.grantAndConsumeSingleReport(
           tx,
-          intent.userId,
+          intent.userId!,
           intent.id,
           intent.healthReportId,
         );
@@ -1370,7 +1409,7 @@ export class BillingService {
       ) {
         await this.activateMembership(
           tx,
-          intent.userId,
+          intent.userId!,
           intent.healthMembershipId,
           intent.id,
         );
@@ -1545,16 +1584,32 @@ export class BillingService {
         amountCents,
         providerRefundId,
       );
+      await this.completeRefundSettlement(tx, current, providerRefundId, payload);
+    });
+  }
+
+  // Only trusted local balance settlement or an already verified provider result calls this core.
+  private async completeRefundSettlement(
+    tx: Prisma.TransactionClient,
+    refund: Prisma.PaymentRefundGetPayload<{ include: { paymentIntent: true } }>,
+    providerRefundId: string | null,
+    payload: Record<string, unknown> | null,
+  ) {
       const completed = await tx.paymentRefund.updateMany({
         where: { id: refund.id, completedAt: null },
         data: {
           status: RefundStatus.SUCCEEDED,
           providerRefundId,
-          providerPayload: payload as Prisma.InputJsonValue,
+          ...(payload ? { providerPayload: payload as Prisma.InputJsonValue } : {}),
           completedAt: new Date(),
         },
       });
       if (!completed.count) return;
+      if (refund.paymentIntent.channel === PaymentChannel.PARTNER_BALANCE) {
+        if (!refund.paymentIntent.partnerId || !refund.paymentIntent.commerceOrderId) throw new ConflictException("余额退款归属不正确");
+        await postPartnerLedger(tx, { partnerId: refund.paymentIntent.partnerId, account: "BALANCE", type: "REFUND", deltaCents: refund.amountCents,
+          idempotencyKey: `partner-refund:${refund.id}`, referenceId: refund.id, reason: `采购退款 ${refund.refundNo}` });
+      }
       const totals = await tx.paymentRefund.aggregate({
         where: {
           paymentIntentId: refund.paymentIntentId,
@@ -1606,14 +1661,14 @@ export class BillingService {
       }
       if (refund.paymentIntent.healthReportId) {
         const balance = await tx.reportCreditLedger.aggregate({
-          where: { userId: refund.paymentIntent.userId, membershipId: null },
+          where: { userId: refund.paymentIntent.userId!, membershipId: null },
           _sum: { delta: true },
         });
         const available = Math.max(0, balance._sum.delta ?? 0);
         await tx.reportCreditLedger.upsert({
           where: { idempotencyKey: `refund-revoke:${refund.id}` },
           create: {
-            userId: refund.paymentIntent.userId,
+            userId: refund.paymentIntent.userId!,
             type: CreditLedgerType.REFUND_REVOKE,
             delta: available > 0 ? -1 : 0,
             balanceAfter: Math.max(0, available - 1),
@@ -1655,7 +1710,7 @@ export class BillingService {
           await tx.reportCreditLedger.upsert({
             where: { idempotencyKey: `refund-revoke:${refund.id}` },
             create: {
-              userId: refund.paymentIntent.userId,
+              userId: refund.paymentIntent.userId!,
               type: CreditLedgerType.REFUND_REVOKE,
               delta: -membership.remainingCredits,
               balanceAfter: 0,
@@ -1676,7 +1731,6 @@ export class BillingService {
           });
         }
       }
-    });
   }
 
   // Caller holds the order -> payment locks; never recompute outside this transaction.

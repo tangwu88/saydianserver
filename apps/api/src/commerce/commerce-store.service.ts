@@ -526,7 +526,7 @@ export class CommerceStoreService {
       include: { items: true as const },
     };
     const checkRequest = (order: {
-      userId: string;
+      userId: string | null;
       requestHash: string | null;
     }) => {
       if (order.userId !== userId)

@@ -1,3 +1,4 @@
+import { partnerRegistrationData, auditPartnerRegistration } from "../partners/partner-registration";
 import { Injectable } from "@nestjs/common";
 import { Prisma, UserStatus } from "@prisma/client";
 import { compare, hash } from "bcryptjs";
@@ -41,6 +42,7 @@ type Ticket = {
   openId: string;
   unionId: string | null;
   referralCode: string | null;
+  partnerCode?: string | null;
   expiresAt: Date;
   consumedAt: Date | null;
   returnTo: string;
@@ -444,6 +446,7 @@ export class GlobalWechatBindingService {
             : await tx.user.create({
                 data: {
                   ...where,
+                  ...(await partnerRegistrationData(tx, body.continueWithoutPartner === true ? null : ticket.partnerCode, body.partnerNoticeVersion)),
                   ...verified,
                   passwordHash,
                   nickname: profile.nickname || nickname || "Saydian user",
@@ -453,6 +456,7 @@ export class GlobalWechatBindingService {
                   locale: globalLocale(body.locale ?? challenge.locale),
                 },
               });
+          if (!user) await auditPartnerRegistration(tx, saved);
           await this.attach(tx, ticket, saved.id);
           await recordConsent(tx, saved.id, legal);
           await recordSayRingMinimumAgeConsent(
@@ -718,6 +722,8 @@ export class GlobalWechatBindingService {
             mobile: identity.identifier,
             ...(!temporary ? { mobileVerifiedAt: new Date() } : {}),
           };
+          if (!user && temporary && ticket.partnerCode && body.continueWithoutPartner !== true)
+            throw globalError(409, "partner_verification_required", "品牌伙伴注册需要真实短信验证，请选择短信或邮箱验证码注册。");
           const saved = user
             ? await tx.user.update({
                 where: { id: user.id },
@@ -726,6 +732,7 @@ export class GlobalWechatBindingService {
             : await tx.user.create({
                 data: {
                   ...data,
+                  ...(await partnerRegistrationData(tx, body.continueWithoutPartner === true ? null : ticket.partnerCode, body.partnerNoticeVersion)),
                   passwordHash: null,
                   nickname: profile.nickname || "Saydian user",
                   ...(profile.avatarUrl
@@ -734,6 +741,7 @@ export class GlobalWechatBindingService {
                   locale: globalLocale(body.locale ?? challenge.locale),
                 },
               });
+          if (!user) await auditPartnerRegistration(tx, saved);
           await this.attach(tx, ticket, saved.id);
           await recordConsent(tx, saved.id, legal);
           await recordSayRingMinimumAgeConsent(

@@ -581,7 +581,7 @@ export class SupportService implements OnModuleInit {
       where: { id: saleId, evidenceImages: { has: `file:${fileId}` } },
       select: { order: { select: { userId: true } } },
     });
-    if (!sale) throw new NotFoundException("售后图片不存在");
+    if (!sale?.order.userId) throw new NotFoundException("售后图片不存在");
     const file = await this.commerceEvidence(sale.order.userId, fileId);
     await this.prisma.auditLog.create({
       data: {

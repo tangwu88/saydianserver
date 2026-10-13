@@ -63,14 +63,23 @@ public_checks() {
     jq -c '{status,revision}' <<< "$response" >&2 2>/dev/null || true
     return 1
   fi
-  for path in /admin/ /down /down/ /down/legacy /down/legacy/ /global/down /global/down/ /down2 /down2/ /say-ring /say-ring/privacy /say-ring/terms /saidian-mall/ /global/saidian-mall/; do
+  for path in /admin/ /vip/ /vip/login /down /down/ /down/legacy /down/legacy/ /global/down /global/down/ /down2 /down2/ /say-ring /say-ring/privacy /say-ring/terms /saidian-mall/ /global/saidian-mall/; do
     curl --fail --silent --show-error --max-time 30 "https://app.saydian.cn$path" > "$source_dir/page.html"
     grep -qi '<html' "$source_dir/page.html" || { echo "Expected HTML: $path" >&2; return 1; }
     case "$path" in
+      /vip/|/vip/login) grep -q '赛电品牌伙伴平台' "$source_dir/page.html" || return 1 ;;
       /say-ring/privacy) grep -q 'Say Ring 隐私政策' "$source_dir/page.html" || return 1 ;;
       /say-ring/terms) grep -q 'Say Ring 用户协议' "$source_dir/page.html" || return 1 ;;
     esac
   done
+  # Query the new tables using the unchanged runtime database role without
+  # creating an account, reading member data or generating a money transaction.
+  local code
+  code=$(curl --silent --show-error --max-time 15 --output "$source_dir/partner-probe.json" --write-out '%{http_code}' "https://app.saydian.cn/api/saydian-app/vip/v1/public/promotion/deployment-check-never-a-partner")
+  [[ "$code" == 404 ]] || return 1
+  grep -q '品牌伙伴推广链接已失效' "$source_dir/partner-probe.json" || return 1
+  code=$(curl --silent --show-error --max-time 15 --output "$source_dir/partner-auth-probe.json" --write-out '%{http_code}' "https://app.saydian.cn/api/saydian-app/vip/v1/wallet")
+  [[ "$code" == 401 ]] || return 1
 }
 node_tool /release/scripts/release-manifest.mjs verify "$revision" /release/release-manifest.json
 base_compose="$state_dir/compose.json"
@@ -102,7 +111,8 @@ else
   cp "$state_dir/accepted.json" "$source_dir/preflight.json"
 fi
 sql "$database" <<< 'SELECT coalesce(json_agg(t), '\''[]'\''::json) FROM (SELECT migration_name,checksum,finished_at,rolled_back_at FROM "_prisma_migrations") t;' > "$source_dir/history.json"
-node_tool /release/scripts/unified-preflight.mjs "$revision" /release/release-manifest.json /work/history.json /work/preflight.json /state "$([[ "$first" == true ]] && echo first-cutover || echo routine)"
+node_tool /release/scripts/unified-preflight.mjs "$revision" /release/release-manifest.json /work/history.json /work/preflight.json /state "$([[ "$first" == true ]] && echo first-cutover || echo routine)" > "$source_dir/preflight-result.json"
+cat "$source_dir/preflight-result.json"
 mode=compose
 [[ ! -f "$source_dir/deploy/.offline-images" ]] || mode=compose-offline
 node_tool /release/scripts/release-manifest.mjs "$mode" "$revision" /release/release-manifest.json > "$source_dir/images.json"
@@ -235,7 +245,14 @@ if [[ "$first" == true ]]; then
   node_tool /release/scripts/import-missing-settings.mjs /work/domestic-settings.json /work/target-settings.json /work/settings-import
   cp "$source_dir/settings-import.audit.json" "$backup/settings-import.audit.json"
 else
-  docker exec "$database" sh -ec 'pg_dump -Fc --no-owner --no-privileges -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$backup/database.dump"
+  if jq -e '.pending | length > 0' "$source_dir/preflight-result.json" > /dev/null; then
+    # Reviewed schema changes require a current consistent backup whose isolated
+    # restore preserves all rows. The source database and live switches stay intact.
+    bash "$source_dir/deploy/scripts/backup-restore.sh" "$database" "$backup/migration-rehearsal"
+    cp "$backup/migration-rehearsal/database.dump" "$backup/database.dump"
+  else
+    docker exec "$database" sh -ec 'pg_dump -Fc --no-owner --no-privileges -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$backup/database.dump"
+  fi
   test -s "$backup/database.dump"
   sha256sum "$backup/database.dump" > "$backup/database.dump.sha256"
   docker exec -i "$database" pg_restore --list < "$backup/database.dump" > /dev/null

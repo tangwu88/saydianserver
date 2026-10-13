@@ -14,6 +14,7 @@ export interface RequestWithContext extends Request {
   requestId: string;
   authUser?: AuthenticatedUser;
   authEmployee?: AuthenticatedEmployee;
+  authPartner?: { id: string; sessionId: string };
   authAdmin?: {
     id: string;
     role: string;
@@ -46,5 +47,13 @@ export const CurrentEmployee = createParamDecorator(
     const request = context.switchToHttp().getRequest<RequestWithContext>();
     if (!request.authEmployee) throw new Error("Authenticated employee is missing");
     return request.authEmployee;
+  },
+);
+
+export const CurrentPartner = createParamDecorator(
+  (_data: unknown, context: ExecutionContext): NonNullable<RequestWithContext["authPartner"]> => {
+    const partner = context.switchToHttp().getRequest<RequestWithContext>().authPartner;
+    if (!partner) throw new Error("Authenticated brand partner is missing");
+    return partner;
   },
 );

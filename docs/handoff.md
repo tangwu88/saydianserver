@@ -13,6 +13,12 @@
 
 日常操作、兼容迁移审核与恢复写入后的回退边界，以[统一生产手册](unified-production.md)为准；故障、修复和上线证据见[实施记录](implementation-log/2026-10-02-unified-build-once.md)。更新前运行 `tools/Start-Change.ps1`，全量验证后显式提交，不覆盖脏工作区。
 
+## 品牌伙伴平台候选实现（2026-10-13，本地验收）
+
+`codex/brand-partner-platform` 完成 **赛电品牌伙伴平台 `/vip/`**：独立伙伴账户与会话、一级/二级/三级分销价、H5 新会员归属、所属会员健康与设备只读、余额采购、充值及独立保证金账本。原会员推广佣金、积分与旧财务投影保持独立。总后台新增伙伴管理及会员归属列。
+
+完整说明见 [品牌伙伴平台](brand-partner-platform.md)，命令、失败修复、实库资金并发与浏览器回执见 [实施记录](implementation-log/2026-10-13-brand-partner-platform.md)。两个新增迁移先提交枚举再扩表；伙伴资金账本不可改写，交易主体恰为会员或伙伴之一。本地支付/ERP合成回执不代表真实供应商验收。用户随后要求发布，兼容SQL完成独立升级/回滚审查并登记摘要，生产执行增加当前库备份恢复门禁；实际上线状态见[生产发布记录](implementation-log/2026-10-13-brand-partner-production-release.md)，保持原维护状态，真实渠道另验。
+
 ## 产品下载入口（2026-10-04，功能发布已验收）
 
 本轮将 `/down` 与 `/global/down` 统一为 Health 页面，三平台只读取 `product=saydian-global` 对应的 `global_app_update`，不把原赛电 HAP 展示为 Health。`/down/legacy` 保留原赛电页面与 `app_update`；`/say-ring` 继续使用独立配置。旧 API、安装包文件地址及原文件不变，三个产品可从页首切换。

@@ -1,3 +1,4 @@
+import { adminDeviceIdentifier, legacyNativeDeviceKey } from "../common/device-identity";
 import { deductCommercePaymentStock } from "../commerce/commerce-payment-stock";
 import {
   BadRequestException,
@@ -98,6 +99,7 @@ const adminOrderPaymentSelect = {
 
 const adminOrderDetailInclude = {
   user: { select: { id: true, nickname: true, mobile: true } },
+  partner: { select: { id: true, partnerNo: true, name: true, level: { select: { name: true } } } },
   referralEmployee: { select: { id: true, name: true, referralCode: true } },
   items: true,
   shipments: { include: { items: true } },
@@ -156,22 +158,6 @@ const adminDeviceSelect = {
 type AdminDeviceRow = Prisma.DeviceBindingGetPayload<{
   select: typeof adminDeviceSelect;
 }>;
-
-function adminDeviceIdentifier(hardwareKey: string) {
-  const shortKey = hardwareKey.slice(0, 16).toUpperCase();
-  return `DEV-${shortKey.slice(0, 8)}-${shortKey.slice(8)}`;
-}
-
-function legacyNativeDeviceKey(userId: string, hardwareKey: string, rawPayload: string): string | null {
-  for (const field of ["deviceId", "hardwareId"]) {
-    // Escaped/ambiguous identifiers are not interpreted as legacy aliases.
-    const reportedId = rawPayload.match(new RegExp(`(?:^| \\| )${field}=([^\\\\|]*?)(?= \\| |$)`))?.[1]?.trim();
-    if (!reportedId || sha256(`${userId}:${reportedId}`) !== hardwareKey) continue;
-    const nativeId = reportedId.match(/^(?:veepoo|yucheng|urion):(.+)$/)?.[1];
-    if (nativeId) return sha256(`${userId}:${nativeId}`);
-  }
-  return null;
-}
 
 function auditedRawHealthReason(current: { role: string; roles?: string[] }, reason: string) {
   const roles = current.roles?.length ? current.roles : [current.role];
@@ -320,6 +306,8 @@ export class AdminService {
       paidCents,
       reports,
       paymentFailures,
+      partnerRechargeCents,
+      commerceTurnoverCents,
     ] = await this.prisma.$transaction([
       this.prisma.user.count({ where: { status: "ACTIVE" } }),
       this.prisma.healthRecord.count(),
@@ -334,13 +322,15 @@ export class AdminService {
       this.prisma.commerceProduct.count({ where: { localArchived: false } }),
       this.prisma.commerceOrder.count(),
       this.prisma.paymentIntent.aggregate({
-        where: { status: PaymentStatus.SUCCEEDED },
+        where: { status: PaymentStatus.SUCCEEDED, channel: { not: PaymentChannel.PARTNER_BALANCE } },
         _sum: { amountCents: true },
       }),
       this.prisma.healthReport.count(),
       this.prisma.paymentIntent.count({
         where: { status: PaymentStatus.FAILED },
       }),
+      this.prisma.paymentIntent.aggregate({ where: { businessType: BusinessType.PARTNER_RECHARGE, status: PaymentStatus.SUCCEEDED }, _sum: { amountCents: true } }),
+      this.prisma.commerceOrder.aggregate({ where: { paidAt: { not: null } }, _sum: { payableCents: true } }),
     ]);
     return {
       members,
@@ -354,10 +344,14 @@ export class AdminService {
       paidCents: paidCents._sum.amountCents ?? 0,
       healthReports: reports,
       paymentFailures,
+      partnerRechargeCents: partnerRechargeCents._sum.amountCents ?? 0,
+      commerceTurnoverCents: commerceTurnoverCents._sum.payableCents ?? 0,
     };
   }
 
-  async members(search = "", pageInput = 1, pageSizeInput = 30) {
+  async members(search = "", pageInput = 1, pageSizeInput = 30, partnerIdInput = "") {
+    const partnerId = partnerIdInput.trim();
+    if (partnerId && partnerId !== "none" && !isUuid(partnerId)) throw new BadRequestException("品牌伙伴筛选不正确");
     search = search.trim();
     const page = Math.min(
       Math.max(Math.trunc(Number(pageInput)) || 1, 1),
@@ -381,7 +375,7 @@ export class AdminService {
       .map((item) => /^member:([0-9a-f-]{36})$/i.exec(item.wecomUserId)?.[1])
       .filter((id): id is string => Boolean(id));
     const promotionEmployeeIds = promotionMatches.map((item) => item.id);
-    const where = search
+    const searchWhere = search
       ? {
           OR: [
             { nickname: { contains: search, mode: "insensitive" as const } },
@@ -398,6 +392,7 @@ export class AdminService {
           ],
         }
       : {};
+    const where = { ...searchWhere, ...(partnerId ? { partnerId: partnerId === "none" ? null : partnerId } : {}) };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         where,
@@ -405,6 +400,7 @@ export class AdminService {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
+          partner: { select: { id: true, partnerNo: true, name: true } },
           _count: { select: { healthRecords: true, devices: true } },
           referralEmployee: {
             select: {
@@ -446,6 +442,8 @@ export class AdminService {
         avatarUrl: item.avatarUrl,
         promotionCode: promotionByUserId.get(item.id)?.referralCode ?? null,
         promotionActive: promotionByUserId.get(item.id)?.active ?? null,
+        partnerId: item.partnerId,
+        partner: item.partner,
         referralEmployeeId: item.referralEmployeeId,
         referralEmployee: item.referralEmployee,
         referrerProfile: item.referralEmployee,
@@ -2495,7 +2493,7 @@ export class AdminService {
         ).includes(AdminRole.SUPER_ADMIN)
           ? order.recipientMobile
           : maskMobile(order.recipientMobile),
-        user: { ...order.user, mobile: maskMobile(order.user.mobile) },
+        user: order.user ? { ...order.user, mobile: maskMobile(order.user.mobile) } : null,
       })),
       total,
       page,
@@ -2588,6 +2586,7 @@ export class AdminService {
         });
         if (!order) throw new NotFoundException("订单不存在");
         requireCommerceOwner(order.executionOwner);
+        if (!order.userId || order.partnerId) throw new ConflictException("品牌伙伴采购仅支持余额结算，不能登记会员线下付款");
         const previousRequest = await tx.idempotencyRecord.findUnique({
           where: {
             userId_scope_key: {
@@ -2856,6 +2855,7 @@ export class AdminService {
           include: { items: true },
         });
         if (!order) throw new NotFoundException("订单不存在");
+        if (!order.userId || order.partnerId) throw new ConflictException("品牌伙伴采购已使用余额付款，请通过售后流程退款");
         const previousRequest = await tx.idempotencyRecord.findUnique({
           where: {
             userId_scope_key: {

@@ -36,3 +36,10 @@ test("reuse keeps digest-pinned files and rejects wrong fingerprint, repository,
   assert.throws(() => reuseDockerfile("api", { ...image, Id: `sha256:${"e".repeat(64)}` }, hash, revision));
   assert.throws(() => reuseDockerfile("api", image, hash, "latest"));
 });
+
+test("brand partner frontend invalidates its static image and keeps backend caches", () => {
+  const changed = [...entries, ["apps/vip-web/src/views/Products.vue", Buffer.from("vip")]];
+  assert.notEqual(inputHash("admin", entries), inputHash("admin", changed));
+  assert.equal(inputHash("api", entries), inputHash("api", changed));
+  assert.equal(inputHash("worker", entries), inputHash("worker", changed));
+});

@@ -33,6 +33,19 @@ export function unifyGateway(source) {
 
   location /admin/ {`);
     }
+    // The partner SPA is served by the same immutable static image as /admin/.
+    const vipMarker = "  location /vip/ {";
+    if (!block.includes(vipMarker)) {
+      block = block.replace("  location /admin/ {", `  location = /vip { return 308 /vip/; }
+  location /vip/ {
+    proxy_pass http://global-admin:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+  }
+
+  location /admin/ {`);
+    }
+    assert(block.split(vipMarker).length === 2, "Expected exactly one brand partner route");
     // Reconcile Say Ring's existing public routes without changing its documents.
     if (!block.includes("location = /say-ring/privacy")) {
       const marker = "  location /saidian-mall/ {";

@@ -25,6 +25,8 @@
         >
         <text v-if="codeNote || (bindTicket && temporaryPhoneCode)" class="muted code-note">{{ codeNote || "填写6位验证码后继续。" }}</text>
         <text v-if="!loading && !verificationEnabled" class="muted code-note">当前方式暂时无法获取验证码，请选择其他方式或稍后再试。</text>
+        <view v-if="partnerReferral && !continueWithoutPartner" class="partner-notice"><b>品牌伙伴：{{ partnerReferral.name }}</b><text>{{ partnerReferral.notice }}</text></view>
+        <view v-if="partnerError" class="partner-notice"><text>{{ partnerError }}</text><button class="text-button" :disabled="busy" @click="ordinaryRegistration">继续普通注册</button></view>
         <view class="agreement"
           ><checkbox-group @change="accepted = !!$event.detail.value.length"
             ><label><checkbox value="yes" :checked="accepted" :disabled="busy || !legalReady" color="#d20b27" />我已阅读并同意</label></checkbox-group
@@ -46,6 +48,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { clearPartnerReferral, attemptedPartnerCode, currentPartnerReferral, loadPartnerReferral, type PartnerReferral } from "../partner-referral";
 import DesktopHeader from "./DesktopHeader.vue";
 import BrandIdentity from "./BrandIdentity.vue";
 import CountryCallingCodePicker from "./CountryCallingCodePicker.vue";
@@ -59,6 +62,7 @@ import { loadGlobalLegal, legalPlainText, type GlobalLegalDocument } from "../gl
 import { authErrorMessage, authUiError } from "../friendly-auth";
 import { claimPurchaseReferral, currentPurchaseReferral } from "../session";
 type DocumentType = "userAgreement" | "privacyPolicy";
+const partnerReferral = ref<PartnerReferral | null>(currentPartnerReferral()), partnerError = ref(""), continueWithoutPartner = ref(false);
 const capabilities = ref<any>(),
   documents = ref<Partial<Record<DocumentType, GlobalLegalDocument>>>({});
 const identifier = ref(""),
@@ -122,6 +126,8 @@ async function initialize(handleCallback: boolean) {
   const callback = handleCallback ? takeGlobalOAuthCallback() : null;
   try {
     await loadCapabilities();
+    try { partnerReferral.value = await loadPartnerReferral(); partnerError.value = ""; }
+    catch (cause) { partnerError.value = cause instanceof Error ? cause.message : "品牌伙伴推广链接暂不可用"; }
     if (!active) return;
     if (callback?.error) throw authUiError(callback.error);
     if (!callback?.code || !callback.context) return;
@@ -271,7 +277,7 @@ async function login() {
       if (!loginChannelEnabled.value) throw authUiError("当前方式暂时无法登录，请选择其他方式或稍后再试。");
       response = await api("/auth/code/login", {
         method: "POST",
-        data: { channel: contactMode.value, identifier: recipient, challengeId: pending.id, code: code.value, consentVersion: consent.value.version, locale: consent.value.locale, referralCode: currentPurchaseReferral() },
+        data: { channel: contactMode.value, identifier: recipient, challengeId: pending.id, code: code.value, consentVersion: consent.value.version, locale: consent.value.locale, referralCode: currentPurchaseReferral(), partnerNoticeVersion: partnerReferral.value && !continueWithoutPartner.value ? "partner-service-v1" : null, partnerCode: continueWithoutPartner.value ? null : attemptedPartnerCode() },
       });
     } else {
       requireBinding();
@@ -284,6 +290,8 @@ async function login() {
           consentVersion: consent.value.version,
           locale: consent.value.locale,
           wechatProfileProof: wechatProfileProof.value,
+          continueWithoutPartner: continueWithoutPartner.value,
+          partnerNoticeVersion: partnerReferral.value && !continueWithoutPartner.value ? "partner-service-v1" : null,
         },
       });
     }
@@ -316,6 +324,7 @@ async function officialLogin() {
         consentVersion: agreed.version,
         locale: agreed.locale,
         referralCode: currentPurchaseReferral(),
+        partnerNoticeVersion: partnerReferral.value && !continueWithoutPartner.value ? "partner-service-v1" : null, partnerCode: continueWithoutPartner.value ? null : attemptedPartnerCode(),
       },
     });
     if (!active) return;
@@ -346,6 +355,8 @@ async function save(response: any) {
   await saveMallSession(response);
   if (!active) return;
   if (response?.user?.id) claimPurchaseReferral(String(response.user.id));
+  clearPartnerReferral();
+  partnerReferral.value = null;
   const target = safeMallRoute(response.returnTo || mallStorage.get("saidian-post-login-route"));
   mallStorage.remove("saidian-post-login-route");
   sessionStorage.removeItem(OAUTH_CONTEXT_KEY);
@@ -364,6 +375,7 @@ async function showError(cause: unknown) {
   if (!active) return;
   const key = (cause as any)?.errorKey;
   const message = authErrorMessage(cause);
+  if (["partner_unavailable", "partner_notice_required"].includes(key)) partnerError.value = "品牌伙伴推广链接已失效，您可以选择普通注册。";
   if (["consent_outdated", "consent_required", "legal_unavailable"].includes(key)) {
     cancelBinding();
     accepted.value = false;
@@ -375,6 +387,7 @@ async function showError(cause: unknown) {
   }
   if (active) error.value = message;
 }
+function ordinaryRegistration() { clearPartnerReferral(); partnerReferral.value = null; partnerError.value = ""; continueWithoutPartner.value = true; }
 function cancelBinding() {
   bindTicket.value = "";
   wechatProfileProof.value = "";
@@ -394,6 +407,8 @@ function browse() {
 @import "../global-ui.scss";
 </style>
 <style scoped>
+.partner-notice { display: block; margin: 16px 0; padding: 14px; border: 1px solid #ead6dc; background: #fff8fa; border-radius: 10px; font-size: 12px; line-height: 1.8; color: #8c5563; }
+.partner-notice b, .partner-notice text { display: block; }
 .phone-fields {
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr);

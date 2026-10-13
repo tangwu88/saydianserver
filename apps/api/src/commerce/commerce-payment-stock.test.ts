@@ -25,6 +25,7 @@ function fixture(deferred = ["item"], stock = 1) {
   };
   const order: any = {
     id: "order",
+    userId: "member",
     status: "PENDING_PAYMENT",
     executionOwner: "NEW_SYSTEM",
     version: 1,

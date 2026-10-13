@@ -356,7 +356,7 @@
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "运营概览",
       "request": "无请求体",
-      "response": "会员/健康/关爱/预警/反馈/积压数量",
+      "response": "会员/健康/关爱/预警/反馈/积压数量；外部收款排除PARTNER_BALANCE，伙伴充值与商城成交额独立统计",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -394,12 +394,18 @@
           "name": "pageSize",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "partnerId",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "会员查询",
-      "request": "search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；国际后台直接查询国际新库",
+      "request": "search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；partnerId可筛选伙伴UUID，none筛选未归属会员；统一账号库",
       "response": "{items,total,page,pageSize}；已登录后台返回数字memberNo、完整手机号、头像、推广上级及积分余额，国际版另含emailMasked；使用对应服务的管理员会话与角色权限",
       "dependency": "核心服务",
       "successStatus": 200,
@@ -7180,7 +7186,7 @@
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "公众号网页授权地址",
-      "request": "{returnTo,codeChallenge:SHA256十六进制,referralCode?,consentVersion?,locale?}；国际版校验当前协议",
+      "request": "{returnTo,codeChallenge:SHA256十六进制,referralCode?,partnerCode?,partnerNoticeVersion?,consentVersion?,locale?}；国际版校验当前协议",
       "response": "{authorizeUrl,state,expiresIn}；一次状态与固定同源回调",
       "dependency": "独立公众号配置；国际H5开关；不复用小程序身份",
       "successStatus": 201,
@@ -9754,7 +9760,7 @@
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/commerce/commerce-compat.controller.ts",
       "summary": "商城手机号或邮箱验证码登录",
-      "request": "{channel:sms|email,identifier,code,challengeId?,consentVersion,locale?,product?,ageConfirmed?,referralCode?}；国际 Say Ring 新会员必须product=say-ring且ageConfirmed=true，不收集出生日期",
+      "request": "{channel:sms|email,identifier,code,challengeId?,consentVersion,locale?,product?,ageConfirmed?,referralCode?,partnerCode?,partnerNoticeVersion?}；伙伴码只在新会员创建事务绑定，已有会员登录不变更；国际 Say Ring 新会员必须product=say-ring且ageConfirmed=true，不收集出生日期",
       "response": "验证成功后返回商城raw会话；账号不存在时自动建立无密码会员；Say Ring缺少年龄确认返回400 minimum_age_confirmation_required",
       "dependency": "验证码一次消费；停用账号拒绝；国内手机号使用sms记录，邮箱和国际手机号使用challengeId",
       "successStatus": 201,
@@ -24266,6 +24272,2232 @@
         "responseExample": null,
         "contentType": "application/json",
         "source": "apps/api/src/notifications/notifications.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.list",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partners",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "search",
+          "type": "unknown",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "总后台品牌伙伴列表",
+      "request": "search?、page?",
+      "response": "伙伴资料、等级、钱包及会员/订单数量；不返回密码或会话",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.create",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partners",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "开通品牌伙伴账户",
+      "request": "{username,name,mobile?,password,levelId}；密码10至128字符",
+      "response": "新伙伴及零余额/零保证金钱包；事务内留审计",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "username": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+            },
+            "name": {
+              "type": "string"
+            },
+            "mobile": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 128
+            },
+            "levelId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "username",
+            "name",
+            "password",
+            "levelId"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "partnerNo": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "levelId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "wallet": {}
+          },
+          "required": [
+            "id",
+            "partnerNo",
+            "username",
+            "name",
+            "levelId",
+            "wallet"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.update",
+      "method": "PATCH",
+      "path": "/api/saydian-app/admin/v1/partners/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "编辑或停用品牌伙伴",
+      "request": "{updatedAt,name?,mobile?,levelId?,active?}；CAS防覆盖",
+      "response": "更新后伙伴；停用立即吊销全部伙伴会话",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "updatedAt": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "mobile": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "levelId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "active": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "updatedAt"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "updatedAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "updatedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.resetPassword",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partners/:id/reset-password",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "重置品牌伙伴密码",
+      "request": "{password}；密码10至128字符",
+      "response": "{changed:true}；全部旧会话失效，审计不记录密码",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.promotion",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partners/:id/promotion",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "查看品牌伙伴推广素材",
+      "request": "id为伙伴UUID",
+      "response": "H5链接和专属二维码",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.assignment",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partners/members/:id/assignment",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "调整会员品牌伙伴归属",
+      "request": "会员id；{partnerId:UUID|null,expectedPartnerId:UUID|null,reason}",
+      "response": "{userId,partnerId}；即时更改资料访问归属，历史交易不变；事务内审计",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "partnerId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expectedPartnerId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
+          "required": [
+            "partnerId",
+            "expectedPartnerId",
+            "reason"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "partnerId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "userId",
+            "partnerId"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.levels",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-levels",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "分销等级列表",
+      "request": "无请求体",
+      "response": "一级/二级/三级默认等级及新增等级",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.createLevel",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partner-levels",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "新增分销价格等级",
+      "request": "{name,sort?,active?}",
+      "response": "等级记录；不创建上下级分佣关系",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.updateLevel",
+      "method": "PATCH",
+      "path": "/api/saydian-app/admin/v1/partner-levels/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "编辑分销等级",
+      "request": "{name,sort?,active?,updatedAt}",
+      "response": "CAS更新等级；停用等级暂停新采购",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.prices",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-prices",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "levelId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "search",
+          "type": "unknown",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "查询等级SKU分销价",
+      "request": "levelId、search?、page?",
+      "response": "商品SKU零售价及指定等级分销价",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.savePrice",
+      "method": "PATCH",
+      "path": "/api/saydian-app/admin/v1/partner-prices/:levelId/:skuId",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "levelId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "skuId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "设置等级SKU分销价",
+      "request": "levelId、skuId；{priceCents,enabled?,updatedAt:旧时间|null}",
+      "response": "CAS更新价格；缺价不回退零售价，不追改订单",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "priceCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "updatedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "priceCents",
+            "updatedAt"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "levelId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "skuId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "priceCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "updatedAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "levelId",
+            "skuId",
+            "priceCents",
+            "enabled",
+            "updatedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.wallet",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-finance/:id/wallet",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "查询品牌伙伴资金账户",
+      "request": "id为伙伴UUID",
+      "response": "独立消费余额和保证金，整数分",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.ledger",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-finance/:id/ledger",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "account",
+          "type": "unknown",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "查询品牌伙伴资金账本",
+      "request": "id为伙伴UUID、account?、page?",
+      "response": "不可变资金明细",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.recharges",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-finance/:id/recharges",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "查询品牌伙伴充值记录",
+      "request": "id为伙伴UUID、page?",
+      "response": "充值状态与入账时间",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.deposit",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partner-finance/:id/deposit",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "FINANCE"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "登记品牌伙伴保证金",
+      "request": "id为伙伴UUID；{type:DEPOSIT_RECEIPT|DEPOSIT_RETURN|DEPOSIT_CORRECTION,deltaCents,reason,idempotencyKey}",
+      "response": "独立保证金流水；不得透支或增加消费余额；事务内审计",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "DEPOSIT_RECEIPT",
+                "DEPOSIT_RETURN",
+                "DEPOSIT_CORRECTION"
+              ]
+            },
+            "deltaCents": {
+              "type": "integer",
+              "minimum": -2147483647,
+              "maximum": 2147483647,
+              "not": {
+                "const": 0
+              }
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 90,
+              "pattern": "^[A-Za-z0-9:_-]+$"
+            }
+          },
+          "required": [
+            "type",
+            "deltaCents",
+            "reason",
+            "idempotencyKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account": {
+              "const": "DEPOSIT"
+            },
+            "deltaCents": {
+              "type": "integer"
+            },
+            "balanceAfterCents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "id",
+            "account",
+            "deltaCents",
+            "balanceAfterCents"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerPublicController.login",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/auth/login",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴登录",
+      "request": "{username,password}；每IP每分钟10次；独立伙伴会话",
+      "response": "{token,expiresAt,user}；停用或改密后旧会话失效",
+      "dependency": "品牌伙伴已开通",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "username": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "username",
+            "password"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "user": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "partnerNo": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "token",
+            "expiresAt",
+            "user"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerPublicController.promotion",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/public/promotion/:code",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "code",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "验证品牌伙伴推广来源",
+      "request": "code为伙伴推广码；公开只读",
+      "response": "{name,partnerCode,noticeVersion,notice}；失效返回404",
+      "dependency": "品牌伙伴启用",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.me",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/auth/me",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "当前品牌伙伴账户",
+      "request": "本人伙伴会话",
+      "response": "账号、等级与资金账户；不返回密码哈希",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.logout",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/auth/logout",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "退出品牌伙伴平台",
+      "request": "本人伙伴会话",
+      "response": "{loggedOut:true}；吊销当前会话",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.dashboard",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/dashboard",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴平台概览",
+      "request": "本人伙伴会话",
+      "response": "账户、可消费余额、保证金、会员数量、订单数量、累计采购金额",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.promotion",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/promotion",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴专属推广二维码",
+      "request": "本人伙伴会话",
+      "response": "{name,partnerNo,promotionCode,linkUrl,qrDataUrl,active}；链接指向H5注册",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.members",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "search",
+          "type": "unknown",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属会员列表",
+      "request": "search?、page?；当前会话决定伙伴身份",
+      "response": "{items,total,page,pageSize}；仅当前partnerId会员",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.profile",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:id/profile",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属会员资料与健康档案",
+      "request": "id为会员UUID",
+      "response": "基本资料与HealthProfile；读取审计成功后返回",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.healthSummary",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:id/health-summary",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属会员健康摘要",
+      "request": "id为会员UUID",
+      "response": "按指标统计数量与首末时间；未知值不补零",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.healthRecords",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:id/health-records",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "pageSize",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属会员历史健康记录",
+      "request": "id为会员UUID、page?、pageSize?（最多100）",
+      "response": "{items,total,page,pageSize}；保留原始历史记录；写敏感读取审计",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.devices",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:id/devices",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属会员设备",
+      "request": "id为会员UUID",
+      "response": "{items}；设备身份单向显示，不暴露内部硬件指纹",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.reports",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:id/reports",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属会员健康报告列表",
+      "request": "id为会员UUID、page?",
+      "response": "{items,total,page,pageSize}；当前会员归属限制",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.report",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/reports/:id",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属会员健康报告详情",
+      "request": "id为报告UUID",
+      "response": "报告摘要与READY状态内容；其他状态不提供完整内容；写读取审计",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.ecg",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/health-records/:id/ecg",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属会员心电波形附件",
+      "request": "id为健康记录UUID；伙伴会话",
+      "response": "私有gzip字节流；no-store及SHA256/采样元数据；先审计后读取",
+      "dependency": "私有对象存储已配置",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.connections",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/devices/:id/connections",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属设备连接记录",
+      "request": "id为设备UUID、page?",
+      "response": "{items,total,page,pageSize}；不返回原始报文",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.measurements",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/devices/:id/measurements",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "pageSize",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "所属设备测量记录",
+      "request": "id为设备UUID、page?、pageSize?",
+      "response": "{items,total,page,pageSize}；兼容历史设备标识；写读取审计",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.products",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/products",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "search",
+          "type": "unknown",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴采购商品",
+      "request": "search?、page?",
+      "response": "当前等级SKU分销价；无有效价不可采购；不返回成本或其他等级价格",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.quote",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/quote",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "计算品牌伙伴采购报价",
+      "request": "{items:[{skuId,quantity}]}",
+      "response": "PartnerQuote：等级、商品行、分销价、运费、总额和fingerprint",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "skuId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9999
+                  }
+                },
+                "required": [
+                  "skuId",
+                  "quantity"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "skuId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  "unitPriceCents": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  "totalCents": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "levelId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "level": {
+              "type": "string"
+            },
+            "subtotalCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "shippingCents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "payableCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "const": "CNY"
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "lines",
+            "levelId",
+            "level",
+            "subtotalCents",
+            "shippingCents",
+            "payableCents",
+            "currency",
+            "fingerprint"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerController.createOrder",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/orders",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "余额支付创建品牌伙伴采购订单",
+      "request": "PartnerCheckoutInput：items、address、expectedQuote、idempotencyKey、buyerRemark?",
+      "response": "订单及成功余额凭证；扣款/账本/付款库存/ERP任务同事务；不足或报价变化不部分扣款",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "skuId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9999
+                  }
+                },
+                "required": [
+                  "skuId",
+                  "quantity"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "address": {
+              "type": "object",
+              "properties": {
+                "recipientName": {
+                  "type": "string"
+                },
+                "recipientMobile": {
+                  "type": "string"
+                },
+                "province": {
+                  "type": "string"
+                },
+                "city": {
+                  "type": "string"
+                },
+                "district": {
+                  "type": "string"
+                },
+                "addressDetail": {
+                  "type": "string"
+                },
+                "countryCode": {
+                  "const": "CN"
+                },
+                "postalCode": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "recipientName",
+                "recipientMobile",
+                "province",
+                "city",
+                "addressDetail"
+              ],
+              "additionalProperties": true
+            },
+            "expectedQuote": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 90,
+              "pattern": "^[A-Za-z0-9:_-]+$"
+            },
+            "buyerRemark": {
+              "type": "string",
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "items",
+            "address",
+            "expectedQuote",
+            "idempotencyKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderNo": {
+              "type": "string"
+            },
+            "partnerId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "userId": {
+              "type": "null"
+            },
+            "partnerLevelSnapshot": {
+              "type": "string"
+            },
+            "status": {
+              "const": "PAID"
+            },
+            "payableCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "id",
+            "orderNo",
+            "partnerId",
+            "status",
+            "payableCents"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerController.orders",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/orders",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴采购订单列表",
+      "request": "page?",
+      "response": "{items,total,page,pageSize}；仅本人采购交易",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.order",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/orders/:id",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴采购订单详情",
+      "request": "id为订单UUID",
+      "response": "成交等级/分销价快照、收货信息、付款、售后及ERP状态",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.logistics",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/orders/:id/logistics",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴采购发货与物流",
+      "request": "id为订单UUID",
+      "response": "{items}；物流公司/单号/发货时间/筛选后的实际轨迹，不透出ERP原始响应",
+      "dependency": "ERP或总后台真实发货记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.wallet",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/wallet",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴资金账户",
+      "request": "本人伙伴会话",
+      "response": "消费余额和保证金分别以整数分返回",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "partnerId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "balanceCents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "depositCents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "currency": {
+              "const": "CNY"
+            }
+          },
+          "required": [
+            "partnerId",
+            "balanceCents",
+            "depositCents",
+            "version",
+            "currency"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerController.ledger",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/ledger",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "account",
+          "type": "unknown",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴资金流水",
+      "request": "account?:BALANCE|DEPOSIT、page?",
+      "response": "不可变资金记录、变动金额、变动后余额和业务引用",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.paymentCapabilities",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/payment-capabilities",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴充值支付能力",
+      "request": "本人伙伴会话",
+      "response": "各渠道enabled与不可用原因；不返回商户凭据",
+      "dependency": "共享商城支付配置",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.createRecharge",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/recharges",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "创建品牌伙伴在线充值",
+      "request": "{amountCents,channel:wechat_native|alipay_page|alipay_wap,idempotencyKey}",
+      "response": "充值单与原支付关系；重复请求不重发支付，验证确认后一次入账",
+      "dependency": "已配置微信Native或支付宝",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "amountCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "channel": {
+              "enum": [
+                "wechat_native",
+                "alipay_page",
+                "alipay_wap"
+              ]
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 90,
+              "pattern": "^[A-Za-z0-9:_-]+$"
+            }
+          },
+          "required": [
+            "amountCents",
+            "channel",
+            "idempotencyKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "rechargeNo": {
+              "type": "string"
+            },
+            "amountCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "status": {
+              "type": "string"
+            },
+            "payment": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "invoke": {}
+              },
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "id",
+            "rechargeNo",
+            "amountCents",
+            "status",
+            "payment"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerController.recharges",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/recharges",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "品牌伙伴充值记录",
+      "request": "page?",
+      "response": "{items,total,page,pageSize}；仅本人充值",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.recharge",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/recharges/:id",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "核对品牌伙伴充值结果",
+      "request": "id为充值UUID",
+      "response": "充值单与payment；服务端查单或回调决定是否入账",
+      "dependency": "原支付渠道可查询",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "rechargeNo": {
+              "type": "string"
+            },
+            "amountCents": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "status": {
+              "type": "string"
+            },
+            "payment": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "invoke": {}
+              },
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "id",
+            "rechargeNo",
+            "amountCents",
+            "status",
+            "payment"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerController.rechargePayment",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/recharges/:id/payment",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "继续原品牌伙伴充值",
+      "request": "id为充值UUID；本人伙伴会话",
+      "response": "原支付关系与唤起参数；结果未知时保留原关系，不新建支付",
+      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
         "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
     },

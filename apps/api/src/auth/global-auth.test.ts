@@ -1048,3 +1048,31 @@ describe("global real-channel readiness", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("H5 brand partner registration attribution", () => {
+  it("binds a verified new account and records the displayed service notice in its creation transaction", async () => {
+    const h = harness(), partnerId = randomUUID();
+    h.tx.$queryRaw = vi.fn(async () => []);
+    h.tx.brandPartner = { findFirst: vi.fn(async () => ({ id: partnerId })) };
+    h.tx.auditLog = { create: vi.fn(async () => ({})) };
+    const challenge = await h.service.requestLoginCode({ channel: "email", identifier: "partner-new@example.com", locale: "en" });
+    const session = await h.service.loginWithCode({ channel: "email", identifier: "partner-new@example.com", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, consentVersion: "v1", locale: "en", partnerCode: "partner-first", partnerNoticeVersion: "partner-service-v1" });
+    expect(h.users().get(session.user.id).partnerId).toBe(partnerId);
+    expect(h.tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: "PARTNER_REGISTRATION", entityId: session.user.id, afterJson: expect.objectContaining({ partnerId, noticeVersion: "partner-service-v1" }) }) }));
+  });
+  it("existing account login ignores even an invalid source and keeps its original partner", async () => {
+    const h = harness(), memberId = randomUUID(), partnerId = randomUUID();
+    h.users().set(memberId, { id: memberId, email: "partner-existing@example.com", emailVerifiedAt: new Date(), status: "ACTIVE", nickname: "合成已注册会员", partnerId });
+    h.tx.brandPartner = { findFirst: vi.fn(async () => null) };
+    const challenge = await h.service.requestLoginCode({ channel: "email", identifier: "partner-existing@example.com", locale: "en" });
+    const session = await h.service.loginWithCode({ channel: "email", identifier: "partner-existing@example.com", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, consentVersion: "v1", locale: "en", partnerCode: "malformed!" });
+    expect(session.user.id).toBe(memberId); expect(h.users().get(memberId).partnerId).toBe(partnerId); expect(h.tx.brandPartner.findFirst).not.toHaveBeenCalled();
+  });
+  it("invalid partner rolls back code consumption and allows explicit ordinary registration with the same code", async () => {
+    const h = harness(); h.tx.$queryRaw = vi.fn(async () => []); h.tx.brandPartner = { findFirst: vi.fn(async () => null) };
+    const challenge = await h.service.requestLoginCode({ channel: "email", identifier: "partner-invalid@example.com", locale: "en" });
+    const input = { channel: "email", identifier: "partner-invalid@example.com", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, consentVersion: "v1", locale: "en", partnerCode: "partner-invalid", partnerNoticeVersion: "partner-service-v1" };
+    await expect(h.service.loginWithCode(input)).rejects.toThrow("推广链接已失效"); expect(h.users().size).toBe(0); expect(h.records().get(challenge.challengeId).consumedAt).toBeNull();
+    const session = await h.service.loginWithCode({ ...input, partnerCode: null }); expect(h.users().get(session.user.id).partnerId).toBeUndefined();
+  });
+});

@@ -1,3 +1,4 @@
+import { partnerRegistrationData, auditPartnerRegistration } from "../partners/partner-registration";
 import { Injectable } from "@nestjs/common";
 import { Prisma, UserStatus } from "@prisma/client";
 import { hash } from "bcryptjs";
@@ -200,11 +201,13 @@ export class GlobalAuthService {
                     ? { email: challenge.identifier }
                     : { mobile: challenge.identifier }),
                   ...verified,
+                  ...(await partnerRegistrationData(tx, body.partnerCode, body.partnerNoticeVersion)),
                   passwordHash: null,
                   nickname: "Saydian user",
                   ...{ locale: globalLocale(body.locale ?? challenge.locale) },
                 },
               });
+          if (!existing) await auditPartnerRegistration(tx, user);
           const source = globalConsentSource("global_h5_code", legal!);
           for (const documentType of Object.values(
             legal?.documentTypes ?? {

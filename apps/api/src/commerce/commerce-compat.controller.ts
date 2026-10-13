@@ -73,6 +73,7 @@ export class CommerceCompatibilityController {
       consentVersion: String(body.consentVersion ?? ""),
       locale: body.locale,
       product: body.product,
+      ...(body.partnerCode ? { partnerCode: String(body.partnerCode), partnerNoticeVersion: String(body.partnerNoticeVersion ?? "") } : {}),
       ...(body.referralCode ? { referralCode: String(body.referralCode) } : {}),
     });
   }

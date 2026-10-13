@@ -1,0 +1,135 @@
+:root {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  color: #18212f;
+  background: #f5f6f9;
+  --el-color-primary: #c9223b;
+  --el-color-primary-light-3: #da6475;
+  --el-color-primary-light-5: #e7909c;
+  --el-color-primary-light-7: #f0bfc6;
+  --el-color-primary-light-8: #f6d7dc;
+  --el-color-primary-light-9: #fcebed;
+  --el-color-primary-dark-2: #a31b30;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+a {
+  color: #b82237;
+  text-decoration: none;
+}
+button,
+input {
+  font: inherit;
+}
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+h1 {
+  font-size: 26px;
+  letter-spacing: -0.5px;
+}
+h2 {
+  font-size: 19px;
+}
+.muted {
+  color: #788397;
+}
+.page {
+  max-width: 1400px;
+  margin: auto;
+}
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.page-head h1 {
+  margin: 0 0 8px;
+}
+.page-head p {
+  margin: 0;
+  color: #788397;
+  font-size: 14px;
+}
+.panel {
+  background: white;
+  border: 1px solid #e8ebf1;
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.el-pagination {
+  margin-top: 20px;
+}
+.el-table {
+  --el-table-header-bg-color: #f8f9fc;
+}
+.el-table .el-table__cell {
+  padding: 14px 0;
+}
+.price {
+  color: #bc1e36;
+  font-weight: 700;
+}
+.empty {
+  padding: 48px;
+  text-align: center;
+  color: #788397;
+}
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 0 0 24px;
+}
+.facts dt {
+  color: #788397;
+  font-size: 13px;
+  margin-bottom: 7px;
+}
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.el-drawer__body {
+  padding: 24px;
+}
+.el-dialog {
+  max-width: calc(100vw - 28px);
+}
+.record-values {
+  white-space: normal;
+  line-height: 1.7;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .panel {
+    padding: 16px;
+  }
+  .page-head {
+    align-items: flex-start;
+  }
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  h1 {
+    font-size: 22px;
+  }
+}

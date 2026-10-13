@@ -22,6 +22,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
 import { StatusController } from "./status.controller";
 import { SupportModule } from "./support/support.module";
 import { UniversalLinksController } from "./universal-links.controller";
+import { PartnerModule } from "./partners/partner.module";
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { UniversalLinksController } from "./universal-links.controller";
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 180 }]),
     AuthModule,
     BillingModule,
+    PartnerModule,
     MembersModule,
     HealthModule,
     HealthReportsModule,

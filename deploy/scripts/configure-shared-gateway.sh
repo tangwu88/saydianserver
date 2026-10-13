@@ -131,9 +131,9 @@ awk \
     if ($0 == "  location /admin/ {") {
       in_admin = 1
       admin_blocks++
-    } else if (in_admin && $0 == "    proxy_pass http://saydianapp-admin:8080;" && admin_upstream == "global-admin") {
+    } else if ($0 == "    proxy_pass http://saydianapp-admin:8080;" && admin_upstream == "global-admin") {
       $0 = "    proxy_pass http://global-admin:8080;"
-      admin_replacements++
+      if (in_admin) admin_replacements++
     }
     if ($0 == placeholder) {
       while ((getline route < routes_file) > 0) print route

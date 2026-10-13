@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, getAdminRoles, readableError, responseData } from "../api";
 import { canAdminResource } from "@saydian/app-contracts";
+import PartnerAssignmentDialog from "../components/PartnerAssignmentDialog.vue";
 import CommerceWorkspace from "../components/CommerceWorkspace.vue";
 import RichTextEditor from "../components/RichTextEditor.vue";
 import MemberHealthData from "../components/MemberHealthData.vue";
@@ -17,7 +18,7 @@ import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayl
 import { healthMetricLabel, healthRawJson, healthReadings, healthTime } from "../health-display";
 
 type Row = Record<string, any>;
-const memberColumns = ["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "referrerProfile", "pointBalanceCents", "status", "createdAt"];
+const memberColumns = ["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "partnerId", "partner", "referrerProfile", "pointBalanceCents", "status", "createdAt"];
 const memberPageSize = 30;
 const route = useRoute();
 const loading = ref(false);
@@ -35,6 +36,8 @@ const articleCategoryEditorResource = ref("");
 const originalArticleCategoryId = ref<string | null>(null);
 const memberReferralOptions = ref<Row[]>([]);
 const search = ref("");
+const memberPartnerFilter = ref("");
+const partnerAssignment = ref<Row | null>(null);
 const commerceStatus = ref("");
 const reportType = ref("");
 const appProductFilter = ref("");
@@ -179,6 +182,8 @@ const fieldLabels: Record<string, string> = {
   mobileMasked: "手机号",
   avatarUrl: "头像",
   promotionCode: "推广码",
+  partnerId: "品牌伙伴 ID",
+  partner: "品牌伙伴",
   referrerProfile: "推广上级",
   pointBalanceCents: "积分余额",
   nickname: "昵称",
@@ -334,7 +339,7 @@ async function load(): Promise<void> {
       ...(requestedResource === "health-reports" && reportType.value ? { reportType: reportType.value } : {}),
       ...(searchable.value && search.value ? { search: search.value } : {}),
       ...(paginatedResources.includes(requestedResource) ? { page: currentPage.value } : {}),
-      ...(requestedResource === "members" ? { pageSize: memberPageSize } : {}),
+      ...(requestedResource === "members" ? { pageSize: memberPageSize, ...(memberPartnerFilter.value ? { partnerId: memberPartnerFilter.value } : {}) } : {}),
       ...(serverStatusResources.includes(requestedResource) && commerceStatus.value ? { status: commerceStatus.value } : {}),
     };
     const response = await api.get(`/${requestedResource}`, {
@@ -1414,6 +1419,8 @@ function resetResourceView(): void {
   rows.value = [];
   resourceMeta.value = {};
   search.value = "";
+  memberPartnerFilter.value = "";
+  partnerAssignment.value = null;
   commerceStatus.value = "";
   appProductFilter.value = "";
   currentPage.value = 1;
@@ -1457,6 +1464,7 @@ onBeforeUnmount(() => {
           <el-select v-if="resource === 'health-reports'" v-model="reportType" placeholder="全部报告" clearable style="width: 180px" @change="load"><el-option label="健康报告" value="health" /><el-option label="睡眠报告" value="sleep" /></el-select>
           <el-select v-if="['articles', 'legal-documents', 'settings'].includes(resource)" v-model="appProductFilter" placeholder="全部前端 App" clearable style="width: 190px"><el-option v-for="item in contentProductOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select>
           <el-input v-if="searchable" v-model="search" placeholder="邮箱、会员编号、手机号、昵称或推广码" clearable style="width: 340px" @keyup.enter="searchMembers" @clear="searchMembers" />
+          <el-input v-if="resource === 'members'" v-model="memberPartnerFilter" placeholder="品牌伙伴 ID（none 表示未归属）" clearable style="width: 290px" @keyup.enter="searchMembers" @clear="searchMembers" />
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
           <el-button v-if="createable" @click="openCreate">新增</el-button>
@@ -1467,6 +1475,7 @@ onBeforeUnmount(() => {
           <el-table-column v-for="column in columns" :key="column" :prop="column" :label="fieldLabels[column] || column" :min-width="resource === 'members' && column === 'referrerProfile' ? 280 : resource === 'members' && ['emailMasked', 'mobile'].includes(column) ? 220 : column === 'avatarUrl' ? 78 : 145" :show-overflow-tooltip="!(resource === 'members' && column === 'referrerProfile')">
             <template #default="scope">
               <el-avatar v-if="resource === 'members' && column === 'avatarUrl'" :size="38" :src="scope.row.avatarUrl || undefined">{{ String(scope.row.nickname || "会员").slice(0, 1) }}</el-avatar>
+              <span v-else-if="resource === 'members' && column === 'partner'">{{ scope.row.partner?.name || "未归属" }}</span>
               <div v-else-if="resource === 'members' && column === 'promotionCode'" style="display: grid; gap: 4px">
                 <span>{{ scope.row.promotionCode || "未生成" }}</span>
                 <el-tag v-if="scope.row.promotionCode && scope.row.promotionActive === false" size="small" type="danger">已停用</el-tag>
@@ -1522,6 +1531,7 @@ onBeforeUnmount(() => {
           <el-table-column v-if="resource === 'members' || editable || (canWrite && resource === 'health-reports')" label="操作" :min-width="resource === 'members' ? 180 : 110" fixed="right">
             <template #default="scope">
               <el-button v-if="resource === 'members'" size="small" type="primary" plain @click="openMemberDevices(scope.row)">查看设备</el-button>
+              <el-button v-if="resource === 'members' && canAdminResource(getAdminRoles(), 'partners', 'write')" size="small" @click="partnerAssignment = scope.row">调整伙伴</el-button>
               <el-button v-if="editable" size="small" :disabled="resource === 'members' && ['DELETION_PENDING', 'DELETED'].includes(scope.row.status)" @click="openEdit(scope.row)">编辑</el-button>
               <el-button v-if="resource === 'health-reports' && canReadRawHealth" size="small" type="primary" plain @click="openHealthReport(scope.row)">查看</el-button>
               <el-button v-if="canWrite && resource === 'health-reports' && scope.row.status === 'FAILED'" size="small" type="warning" @click="runAction(`/health-reports/${scope.row.id}/retry`, '报告已重新排队')">重试</el-button>
@@ -1533,6 +1543,7 @@ onBeforeUnmount(() => {
       </template>
     </div>
 
+    <PartnerAssignmentDialog :member="partnerAssignment" @close="partnerAssignment = null" @saved="load" />
     <el-dialog v-model="memberDevicesVisible" title="会员设备" width="min(980px, 94vw)" destroy-on-close @closed="++memberDevicesRequestId">
       <div v-loading="memberDevicesLoading">
         <p>{{ memberDeviceMember.memberNo || "—" }} · {{ memberDeviceMember.memberNickname || "未填写昵称" }}</p>

@@ -1,0 +1,28 @@
+// Reviewed against partner services; all examples are synthetic local data.
+const id = { type: "string", format: "uuid" }, text = { type: "string" }, flag = { type: "boolean" };
+const cents = { type: "integer", minimum: 1, maximum: 2147483647 }, amount = { type: "integer", minimum: 0, maximum: 2147483647 };
+const key = { type: "string", minLength: 8, maxLength: 90, pattern: "^[A-Za-z0-9:_-]+$" };
+const object = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: true });
+const list = items => ({ type: "array", items });
+const nullableId = { oneOf: [id, { type: "null" }] };
+const source = "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts";
+const record = (requestSchema, responseSchema, requestExample = null) => ({ status: "request-reviewed", requestSchema, requestExample, responseSchema, responseExample: null, contentType: "application/json", source,
+  note: "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。" });
+const items = { type: "array", minItems: 1, maxItems: 100, items: object({ skuId: id, quantity: { type: "integer", minimum: 1, maximum: 9999 } }, ["skuId", "quantity"]) };
+const quote = object({ lines: list(object({ skuId: id, quantity: cents, unitPriceCents: cents, totalCents: cents })), levelId: id, level: text, subtotalCents: cents, shippingCents: amount, payableCents: cents, currency: { const: "CNY" }, fingerprint: { type: "string", pattern: "^[a-f0-9]{64}$" } }, ["lines", "levelId", "level", "subtotalCents", "shippingCents", "payableCents", "currency", "fingerprint"]);
+const address = object({ recipientName: text, recipientMobile: text, province: text, city: text, district: text, addressDetail: text, countryCode: { const: "CN" }, postalCode: text }, ["recipientName", "recipientMobile", "province", "city", "addressDetail"]);
+const wallet = object({ partnerId: id, balanceCents: amount, depositCents: amount, version: { type: "integer", minimum: 0 }, currency: { const: "CNY" } }, ["partnerId", "balanceCents", "depositCents", "version", "currency"]);
+const recharge = object({ id, rechargeNo: text, amountCents: cents, status: text, payment: object({ id, status: text, invoke: {} }) }, ["id", "rechargeNo", "amountCents", "status", "payment"]);
+export const partnerFieldContracts = {
+  "PartnerPublicController.login": record(object({ username: text, password: text }, ["username", "password"]), object({ token: text, expiresAt: text, user: object({ id, partnerNo: text, name: text, level: text }) }, ["token", "expiresAt", "user"])),
+  "PartnerController.wallet": record(null, wallet),
+  "PartnerController.quote": record(object({ items }, ["items"]), quote),
+  "PartnerController.createOrder": record(object({ items, address, expectedQuote: quote.properties.fingerprint, idempotencyKey: key, buyerRemark: { type: "string", maxLength: 500 } }, ["items", "address", "expectedQuote", "idempotencyKey"]), object({ id, orderNo: text, partnerId: id, userId: { type: "null" }, partnerLevelSnapshot: text, status: { const: "PAID" }, payableCents: cents, items: list(object({})) }, ["id", "orderNo", "partnerId", "status", "payableCents"])),
+  "PartnerController.createRecharge": record(object({ amountCents: cents, channel: { enum: ["wechat_native", "alipay_page", "alipay_wap"] }, idempotencyKey: key }, ["amountCents", "channel", "idempotencyKey"]), recharge),
+  "PartnerController.recharge": record(null, recharge),
+  "PartnerAdminController.create": record(object({ username: { type: "string", pattern: "^[A-Za-z0-9_.-]{3,80}$" }, name: text, mobile: text, password: { type: "string", minLength: 10, maxLength: 128 }, levelId: id }, ["username", "name", "password", "levelId"]), object({ id, partnerNo: text, username: text, name: text, levelId: id, wallet: {} }, ["id", "partnerNo", "username", "name", "levelId", "wallet"])),
+  "PartnerAdminController.update": record(object({ updatedAt: text, name: text, mobile: { type: ["string", "null"] }, levelId: id, active: flag }, ["updatedAt"]), object({ id, updatedAt: text }, ["id", "updatedAt"])),
+  "PartnerAdminController.assignment": record(object({ partnerId: nullableId, expectedPartnerId: nullableId, reason: { type: "string", minLength: 1, maxLength: 300 } }, ["partnerId", "expectedPartnerId", "reason"]), object({ userId: id, partnerId: nullableId }, ["userId", "partnerId"])),
+  "PartnerAdminController.savePrice": record(object({ priceCents: cents, enabled: flag, updatedAt: { type: ["string", "null"] } }, ["priceCents", "updatedAt"]), object({ levelId: id, skuId: id, priceCents: cents, enabled: flag, updatedAt: text }, ["levelId", "skuId", "priceCents", "enabled", "updatedAt"])),
+  "PartnerAdminController.deposit": record(object({ type: { enum: ["DEPOSIT_RECEIPT", "DEPOSIT_RETURN", "DEPOSIT_CORRECTION"] }, deltaCents: { type: "integer", minimum: -2147483647, maximum: 2147483647, not: { const: 0 } }, reason: { type: "string", minLength: 1, maxLength: 300 }, idempotencyKey: key }, ["type", "deltaCents", "reason", "idempotencyKey"]), object({ id, account: { const: "DEPOSIT" }, deltaCents: { type: "integer" }, balanceAfterCents: amount }, ["id", "account", "deltaCents", "balanceAfterCents"])),
+};

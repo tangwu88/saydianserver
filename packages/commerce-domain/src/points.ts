@@ -48,7 +48,7 @@ export async function afterSaleSettlementSnapshot(tx: Prisma.TransactionClient, 
     }
   }
   if (pointReturnCents > 0) {
-    const account = await tx.commercePointAccount.findUnique({ where: { userId: sale.order.userId } });
+    const account = await tx.commercePointAccount.findUnique({ where: { userId: sale.order.userId! } });
     if (!account) throw new ConflictException("积分账户未核验，禁止先向渠道出款");
     if (!sale.settledAt) {
       const already = await tx.commercePointLedger.aggregate({ where: { orderId: sale.orderId, type: { in: ["AFTER_SALE_RETURN", "FULL_REFUND_RETURN", "ORDER_CANCEL_RETURN"] } }, _sum: { deltaCents: true } });
@@ -63,6 +63,13 @@ export async function afterSaleSettlementSnapshot(tx: Prisma.TransactionClient, 
 export async function settleAfterSalePoints(tx: Prisma.TransactionClient, afterSaleId: string, refundId?: string): Promise<void> {
   const data = await afterSaleSettlementSnapshot(tx, afterSaleId);
   const { sale, pointReturnCents } = data;
+  if (sale.order.partnerId) {
+    if (pointReturnCents !== 0 || sale.order.pointDiscountCents !== 0) throw new ConflictException("品牌伙伴采购不能结算会员积分");
+    if (!refundId || !sale.refunds.some(refund => refund.id === refundId && refund.status === "SUCCEEDED" && refund.amountCents === sale.requestedCents))
+      throw new ConflictException("品牌伙伴余额退款尚未确认");
+    if (!sale.settledAt) await tx.commerceAfterSale.update({ where: { id: sale.id }, data: { settledAt: new Date() } });
+    return;
+  }
   if (sale.type === "SHIPPING_ONLY") {
     if (!refundId || !sale.refunds.some(refund => refund.id === refundId && refund.status === "SUCCEEDED" && refund.amountCents === sale.requestedCents)) throw new ConflictException("运费渠道退款尚未确认");
     if (!sale.settledAt) await tx.commerceAfterSale.update({ where: { id: sale.id }, data: { settledAt: new Date() } });
@@ -87,12 +94,12 @@ export async function settleAfterSalePoints(tx: Prisma.TransactionClient, afterS
     const already = await tx.commercePointLedger.aggregate({ where: { orderId: sale.orderId,
       type: { in: ["AFTER_SALE_RETURN", "FULL_REFUND_RETURN", "ORDER_CANCEL_RETURN"] } }, _sum: { deltaCents: true } });
     if ((already._sum.deltaCents ?? 0) + pointReturnCents > sale.order.pointDiscountCents) throw new ConflictException("累计返还积分超过原订单抵扣，请核验历史退款");
-    const changed = await tx.commercePointAccount.updateMany({ where: { userId: sale.order.userId, balanceCents: { lte: MAX_CENTS - pointReturnCents } },
+    const changed = await tx.commercePointAccount.updateMany({ where: { userId: sale.order.userId!, balanceCents: { lte: MAX_CENTS - pointReturnCents } },
       data: { balanceCents: { increment: pointReturnCents }, version: { increment: 1 } } });
     if (changed.count !== 1) throw new ConflictException("积分账户未迁入或余额超出范围");
   }
   // A zero-point settlement is still recorded to prove that this after-sale was processed.
-  await tx.commercePointLedger.create({ data: { userId: sale.order.userId, orderId: sale.orderId, afterSaleId: sale.id,
+  await tx.commercePointLedger.create({ data: { userId: sale.order.userId!, orderId: sale.orderId, afterSaleId: sale.id,
     ...(refundId ? { refundId } : {}), deltaCents: pointReturnCents, type: "AFTER_SALE_RETURN", idempotencyKey: key } });
   await tx.commerceAfterSale.update({ where: { id: sale.id }, data: { settledAt: new Date() } });
 }

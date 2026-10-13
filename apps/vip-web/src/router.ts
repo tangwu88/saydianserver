@@ -1,0 +1,38 @@
+import { createRouter, createWebHistory } from "vue-router";
+import { partnerTokenKey } from "./api";
+import Login from "./views/Login.vue";
+import Shell from "./views/Shell.vue";
+import Dashboard from "./views/Dashboard.vue";
+import Promotion from "./views/Promotion.vue";
+import Members from "./views/Members.vue";
+import Products from "./views/Products.vue";
+import Orders from "./views/Orders.vue";
+import Finance from "./views/Finance.vue";
+export const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    { path: "/login", component: Login },
+    {
+      path: "/",
+      component: Shell,
+      children: [
+        { path: "", component: Dashboard },
+        { path: "promotion", component: Promotion },
+        { path: "members", component: Members },
+        { path: "products", component: Products },
+        { path: "orders", component: Orders },
+        { path: "wallet", component: Finance },
+        { path: "ledger", component: Finance },
+        { path: "deposit", component: Finance },
+        { path: "recharges/:id?", component: Finance },
+      ],
+    },
+    { path: "/:pathMatch(.*)*", redirect: "/" },
+  ],
+});
+router.beforeEach((to) => {
+  const loggedIn = !!sessionStorage.getItem(partnerTokenKey);
+  if (to.path !== "/login" && !loggedIn) return "/login";
+  if (to.path === "/login" && loggedIn) return "/";
+  return true;
+});

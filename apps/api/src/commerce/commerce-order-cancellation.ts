@@ -14,6 +14,7 @@ export async function cancelCommerceOrderInTransaction(
   options: { expectedVersion?: number; adminRemark?: string; cancelledAt?: Date } = {},
 ): Promise<Date> {
   requireCommerceOwner(order.executionOwner);
+  if (!order.userId || order.partnerId) throw new ConflictException("品牌伙伴采购须通过售后流程退款");
   if (order.status !== CommerceOrderStatus.PENDING_PAYMENT) {
     throw new ConflictException("当前订单不可取消");
   }
@@ -59,7 +60,7 @@ export async function cancelCommerceOrderInTransaction(
   if (order.pointDiscountCents > 0) {
     financialSnapshot(order);
     await tx.commercePointAccount.update({
-      where: { userId: order.userId },
+      where: { userId: order.userId! },
       data: {
         balanceCents: { increment: order.pointDiscountCents },
         version: { increment: 1 },
@@ -67,7 +68,7 @@ export async function cancelCommerceOrderInTransaction(
     });
     await tx.commercePointLedger.create({
       data: {
-        userId: order.userId,
+        userId: order.userId!,
         orderId: order.id,
         deltaCents: order.pointDiscountCents,
         type: "ORDER_CANCEL_RETURN",

@@ -30,7 +30,7 @@ import { officialRedirectUri } from "../auth/wechat-h5-auth.service";
 
 type IntentForProvider = {
   id: string;
-  userId?: string;
+  userId?: string | null;
   businessType?: string;
   paymentNo: string;
   amountCents: number;
@@ -70,7 +70,7 @@ export type PaymentIntegrationKey =
 export function paymentIntegrationKeyForNewIntent(
   channel: PaymentChannel,
 ): PaymentIntegrationKey | null {
-  if (channel === PaymentChannel.OFFLINE_MANUAL) return null;
+  if (channel === PaymentChannel.OFFLINE_MANUAL || channel === PaymentChannel.PARTNER_BALANCE) return null;
   if (channel === PaymentChannel.APPLE_IAP) return "apple_iap";
   if (channel === PaymentChannel.WECHAT_APP) return "wechat_pay_app";
   if (channel.startsWith("WECHAT")) return "wechat_pay";
@@ -88,7 +88,7 @@ export function paymentIntegrationKeyForStoredIntent(intent: {
   integrationKey?: string | null;
 }): PaymentIntegrationKey | null {
   if (!intent.integrationKey) {
-    if (intent.channel === PaymentChannel.OFFLINE_MANUAL) return null;
+    if (intent.channel === PaymentChannel.OFFLINE_MANUAL || intent.channel === PaymentChannel.PARTNER_BALANCE) return null;
     if (intent.channel === PaymentChannel.APPLE_IAP) return "apple_iap";
     return intent.channel.startsWith("WECHAT") ? "wechat_pay" : "alipay";
   }
@@ -123,6 +123,8 @@ export function assertGlobalPaymentScope(intent: {
   businessType?: string;
 }) {
   if (intent.channel === PaymentChannel.APPLE_IAP) return;
+  if (intent.businessType === "PARTNER_RECHARGE" &&
+      ([PaymentChannel.WECHAT_NATIVE, PaymentChannel.ALIPAY_PAGE, PaymentChannel.ALIPAY_WAP] as PaymentChannel[]).includes(intent.channel)) return;
   if (
     intent.businessType !== "COMMERCE_ORDER" ||
     !globalCommercePaymentChannels.some((channel) => channel === intent.channel)
@@ -321,6 +323,7 @@ export class PaymentProviderService {
       appleProductId?: string | null;
     },
   ): Promise<Record<string, unknown>> {
+    if (intent.channel === PaymentChannel.PARTNER_BALANCE) throw new BadRequestException("余额支付由内部账务事务处理");
     if (intent.channel === PaymentChannel.OFFLINE_MANUAL)
       throw new ServiceUnavailableException(
         "线下收款只能由超级管理员在订单详情中确认",
@@ -346,6 +349,7 @@ export class PaymentProviderService {
   }
 
   async refund(refund: RefundForProvider): Promise<ProviderRefundResult> {
+    if (refund.channel === PaymentChannel.PARTNER_BALANCE) throw new BadRequestException("余额退款由内部账务事务处理");
     if (refund.channel === PaymentChannel.OFFLINE_MANUAL) {
       throw new ServiceUnavailableException(
         "线下收款不会调用线上退款渠道；请先在线下完成退款并由财务登记",
@@ -361,6 +365,7 @@ export class PaymentProviderService {
   async closePayment(
     intent: PaymentForClose,
   ): Promise<Record<string, unknown>> {
+    if (intent.channel === PaymentChannel.PARTNER_BALANCE) throw new BadRequestException("余额支付没有外部关闭渠道");
     if (intent.channel === PaymentChannel.OFFLINE_MANUAL) {
       throw new BadRequestException("线下收款没有可关闭的在线支付");
     }
@@ -735,6 +740,8 @@ export class PaymentProviderService {
             return_url: String(
               intent.businessType === "COMMERCE_ORDER"
                 ? commerceAlipayReturnUrl(intent.businessId)
+                : intent.businessType === "PARTNER_RECHARGE"
+                  ? `${requiredEnv("PUBLIC_BASE_URL").replace(/\/$/, "")}/vip/recharges/${encodeURIComponent(intent.businessId)}`
                 : (publicConfig.returnUrl ??
                     `${env("STOREFRONT_URL", requiredEnv("PUBLIC_BASE_URL"))}/#/orders`),
             ),

@@ -120,7 +120,7 @@ async function selectDeviceHistoryTab(h: ReturnType<typeof harness>, name: strin
 describe("international member admin list", () => {
   it("shows fixed numeric-ID columns, including on empty lists", async () => {
     const h = harness();
-    expect(h.columns.value).toEqual(["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "referrerProfile", "pointBalanceCents", "status", "createdAt"]);
+    expect(h.columns.value).toEqual(["avatarUrl", "memberNo", "promotionCode", "emailMasked", "mobile", "nickname", "partnerId", "partner", "referrerProfile", "pointBalanceCents", "status", "createdAt"]);
     expect(h.sfc).toContain("邮箱、会员编号、手机号、昵称或推广码");
     expect(h.sfc).toContain("scope.row.referrerProfile.avatarUrl");
     expect(h.sfc).toContain("scope.row.referrerProfile.mobile");
@@ -130,7 +130,7 @@ describe("international member admin list", () => {
     expect(h.api.get).toHaveBeenCalledExactlyOnceWith("/members", {
       params: { page: 1, pageSize: 30 },
     });
-    expect(h.columns.value).toHaveLength(10);
+    expect(h.columns.value).toHaveLength(12);
     expect(h.resourceMeta.value.total).toBe(0);
   });
 

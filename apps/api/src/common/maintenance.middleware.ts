@@ -30,6 +30,8 @@ export class MaintenanceMiddleware implements NestMiddleware {
     const exempt =
       request.method === "POST" &&
       (requestPath === "/api/saydian-app/admin/v1/auth/login" ||
+        requestPath === "/api/saydian-app/vip/v1/auth/login" ||
+        requestPath === "/api/saydian-app/vip/v1/auth/logout" ||
         verifiedCallbackPaths.has(requestPath ?? "") ||
         (cutoverFlag(process.env.MAINTENANCE_ALLOW_MEMBER_AUTH) &&
           memberAuthentication.has(requestPath ?? "")));

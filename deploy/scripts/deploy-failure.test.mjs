@@ -13,7 +13,14 @@ function run(mode) {
   const root = mkdtempSync(join(tmpdir(), "saydian-deploy-test-"));
   try {
     const source = join(root, "releases/ci-fixture"), state = join(root, "deploy/unified"), bin = join(root, "bin"), gateway = join(root, "gateway-nginx.conf");
-    for (const directory of [join(source, "deploy"), state, bin]) mkdirSync(directory, { recursive: true });
+    for (const directory of [join(source, "deploy/scripts"), state, bin]) mkdirSync(directory, { recursive: true });
+    writeFileSync(join(source, "deploy/scripts/backup-restore.sh"), `#!/usr/bin/env bash
+set -Eeuo pipefail
+echo restore-rehearsal >> "$FIXTURE_LOG"
+if [[ "$FIXTURE_MODE" == restore-failed ]]; then exit 1; fi
+mkdir -p "$2"
+printf 'synthetic restored archive' > "$2/database.dump"
+`);
     if (!["not-initialized", "legacy-active"].includes(mode)) writeFileSync(join(state, "accepted.json"), "{}");
     if (mode === "legacy-active") writeFileSync(join(source, "deploy/.first-unified-cutover"), "");
     writeFileSync(join(state, "compose.json"), '{"name":"saydian-global","services":{}}');
@@ -31,13 +38,18 @@ if(tool==='readlink') console.log(process.env.FIXTURE_SHELL_ROOT+'/deploy/.ci-re
 if(tool==='timeout') { const r=require('node:child_process').spawnSync(process.execPath,[path.join(process.env.FIXTURE_BIN,a[3]+'.cjs'),...a.slice(4)],{stdio:'inherit'});process.exit(r.status??1); }
 if(tool==='curl') {
  const url=a.at(-1);
+ if(url.includes('/vip/v1/public/promotion/')) {
+  fs.writeFileSync(a[a.indexOf('--output')+1],JSON.stringify({message:'品牌伙伴推广链接已失效'}));
+  console.log(mode==='vip-api-failed'?'500':'404');process.exit(0);
+ }
+ if(url.includes('/vip/v1/wallet')) {fs.writeFileSync(a[a.indexOf('--output')+1],'{}');console.log('401');process.exit(0);}
  let publicRevision=revision;
  if(/health/.test(url)) {
   const marker=process.env.FIXTURE_ROOT+'/public-probe';
   if(mode==='public-stale'||mode==='public-stale-once'&&!fs.existsSync(marker)) publicRevision='f'.repeat(40);
   fs.writeFileSync(marker,'1');
  }
- const page=url.includes('/say-ring/privacy')?'<html>Say Ring 隐私政策</html>':url.includes('/say-ring/terms')?'<html>Say Ring 用户协议</html>':'<html>tested page</html>';
+ const page=url.includes('/vip/')?'<html>赛电品牌伙伴平台</html>':url.includes('/say-ring/privacy')?'<html>Say Ring 隐私政策</html>':url.includes('/say-ring/terms')?'<html>Say Ring 用户协议</html>':'<html>tested page</html>';
  console.log(url.includes('api.github.com') ? JSON.stringify({object:{sha:mode==='stale'?'f'.repeat(40):revision}}) : /health/.test(url)?JSON.stringify({status:'ready',revision:publicRevision}):page);
 }
 if(tool==='docker') {
@@ -46,6 +58,7 @@ if(tool==='docker') {
  else if(a[0]==='inspect') console.log(a.join(' ').includes('.Config.Env')?'["POSTGRES_USER=global_owner","POSTGRES_DB=saydian_global","POSTGRES_PASSWORD=synthetic-test-only"]':a.join(' ').includes('.Image')?(fs.existsSync(process.env.FIXTURE_ROOT+'/changed')?imageId:'sha256:'+'e'.repeat(64)):imageId);
  else if(a[0]==='run') {
   const helper=a.find(v=>v.startsWith('/release/scripts/'));
+  if(helper?.endsWith('unified-preflight.mjs')) console.log(JSON.stringify({pending:mode.startsWith('restore-')?['reviewed-migration']:[]}));
   if(helper?.endsWith('unify-gateway.mjs')) fs.copyFileSync(process.env.RELEASE_SOURCE+'/gateway.conf',process.env.RELEASE_SOURCE+'/gateway-candidate.conf');
   if(helper?.endsWith('release-manifest.mjs') && a.includes('compose')) console.log(JSON.stringify({services:{'global-api':{image:imageId}}}));
  } else if(a[0]==='exec') {
@@ -94,6 +107,21 @@ test("successful routine publication verifies both health aliases without build,
   for (const path of ["/down2", "/down2/", "/down/legacy", "/global/down", "/global/down/"])
     assert(result.calls.includes(`https://app.saydian.cn${path}`));
   assert(!/docker build|prisma db seed|compose down|docker prune/.test(result.calls));
+});
+test("pending reviewed migration requires a successful isolated restore before schema writes", () => {
+  const failed = run("restore-failed");
+  assert.notEqual(failed.status, 0, failed.output + failed.calls);
+  assert(failed.calls.includes("restore-rehearsal"));
+  assert(!failed.calls.includes("migrate deploy"));
+  assert(!failed.calls.includes(" up "));
+  const accepted = run("restore-success");
+  assert.equal(accepted.status, 0, accepted.output);
+  assert(accepted.calls.indexOf("restore-rehearsal") < accepted.calls.indexOf("migrate deploy"));
+});
+test("new partner runtime table or route failure rolls back the application release", () => {
+  const result = run("vip-api-failed");
+  assert.notEqual(result.status, 0);
+  assert.match(result.calls, /backups\/[^\n]+images.json up -d --no-build --pull never/);
 });
 test("an exact locally cached image skips registry transfer but still verifies the release", () => {
   const result = run("cached"); assert.equal(result.status, 0, result.output);

@@ -35,7 +35,8 @@
     "migrate:mall:import": "pnpm --filter @saydian/app-migrator mall:migrate",
     "migrate:mall:verify": "pnpm --filter @saydian/app-migrator mall:verify",
     "migrate:takeover:check": "pnpm --filter @saydian/app-migrator takeover:check",
-    "migrate:takeover:activate": "pnpm --filter @saydian/app-migrator takeover:activate"
+    "migrate:takeover:activate": "pnpm --filter @saydian/app-migrator takeover:activate",
+    "dev:vip": "pnpm --filter @saydian/app-vip-web dev"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

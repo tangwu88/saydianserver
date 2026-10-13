@@ -122,11 +122,13 @@ export class AdminController {
     @Query("search") search?: string,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
+    @Query("partnerId") partnerId?: string,
   ) {
     return this.admin.members(
       search,
       Number(page ?? 1),
       Number(pageSize ?? 30),
+      partnerId,
     );
   }
 

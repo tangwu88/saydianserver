@@ -15,7 +15,7 @@ export function isComponentInput(name, path) {
   if (path === `docker/${name}.Dockerfile`) return true;
   if (name === "api") return path.startsWith("packages/commerce-domain/") || path.startsWith("apps/api/");
   if (name === "worker") return path.startsWith("packages/commerce-domain/") || path.startsWith("apps/worker/") || path.startsWith("apps/api/prisma/") || path === "apps/api/package.json";
-  return ["apps/admin-web/", "apps/download-web/", "apps/shop/"].some(prefix => path.startsWith(prefix)) || path === "docker/admin-nginx.conf";
+  return ["apps/admin-web/", "apps/vip-web/", "apps/download-web/", "apps/shop/"].some(prefix => path.startsWith(prefix)) || path === "docker/admin-nginx.conf";
 }
 
 export function inputHash(name, entries) {

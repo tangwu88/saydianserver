@@ -96,10 +96,12 @@ enum BusinessType {
   COMMERCE_ORDER
   HEALTH_REPORT
   HEALTH_MEMBERSHIP
+  PARTNER_RECHARGE
 }
 
 enum PaymentChannel {
   OFFLINE_MANUAL
+  PARTNER_BALANCE
   WECHAT_MINI
   WECHAT_JSAPI
   WECHAT_H5
@@ -313,6 +315,8 @@ model User {
   redeemedCouponGifts      CommerceCouponGift[]              @relation("CouponGiftRedeemer")
   referralEmployeeId       String?                           @db.Uuid
   referralEmployee         CommerceEmployee?                 @relation("LockedReferral", fields: [referralEmployeeId], references: [id], onDelete: SetNull)
+  partnerId                String?                           @db.Uuid
+  partner                  BrandPartner?                     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   pointAccount             CommercePointAccount?
   pointLedger              CommercePointLedger[]
   legacySessions           LegacySessionCredential[]
@@ -320,6 +324,110 @@ model User {
 
   @@index([status, createdAt])
   @@index([referralEmployeeId])
+  @@index([partnerId, createdAt])
+}
+
+// Brand partners are independent of member promotion/commission identities.
+model PartnerLevel {
+  id        String            @id @default(uuid()) @db.Uuid
+  code      String            @unique
+  name      String
+  sort      Int               @default(0)
+  active    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  partners  BrandPartner[]
+  prices    PartnerSkuPrice[]
+}
+
+model BrandPartner {
+  id            String            @id @default(uuid()) @db.Uuid
+  partnerNo     String            @unique
+  username      String            @unique
+  passwordHash  String
+  name          String
+  mobile        String?
+  active        Boolean           @default(true)
+  promotionCode String            @unique
+  levelId       String            @db.Uuid
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  level         PartnerLevel      @relation(fields: [levelId], references: [id], onDelete: Restrict)
+  sessions      PartnerSession[]
+  members       User[]
+  wallet        PartnerWallet?
+  ledger        PartnerLedger[]
+  recharges     PartnerRecharge[]
+  orders        CommerceOrder[]
+  payments      PaymentIntent[]
+
+  @@index([levelId, active])
+}
+
+model PartnerSession {
+  id        String       @id @default(uuid()) @db.Uuid
+  partnerId String       @db.Uuid
+  tokenHash String       @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime     @default(now())
+  partner   BrandPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  @@index([partnerId, expiresAt])
+}
+
+model PartnerSkuPrice {
+  levelId    String       @db.Uuid
+  skuId      String       @db.Uuid
+  priceCents Int
+  enabled    Boolean      @default(true)
+  updatedAt  DateTime     @updatedAt
+  level      PartnerLevel @relation(fields: [levelId], references: [id], onDelete: Restrict)
+  sku        CommerceSku  @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@id([levelId, skuId])
+}
+
+model PartnerWallet {
+  partnerId    String       @id @db.Uuid
+  balanceCents Int          @default(0)
+  depositCents Int          @default(0)
+  version      Int          @default(0)
+  updatedAt    DateTime     @updatedAt
+  partner      BrandPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+}
+
+model PartnerLedger {
+  id                String       @id @default(uuid()) @db.Uuid
+  partnerId         String       @db.Uuid
+  account           String
+  type              String
+  deltaCents        Int
+  balanceAfterCents Int
+  referenceId       String?
+  reason            String
+  actorId           String?
+  idempotencyKey    String       @unique
+  createdAt         DateTime     @default(now())
+  partner           BrandPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  @@index([partnerId, account, createdAt])
+}
+
+model PartnerRecharge {
+  id             String          @id @default(uuid()) @db.Uuid
+  rechargeNo     String          @unique
+  partnerId      String          @db.Uuid
+  amountCents    Int
+  channel        PaymentChannel
+  status         PaymentStatus   @default(CREATED)
+  idempotencyKey String          @unique
+  createdAt      DateTime        @default(now())
+  creditedAt     DateTime?
+  partner        BrandPartner    @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  payments       PaymentIntent[]
+
+  @@index([partnerId, createdAt])
 }
 
 model WechatOfficialIdentity {
@@ -343,6 +451,7 @@ model CommerceOAuthState {
   product       String    @default("saydian-global")
   returnTo      String
   referralCode  String?
+  partnerCode   String?
   expiresAt     DateTime
   consumedAt    DateTime?
   createdAt     DateTime  @default(now())
@@ -358,6 +467,7 @@ model CommerceWechatBindTicket {
   unionId      String?
   returnTo     String
   referralCode String?
+  partnerCode  String?
   expiresAt    DateTime
   consumedAt   DateTime?
   createdAt    DateTime  @default(now())
@@ -1137,7 +1247,9 @@ model PaymentIntent {
   paymentNo                  String            @unique
   sourceSystem               String            @default("canonical")
   executionOwner             String            @default("NEW_SYSTEM")
-  userId                     String            @db.Uuid
+  userId                     String?           @db.Uuid
+  partnerId                  String?           @db.Uuid
+  partnerRechargeId          String?           @db.Uuid
   businessType               BusinessType
   businessId                 String
   commerceOrderId            String?           @db.Uuid
@@ -1162,13 +1274,16 @@ model PaymentIntent {
   closedAt                   DateTime?
   createdAt                  DateTime          @default(now())
   updatedAt                  DateTime          @updatedAt
-  user                       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                       User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partner                    BrandPartner?     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  partnerRecharge            PartnerRecharge?  @relation(fields: [partnerRechargeId], references: [id], onDelete: Restrict)
   commerceOrder              CommerceOrder?    @relation("OrderPayments", fields: [commerceOrderId], references: [id], onDelete: SetNull)
   healthReport               HealthReport?     @relation("ReportPayments", fields: [healthReportId], references: [id], onDelete: SetNull)
   healthMembership           HealthMembership? @relation("MembershipPayments", fields: [healthMembershipId], references: [id], onDelete: SetNull)
   refunds                    PaymentRefund[]
 
   @@index([userId, businessType, createdAt])
+  @@index([partnerId, businessType, createdAt])
   @@index([status, createdAt])
   @@index([integrationKey, status])
   @@index([appleOriginalTransactionId])
@@ -1338,6 +1453,7 @@ model CommerceSku {
   product          CommerceProduct     @relation(fields: [productId], references: [id], onDelete: Cascade)
   orderItems       CommerceOrderItem[]
   cartItems        CommerceCartItem[]
+  partnerPrices    PartnerSkuPrice[]
 
   @@index([productId, enabled])
 }
@@ -1376,7 +1492,9 @@ model CommerceOrder {
   executionOwner       String                     @default("NEW_SYSTEM")
   version              Int                        @default(0)
   orderNo              String                     @unique
-  userId               String                     @db.Uuid
+  userId               String?                    @db.Uuid
+  partnerId            String?                    @db.Uuid
+  partnerLevelSnapshot String?
   status               CommerceOrderStatus        @default(PENDING_PAYMENT)
   referralEmployeeId   String?                    @db.Uuid
   referralCodeSnapshot String?
@@ -1410,7 +1528,8 @@ model CommerceOrder {
   cancelledAt          DateTime?
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
-  user                 User                       @relation(fields: [userId], references: [id])
+  user                 User?                      @relation(fields: [userId], references: [id])
+  partner              BrandPartner?              @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   referralEmployee     CommerceEmployee?          @relation("OrderReferral", fields: [referralEmployeeId], references: [id])
   items                CommerceOrderItem[]
   paymentIntents       PaymentIntent[]            @relation("OrderPayments")
@@ -1422,6 +1541,7 @@ model CommerceOrder {
   pointLedger          CommercePointLedger[]
 
   @@index([userId, status, createdAt])
+  @@index([partnerId, status, createdAt])
   @@index([referralEmployeeId, paidAt])
 }
 

@@ -28,7 +28,7 @@ export async function onCommerceOrderPaid(tx: Prisma.TransactionClient, orderId:
   await tx.$queryRaw`SELECT id FROM "CommerceOrder" WHERE id = ${orderId}::uuid FOR UPDATE`;
   const order = await tx.commerceOrder.findUniqueOrThrow({ where: { id: orderId }, include: { commissionAccrual: true } });
   if (order.executionOwner !== "NEW_SYSTEM") throw new ConflictException("订单尚未完成新系统接管");
-  if (order.commissionAccrual || !order.referralEmployeeId || !order.paidAt) return;
+  if (order.partnerId || order.commissionAccrual || !order.referralEmployeeId || !order.paidAt) return;
   const plan = await tx.commerceCommissionPlan.findUnique({ where: { id: "default" } });
   if (!plan?.enabled || !plan.enabledAt || order.paidAt < plan.enabledAt || plan.rateBps <= 0) return;
   const baseCents = Math.max(0, order.payableCents - order.shippingCents);
