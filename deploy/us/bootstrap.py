@@ -134,13 +134,13 @@ ALTER DEFAULT PRIVILEGES FOR ROLE us_owner IN SCHEMA public GRANT SELECT,INSERT,
 ALTER DEFAULT PRIVILEGES FOR ROLE us_owner IN SCHEMA public GRANT USAGE,SELECT ON SEQUENCES TO us_app;
 """ % values['US_DATABASE_PASSWORD']
     run(pg,sql.encode())
-    run(['docker','run','--rm','--network','saydian-us_us_private','--memory','192m','--read-only',
+    run(['docker','run','--rm','--user','0:0','--cap-drop','ALL','--security-opt','no-new-privileges:true','--network','saydian-us_us_private','--memory','192m','--read-only',
          '--tmpfs','/tmp:size=16m','--env-file',str(private/'runtime.env'),'-e','DATABASE_URL',
          '-v',str(source)+':/release:ro','--entrypoint','node',manifest['images']['api']['ref'],
          '/release/deploy/us/bootstrap-seed.cjs'],env=environment)
     history=run(pg+['-c','SELECT coalesce(json_agg(t),\'[]\'::json)::text FROM (SELECT migration_name,checksum,finished_at,rolled_back_at FROM "_prisma_migrations") t'])
     (source/'history.json').write_bytes(history)
-    run(['docker','run','--rm','--network','none','--memory','128m','--read-only','-v',str(source)+':/release:ro',
+    run(['docker','run','--rm','--user','0:0','--cap-drop','ALL','--security-opt','no-new-privileges:true','--network','none','--memory','128m','--read-only','-v',str(source)+':/release:ro',
          '--entrypoint','node',manifest['images']['api']['ref'],'--input-type=module','-e',
          "import {readFileSync} from 'node:fs'; import {validateManifest,verifyMigrationHistory} from '/release/deploy/scripts/release-manifest.mjs'; const m=validateManifest(JSON.parse(readFileSync('/release/deploy/release-manifest.json')),process.argv[1]); if(verifyMigrationHistory(m,JSON.parse(readFileSync('/release/history.json'))).length) throw Error('Incomplete schema');",revision])
     # Real host dump and restore into a different database; compare every table, including row contents.

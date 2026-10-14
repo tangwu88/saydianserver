@@ -32,7 +32,7 @@ docker exec -i saydian-us-us-postgres-1 psql -U us_owner -d saydian_us -At > "$s
 SELECT coalesce(json_agg(t), '[]'::json)::text FROM (SELECT migration_name,checksum,finished_at,rolled_back_at FROM "_prisma_migrations") t;
 SQL
 api_image=$(sed -n 's/^US_API_IMAGE=//p' "$next")
-docker run --rm --network none --read-only --memory 128m -v "$source_dir:/release:ro" --entrypoint node "$api_image" --input-type=module -e '
+docker run --rm --user 0:0 --cap-drop ALL --security-opt no-new-privileges:true --network none --read-only --memory 128m -v "$source_dir:/release:ro" --entrypoint node "$api_image" --input-type=module -e '
 import {readFileSync} from "node:fs";
 import {validateManifest,verifyMigrationHistory} from "/release/deploy/scripts/release-manifest.mjs";
 const m=validateManifest(JSON.parse(readFileSync("/release/deploy/release-manifest.json")),process.argv[1]);
