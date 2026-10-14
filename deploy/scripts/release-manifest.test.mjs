@@ -28,3 +28,10 @@ test("only permits reviewed exact pending SQL, and refuses drift or failed migra
   assert.throws(() => verifyMigrationHistory(value, [{ ...row, checksum: "d".repeat(64) }]), /differs/);
   assert.throws(() => verifyMigrationHistory(value, [{ ...row, finished_at: null }]), /Unfinished/);
 });
+test("optional measured runtime layers must carry exact hashes and positive sizes", () => {
+  const value = fixture();
+  value.images.api.layers = [{ diffId: `sha256:${"e".repeat(64)}`, uncompressedBytes: 10240 }];
+  assert.equal(validateManifest(value, revision), value);
+  value.images.api.layers[0].uncompressedBytes = -1;
+  assert.throws(() => validateManifest(value, revision), /Invalid measured runtime layer/);
+});

@@ -50,6 +50,17 @@ r=json.load(open(p/'bootstrap-restore-proof.json'))
 assert len(r['tables'])>30
 print('Actual isolated CI bootstrap, complete restore row digests and restricted S3 passed')
 PY
+api_ref=$(python3 -c 'import json; print(json.load(open("verified-release/release-manifest.json"))["images"]["api"]["ref"])')
+python3 deploy/scripts/measure-image-layers.py "$api_ref" > "$root/verified-layers.json"
+sudo python3 - "$root" "$api_ref" <<'PY'
+import json,sys,subprocess
+from pathlib import Path
+root=Path(sys.argv[1]);layers=json.load(open(root/'verified-layers.json'))
+actual=json.loads(subprocess.check_output(['docker','image','inspect',sys.argv[2]]))[0]
+assert [layer['diffId'] for layer in layers]==actual['RootFS']['Layers']
+assert all(layer['uncompressedBytes']>0 for layer in layers)
+print('Actual runtime layer hashes and uncompressed sizes accepted')
+PY
 # A second bootstrap must refuse the accepted system, preserving its DB and secrets.
 if sudo env GITHUB_ACTIONS=true US_BOOTSTRAP_CI_ROOT="$root" DOCKER_CONFIG="$HOME/.docker" \
   RELEASE_SHA="$revision" RELEASE_SOURCE="$source_dir" python3 "$source_dir/deploy/us/bootstrap.py"; then exit 1; fi

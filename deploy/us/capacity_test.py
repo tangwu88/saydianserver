@@ -1,5 +1,5 @@
 import unittest
-from capacity import capacity
+from capacity import capacity,incremental_images
 
 SHA = "a" * 40
 MANIFEST = {"schemaVersion": 1, "revision": SHA, "images": {
@@ -24,6 +24,22 @@ class CapacityGate(unittest.TestCase):
                 capacity(MANIFEST, value, SHA, 10*1024**3)
         with self.assertRaises(ValueError):
             capacity(MANIFEST, STATE, "c"*40, 10*1024**3)
+
+    def test_resident_immutable_images_do_not_need_a_second_copy(self):
+        cost=incremental_images(MANIFEST,lambda ref:{'RepoDigests':[ref]},set())
+        self.assertEqual(cost,3*1024**2)
+        self.assertEqual(capacity(MANIFEST,STATE,SHA,10*1024**3,cost,0)['requiredBytes'],
+                         5*1024**3+cost+280)
+
+    def test_counts_only_missing_verified_layers_and_preserves_old_manifest_gate(self):
+        from copy import deepcopy
+        manifest=deepcopy(MANIFEST)
+        for image in manifest['images'].values():image['layers']=[{'diffId':'sha256:'+'c'*64,'uncompressedBytes':100}]
+        self.assertEqual(incremental_images(manifest,lambda _:None,{'sha256:'+'c'*64}),3*1024**2)
+        self.assertEqual(incremental_images(manifest,lambda _:None,set()),3*1024**2+120+16*1024**2)
+        self.assertEqual(incremental_images(MANIFEST,lambda _:None,set()),600)
+        manifest['images']['api']['layers'][0]['diffId']='untrusted'
+        with self.assertRaises(AssertionError):incremental_images(manifest,lambda _:None,set())
 
 
 if __name__ == "__main__":
