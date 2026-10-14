@@ -6,6 +6,7 @@ import {
   Box,
   User,
   Wallet,
+  DocumentChecked,
   ArrowRight,
 } from "@element-plus/icons-vue";
 import { api, data, errorMessage } from "../api";
@@ -94,7 +95,7 @@ onMounted(load);
           ><el-icon><User /></el-icon>我的会员</span
         ><strong>{{ overview?.memberCount ?? "—" }}<small> 人</small></strong
         ><span class="metric-link"
-          >查看档案 <el-icon><ArrowRight /></el-icon></span
+          >{{ overview?.canViewMemberHealth ? "查看档案" : "查看会员" }} <el-icon><ArrowRight /></el-icon></span
       ></router-link>
       <router-link to="/orders" class="panel metric-card"
         ><span
@@ -123,6 +124,7 @@ onMounted(load);
           <dd>{{ overview?.username || "—" }}</dd>
         </div>
       </dl>
+      <router-link to="/certificate" class="action-link"><el-icon><DocumentChecked /></el-icon>查看 / 打印授权证书</router-link>
       <details class="quiet-details">
         <summary>账户信息</summary>
         <p>伙伴编号：{{ overview?.partnerNo || "—" }}</p>

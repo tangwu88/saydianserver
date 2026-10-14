@@ -11,6 +11,7 @@ import {
   healthReadings,
   healthTime,
 } from "@saydian/app-contracts";
+const canViewMemberHealth = ref(false);
 const error = ref(""),
   detailError = ref(""),
   deviceError = ref(""),
@@ -61,6 +62,7 @@ async function load() {
       }),
     );
     if (request === listRequest) {
+      canViewMemberHealth.value = result.canViewMemberHealth === true;
       items.value = result.items;
       total.value = result.total;
     }
@@ -96,7 +98,10 @@ async function loadDetails() {
   try {
     if (tab.value === "profile") {
       const result = data(await api.get(`/members/${id}/profile`));
-      if (request === detailRequest) profile.value = result;
+      if (request === detailRequest) {
+        profile.value = result;
+        canViewMemberHealth.value = result.canViewMemberHealth === true;
+      }
     } else if (tab.value === "devices") {
       const result = data(await api.get(`/members/${id}/devices`));
       if (request === detailRequest) devices.value = result.items;
@@ -266,16 +271,18 @@ function changeDeviceTab() {
                 <el-icon :size="22"><User /></el-icon
                 ><b>{{ member.nickname || "未填写昵称" }}</b>
               </div>
-              <el-button type="primary" plain @click="openMember(member)"
-                >查看档案</el-button
-              >
+              <el-button type="primary" plain @click="openMember(member)">{{
+                canViewMemberHealth ? "查看档案" : "查看资料"
+              }}</el-button>
             </div>
             <p class="member-contact">
               {{ member.mobile || member.email || "未填写联系方式" }}
             </p>
             <p class="muted member-meta">
-              {{ member.memberNo }} · {{ member._count.devices }} 台设备 ·
-              {{ member._count.healthRecords }} 条健康记录
+              {{ member.memberNo }} · {{ member._count.devices }} 台设备
+              <template v-if="canViewMemberHealth">
+                · {{ member._count.healthRecords }} 条健康记录</template
+              >
             </p>
             <small class="muted">注册于 {{ date(member.createdAt) }}</small>
           </article>
@@ -292,7 +299,7 @@ function changeDeviceTab() {
     </div>
     <el-drawer
       v-model="drawer"
-      :title="`${selected?.nickname || '会员'} · 健康档案`"
+      :title="`${selected?.nickname || '会员'} · ${canViewMemberHealth ? '健康档案' : '会员资料'}`"
       size="min(900px, 100vw)"
       @closed="
         detailRequest++;
@@ -308,8 +315,12 @@ function changeDeviceTab() {
         ><el-tab-pane label="会员资料" name="profile" /><el-tab-pane
           label="设备"
           name="devices" /><el-tab-pane
+          v-if="canViewMemberHealth"
           label="健康与测量记录"
-          name="health" /><el-tab-pane label="健康报告" name="reports"
+          name="health" /><el-tab-pane
+          v-if="canViewMemberHealth"
+          label="健康报告"
+          name="reports"
       /></el-tabs>
       <PageError :message="detailError" @retry="loadDetails" />
       <div v-loading="detailBusy" :aria-busy="detailBusy">
@@ -340,7 +351,7 @@ function changeDeviceTab() {
             <dt>邮箱</dt>
             <dd>{{ profile.email || "未填写" }}</dd>
           </div>
-          <div>
+          <div v-if="canViewMemberHealth">
             <dt>出生日期</dt>
             <dd>
               {{
@@ -350,7 +361,7 @@ function changeDeviceTab() {
               }}
             </dd>
           </div>
-          <div>
+          <div v-if="canViewMemberHealth">
             <dt>身高</dt>
             <dd>
               {{
@@ -358,7 +369,7 @@ function changeDeviceTab() {
               }}
             </dd>
           </div>
-          <div>
+          <div v-if="canViewMemberHealth">
             <dt>体重</dt>
             <dd>
               {{
@@ -366,7 +377,7 @@ function changeDeviceTab() {
               }}
             </dd>
           </div>
-          <div>
+          <div v-if="canViewMemberHealth">
             <dt>健康档案时区</dt>
             <dd>{{ profile.healthProfile?.timezone || "未建立档案" }}</dd>
           </div>
@@ -386,9 +397,9 @@ function changeDeviceTab() {
             }}</template></el-table-column
           ><el-table-column label="操作" width="120"
             ><template #default="scope"
-              ><el-button text type="primary" @click="openDevice(scope.row)"
-                >连接与测量</el-button
-              ></template
+              ><el-button text type="primary" @click="openDevice(scope.row)">{{
+                canViewMemberHealth ? "连接与测量" : "连接记录"
+              }}</el-button></template
             ></el-table-column
           ></el-table
         ><template v-if="tab === 'health'"
@@ -505,6 +516,7 @@ function changeDeviceTab() {
         v-model="deviceTab"
         @tab-change="changeDeviceTab"
         ><el-tab-pane label="连接记录" name="connections" /><el-tab-pane
+          v-if="canViewMemberHealth"
           label="测量记录"
           name="measurements" /></el-tabs
       ><el-table :data="child.items" v-loading="deviceBusy"

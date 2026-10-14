@@ -17,6 +17,7 @@ export interface PartnerWalletContract {
 }
 export interface PartnerIdentityContract {
   preview?: boolean;
+  canViewMemberHealth?: boolean;
   id: string;
   partnerNo: string;
   username: string;
@@ -88,4 +89,17 @@ export interface PartnerPromotionContract {
   linkUrl: string;
   qrDataUrl: string;
   active: boolean;
+}
+
+/** Display current cooperation wording without rewriting historic transaction snapshots. */
+export function partnerLevelName(name: string | null | undefined): string {
+  return (
+    (
+      {
+        一级分销: "战略合作",
+        二级分销: "核心合作",
+        三级分销: "优选合作",
+      } as Record<string, string>
+    )[name ?? ""] ?? (name || "—").replace(/分销/g, "合作")
+  );
 }

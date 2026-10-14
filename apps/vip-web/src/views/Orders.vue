@@ -2,7 +2,8 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { api, data, errorMessage } from "../api";
-import { money, date, statuses } from "../present";
+import { money, date, statuses, erpStatuses } from "../present";
+import { partnerLevelName } from "@saydian/app-contracts";
 import { Refresh, Van, CopyDocument } from "@element-plus/icons-vue";
 import PageError from "../components/PageError.vue";
 import EmptyState from "../components/EmptyState.vue";
@@ -11,9 +12,14 @@ const error = ref(""),
   logisticsError = ref(""),
   detailBusy = ref(false),
   selectedId = ref("");
+const processing = ref<any>(),
+  processingError = ref(""),
+  processingBusy = ref(false);
+let processingTimer: ReturnType<typeof setTimeout> | undefined;
 let listRequest = 0,
   detailRequest = 0;
 onBeforeUnmount(() => {
+  clearTimeout(processingTimer);
   listRequest++;
   detailRequest++;
 });
@@ -45,6 +51,9 @@ onMounted(load);
 async function open(id: string) {
   const request = ++detailRequest;
   selectedId.value = id;
+  clearTimeout(processingTimer);
+  processing.value = null;
+  processingError.value = "";
   detail.value = null;
   logistics.value = [];
   detailError.value = "";
@@ -62,6 +71,33 @@ async function open(id: string) {
     logistics.value = data(shipments.value).items;
   else logisticsError.value = errorMessage(shipments.reason);
   detailBusy.value = false;
+  if (detail.value) void loadProcessing(id, request);
+}
+function stopProcessing() {
+  clearTimeout(processingTimer);
+}
+async function loadProcessing(
+  id = selectedId.value,
+  request = detailRequest,
+  poll = 0,
+) {
+  clearTimeout(processingTimer);
+  processingBusy.value = true;
+  processingError.value = "";
+  try {
+    const result = data(await api.get(`/orders/${id}/processing`));
+    if (request !== detailRequest || id !== selectedId.value || !drawer.value)
+      return;
+    processing.value = result;
+    if (result.state === "PENDING" && poll < 6)
+      processingTimer = setTimeout(() => {
+        void loadProcessing(id, request, poll + 1);
+      }, 2500);
+  } catch (cause) {
+    if (request === detailRequest) processingError.value = errorMessage(cause);
+  } finally {
+    if (request === detailRequest) processingBusy.value = false;
+  }
 }
 async function copyTracking(value: string) {
   try {
@@ -137,6 +173,7 @@ async function copyTracking(value: string) {
       size="min(820px, 100vw)"
       @closed="
         detailRequest++;
+        stopProcessing();
         detail = null;
       "
       ><div v-loading="detailBusy" :aria-busy="detailBusy">
@@ -147,7 +184,7 @@ async function copyTracking(value: string) {
           <dl class="facts" style="margin-top: 26px">
             <div>
               <dt>成交等级</dt>
-              <dd>{{ detail.partnerLevelSnapshot }}</dd>
+              <dd>{{ partnerLevelName(detail.partnerLevelSnapshot) }}</dd>
             </div>
             <div>
               <dt>余额付款</dt>
@@ -163,7 +200,7 @@ async function copyTracking(value: string) {
             </div>
             <div>
               <dt>发货处理</dt>
-              <dd>{{ detail.erpStatus || "等待同步" }}</dd>
+              <dd>{{ erpStatuses[detail.erpStatus] || (detail.erpStatus ? "处理中" : "等待同步") }}</dd>
             </div>
             <div>
               <dt>下单时间</dt>
@@ -193,6 +230,54 @@ async function copyTracking(value: string) {
               }}</template></el-table-column
             ></el-table
           >
+          <div class="record-head" style="margin-top: 26px">
+            <h3>ERP 处理明细</h3>
+            <el-button
+              :icon="Refresh"
+              :loading="processingBusy"
+              @click="loadProcessing()"
+              >同步 / 刷新</el-button
+            >
+          </div>
+          <PageError :message="processingError" @retry="loadProcessing()" />
+          <p v-if="processing?.syncedAt" class="muted">
+            同步于 {{ date(processing.syncedAt) }}
+          </p>
+          <el-timeline v-if="processing?.items?.length">
+            <el-timeline-item
+              v-for="event in processing.items"
+              :key="event.id"
+              :timestamp="event.time"
+            >
+              <b>{{ event.name }}</b
+              ><span v-if="event.operator" class="muted">
+                · {{ event.operator }}</span
+              >
+              <p v-if="event.remark" class="erp-remark">{{ event.remark }}</p>
+            </el-timeline-item>
+          </el-timeline>
+          <p v-if="processing?.state === 'PENDING'" class="muted">
+            正在同步 ERP 处理记录…
+          </p>
+          <p v-else-if="processing?.state === 'ERROR'" class="inline-error">
+            ERP 处理记录同步失败，请联系管理员检查接口权限。
+          </p>
+          <p v-else-if="processing?.state === 'UNAVAILABLE'" class="muted">
+            ERP 接口暂不可用。
+          </p>
+          <p
+            v-else-if="!processing?.items?.length && !processingError"
+            class="muted"
+          >
+            {{
+              processing?.state === "WAITING_ORDER"
+                ? "订单正在提交至 ERP。"
+                : "ERP 暂未返回处理记录。"
+            }}
+          </p>
+          <p v-if="processing?.truncated" class="muted">
+            记录较多，当前显示最近查询到的 6,000 条记录。
+          </p>
           <h3 style="margin-top: 30px">发货与物流</h3>
           <PageError
             :message="logisticsError"
@@ -252,6 +337,11 @@ async function copyTracking(value: string) {
   </section>
 </template>
 <style scoped>
+.erp-remark {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 6px 0;
+}
 .order-item {
   display: flex;
   align-items: center;

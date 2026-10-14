@@ -10,6 +10,7 @@ import {
   Wallet,
   Picture,
   MagicStick,
+  Location,
 } from "@element-plus/icons-vue";
 import { api, data, errorMessage, requestKey } from "../api";
 import { money } from "../present";
@@ -23,7 +24,10 @@ import {
   addressError,
   isDefiniteOrderFailure,
 } from "../checkout-form";
-import type { PartnerCheckoutInput } from "@saydian/app-contracts";
+import type {
+  PartnerCheckoutInput,
+  PartnerQuoteContract,
+} from "@saydian/app-contracts";
 import PageError from "../components/PageError.vue";
 import EmptyState from "../components/EmptyState.vue";
 import axios from "axios";
@@ -31,6 +35,12 @@ import {
   recognizeAddress,
   type RecognizedAddress,
 } from "../address-recognition";
+type PurchaseConfirmation = {
+  input: PartnerCheckoutInput;
+  quote: PartnerQuoteContract;
+  balanceCents: number | undefined;
+  resuming: boolean;
+};
 const products = ref<any[]>([]),
   page = ref(1),
   total = ref(0),
@@ -43,6 +53,8 @@ const products = ref<any[]>([]),
   quote = ref<any>(),
   checkout = ref(false),
   submitting = ref(false),
+  preparingPurchase = ref(false),
+  paymentReview = ref<PurchaseConfirmation | null>(null),
   error = ref(""),
   checkoutError = ref(""),
   quoteStale = ref(false),
@@ -65,7 +77,13 @@ const pastedAddress = ref(""),
   addressIncomplete = ref(false);
 const previousAddress = ref<RecognizedAddress>();
 function fillAddress() {
-  if (submitting.value || submittedRequest.value) return;
+  if (
+    submitting.value ||
+    preparingPurchase.value ||
+    paymentReview.value ||
+    submittedRequest.value
+  )
+    return;
   const result = recognizeAddress(pastedAddress.value);
   if (result.error || !result.recognized) {
     addressIncomplete.value = true;
@@ -84,7 +102,13 @@ function fillAddress() {
     : result.warnings.join("；") || "已自动填写，请核对收货信息";
 }
 function undoAddress() {
-  if (submitting.value || submittedRequest.value || !previousAddress.value)
+  if (
+    submitting.value ||
+    preparingPurchase.value ||
+    paymentReview.value ||
+    submittedRequest.value ||
+    !previousAddress.value
+  )
     return;
   Object.assign(address, previousAddress.value);
   previousAddress.value = undefined;
@@ -131,6 +155,32 @@ const insufficient = computed(
     quote.value &&
     balance.value < quote.value.payableCents,
 );
+const confirmationVisible = computed({
+  get: () => paymentReview.value !== null,
+  set: (visible) => {
+    if (!visible) cancelPurchaseConfirmation();
+  },
+});
+const confirmationCount = computed(
+  () =>
+    paymentReview.value?.input.items.reduce(
+      (sum, item) => sum + item.quantity,
+      0,
+    ) ?? 0,
+);
+const confirmationAddress = computed(() => {
+  const address = paymentReview.value?.input.address;
+  if (!address) return "";
+  return [
+    address.province,
+    address.city === address.province ? "" : address.city,
+    address.district,
+    address.addressDetail,
+    address.postalCode,
+  ]
+    .filter(Boolean)
+    .join(" ");
+});
 const router = useRouter();
 let checkoutKey = "",
   partnerId = "",
@@ -189,7 +239,13 @@ function available(product: any) {
   return product.skus.filter((sku: any) => sku.purchasable);
 }
 async function review() {
-  if (reviewing.value) return;
+  if (
+    reviewing.value ||
+    submitting.value ||
+    preparingPurchase.value ||
+    paymentReview.value
+  )
+    return;
   if (submittedRequest.value) {
     checkout.value = true;
     return;
@@ -220,38 +276,82 @@ async function review() {
   }
 }
 function clearCart() {
-  if (submittedRequest.value) return;
+  if (submittedRequest.value || paymentReview.value || submitting.value) return;
+  resetCart();
+}
+function resetCart() {
   Object.keys(quantities).forEach((key) => delete quantities[key]);
 }
-async function purchase() {
-  if (submitting.value || !quote.value || quoteStale.value || !partnerId)
+function cancelPurchaseConfirmation() {
+  if (!submitting.value) paymentReview.value = null;
+}
+async function preparePurchase() {
+  if (
+    submitting.value ||
+    preparingPurchase.value ||
+    paymentReview.value ||
+    !quote.value ||
+    quoteStale.value ||
+    !partnerId
+  )
     return;
-  submitting.value = true;
+  preparingPurchase.value = true;
   checkoutError.value = "";
   try {
     if (!submittedRequest.value) {
       if (!(await addressForm.value?.validate().catch(() => false))) return;
-      if (insufficient.value) {
+      if (!alive) return;
+      if (balance.value == null || insufficient.value) {
         checkoutError.value = "余额不足，请先充值";
         return;
       }
-      const input: PartnerCheckoutInput = {
-        items: quote.value.lines.map((line: any) => ({
-          skuId: line.skuId,
-          quantity: line.quantity,
-        })),
-        address: { ...address },
-        buyerRemark: buyerRemark.value,
-        expectedQuote: quote.value.fingerprint,
-        idempotencyKey: checkoutKey,
-      };
+    }
+    const input: PartnerCheckoutInput = submittedRequest.value || {
+      items: quote.value.lines.map((line: any) => ({
+        skuId: line.skuId,
+        quantity: line.quantity,
+      })),
+      address: { ...address },
+      buyerRemark: buyerRemark.value,
+      expectedQuote: quote.value.fingerprint,
+      idempotencyKey: checkoutKey,
+    };
+    // Confirm and send the same snapshot, including during payment recovery.
+    paymentReview.value = {
+      input: JSON.parse(JSON.stringify(input)),
+      quote: JSON.parse(JSON.stringify(quote.value)),
+      balanceCents: balance.value,
+      resuming: !!submittedRequest.value,
+    };
+  } finally {
+    preparingPurchase.value = false;
+  }
+}
+async function purchase() {
+  if (
+    submitting.value ||
+    !paymentReview.value ||
+    !partnerId ||
+    quoteStale.value
+  )
+    return;
+  const approved = paymentReview.value;
+  submitting.value = true;
+  checkoutError.value = "";
+  try {
+    if (!submittedRequest.value) {
+      if (approved.resuming) return;
       try {
-        saveCheckout(sessionStorage, { partnerId, input, quote: quote.value });
+        saveCheckout(sessionStorage, {
+          partnerId,
+          input: approved.input,
+          quote: approved.quote,
+        });
       } catch {
         checkoutError.value = "浏览器无法保存订单状态，请允许本站存储后再付款";
         return;
       }
-      submittedRequest.value = input;
+      submittedRequest.value = approved.input;
     }
     await api.post("/orders", submittedRequest.value);
     try {
@@ -259,7 +359,8 @@ async function purchase() {
     } catch {}
     submittedRequest.value = null;
     checkout.value = false;
-    clearCart();
+    paymentReview.value = null;
+    resetCart();
     ElMessage.success("采购成功，已从余额扣款");
     await router.push("/orders");
   } catch (cause) {
@@ -276,6 +377,7 @@ async function purchase() {
     checkoutError.value = errorMessage(cause);
   } finally {
     submitting.value = false;
+    paymentReview.value = null;
   }
 }
 </script>
@@ -283,7 +385,7 @@ async function purchase() {
   <section class="page">
     <div class="page-head">
       <h1>商品采购</h1>
-      <el-tag v-if="level" type="info">{{ level }} · 分销价</el-tag>
+      <el-tag v-if="level" type="info">{{ level }} · 合作价</el-tag>
     </div>
     <PageError :message="error" @retry="load" />
     <div class="panel">
@@ -353,7 +455,7 @@ async function purchase() {
                 )"
                 :key="sku.id"
               >
-                {{ sku.specification || "默认规格" }} · 暂无分销价
+                {{ sku.specification || "默认规格" }} · 暂无合作价
               </p>
             </details>
             <p v-if="!product.skus.length" class="muted">暂无可采购规格</p>
@@ -404,8 +506,10 @@ async function purchase() {
       title="确认订单"
       width="760px"
       :close-on-click-modal="false"
-      :close-on-press-escape="!submitting"
-      :show-close="!submitting"
+      :close-on-press-escape="
+        !submitting && !paymentReview && !preparingPurchase
+      "
+      :show-close="!submitting && !paymentReview && !preparingPurchase"
     >
       <template v-if="quote">
         <el-alert
@@ -439,7 +543,12 @@ async function purchase() {
             :rows="2"
             maxlength="1000"
             placeholder="例：张三 13800138000 广东省深圳市南山区科技园路8号2栋1201"
-            :disabled="submitting || !!submittedRequest"
+            :disabled="
+              submitting ||
+              preparingPurchase ||
+              !!paymentReview ||
+              !!submittedRequest
+            "
           />
           <div class="button-row">
             <el-button
@@ -447,7 +556,11 @@ async function purchase() {
               type="primary"
               plain
               :disabled="
-                !pastedAddress.trim() || submitting || !!submittedRequest
+                !pastedAddress.trim() ||
+                submitting ||
+                preparingPurchase ||
+                !!paymentReview ||
+                !!submittedRequest
               "
               @click="fillAddress"
               >识别并填写</el-button
@@ -455,7 +568,12 @@ async function purchase() {
             <el-button
               v-if="previousAddress"
               text
-              :disabled="submitting || !!submittedRequest"
+              :disabled="
+                submitting ||
+                preparingPurchase ||
+                !!paymentReview ||
+                !!submittedRequest
+              "
               @click="undoAddress"
               >撤销填写</el-button
             >
@@ -473,7 +591,12 @@ async function purchase() {
           :model="address"
           :rules="rules"
           label-position="top"
-          :disabled="submitting || !!submittedRequest"
+          :disabled="
+            submitting ||
+            preparingPurchase ||
+            !!paymentReview ||
+            !!submittedRequest
+          "
           ><div class="address-grid">
             <el-form-item label="收货人" prop="recipientName" required
               ><el-input
@@ -539,7 +662,9 @@ async function purchase() {
       </template>
       <template #footer
         ><div class="button-row checkout-actions">
-          <el-button :disabled="submitting" @click="checkout = false"
+          <el-button
+            :disabled="submitting || preparingPurchase || !!paymentReview"
+            @click="checkout = false"
             >继续选购</el-button
           ><a
             v-if="insufficient && !submittedRequest"
@@ -555,12 +680,12 @@ async function purchase() {
             >更新报价与余额</el-button
           ><el-button
             type="primary"
-            :loading="submitting"
+            :loading="submitting || preparingPurchase"
             :disabled="
               !submittedRequest &&
               (insufficient || quoteStale || balance == null)
             "
-            @click="purchase"
+            @click="preparePurchase"
             >{{
               submittedRequest
                 ? "核对原订单"
@@ -570,9 +695,126 @@ async function purchase() {
         </div></template
       >
     </el-dialog>
+    <el-dialog
+      v-model="confirmationVisible"
+      :title="paymentReview?.resuming ? '核对原订单' : '确认付款'"
+      width="620px"
+      append-to-body
+      :close-on-click-modal="false"
+      :close-on-press-escape="!submitting"
+      :show-close="!submitting"
+    >
+      <template v-if="paymentReview">
+        <el-alert
+          v-if="paymentReview.resuming"
+          title="核对上次付款结果"
+          type="warning"
+          :closable="false"
+          class="section-space"
+        />
+        <div class="confirmation-recipient">
+          <el-icon><Location /></el-icon>
+          <div>
+            <b>{{ paymentReview.input.address.recipientName }}</b>
+            <span>{{ paymentReview.input.address.recipientMobile }}</span>
+            <p>{{ confirmationAddress }}</p>
+          </div>
+        </div>
+        <div class="confirmation-heading">
+          <h2>采购商品</h2>
+          <span>共 {{ confirmationCount }} 件</span>
+        </div>
+        <div
+          v-for="line in paymentReview.quote.lines"
+          :key="line.skuId"
+          class="checkout-item"
+        >
+          <div>
+            <b>{{ line.name }}</b
+            ><small
+              >{{ line.specification || "默认规格" }} ·
+              {{ money(line.unitPriceCents) }} × {{ line.quantity }}</small
+            >
+          </div>
+          <strong>{{ money(line.totalCents) }}</strong>
+        </div>
+        <p v-if="paymentReview.input.buyerRemark" class="confirmation-remark">
+          备注：{{ paymentReview.input.buyerRemark }}
+        </p>
+        <div class="quote-totals">
+          <span
+            >商品 {{ money(paymentReview.quote.subtotalCents) }} + 运费
+            {{ money(paymentReview.quote.shippingCents) }}</span
+          >
+          <strong>合计 {{ money(paymentReview.quote.payableCents) }}</strong>
+        </div>
+        <p v-if="paymentReview.balanceCents != null" class="balance-note">
+          当前余额 {{ money(paymentReview.balanceCents)
+          }}<template v-if="!paymentReview.resuming">
+            · 付款后
+            {{
+              money(
+                paymentReview.balanceCents - paymentReview.quote.payableCents,
+              )
+            }}</template
+          >
+        </p>
+      </template>
+      <template #footer>
+        <div class="button-row checkout-actions">
+          <el-button
+            :disabled="submitting"
+            @click="cancelPurchaseConfirmation"
+            >{{ paymentReview?.resuming ? "返回" : "返回修改" }}</el-button
+          >
+          <el-button type="primary" :loading="submitting" @click="purchase">{{
+            paymentReview?.resuming
+              ? "确认核对原订单"
+              : `确认付款并下单 ${money(paymentReview?.quote.payableCents)}`
+          }}</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </section>
 </template>
 <style scoped>
+.confirmation-recipient {
+  display: flex;
+  gap: 12px;
+  padding: 18px;
+  background: #f5f6f9;
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.confirmation-recipient .el-icon {
+  margin-top: 3px;
+  color: #b82237;
+}
+.confirmation-recipient span {
+  margin-left: 14px;
+}
+.confirmation-recipient p {
+  margin: 8px 0 0;
+  line-height: 1.6;
+}
+.confirmation-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+}
+.confirmation-heading h2 {
+  font-size: 16px;
+  margin: 0;
+}
+.confirmation-heading span {
+  color: #667085;
+}
+.confirmation-remark {
+  overflow-wrap: anywhere;
+  color: #667085;
+  line-height: 1.6;
+}
 .wallet-link {
   margin-left: auto;
   font-size: 14px;

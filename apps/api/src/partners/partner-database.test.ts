@@ -101,9 +101,9 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
       orderBy: { sort: "asc" },
     });
     expect(levels.slice(0, 3).map((level) => level.name)).toEqual([
-      "一级分销",
-      "二级分销",
-      "三级分销",
+      "战略合作",
+      "核心合作",
+      "优选合作",
     ]);
     a = await admin.create(
       actorId,
@@ -128,7 +128,7 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
     product = await prisma.commerceProduct.create({
       data: {
         erpItemId: `PARTNER-${suffix}`,
-        name: "合成分销测试商品",
+        name: "合成合作测试商品",
         source: "ERP",
         status: "PUBLISHED",
         gallery: [],
@@ -236,9 +236,85 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
     );
     await expect(
       members.measurements(b.id, device.id, suffix, 1, 30),
-    ).rejects.toThrow("设备不存在");
+    ).rejects.toThrow("仅战略合作伙伴");
     await expect(members.ecg(b.id, randomUUID(), suffix)).rejects.toThrow(
-      "心电波形不存在",
+      "仅战略合作伙伴",
+    );
+  });
+  it("checks current cooperation tier on every health read and strips basic profile/list health fields", async () => {
+    const current = await prisma.brandPartner.findUniqueOrThrow({
+      where: { id: a.id },
+    });
+    await prisma.brandPartner.update({
+      where: { id: a.id },
+      data: { levelId: b.levelId },
+    });
+    try {
+      const profile = await members.profile(a.id, member.id, suffix);
+      expect(profile).toMatchObject({
+        id: member.id,
+        canViewMemberHealth: false,
+      });
+      for (const key of ["healthProfile", "birthday", "heightCm", "weightKg"])
+        expect(profile).not.toHaveProperty(key);
+      const list = await members.members(a.id, "", 1);
+      expect(list.canViewMemberHealth).toBe(false);
+      expect(
+        list.items.find((item) => item.id === member.id)?._count,
+      ).not.toHaveProperty("healthRecords");
+      for (const call of [
+        () => members.healthRecords(a.id, member.id, suffix, 1, 30),
+        () => members.healthSummary(a.id, member.id, suffix),
+        () => members.measurements(a.id, device.id, suffix, 1, 30),
+        () => members.reports(a.id, member.id, suffix, 1),
+        () => members.report(a.id, randomUUID(), suffix),
+        () => members.ecg(a.id, randomUUID(), suffix),
+      ])
+        await expect(call()).rejects.toThrow("仅战略合作伙伴");
+      expect(
+        (await members.devices(a.id, member.id, suffix)).items,
+      ).toHaveLength(1);
+    } finally {
+      await prisma.brandPartner.update({
+        where: { id: a.id },
+        data: { levelId: current.levelId },
+      });
+    }
+    expect(
+      (await members.healthRecords(a.id, member.id, suffix, 1, 30)).items,
+    ).toHaveLength(1);
+  });
+  it("public certificate verification follows live level and disable state without private account data", async () => {
+    const cert = await partners.certificate(a.id);
+    expect(cert).toMatchObject({
+      issuer: "赛电",
+      partnerName: a.name,
+      active: true,
+      level: "战略合作",
+    });
+    expect(cert.verifyUrl).toContain(
+      `/vip/certificate/verify/${a.promotionCode}`,
+    );
+    const initial = await partners.publicCertificate(a.promotionCode);
+    for (const key of ["id", "username", "mobile", "wallet", "promotionCode"])
+      expect(initial).not.toHaveProperty(key);
+    await prisma.brandPartner.update({
+      where: { id: a.id },
+      data: { active: false, levelId: b.levelId },
+    });
+    try {
+      expect(await partners.publicCertificate(a.promotionCode)).toMatchObject({
+        active: false,
+        level: "核心合作",
+      });
+    } finally {
+      await prisma.brandPartner.update({
+        where: { id: a.id },
+        data: { active: true, levelId: a.levelId },
+      });
+    }
+    await expect(partners.publicCertificate("unknown-code")).rejects.toThrow(
+      "授权证书不存在",
     );
   });
   it("keeps procurement within existing delivery and fulfillment boundaries", async () => {
@@ -379,7 +455,7 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
     ).value;
     expect(originalOrder.status).toBe("PAID");
     expect(originalOrder.userId).toBeNull();
-    expect(originalOrder.partnerLevelSnapshot).toBe("一级分销");
+    expect(originalOrder.partnerLevelSnapshot).toBe("战略合作");
     expect(originalOrder.paymentIntents).toHaveLength(1);
     expect(originalOrder.paymentIntents[0].channel).toBe(
       PaymentChannel.PARTNER_BALANCE,

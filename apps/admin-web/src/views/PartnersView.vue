@@ -30,7 +30,10 @@ const dialog = ref(false),
   funds = ref<any>(),
   ledger = ref<any[]>([]),
   financeTab = ref("ledger"),
-  recharges = ref<any[]>([]);
+  recharges = ref<any[]>([]),
+  financeOrders = ref<any[]>([]),
+  selectedPartner = ref<any>(),
+  orderDetail = ref<any>();
 const pendingFunds = ref<{ url: string; body: Record<string, unknown> }>();
 const ledgerDetail = ref<any>();
 let financeRequest = 0;
@@ -75,8 +78,8 @@ const canManage = computed(() =>
   );
 const labels: Record<string, string> = {
   partners: "品牌伙伴账户",
-  "partner-levels": "分销等级",
-  "partner-prices": "等级分销价",
+  "partner-levels": "合作等级",
+  "partner-prices": "等级合作价",
   "partner-finance": "品牌伙伴资金",
 };
 function money(value: unknown) {
@@ -101,12 +104,20 @@ async function loadPartners(searchInput = search.value) {
     await api.get("/partners", {
       params: {
         search: searchInput,
-        page: resource.value === "partners" ? page.value : 1,
+        page:
+          resource.value === "partners" ||
+          (resource.value === "partner-finance" && !partnerId.value)
+            ? page.value
+            : 1,
       },
     }),
   );
   partners.value = result.items;
-  if (resource.value === "partners") total.value = result.total;
+  if (
+    resource.value === "partners" ||
+    (resource.value === "partner-finance" && !partnerId.value)
+  )
+    total.value = result.total;
 }
 async function load() {
   loading.value = true;
@@ -149,14 +160,18 @@ async function loadFinance() {
   funds.value = null;
   ledger.value = [];
   recharges.value = [];
+  financeOrders.value = [];
   if (!selectedPartner) return;
   try {
-    const [wallet, records, charges] = await Promise.all([
+    const [wallet, records, charges, orders] = await Promise.all([
       api.get(`/partner-finance/${selectedPartner}/wallet`),
       api.get(`/partner-finance/${selectedPartner}/ledger`, {
         params: { page: page.value },
       }),
       api.get(`/partner-finance/${selectedPartner}/recharges`, {
+        params: { page: page.value },
+      }),
+      api.get(`/partner-finance/${selectedPartner}/orders`, {
         params: { page: page.value },
       }),
     ]);
@@ -165,13 +180,37 @@ async function loadFinance() {
     funds.value = responseData(wallet);
     ledger.value = responseData<any>(records).items;
     recharges.value = responseData<any>(charges).items;
+    financeOrders.value = responseData<any>(orders).items;
     total.value =
-      financeTab.value === "ledger"
-        ? responseData<any>(records).total
-        : responseData<any>(charges).total;
+      financeTab.value === "orders"
+        ? responseData<any>(orders).total
+        : financeTab.value === "ledger"
+          ? responseData<any>(records).total
+          : responseData<any>(charges).total;
   } catch (cause) {
     if (request === financeRequest) ElMessage.error(readableError(cause));
   }
+}
+async function selectFinance(row: any, action = "ledger") {
+  if (pendingFunds.value || saving.value) {
+    dialog.value = true;
+    return;
+  }
+  selectedPartner.value = row;
+  partnerId.value = row.id;
+  page.value = 1;
+  financeTab.value = action === "orders" ? "orders" : "ledger";
+  await loadFinance();
+  if (action === "balance" || action === "deposit") open(action);
+}
+function backToPartners() {
+  if (pendingFunds.value || saving.value) return;
+  financeRequest++;
+  partnerId.value = "";
+  selectedPartner.value = undefined;
+  page.value = 1;
+  funds.value = null;
+  void load();
 }
 function open(type: string, row?: any) {
   if (pendingFunds.value) {
@@ -364,7 +403,10 @@ async function copyPromotion() {
     </div>
     <div class="toolbar">
       <el-input
-        v-if="resource !== 'partner-levels' && resource !== 'partner-finance'"
+        v-if="
+          resource !== 'partner-levels' &&
+          !(resource === 'partner-finance' && partnerId)
+        "
         v-model="search"
         clearable
         :placeholder="
@@ -390,24 +432,6 @@ async function copyPromotion() {
           :key="level.id"
           :value="level.id"
           :label="level.name" /></el-select
-      ><el-select
-        v-if="resource === 'partner-finance'"
-        v-model="partnerId"
-        :disabled="saving || !!pendingFunds"
-        filterable
-        remote
-        :remote-method="loadPartners"
-        placeholder="选择品牌伙伴"
-        style="width: 360px"
-        @change="
-          page = 1;
-          loadFinance();
-        "
-        ><el-option
-          v-for="partner in partners"
-          :key="partner.id"
-          :value="partner.id"
-          :label="`${partner.name} · ${partner.partnerNo}`" /></el-select
       ><el-button
         @click="
           page = 1;
@@ -426,6 +450,13 @@ async function copyPromotion() {
         >新增等级</el-button
       >
     </div>
+    <div v-if="resource === 'partner-finance' && partnerId" class="toolbar">
+      <el-button :disabled="saving || !!pendingFunds" @click="backToPartners"
+        >返回伙伴列表</el-button
+      >
+      <b>{{ selectedPartner?.name }}</b
+      ><span class="muted">{{ selectedPartner?.partnerNo }}</span>
+    </div>
     <div v-loading="loading">
       <el-table v-if="resource === 'partners'" :data="partners" border stripe
         ><el-table-column
@@ -440,7 +471,7 @@ async function copyPromotion() {
           prop="username"
           label="登录账号"
           min-width="140"
-        /><el-table-column label="分销等级" width="120"
+        /><el-table-column label="合作等级" width="120"
           ><template #default="scope">{{
             scope.row.level.name
           }}</template></el-table-column
@@ -477,7 +508,7 @@ async function copyPromotion() {
         :data="levels"
         border
         stripe
-        ><el-table-column prop="name" label="分销等级" /><el-table-column
+        ><el-table-column prop="name" label="合作等级" /><el-table-column
           prop="code"
           label="等级代码"
         /><el-table-column prop="sort" label="排序" /><el-table-column
@@ -510,7 +541,7 @@ async function copyPromotion() {
           ><template #default="scope">{{
             money(scope.row.salePriceCents)
           }}</template></el-table-column
-        ><el-table-column label="分销价" width="140"
+        ><el-table-column label="合作价" width="140"
           ><template #default="scope">{{
             money(scope.row.price?.priceCents)
           }}</template></el-table-column
@@ -521,16 +552,65 @@ async function copyPromotion() {
         ><el-table-column v-if="canPrice" label="操作" width="120"
           ><template #default="scope"
             ><el-button @click="open('price', scope.row)"
-              >设置分销价</el-button
+              >设置合作价</el-button
             ></template
           ></el-table-column
         ></el-table
       >
       <template v-if="resource === 'partner-finance'"
-        ><el-empty
-          v-if="!funds"
-          description="请选择品牌伙伴查询资金"
-        /><template v-else
+        ><el-table v-if="!partnerId" :data="partners" border stripe>
+          <el-table-column prop="name" label="伙伴名称" min-width="140" />
+          <el-table-column prop="username" label="登录账号" min-width="120" />
+          <el-table-column label="合作等级" min-width="120"
+            ><template #default="scope">{{
+              scope.row.level.name
+            }}</template></el-table-column
+          >
+          <el-table-column label="可消费余额" width="145"
+            ><template #default="scope">{{
+              money(scope.row.wallet?.balanceCents)
+            }}</template></el-table-column
+          >
+          <el-table-column label="保证金" width="145"
+            ><template #default="scope">{{
+              money(scope.row.wallet?.depositCents)
+            }}</template></el-table-column
+          >
+          <el-table-column label="采购订单" width="100"
+            ><template #default="scope">{{
+              scope.row._count.orders
+            }}</template></el-table-column
+          >
+          <el-table-column label="状态" width="80"
+            ><template #default="scope">{{
+              scope.row.active ? "启用" : "停用"
+            }}</template></el-table-column
+          >
+          <el-table-column label="操作" min-width="335" fixed="right"
+            ><template #default="scope">
+              <el-button
+                v-if="canFinance"
+                text
+                type="primary"
+                @click="selectFinance(scope.row, 'balance')"
+                >充值余额</el-button
+              >
+              <el-button
+                v-if="canFinance"
+                text
+                type="primary"
+                @click="selectFinance(scope.row, 'deposit')"
+                >充保证金</el-button
+              >
+              <el-button text @click="selectFinance(scope.row, 'orders')"
+                >查看下单</el-button
+              >
+              <el-button text @click="selectFinance(scope.row)"
+                >余额明细</el-button
+              >
+            </template></el-table-column
+          > </el-table
+        ><template v-else-if="funds"
           ><div class="funds">
             <el-card
               ><span class="muted">可消费余额</span>
@@ -560,7 +640,9 @@ async function copyPromotion() {
             "
             ><el-tab-pane label="资金流水" name="ledger" /><el-tab-pane
               label="在线充值记录"
-              name="recharges" /></el-tabs
+              name="recharges" /><el-tab-pane
+              label="采购订单"
+              name="orders" /></el-tabs
           ><el-table v-if="financeTab === 'ledger'" :data="ledger" border stripe
             ><el-table-column label="账户" width="110"
               ><template #default="scope">{{
@@ -599,7 +681,11 @@ async function copyPromotion() {
                 ></template
               ></el-table-column
             ></el-table
-          ><el-table v-else :data="recharges" border stripe
+          ><el-table
+            v-else-if="financeTab === 'recharges'"
+            :data="recharges"
+            border
+            stripe
             ><el-table-column
               prop="rechargeNo"
               label="充值编号"
@@ -618,7 +704,33 @@ async function copyPromotion() {
                 date(scope.row.createdAt)
               }}</template></el-table-column
             ></el-table
-          ></template
+          ><el-table v-else :data="financeOrders" border stripe>
+            <el-table-column prop="orderNo" label="采购订单" min-width="235" />
+            <el-table-column label="商品" min-width="240"
+              ><template #default="scope"
+                ><div v-for="item in scope.row.items" :key="item.id">
+                  {{ item.nameSnapshot }} × {{ item.quantity }}
+                </div></template
+              ></el-table-column
+            >
+            <el-table-column label="订单金额" width="130"
+              ><template #default="scope">{{
+                money(scope.row.payableCents)
+              }}</template></el-table-column
+            >
+            <el-table-column label="下单时间" min-width="180"
+              ><template #default="scope">{{
+                date(scope.row.createdAt)
+              }}</template></el-table-column
+            >
+            <el-table-column label="操作" width="100"
+              ><template #default="scope"
+                ><el-button text @click="orderDetail = scope.row"
+                  >详情</el-button
+                ></template
+              ></el-table-column
+            >
+          </el-table></template
         ></template
       >
       <el-pagination
@@ -628,10 +740,37 @@ async function copyPromotion() {
         :page-size="30"
         layout="prev, pager, next, total"
         @current-change="
-          resource === 'partner-finance' ? loadFinance() : load()
+          resource === 'partner-finance' && partnerId ? loadFinance() : load()
         "
       />
     </div>
+    <el-dialog
+      :model-value="!!orderDetail"
+      title="采购订单详情"
+      width="min(760px, 94vw)"
+      @close="orderDetail = null"
+    >
+      <template v-if="orderDetail"
+        ><b>{{ orderDetail.orderNo }}</b>
+        <p>付款金额：{{ money(orderDetail.payableCents) }}</p>
+        <p>
+          {{ orderDetail.recipientName }} · {{ orderDetail.recipientMobile }}
+        </p>
+        <p>
+          {{ orderDetail.province }} {{ orderDetail.city }}
+          {{ orderDetail.district }} {{ orderDetail.addressDetail }}
+        </p>
+        <p v-for="item in orderDetail.items" :key="item.id">
+          {{ item.nameSnapshot }} · {{ item.specificationSnapshot }} ×
+          {{ item.quantity }} · {{ money(item.unitPriceCents) }}
+        </p>
+        <p v-for="shipment in orderDetail.shipments" :key="shipment.trackingNo">
+          {{ shipment.logisticsCompany }} · {{ shipment.trackingNo }} ·
+          {{ date(shipment.shippedAt) }}
+        </p>
+        <p v-if="!orderDetail.shipments.length" class="muted">尚未发货</p>
+      </template>
+    </el-dialog>
     <el-dialog
       :model-value="!!ledgerDetail"
       title="资金登记日志"
@@ -686,15 +825,19 @@ async function copyPromotion() {
       :title="
         {
           account: edit ? '编辑品牌伙伴' : '新增品牌伙伴',
-          level: '分销等级',
-          price: '设置分销价',
+          level: '合作等级',
+          price: '设置合作价',
           deposit: '保证金登记',
           balance: '手动充值余额',
         }[dialogType]
       "
       width="560px"
       :close-on-click-modal="false"
-      ><el-form
+      ><p v-if="dialogType === 'balance' || dialogType === 'deposit'">
+        入账伙伴：<b>{{ selectedPartner?.name }}</b> ·
+        {{ selectedPartner?.partnerNo }}
+      </p>
+      <el-form
         ref="accountForm"
         :model="form"
         :rules="accountRules"
@@ -707,7 +850,7 @@ async function copyPromotion() {
             ><el-input v-model="form.name" maxlength="80" /></el-form-item
           ><el-form-item label="联系方式" prop="mobile"
             ><el-input v-model="form.mobile" maxlength="30" /></el-form-item
-          ><el-form-item label="分销等级" prop="levelId" required
+          ><el-form-item label="合作等级" prop="levelId" required
             ><el-select v-model="form.levelId" style="width: 100%"
               ><el-option
                 v-for="level in levels"
@@ -742,7 +885,7 @@ async function copyPromotion() {
           ><p>
             {{ edit?.product.name }} · {{ edit?.specification || "默认规格" }}
           </p>
-          <el-form-item label="分销价（元）"
+          <el-form-item label="合作价（元）"
             ><el-input-number
               v-model="form.amount"
               :min="0.01"

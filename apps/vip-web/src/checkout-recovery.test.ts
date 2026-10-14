@@ -34,7 +34,7 @@ const pending: PendingCheckout = {
   quote: {
     lines: [],
     levelId: "level",
-    level: "一级分销",
+    level: "战略合作",
     currency: "CNY",
     subtotalCents: 1200,
     shippingCents: 0,

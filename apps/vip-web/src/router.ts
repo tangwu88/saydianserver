@@ -7,6 +7,7 @@ import Promotion from "./views/Promotion.vue";
 import Members from "./views/Members.vue";
 import Products from "./views/Products.vue";
 import Orders from "./views/Orders.vue";
+import Certificate from "./views/Certificate.vue";
 import Finance from "./views/Finance.vue";
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -14,10 +15,16 @@ export const router = createRouter({
   routes: [
     { path: "/login", component: Login },
     {
+      path: "/certificate/verify/:code",
+      component: Certificate,
+      meta: { public: true },
+    },
+    {
       path: "/",
       component: Shell,
       children: [
         { path: "", component: Dashboard },
+        { path: "certificate", component: Certificate },
         { path: "promotion", component: Promotion },
         { path: "members", component: Members },
         { path: "products", component: Products },
@@ -33,7 +40,7 @@ export const router = createRouter({
 });
 router.beforeEach((to) => {
   const loggedIn = !!sessionStorage.getItem(partnerTokenKey);
-  if (to.path !== "/login" && !loggedIn)
+  if (!to.meta.public && to.path !== "/login" && !loggedIn)
     return { path: "/login", query: { next: to.path } };
   if (to.path === "/login" && loggedIn) return "/";
   return true;

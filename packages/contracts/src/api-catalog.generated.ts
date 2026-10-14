@@ -24674,9 +24674,9 @@ export const apiCatalog = {
       "parameters": [],
       "envelope": "v2",
       "source": "apps/api/src/partners/partner-admin.controller.ts",
-      "summary": "分销等级列表",
+      "summary": "合作等级列表",
       "request": "无请求体",
-      "response": "一级/二级/三级默认等级及新增等级",
+      "response": "战略合作/核心合作/优选合作默认等级及新增等级",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -24709,7 +24709,7 @@ export const apiCatalog = {
       ],
       "envelope": "v2",
       "source": "apps/api/src/partners/partner-admin.controller.ts",
-      "summary": "新增分销价格等级",
+      "summary": "新增合作价格等级",
       "request": "{name,sort?,active?}",
       "response": "等级记录；不创建上下级分佣关系",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
@@ -24750,7 +24750,7 @@ export const apiCatalog = {
       ],
       "envelope": "v2",
       "source": "apps/api/src/partners/partner-admin.controller.ts",
-      "summary": "编辑分销等级",
+      "summary": "编辑合作等级",
       "request": "{name,sort?,active?,updatedAt}",
       "response": "CAS更新等级；停用等级暂停新采购",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
@@ -24794,9 +24794,9 @@ export const apiCatalog = {
       ],
       "envelope": "v2",
       "source": "apps/api/src/partners/partner-admin.controller.ts",
-      "summary": "查询等级SKU分销价",
+      "summary": "查询等级SKU合作价",
       "request": "levelId、search?、page?",
-      "response": "商品SKU零售价及指定等级分销价",
+      "response": "商品SKU零售价及指定等级合作价",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -24841,7 +24841,7 @@ export const apiCatalog = {
       ],
       "envelope": "v2",
       "source": "apps/api/src/partners/partner-admin.controller.ts",
-      "summary": "设置等级SKU分销价",
+      "summary": "设置等级SKU合作价",
       "request": "levelId、skuId；{priceCents,enabled?,updatedAt:旧时间|null}",
       "response": "CAS更新价格；缺价不回退零售价，不追改订单",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
@@ -24985,6 +24985,95 @@ export const apiCatalog = {
         "contentType": "application/json",
         "source": "apps/api/src/partners/partner-admin.controller.ts",
         "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.orders",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-finance/:id/orders",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "查询品牌伙伴采购订单",
+      "request": "id为伙伴UUID、page?；财务只读",
+      "response": "{items,total,page,pageSize}；金额、商品、地址及发货，无支付原始响应",
+      "dependency": "主库；含已停用伙伴历史交易",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "orderNo": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "payableCents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "page",
+            "pageSize"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
     {
@@ -25318,6 +25407,81 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "PartnerPublicController.certificate",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/public/certificate/:code",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "code",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "核验赛电电子授权证书",
+      "request": "code为公开推广码；公开只读",
+      "response": "授权方、伙伴名称/编号、当前合作等级、启用状态、登记日期；不返回联系方式、账号、余额或内部ID",
+      "dependency": "主库当前状态；停用即时失效",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "issuer": {
+              "type": "string"
+            },
+            "partnerName": {
+              "type": "string"
+            },
+            "certificateNo": {
+              "type": "string"
+            },
+            "level": {
+              "type": "string"
+            },
+            "active": {
+              "type": "boolean"
+            },
+            "registeredAt": {
+              "type": "string"
+            },
+            "generatedAt": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "validity": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "issuer",
+            "partnerName",
+            "certificateNo",
+            "level",
+            "active",
+            "registeredAt",
+            "generatedAt",
+            "scope",
+            "validity"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
       "key": "PartnerPublicController.promotion",
       "method": "GET",
       "path": "/api/saydian-app/vip/v1/public/promotion/:code",
@@ -25450,6 +25614,82 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "PartnerController.certificate",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/certificate",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "查看与打印电子授权证书",
+      "request": "本人伙伴会话",
+      "response": "赛电授权数据、当前等级/状态、核验链接和二维码；随账户启用状态有效",
+      "dependency": "主库当前伙伴账户",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "issuer": {
+              "type": "string"
+            },
+            "partnerName": {
+              "type": "string"
+            },
+            "certificateNo": {
+              "type": "string"
+            },
+            "level": {
+              "type": "string"
+            },
+            "active": {
+              "type": "boolean"
+            },
+            "registeredAt": {
+              "type": "string"
+            },
+            "generatedAt": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "validity": {
+              "type": "string"
+            },
+            "verifyUrl": {
+              "type": "string"
+            },
+            "qrDataUrl": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "issuer",
+            "partnerName",
+            "certificateNo",
+            "level",
+            "active",
+            "registeredAt",
+            "generatedAt",
+            "scope",
+            "validity",
+            "verifyUrl",
+            "qrDataUrl"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
       "key": "PartnerController.members",
       "method": "GET",
       "path": "/api/saydian-app/vip/v1/members",
@@ -25505,7 +25745,7 @@ export const apiCatalog = {
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "所属会员资料与健康档案",
       "request": "id为会员UUID",
-      "response": "基本资料与HealthProfile；读取审计成功后返回",
+      "response": "基本资料；仅战略合作伙伴返回生日、身高、体重、HealthProfile，读取审计成功后返回",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -25538,7 +25778,7 @@ export const apiCatalog = {
       "summary": "所属会员健康摘要",
       "request": "id为会员UUID",
       "response": "按指标统计数量与首末时间；未知值不补零",
-      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "dependency": "仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -25582,7 +25822,7 @@ export const apiCatalog = {
       "summary": "所属会员历史健康记录",
       "request": "id为会员UUID、page?、pageSize?（最多100）",
       "response": "{items,total,page,pageSize}；保留原始历史记录；写敏感读取审计",
-      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "dependency": "仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -25652,7 +25892,7 @@ export const apiCatalog = {
       "summary": "所属会员健康报告列表",
       "request": "id为会员UUID、page?",
       "response": "{items,total,page,pageSize}；当前会员归属限制",
-      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "dependency": "仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -25684,7 +25924,7 @@ export const apiCatalog = {
       "summary": "所属会员健康报告详情",
       "request": "id为报告UUID",
       "response": "报告摘要与READY状态内容；其他状态不提供完整内容；写读取审计",
-      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "dependency": "仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -25716,7 +25956,7 @@ export const apiCatalog = {
       "summary": "所属会员心电波形附件",
       "request": "id为健康记录UUID；伙伴会话",
       "response": "私有gzip字节流；no-store及SHA256/采样元数据；先审计后读取",
-      "dependency": "私有对象存储已配置",
+      "dependency": "仅当前启用战略合作伙伴；私有对象存储已配置",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -25798,7 +26038,7 @@ export const apiCatalog = {
       "summary": "所属设备测量记录",
       "request": "id为设备UUID、page?、pageSize?",
       "response": "{items,total,page,pageSize}；兼容历史设备标识；写读取审计",
-      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "dependency": "仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -25835,7 +26075,7 @@ export const apiCatalog = {
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "品牌伙伴采购商品",
       "request": "search?、page?",
-      "response": "当前等级SKU分销价；无有效价不可采购；不返回成本或其他等级价格",
+      "response": "当前等级SKU合作价；无有效价不可采购；不返回成本或其他等级价格",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -25867,7 +26107,7 @@ export const apiCatalog = {
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "计算品牌伙伴采购报价",
       "request": "{items:[{skuId,quantity}]}",
-      "response": "PartnerQuote：等级、商品行、分销价、运费、总额和fingerprint",
+      "response": "PartnerQuote：等级、商品行、合作价、运费、总额和fingerprint",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 201,
       "contract": {
@@ -26200,7 +26440,7 @@ export const apiCatalog = {
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "品牌伙伴采购订单详情",
       "request": "id为订单UUID",
-      "response": "成交等级/分销价快照、收货信息、付款、售后及ERP状态",
+      "response": "成交等级/合作价快照、收货信息、付款、售后及ERP状态",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -26212,6 +26452,92 @@ export const apiCatalog = {
         "contentType": "application/json",
         "source": "apps/api/src/partners/partner.controller.ts",
         "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.processing",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/orders/:id/processing",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "同步采购订单ERP处理明细",
+      "request": "id为本人订单UUID",
+      "response": "{items,state,syncedAt,truncated}；缓存一分钟；实际ERP操作时间/名称/操作人/备注，后台只读同步任务",
+      "dependency": "聚水潭order.action.query已授权；不伪造处理记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "remark": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  },
+                  "operator": {
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "state": {
+              "enum": [
+                "WAITING_ORDER",
+                "UNAVAILABLE",
+                "PENDING",
+                "READY",
+                "ERROR"
+              ]
+            },
+            "syncedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "items",
+            "state",
+            "syncedAt",
+            "truncated"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
     {

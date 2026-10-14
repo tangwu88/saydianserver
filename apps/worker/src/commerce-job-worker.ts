@@ -96,6 +96,10 @@ export class CommerceJobWorker {
       await this.uploadOrder(identifier("orderId"));
       return;
     }
+    if (type === "JUSHUITAN_ORDER_LOG_SYNC") {
+      await this.syncOrderLogs(identifier("orderId"));
+      return;
+    }
     if (type === "JUSHUITAN_AFTER_SALE_PUSH") {
       await this.uploadAfterSale(identifier("afterSaleId"));
       return;
@@ -120,6 +124,7 @@ export class CommerceJobWorker {
       include: {
         items: true,
         paymentIntents: { where: { status: PaymentStatus.SUCCEEDED } },
+        partner: { select: { id: true, partnerNo: true, name: true } },
       },
     });
     if (!order) throw new PermanentCommerceJobError("Commerce order not found");
@@ -134,6 +139,29 @@ export class CommerceJobWorker {
     const payment = order.paymentIntents[0]!;
     if (payment.amountCents !== order.payableCents) {
       throw new PermanentCommerceJobError("Commerce order payment amount does not match the payable amount");
+    }
+    if (order.partnerId && (!order.partner || order.partner.id !== order.partnerId)) {
+      throw new PermanentCommerceJobError("Brand partner identity is missing or does not match the order");
+    }
+    const cleanIdentity = (value: string) => value.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+    let remark = order.adminRemark ?? undefined;
+    if (order.partnerId) {
+      // orders.upload limits remark to 150 characters; keep the required identity first.
+      const identity = `品牌伙伴 ID：${order.partnerId}\n品牌伙伴名称：${cleanIdentity(order.partner!.name)}`;
+      const number = `品牌伙伴编号：${cleanIdentity(order.partner!.partnerNo)}`;
+      const parts = [identity];
+      if (identity.length + 1 + number.length <= 150) parts.push(number);
+      if (order.adminRemark) parts.push(order.adminRemark);
+      const complete = parts.join("\n");
+      if (complete.length <= 150) remark = complete;
+      else {
+        let clipped = "";
+        for (const character of complete) {
+          if (clipped.length + character.length > 149) break;
+          clipped += character;
+        }
+        remark = `${clipped}…`;
+      }
     }
     const shopId = jstShopId(settings.shopId);
     const result = await this.call(settings, settings.paths.orderUpload!, [
@@ -152,7 +180,7 @@ export class CommerceJobWorker {
         receiver_mobile: order.recipientMobile,
         pay_amount: order.payableCents / 100,
         freight: order.shippingCents / 100,
-        remark: order.adminRemark ?? undefined,
+        remark,
         buyer_message: order.buyerRemark ?? undefined,
         items: order.items.map((item) => ({
           outer_oi_id: item.id,
@@ -383,6 +411,35 @@ export class CommerceJobWorker {
     }
   }
 
+  private async syncOrderLogs(orderId: string) {
+    const order = await this.prisma.commerceOrder.findUnique({ where: { id: orderId } });
+    if (!order || order.executionOwner !== "NEW_SYSTEM" || !order.erpOrderId || !/^[1-9]\d*$/.test(order.erpOrderId))
+      throw new PermanentCommerceJobError("Order has no valid ERP order identifier");
+    const erpId = Number(order.erpOrderId);
+    if (!Number.isSafeInteger(erpId)) throw new PermanentCommerceJobError("ERP order identifier exceeds safe integer range");
+    const settings = await this.settings(), events = new Map<string, { id: string; name: string; remark: string; time: string; operator: string }>();
+    let truncated = false;
+    for (let page = 1; page <= 20; page++) {
+      const result = await this.call(settings, settings.paths.orderLogs!, { o_id: erpId, page_index: page, page_size: 300 });
+      if (!Array.isArray(result.datas)) throw new Error("ERP operation log response has no datas array");
+      for (const raw of result.datas) {
+        const row = asObject(raw);
+        // Provider output is untrusted. Never cache another order's operation records.
+        if (String(row.o_id) !== order.erpOrderId) continue;
+        const id = String(row.oa_id ?? "").slice(0, 80);
+        if (!id) continue;
+        events.set(id, { id, name: String(row.name ?? "").slice(0, 200), remark: String(row.remark ?? "").slice(0, 4000),
+          time: String(row.created ?? "").slice(0, 80), operator: String(row.creator_name ?? "").slice(0, 120) });
+      }
+      const next = result.has_next === true || result.has_next === 1 || result.has_next === "true" || result.has_next === "1" || Number(result.page_count) > page;
+      if (!next) break;
+      if (page === 20) truncated = true;
+    }
+    const items = [...events.values()].sort((a,b) => a.time.localeCompare(b.time) || a.id.localeCompare(b.id, undefined, {numeric:true}));
+    await this.prisma.commerceOrder.updateMany({ where: { id: order.id, erpOrderId: order.erpOrderId, executionOwner: "NEW_SYSTEM" },
+      data: { erpProcessLogJson: { items, truncated } as Prisma.InputJsonValue, erpProcessLogSyncedAt: new Date() } });
+  }
+
   private async settings(): Promise<JstSettings> {
     const integration = await this.prisma.integrationConfig.findUnique({
       where: { key: "jushuitan" },
@@ -416,6 +473,7 @@ export class CommerceJobWorker {
         inventory: String(customMethods.inventory ?? customPaths.inventory ?? "inventory.query"),
         orderUpload: String(customMethods.orderUpload ?? customPaths.orderUpload ?? "jushuitan.orders.upload"),
         afterSaleUpload: String(customMethods.afterSaleUpload ?? customPaths.afterSaleUpload ?? "aftersale.upload"),
+        orderLogs: String(customMethods.orderLogs ?? customPaths.orderLogs ?? "order.action.query"),
         fulfillment: String(customMethods.fulfillment ?? customPaths.fulfillment ?? "logistic.query"),
       },
     };

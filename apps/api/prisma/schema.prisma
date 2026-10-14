@@ -1516,6 +1516,8 @@ model CommerceOrder {
   adminRemark          String?
   invoiceJson          Json?
   erpShopId            String?
+  erpProcessLogJson    Json?
+  erpProcessLogSyncedAt DateTime?
   erpOrderId           String?
   erpStatus            String?
   idempotencyKey       String                     @unique

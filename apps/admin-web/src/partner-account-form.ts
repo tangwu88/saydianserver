@@ -24,7 +24,7 @@ export function partnerAccountErrors(
   if (String(form.mobile ?? "").trim().length > 30)
     errors.mobile = "联系方式不能超过30个字符";
   if (!levels.some((level) => level.id === form.levelId && level.active))
-    errors.levelId = "请选择有效的分销等级";
+    errors.levelId = "请选择有效的合作等级";
   const password = String(form.password ?? "");
   if (creating && (password.length < 10 || password.length > 128))
     errors.password = "密码须为10至128个字符";

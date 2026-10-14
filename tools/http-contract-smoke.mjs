@@ -188,6 +188,32 @@ try {
   for (const path of ["/balance-recharge", "/deposit"]) check((await request(manualRoute + path, { method: "POST", token: financeToken, body: manualInput })).status, 403);
   check((await request(manualRoute + "/wallet", { token: adminToken })).json.data.balanceCents, 1234);
 
+  const vip = "/api/saydian-app/vip/v1";
+  check(partnerLevels.filter(level => level.code.startsWith("distribution-")).map(level => level.name), ["战略合作", "核心合作", "优选合作"]);
+  const partnerToken = (await request(vip + "/auth/login", {method:"POST",body:{username:partnerInput.username,password}})).json.data.token;
+  check((await request(vip + "/auth/me",{token:partnerToken})).json.data.canViewMemberHealth,true);
+  check((await request(admin + "/partners/members/" + a.data.member.id + "/assignment",{method:"POST",token:adminToken,body:{partnerId:fixturePartner.id,expectedPartnerId:null,reason:"Synthetic cooperation HTTP acceptance"}})).status,201);
+  check((await request(vip + "/members/" + a.data.member.id + "/health-summary",{token:partnerToken})).status,200);
+  const certificate=(await request(vip + "/certificate",{token:partnerToken})).json.data;
+  check(certificate.active,true);check(certificate.issuer,"赛电");
+  const publicCertificate=(await request(vip + "/public/certificate/" + fixturePartner.promotionCode)).json.data;
+  for(const field of ["id","mobile","username","wallet"])check(Object.hasOwn(publicCertificate,field),false);
+  check((await request(manualRoute + "/orders",{token:financeToken})).status,200);
+  check((await request(admin + "/partners",{token:financeToken})).json.data.items.some(partner=>partner.id===fixturePartner.id),true);
+  const coreLevel=partnerLevels.find(level=>level.code==="distribution-2");
+  const changed=(await request(admin + "/partners/"+fixturePartner.id,{method:"PATCH",token:adminToken,body:{updatedAt:fixturePartner.updatedAt,levelId:coreLevel.id}})).json.data;
+  check((await request(vip + "/auth/me",{token:partnerToken})).json.data.canViewMemberHealth,false);
+  const coreProfile=(await request(vip + "/members/"+a.data.member.id+"/profile",{token:partnerToken})).json.data;
+  for(const field of ["birthday","heightCm","weightKg","healthProfile"])check(Object.hasOwn(coreProfile,field),false);
+  check(Object.hasOwn((await request(vip + "/members",{token:partnerToken})).json.data.items[0]._count,"healthRecords"),false);
+  for(const path of ["/members/"+a.data.member.id+"/health-summary","/members/"+a.data.member.id+"/health-records","/members/"+a.data.member.id+"/reports","/devices/00000000-0000-4000-8000-000000000001/measurements","/reports/00000000-0000-4000-8000-000000000001","/health-records/00000000-0000-4000-8000-000000000001/ecg"])
+    check((await request(vip+path,{token:partnerToken})).status,403);
+  check((await request(vip+"/orders/00000000-0000-4000-8000-000000000001/processing",{token:partnerToken})).status,404);
+  check((await request(vip + "/public/certificate/" + fixturePartner.promotionCode)).json.data.level,"核心合作");
+  check((await request(admin + "/partners/"+fixturePartner.id,{method:"PATCH",token:adminToken,body:{updatedAt:changed.updatedAt,active:false}})).status,200);
+  check((await request(vip + "/public/certificate/" + fixturePartner.promotionCode)).json.data.active,false);
+  check((await request(vip + "/certificate",{token:partnerToken})).status,401);
+
   const zhCategory = await request(admin + "/article-categories", { method: "POST", token: adminToken, body: { name: "Chinese fixture" } });
   check(zhCategory.json.code, 200); check(zhCategory.json.data.locale, "zh-Hans");
   const contentInput = { title: "Chinese fixture", contentHtml: "<p>Synthetic only</p>", categoryId: zhCategory.json.data.id, status: "PUBLISHED" };

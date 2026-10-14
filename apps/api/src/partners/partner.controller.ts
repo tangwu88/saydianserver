@@ -33,6 +33,10 @@ export class PartnerPublicController {
   login(@Body() body: unknown) {
     return this.auth.login(body);
   }
+  @Get("public/certificate/:code")
+  certificate(@Param("code") code: string) {
+    return this.partners.publicCertificate(code);
+  }
   @Get("public/promotion/:code")
   promotion(@Param("code") code: string) {
     return this.partners.publicPromotion(code);
@@ -65,6 +69,10 @@ export class PartnerController {
   @Get("promotion")
   promotion(@CurrentPartner() partner: Partner) {
     return this.partners.promotion(partner.id);
+  }
+  @Get("certificate")
+  certificate(@CurrentPartner() partner: Partner) {
+    return this.partners.certificate(partner.id);
   }
   @Get("members")
   members(
@@ -210,6 +218,10 @@ export class PartnerController {
   @Get("orders/:id")
   order(@CurrentPartner() partner: Partner, @Param("id") id: string) {
     return this.commerce.order(partner.id, id);
+  }
+  @Get("orders/:id/processing")
+  processing(@CurrentPartner() partner: Partner, @Param("id") id: string) {
+    return this.commerce.processing(partner.id, id);
   }
   @Get("orders/:id/logistics")
   logistics(@CurrentPartner() partner: Partner, @Param("id") id: string) {

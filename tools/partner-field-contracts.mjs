@@ -12,8 +12,13 @@ const items = { type: "array", minItems: 1, maxItems: 100, items: object({ skuId
 const quote = object({ lines: list(object({ skuId: id, quantity: cents, unitPriceCents: cents, totalCents: cents })), levelId: id, level: text, subtotalCents: cents, shippingCents: amount, payableCents: cents, currency: { const: "CNY" }, fingerprint: { type: "string", pattern: "^[a-f0-9]{64}$" } }, ["lines", "levelId", "level", "subtotalCents", "shippingCents", "payableCents", "currency", "fingerprint"]);
 const address = object({ recipientName: text, recipientMobile: text, province: text, city: text, district: text, addressDetail: text, countryCode: { const: "CN" }, postalCode: text }, ["recipientName", "recipientMobile", "province", "city", "addressDetail"]);
 const wallet = object({ partnerId: id, balanceCents: amount, depositCents: amount, version: { type: "integer", minimum: 0 }, currency: { const: "CNY" } }, ["partnerId", "balanceCents", "depositCents", "version", "currency"]);
+const certificate = object({ issuer:text, partnerName:text, certificateNo:text, level:text, active:flag, registeredAt:text, generatedAt:text, scope:text, validity:text }, ["issuer","partnerName","certificateNo","level","active","registeredAt","generatedAt","scope","validity"]);
 const recharge = object({ id, rechargeNo: text, amountCents: cents, status: text, payment: object({ id, status: text, invoke: {} }) }, ["id", "rechargeNo", "amountCents", "status", "payment"]);
 export const partnerFieldContracts = {
+  "PartnerPublicController.certificate": record(null, certificate),
+  "PartnerController.certificate": record(null, object({...certificate.properties, verifyUrl:text, qrDataUrl:text}, [...certificate.required,"verifyUrl","qrDataUrl"])),
+  "PartnerController.processing": record(null, object({items:list(object({id:text,name:text,remark:text,time:text,operator:text})),state:{enum:["WAITING_ORDER","UNAVAILABLE","PENDING","READY","ERROR"]},syncedAt:{type:["string","null"]},truncated:flag},["items","state","syncedAt","truncated"])),
+  "PartnerAdminController.orders": record(null, object({items:list(object({id,orderNo:text,status:text,payableCents:amount})),total:amount,page:cents,pageSize:cents},["items","total","page","pageSize"])),
   "PartnerPublicController.login": record(object({ username: text, password: text }, ["username", "password"]), object({ token: text, expiresAt: text, user: object({ id, partnerNo: text, name: text, level: text }) }, ["token", "expiresAt", "user"])),
   "PartnerController.wallet": record(null, wallet),
   "PartnerController.quote": record(object({ items }, ["items"]), quote),

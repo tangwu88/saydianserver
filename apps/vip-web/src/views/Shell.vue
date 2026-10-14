@@ -13,7 +13,7 @@ const route = useRoute(),
 const currentTitle = computed(
   () =>
     menu.find((item) => activeMenu(item.path, route.path))?.title ||
-    "品牌伙伴平台",
+    (route.path === "/certificate" ? "电子授权证书" : "品牌伙伴平台"),
 );
 const shortcuts = menu.filter((item) =>
   ["/", "/promotion", "/products", "/orders", "/wallet"].includes(item.path),

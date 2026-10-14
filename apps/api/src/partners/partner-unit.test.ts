@@ -85,6 +85,12 @@ describe("brand partner financial and access boundaries", () => {
     const memberId = randomUUID(),
       partnerId = randomUUID();
     const tx: any = {
+      brandPartner: {
+        findUnique: vi.fn(async () => ({
+          active: true,
+          level: { active: true, code: "distribution-1" },
+        })),
+      },
       user: {
         findFirst: vi.fn(async () => ({ id: memberId })),
         findFirstOrThrow: vi.fn(async () => ({
@@ -112,6 +118,12 @@ describe("brand partner financial and access boundaries", () => {
   });
   it("rejects a foreign member before fetching health or device data", async () => {
     const tx: any = {
+      brandPartner: {
+        findUnique: vi.fn(async () => ({
+          active: true,
+          level: { active: true, code: "distribution-1" },
+        })),
+      },
       user: { findFirst: vi.fn(async () => null) },
       healthRecord: { findMany: vi.fn() },
       auditLog: { create: vi.fn() },

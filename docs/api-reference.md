@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **428 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **432 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -295,7 +295,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（127）
+## 管理后台接口（128）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -416,42 +416,46 @@
 | `POST /api/saydian-app/admin/v1/partners/:id/reset-password` | 重置品牌伙伴密码 | admin: SUPER_ADMIN | path:id；{password}；密码10至128字符 | {changed:true}；全部旧会话失效，审计不记录密码 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/admin/v1/partners/:id/promotion` | 查看品牌伙伴推广素材 | admin | path:id；id为伙伴UUID | H5链接和专属二维码 | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/admin/v1/partners/members/:id/assignment` | 调整会员品牌伙伴归属 | admin: SUPER_ADMIN | path:id；会员id；{partnerId:UUID\|null,expectedPartnerId:UUID\|null,reason} | {userId,partnerId}；即时更改资料访问归属，历史交易不变；事务内审计 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/admin/v1/partner-levels` | 分销等级列表 | admin | 无请求体 | 一级/二级/三级默认等级及新增等级 | 主库；伙伴身份与会员/员工推广隔离 |
-| `POST /api/saydian-app/admin/v1/partner-levels` | 新增分销价格等级 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {name,sort?,active?} | 等级记录；不创建上下级分佣关系 | 主库；伙伴身份与会员/员工推广隔离 |
-| `PATCH /api/saydian-app/admin/v1/partner-levels/:id` | 编辑分销等级 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；{name,sort?,active?,updatedAt} | CAS更新等级；停用等级暂停新采购 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/admin/v1/partner-prices` | 查询等级SKU分销价 | admin | query:levelId，query:search?，query:page?；levelId、search?、page? | 商品SKU零售价及指定等级分销价 | 主库；伙伴身份与会员/员工推广隔离 |
-| `PATCH /api/saydian-app/admin/v1/partner-prices/:levelId/:skuId` | 设置等级SKU分销价 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:levelId，path:skuId；levelId、skuId；{priceCents,enabled?,updatedAt:旧时间\|null} | CAS更新价格；缺价不回退零售价，不追改订单 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/admin/v1/partner-levels` | 合作等级列表 | admin | 无请求体 | 战略合作/核心合作/优选合作默认等级及新增等级 | 主库；伙伴身份与会员/员工推广隔离 |
+| `POST /api/saydian-app/admin/v1/partner-levels` | 新增合作价格等级 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {name,sort?,active?} | 等级记录；不创建上下级分佣关系 | 主库；伙伴身份与会员/员工推广隔离 |
+| `PATCH /api/saydian-app/admin/v1/partner-levels/:id` | 编辑合作等级 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；{name,sort?,active?,updatedAt} | CAS更新等级；停用等级暂停新采购 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/admin/v1/partner-prices` | 查询等级SKU合作价 | admin | query:levelId，query:search?，query:page?；levelId、search?、page? | 商品SKU零售价及指定等级合作价 | 主库；伙伴身份与会员/员工推广隔离 |
+| `PATCH /api/saydian-app/admin/v1/partner-prices/:levelId/:skuId` | 设置等级SKU合作价 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:levelId，path:skuId；levelId、skuId；{priceCents,enabled?,updatedAt:旧时间\|null} | CAS更新价格；缺价不回退零售价，不追改订单 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/admin/v1/partner-finance/:id/wallet` | 查询品牌伙伴资金账户 | admin | path:id；id为伙伴UUID | 独立消费余额和保证金，整数分 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/admin/v1/partner-finance/:id/ledger` | 查询品牌伙伴资金账本 | admin | path:id，query:account?，query:page?；id为伙伴UUID、account?、page? | 不可变资金明细 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/admin/v1/partner-finance/:id/orders` | 查询品牌伙伴采购订单 | admin | path:id，query:page?；id为伙伴UUID、page?；财务只读 | {items,total,page,pageSize}；金额、商品、地址及发货，无支付原始响应 | 主库；含已停用伙伴历史交易 |
 | `GET /api/saydian-app/admin/v1/partner-finance/:id/recharges` | 查询品牌伙伴充值记录 | admin | path:id，query:page?；id为伙伴UUID、page? | 充值状态与入账时间 | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/admin/v1/partner-finance/:id/deposit` | 登记品牌伙伴保证金 | admin: SUPER_ADMIN | path:id；仅SUPER_ADMIN；id为伙伴UUID；{type:DEPOSIT_RECEIPT\|DEPOSIT_RETURN\|DEPOSIT_CORRECTION,deltaCents,reason,referenceNo?,idempotencyKey} | 独立保证金流水；不得透支或增加消费余额；记录操作人、凭证、变动前后余额；幂等审计 | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/admin/v1/partner-finance/:id/balance-recharge` | 手动充值品牌伙伴余额 | admin: SUPER_ADMIN | path:id；仅SUPER_ADMIN；id为伙伴UUID；{amountCents,reason,referenceNo?,idempotencyKey} | 正整数分入账；MANUAL_RECHARGE不可变流水及操作人快照/前后余额审计，同一请求只入账一次 | 不生成在线支付凭证；不计入支付渠道外部收款 |
 
-## 品牌伙伴平台接口（29）
+## 品牌伙伴平台接口（32）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
 | `POST /api/saydian-app/vip/v1/auth/login` | 品牌伙伴登录 | public | {username,password}；每IP每分钟10次；独立伙伴会话 | {token,expiresAt,user}；停用或改密后旧会话失效 | 品牌伙伴已开通 |
+| `GET /api/saydian-app/vip/v1/public/certificate/:code` | 核验赛电电子授权证书 | public | path:code；code为公开推广码；公开只读 | 授权方、伙伴名称/编号、当前合作等级、启用状态、登记日期；不返回联系方式、账号、余额或内部ID | 主库当前状态；停用即时失效 |
 | `GET /api/saydian-app/vip/v1/public/promotion/:code` | 验证品牌伙伴推广来源 | public | path:code；code为伙伴推广码；公开只读 | {name,partnerCode,noticeVersion,notice}；失效返回404 | 品牌伙伴启用 |
 | `GET /api/saydian-app/vip/v1/auth/me` | 当前品牌伙伴账户 | partner | 本人伙伴会话 | 账号、等级与资金账户；不返回密码哈希 | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/vip/v1/auth/logout` | 退出品牌伙伴平台 | partner | 本人伙伴会话 | {loggedOut:true}；吊销当前会话 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/dashboard` | 品牌伙伴平台概览 | partner | 本人伙伴会话 | 账户、可消费余额、保证金、会员数量、订单数量、累计采购金额 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/promotion` | 品牌伙伴专属推广二维码 | partner | 本人伙伴会话 | {name,partnerNo,promotionCode,linkUrl,qrDataUrl,active}；链接指向H5注册 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/vip/v1/certificate` | 查看与打印电子授权证书 | partner | 本人伙伴会话 | 赛电授权数据、当前等级/状态、核验链接和二维码；随账户启用状态有效 | 主库当前伙伴账户 |
 | `GET /api/saydian-app/vip/v1/members` | 所属会员列表 | partner | query:search?，query:page?；search?、page?；当前会话决定伙伴身份 | {items,total,page,pageSize}；仅当前partnerId会员 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/members/:id/profile` | 所属会员资料与健康档案 | partner | path:id；id为会员UUID | 基本资料与HealthProfile；读取审计成功后返回 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/members/:id/health-summary` | 所属会员健康摘要 | partner | path:id；id为会员UUID | 按指标统计数量与首末时间；未知值不补零 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/members/:id/health-records` | 所属会员历史健康记录 | partner | path:id，query:page?，query:pageSize?；id为会员UUID、page?、pageSize?（最多100） | {items,total,page,pageSize}；保留原始历史记录；写敏感读取审计 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/vip/v1/members/:id/profile` | 所属会员资料与健康档案 | partner | path:id；id为会员UUID | 基本资料；仅战略合作伙伴返回生日、身高、体重、HealthProfile，读取审计成功后返回 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/vip/v1/members/:id/health-summary` | 所属会员健康摘要 | partner | path:id；id为会员UUID | 按指标统计数量与首末时间；未知值不补零 | 仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403 |
+| `GET /api/saydian-app/vip/v1/members/:id/health-records` | 所属会员历史健康记录 | partner | path:id，query:page?，query:pageSize?；id为会员UUID、page?、pageSize?（最多100） | {items,total,page,pageSize}；保留原始历史记录；写敏感读取审计 | 仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403 |
 | `GET /api/saydian-app/vip/v1/members/:id/devices` | 所属会员设备 | partner | path:id；id为会员UUID | {items}；设备身份单向显示，不暴露内部硬件指纹 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/members/:id/reports` | 所属会员健康报告列表 | partner | path:id，query:page?；id为会员UUID、page? | {items,total,page,pageSize}；当前会员归属限制 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/reports/:id` | 所属会员健康报告详情 | partner | path:id；id为报告UUID | 报告摘要与READY状态内容；其他状态不提供完整内容；写读取审计 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/health-records/:id/ecg` | 所属会员心电波形附件 | partner | path:id；id为健康记录UUID；伙伴会话 | 私有gzip字节流；no-store及SHA256/采样元数据；先审计后读取 | 私有对象存储已配置 |
+| `GET /api/saydian-app/vip/v1/members/:id/reports` | 所属会员健康报告列表 | partner | path:id，query:page?；id为会员UUID、page? | {items,total,page,pageSize}；当前会员归属限制 | 仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403 |
+| `GET /api/saydian-app/vip/v1/reports/:id` | 所属会员健康报告详情 | partner | path:id；id为报告UUID | 报告摘要与READY状态内容；其他状态不提供完整内容；写读取审计 | 仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403 |
+| `GET /api/saydian-app/vip/v1/health-records/:id/ecg` | 所属会员心电波形附件 | partner | path:id；id为健康记录UUID；伙伴会话 | 私有gzip字节流；no-store及SHA256/采样元数据；先审计后读取 | 仅当前启用战略合作伙伴；私有对象存储已配置 |
 | `GET /api/saydian-app/vip/v1/devices/:id/connections` | 所属设备连接记录 | partner | path:id，query:page?；id为设备UUID、page? | {items,total,page,pageSize}；不返回原始报文 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/devices/:id/measurements` | 所属设备测量记录 | partner | path:id，query:page?，query:pageSize?；id为设备UUID、page?、pageSize? | {items,total,page,pageSize}；兼容历史设备标识；写读取审计 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/products` | 品牌伙伴采购商品 | partner | query:search?，query:page?；search?、page? | 当前等级SKU分销价；无有效价不可采购；不返回成本或其他等级价格 | 主库；伙伴身份与会员/员工推广隔离 |
-| `POST /api/saydian-app/vip/v1/quote` | 计算品牌伙伴采购报价 | partner | {items:[{skuId,quantity}]} | PartnerQuote：等级、商品行、分销价、运费、总额和fingerprint | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/vip/v1/devices/:id/measurements` | 所属设备测量记录 | partner | path:id，query:page?，query:pageSize?；id为设备UUID、page?、pageSize? | {items,total,page,pageSize}；兼容历史设备标识；写读取审计 | 仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403 |
+| `GET /api/saydian-app/vip/v1/products` | 品牌伙伴采购商品 | partner | query:search?，query:page?；search?、page? | 当前等级SKU合作价；无有效价不可采购；不返回成本或其他等级价格 | 主库；伙伴身份与会员/员工推广隔离 |
+| `POST /api/saydian-app/vip/v1/quote` | 计算品牌伙伴采购报价 | partner | {items:[{skuId,quantity}]} | PartnerQuote：等级、商品行、合作价、运费、总额和fingerprint | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/vip/v1/orders` | 余额支付创建品牌伙伴采购订单 | partner | PartnerCheckoutInput：items、address、expectedQuote、idempotencyKey、buyerRemark? | 订单及成功余额凭证；扣款/账本/付款库存/ERP任务同事务；不足或报价变化不部分扣款 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/orders` | 品牌伙伴采购订单列表 | partner | query:page?；page? | {items,total,page,pageSize}；仅本人采购交易 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/orders/:id` | 品牌伙伴采购订单详情 | partner | path:id；id为订单UUID | 成交等级/分销价快照、收货信息、付款、售后及ERP状态 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/vip/v1/orders/:id` | 品牌伙伴采购订单详情 | partner | path:id；id为订单UUID | 成交等级/合作价快照、收货信息、付款、售后及ERP状态 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/vip/v1/orders/:id/processing` | 同步采购订单ERP处理明细 | partner | path:id；id为本人订单UUID | {items,state,syncedAt,truncated}；缓存一分钟；实际ERP操作时间/名称/操作人/备注，后台只读同步任务 | 聚水潭order.action.query已授权；不伪造处理记录 |
 | `GET /api/saydian-app/vip/v1/orders/:id/logistics` | 品牌伙伴采购发货与物流 | partner | path:id；id为订单UUID | {items}；物流公司/单号/发货时间/筛选后的实际轨迹，不透出ERP原始响应 | ERP或总后台真实发货记录 |
 | `GET /api/saydian-app/vip/v1/wallet` | 品牌伙伴资金账户 | partner | 本人伙伴会话 | 消费余额和保证金分别以整数分返回 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/ledger` | 品牌伙伴资金流水 | partner | query:account?，query:page?；account?:BALANCE\|DEPOSIT、page? | 不可变资金记录、变动金额、变动后余额和业务引用 | 主库；伙伴身份与会员/员工推广隔离 |

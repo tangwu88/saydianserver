@@ -61,3 +61,11 @@ export function measurements(values: unknown) {
       .join(" · ") || "暂无数据"
   );
 }
+
+export const erpStatuses: Record<string, string> = {
+  WAIT_SELLER_SEND_GOODS: "等待发货",
+  WAIT_BUYER_CONFIRM_GOODS: "已发货，等待收货",
+  TRADE_FINISHED: "交易完成",
+  TRADE_CLOSED: "交易关闭",
+  SENT: "已发货",
+};

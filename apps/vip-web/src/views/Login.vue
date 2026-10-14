@@ -36,7 +36,7 @@ async function login() {
         <h1>赛电品牌伙伴平台</h1>
 
         <div class="story-line"></div>
-        <small>会员服务 · 分销采购 · 资金管理</small>
+        <small>会员服务 · 合作采购 · 资金管理</small>
       </div>
     </section>
     <section class="login-side">

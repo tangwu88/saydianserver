@@ -103,6 +103,54 @@ export class PartnerAdminService {
     return { items, total, page, pageSize };
   }
 
+  async orders(id: string, pageInput: unknown) {
+    if (!isUuid(id)) throw new NotFoundException("品牌伙伴不存在");
+    const { page, pageSize, skip } = partnerPage(pageInput),
+      where = { partnerId: id };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.commerceOrder.findMany({
+        where,
+        select: {
+          id: true,
+          orderNo: true,
+          status: true,
+          payableCents: true,
+          partnerLevelSnapshot: true,
+          createdAt: true,
+          recipientName: true,
+          recipientMobile: true,
+          province: true,
+          city: true,
+          district: true,
+          addressDetail: true,
+          erpOrderId: true,
+          erpStatus: true,
+          items: {
+            select: {
+              id: true,
+              nameSnapshot: true,
+              specificationSnapshot: true,
+              quantity: true,
+              unitPriceCents: true,
+            },
+          },
+          shipments: {
+            select: {
+              logisticsCompany: true,
+              trackingNo: true,
+              shippedAt: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.commerceOrder.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
   async create(actorId: string, input: unknown, requestId: string) {
     const body = safeObject(input),
       username = text(body.username, "登录账号");
@@ -110,7 +158,7 @@ export class PartnerAdminService {
       !/^[A-Za-z0-9_.-]{3,80}$/.test(username) ||
       !isUuid(String(body.levelId ?? ""))
     )
-      throw new BadRequestException("登录账号或分销等级不正确");
+      throw new BadRequestException("登录账号或合作等级不正确");
     const name = text(body.name, "伙伴名称"),
       mobile = String(body.mobile ?? "").trim();
     if (mobile.length > 30) throw new BadRequestException("联系方式过长");
@@ -120,7 +168,7 @@ export class PartnerAdminService {
         const level = await tx.partnerLevel.findFirst({
           where: { id: body.levelId as string, active: true },
         });
-        if (!level) throw new BadRequestException("请选择有效的分销等级");
+        if (!level) throw new BadRequestException("请选择有效的合作等级");
         const partner = await tx.brandPartner.create({
           data: {
             partnerNo: partnerNumber("VIP"),
@@ -172,7 +220,7 @@ export class PartnerAdminService {
     }
     if (body.levelId !== undefined) {
       if (!isUuid(String(body.levelId)))
-        throw new BadRequestException("分销等级不正确");
+        throw new BadRequestException("合作等级不正确");
       data.levelId = String(body.levelId);
     }
     return this.prisma.$transaction(async (tx) => {
@@ -183,7 +231,7 @@ export class PartnerAdminService {
           where: { id: String(data.levelId), active: true },
         }))
       )
-        throw new BadRequestException("分销等级不可用");
+        throw new BadRequestException("合作等级不可用");
       const changed = await tx.brandPartner.updateMany({
         where: { id, updatedAt },
         data,
@@ -298,7 +346,7 @@ export class PartnerAdminService {
   }
 
   async prices(levelId: string, search: string, pageInput: unknown) {
-    if (!isUuid(levelId)) throw new BadRequestException("请选择分销等级");
+    if (!isUuid(levelId)) throw new BadRequestException("请选择合作等级");
     const { page, pageSize, skip } = partnerPage(pageInput);
     const where: Prisma.CommerceSkuWhereInput = {
       product: {
@@ -354,7 +402,7 @@ export class PartnerAdminService {
       priceCents > PARTNER_MAX_CENTS ||
       typeof enabled !== "boolean"
     )
-      throw new BadRequestException("分销价信息不正确");
+      throw new BadRequestException("合作价信息不正确");
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`partner-price:${levelId}:${skuId}`}))`;
       if (
@@ -371,7 +419,7 @@ export class PartnerAdminService {
             expectedTime(body.updatedAt).getTime()
           : body.updatedAt != null
       )
-        throw new ConflictException("分销价已变化，请刷新");
+        throw new ConflictException("合作价已变化，请刷新");
       const price = await tx.partnerSkuPrice.upsert({
         where: { levelId_skuId: { levelId, skuId } },
         create: { levelId, skuId, priceCents, enabled },

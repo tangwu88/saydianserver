@@ -33,7 +33,7 @@ const wallet = ref<any>(),
   pollError = ref(""),
   pollBusy = ref(false);
 const selectedRechargeId = ref("");
-const form = reactive({ amount: 100, channel: "wechat_native" }),
+const form = reactive({ amount: 10000, channel: "wechat_native" }),
   payment = ref<any>(),
   currentRecharge = ref<any>(),
   payDialog = ref(false),
@@ -361,7 +361,7 @@ function closePayment() {
       />
       <div class="amount-options">
         <el-button
-          v-for="amount in [100, 500, 1000, 3000]"
+          v-for="amount in [10000, 20000, 50000, 100000]"
           :key="amount"
           :type="form.amount === amount ? 'primary' : 'default'"
           :plain="form.amount !== amount"

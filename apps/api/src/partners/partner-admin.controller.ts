@@ -129,6 +129,10 @@ export class PartnerAdminController {
   ) {
     return this.admin.ledger(id, account, page);
   }
+  @Get("partner-finance/:id/orders")
+  orders(@Param("id") id: string, @Query("page") page?: string) {
+    return this.admin.orders(id, page);
+  }
   @Get("partner-finance/:id/recharges")
   recharges(@Param("id") id: string, @Query("page") page?: string) {
     return this.admin.recharges(id, page);

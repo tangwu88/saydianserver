@@ -139,7 +139,7 @@ export class PartnerCommerceService {
     });
     if (!partner) throw new NotFoundException("品牌伙伴账户不可用");
     if (!partner.level.active)
-      throw new ConflictException("分销等级暂未开放采购，请联系总后台");
+      throw new ConflictException("合作等级暂未开放采购，请联系总后台");
     return partner;
   }
 
@@ -223,7 +223,7 @@ export class PartnerCommerceService {
       const price = prices.find((row) => row.skuId === item.skuId);
       if (!price)
         throw new ConflictException(
-          "部分商品未设置分销价或已下架，请刷新商品列表",
+          "部分商品未设置合作价或已下架，请刷新商品列表",
         );
       return {
         skuId: item.skuId,
@@ -320,7 +320,7 @@ export class PartnerCommerceService {
             await tx.$queryRaw`SELECT id FROM "BrandPartner" WHERE id = ${partnerId}::uuid FOR SHARE`;
             const quote = await this.readQuote(tx, partnerId, requested);
             if (quote.fingerprint !== expectedQuote)
-              throw new ConflictException("分销价或等级已变化，请重新确认报价");
+              throw new ConflictException("合作价或等级已变化，请重新确认报价");
             const order = await tx.commerceOrder.create({
               data: {
                 orderNo: partnerNumber("VP"),
@@ -430,6 +430,56 @@ export class PartnerCommerceService {
     });
     if (!order) throw new NotFoundException("订单不存在");
     return order;
+  }
+
+  async processing(partnerId: string, id: string) {
+    const order = await this.order(partnerId, id);
+    const cache = safeObject(order.erpProcessLogJson),
+      items = Array.isArray(cache.items) ? cache.items : [];
+    if (!order.erpOrderId || order.executionOwner !== "NEW_SYSTEM")
+      return {
+        items,
+        state: "WAITING_ORDER",
+        syncedAt: order.erpProcessLogSyncedAt,
+        truncated: cache.truncated === true,
+      };
+    const integration = await this.prisma.integrationConfig.findUnique({
+      where: { key: "jushuitan" },
+      select: { state: true },
+    });
+    if (integration?.state !== "CONFIGURED")
+      return {
+        items,
+        state: "UNAVAILABLE",
+        syncedAt: order.erpProcessLogSyncedAt,
+        truncated: cache.truncated === true,
+      };
+    const stale =
+      !order.erpProcessLogSyncedAt ||
+      Date.now() - order.erpProcessLogSyncedAt.getTime() >= 60_000;
+    let state = "READY";
+    if (stale) {
+      const key = `partner-erp-logs:${id}:${Math.floor(Date.now() / 60_000)}`;
+      const job = await this.prisma.commerceIntegrationJob.upsert({
+        where: { idempotencyKey: key },
+        create: {
+          type: "JUSHUITAN_ORDER_LOG_SYNC",
+          aggregateType: "commerce_order",
+          aggregateId: id,
+          payload: { orderId: id },
+          idempotencyKey: key,
+        },
+        update: {},
+        select: { status: true },
+      });
+      state = job.status === "DEAD_LETTER" ? "ERROR" : "PENDING";
+    }
+    return {
+      items,
+      state,
+      syncedAt: order.erpProcessLogSyncedAt,
+      truncated: cache.truncated === true,
+    };
   }
 
   async logistics(partnerId: string, id: string) {

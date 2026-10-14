@@ -24,7 +24,7 @@ const groups = [
     ["/payments", "支付流水"],
     ["/commerce-withdrawals", "提现审核"],
   ] },
-  { title: "品牌伙伴", items: [["/partners", "伙伴账户"], ["/partner-levels", "分销等级"], ["/partner-prices", "等级分销价"], ["/partner-finance", "伙伴资金"]] },
+  { title: "品牌伙伴", items: [["/partners", "伙伴账户"], ["/partner-levels", "合作等级"], ["/partner-prices", "等级合作价"], ["/partner-finance", "伙伴资金"]] },
   { title: "运营", items: [
     ["/notifications", "站内通知"], ["/notification-campaigns", "通知群发"],
     ["/articles", "内容"], ["/article-categories", "内容分类"],

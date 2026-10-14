@@ -374,3 +374,5 @@ export { apiCatalog } from "./api-catalog.generated";
 export * from "./download";
 export * from "./cutover";
 export * from "./sleep-report";
+
+export { partnerLevelName } from "./partner";

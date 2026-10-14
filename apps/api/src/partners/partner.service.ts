@@ -16,6 +16,7 @@ import {
   partnerRequestKey,
 } from "./partner-commerce.service";
 import { PARTNER_MAX_CENTS } from "./partner-ledger";
+import { canReadPartnerHealth } from "./partner-health-policy";
 import { normalizedPartnerCode } from "./partner-registration";
 
 @Injectable()
@@ -34,13 +35,15 @@ export class PartnerService {
         username: true,
         name: true,
         mobile: true,
-        level: { select: { id: true, name: true } },
+        active: true,
+        level: { select: { id: true, name: true, code: true, active: true } },
         wallet: true,
       },
     });
     if (!partner) throw new NotFoundException("品牌伙伴账户不存在");
     return {
       ...partner,
+      canViewMemberHealth: canReadPartnerHealth(partner),
       preview:
         env("NODE_ENV", "development") !== "production" &&
         envBoolean("LOCAL_PARTNER_PREVIEW", false),
@@ -79,7 +82,7 @@ export class PartnerService {
       name: partner.name,
       partnerCode: partner.promotionCode,
       noticeVersion: "partner-service-v1",
-      notice: `通过此链接注册后，您的会员资料、健康档案、设备、连接记录及测量记录将由所属品牌伙伴「${partner.name}」查看，用于提供服务。`,
+      notice: `通过此链接注册后，所属品牌伙伴「${partner.name}」可查看您的会员资料、设备及连接记录，用于提供服务；仅战略合作伙伴可查看健康档案、测量记录及健康报告。`,
     };
   }
 
@@ -112,6 +115,68 @@ export class PartnerService {
         margin: 2,
       }),
     };
+  }
+
+  private certificateData(partner: {
+    name: string;
+    partnerNo: string;
+    active: boolean;
+    createdAt: Date;
+    level: { name: string; active: boolean };
+  }) {
+    return {
+      issuer: "赛电",
+      partnerName: partner.name,
+      certificateNo: partner.partnerNo,
+      level: partner.level.name,
+      active: partner.active && partner.level.active,
+      registeredAt: partner.createdAt,
+      generatedAt: new Date(),
+      scope: "赛电品牌产品推广与采购",
+      validity: "随合作账户启用状态有效",
+    };
+  }
+
+  async certificate(partnerId: string) {
+    const partner = await this.prisma.brandPartner.findFirst({
+      where: { id: partnerId, active: true },
+      select: {
+        name: true,
+        partnerNo: true,
+        active: true,
+        createdAt: true,
+        promotionCode: true,
+        level: { select: { name: true, active: true } },
+      },
+    });
+    if (!partner) throw new NotFoundException("品牌伙伴账户不存在");
+    const base = new URL(env("PUBLIC_BASE_URL", "http://localhost:3301"));
+    const verifyUrl = new URL(
+      `/vip/certificate/verify/${encodeURIComponent(partner.promotionCode)}`,
+      base,
+    ).toString();
+    return {
+      ...this.certificateData(partner),
+      verifyUrl,
+      qrDataUrl: await QRCode.toDataURL(verifyUrl, { width: 180, margin: 1 }),
+    };
+  }
+
+  async publicCertificate(codeInput: unknown) {
+    const promotionCode = normalizedPartnerCode(codeInput);
+    if (!promotionCode) throw new NotFoundException("授权证书不存在");
+    const partner = await this.prisma.brandPartner.findUnique({
+      where: { promotionCode },
+      select: {
+        name: true,
+        partnerNo: true,
+        active: true,
+        createdAt: true,
+        level: { select: { name: true, active: true } },
+      },
+    });
+    if (!partner) throw new NotFoundException("授权证书不存在");
+    return this.certificateData(partner);
   }
 
   paymentCapabilities() {

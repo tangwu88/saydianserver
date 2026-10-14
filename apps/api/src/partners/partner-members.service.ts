@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
 import { isUuid } from "../common/crypto";
@@ -8,6 +12,7 @@ import {
 } from "../common/device-identity";
 import { partnerPage } from "./partner-commerce.service";
 import { foldedHealthRecordWhere } from "../health/health-record-scope";
+import { canReadPartnerHealth } from "./partner-health-policy";
 import { SupportService } from "../support/support.service";
 
 const deviceSelect = {
@@ -49,6 +54,21 @@ export class PartnerMembersService {
     private readonly prisma: PrismaService,
     private readonly support: SupportService,
   ) {}
+
+  private async healthAccess(
+    tx: Prisma.TransactionClient,
+    partnerId: string,
+    required = false,
+  ) {
+    const partner = await tx.brandPartner.findUnique({
+      where: { id: partnerId },
+      select: { active: true, level: { select: { code: true, active: true } } },
+    });
+    const allowed = canReadPartnerHealth(partner);
+    if (required && !allowed)
+      throw new ForbiddenException("仅战略合作伙伴可查看会员健康资料");
+    return allowed;
+  }
 
   private async requireMember(
     tx: Prisma.TransactionClient,
@@ -109,41 +129,51 @@ export class PartnerMembersService {
           }
         : {}),
     };
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.user.findMany({
-        where,
-        select: {
-          id: true,
-          compatibilityId: true,
-          nickname: true,
-          mobile: true,
-          email: true,
-          avatarUrl: true,
-          gender: true,
-          createdAt: true,
-          _count: { select: { devices: true, healthRecords: true } },
-        },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        skip,
-        take: pageSize,
-      }),
-      this.prisma.user.count({ where }),
-    ]);
-    return {
-      items: items.map((item) => ({
-        ...item,
-        memberNo: String(item.compatibilityId),
-      })),
-      total,
-      page,
-      pageSize,
-    };
+    return this.prisma.$transaction(async (tx) => {
+      const canViewMemberHealth = await this.healthAccess(tx, partnerId);
+      const [items, total] = await Promise.all([
+        tx.user.findMany({
+          where,
+          select: {
+            id: true,
+            compatibilityId: true,
+            nickname: true,
+            mobile: true,
+            email: true,
+            avatarUrl: true,
+            gender: true,
+            createdAt: true,
+            _count: {
+              select: {
+                devices: true,
+                ...(canViewMemberHealth ? { healthRecords: true } : {}),
+              },
+            },
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          skip,
+          take: pageSize,
+        }),
+        tx.user.count({ where }),
+      ]);
+      return {
+        canViewMemberHealth,
+        items: items.map((item) => ({
+          ...item,
+          memberNo: String(item.compatibilityId),
+        })),
+        total,
+        page,
+        pageSize,
+      };
+    });
   }
 
   profile(partnerId: string, id: string, requestId: string) {
     return this.prisma.$transaction(
       async (tx) => {
         await this.requireMember(tx, partnerId, id);
+        const canViewMemberHealth = await this.healthAccess(tx, partnerId);
         const member = await tx.user.findFirstOrThrow({
           where: { id, partnerId },
           select: {
@@ -154,16 +184,24 @@ export class PartnerMembersService {
             email: true,
             avatarUrl: true,
             gender: true,
-            birthday: true,
-            heightCm: true,
-            weightKg: true,
+            ...(canViewMemberHealth
+              ? {
+                  birthday: true,
+                  heightCm: true,
+                  weightKg: true,
+                  healthProfile: true,
+                }
+              : {}),
             status: true,
             createdAt: true,
-            healthProfile: true,
           },
         });
         await this.audit(tx, partnerId, id, "USER_PROFILE", requestId, 1);
-        return { ...member, memberNo: String(member.compatibilityId) };
+        return {
+          ...member,
+          canViewMemberHealth,
+          memberNo: String(member.compatibilityId),
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
@@ -171,6 +209,7 @@ export class PartnerMembersService {
 
   healthSummary(partnerId: string, id: string, requestId: string) {
     return this.prisma.$transaction(async (tx) => {
+      await this.healthAccess(tx, partnerId, true);
       await this.requireMember(tx, partnerId, id);
       const rows = await tx.healthRecord.groupBy({
         by: ["metric"],
@@ -210,6 +249,7 @@ export class PartnerMembersService {
     pageSizeInput: unknown,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      await this.healthAccess(tx, partnerId, true);
       await this.requireMember(tx, partnerId, id);
       const { page, pageSize, skip } = partnerPage(pageInput, pageSizeInput);
       const where = { userId: id, user: { partnerId } };
@@ -339,6 +379,7 @@ export class PartnerMembersService {
     pageSizeInput: unknown,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      await this.healthAccess(tx, partnerId, true);
       const device = await this.requireDevice(tx, partnerId, id),
         { page, pageSize, skip } = partnerPage(pageInput, pageSizeInput);
       const alias = legacyNativeDeviceKey(
@@ -387,6 +428,7 @@ export class PartnerMembersService {
   async ecg(partnerId: string, id: string, requestId: string) {
     if (!isUuid(id)) throw new NotFoundException("心电波形不存在");
     const record = await this.prisma.$transaction(async (tx) => {
+      await this.healthAccess(tx, partnerId, true);
       const row = await tx.healthRecord.findFirst({
         where: {
           id,
@@ -413,6 +455,7 @@ export class PartnerMembersService {
     pageInput: unknown,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      await this.healthAccess(tx, partnerId, true);
       await this.requireMember(tx, partnerId, userId);
       const { page, pageSize, skip } = partnerPage(pageInput),
         where = { userId, user: { partnerId } };
@@ -448,6 +491,7 @@ export class PartnerMembersService {
 
   report(partnerId: string, id: string, requestId: string) {
     return this.prisma.$transaction(async (tx) => {
+      await this.healthAccess(tx, partnerId, true);
       if (!isUuid(id)) throw new NotFoundException("健康报告不存在");
       const report = await tx.healthReport.findFirst({
         where: { id, user: { partnerId, status: { not: "DELETED" } } },

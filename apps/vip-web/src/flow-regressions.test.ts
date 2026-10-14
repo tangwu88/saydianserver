@@ -55,7 +55,7 @@ const quote = {
   subtotalCents: 100,
   shippingCents: 0,
   fingerprint: "a".repeat(64),
-  level: "一级分销",
+  level: "战略合作",
 };
 function harness(view: string, store = memoryStorage()) {
   const source = readFileSync(
@@ -105,7 +105,7 @@ function harness(view: string, store = memoryStorage()) {
                     },
                   ],
                   total: 1,
-                  level: "一级分销",
+                  level: "战略合作",
                 }
               : path === "/payment-capabilities"
                 ? { items: [{ channel: "wechat_native", enabled: true }] }
@@ -113,7 +113,7 @@ function harness(view: string, store = memoryStorage()) {
       ),
     ),
     post: vi.fn(async (path: string, _input?: unknown) =>
-      response(path === "/quote" ? quote : {}),
+      response(path === "/quote" ? JSON.parse(JSON.stringify(quote)) : {}),
     ),
   };
   const mounts: Array<() => Promise<void>> = [],
@@ -154,7 +154,7 @@ function harness(view: string, store = memoryStorage()) {
   };
   const exports =
     view === "Products"
-      ? "load, review, purchase, quantities, address, addressForm, submittedRequest, submitting, quoteStale, checkoutError, balance, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
+      ? "load, review, preparePurchase, purchase, cancelPurchaseConfirmation, paymentReview, preparingPurchase, quantities, address, addressForm, submittedRequest, submitting, quote, quoteStale, checkoutError, balance, buyerRemark, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
       : "load, create, viewRecharge, poll, pendingInput, form, currentRecharge, payment, paymentError, pollError, paying";
   const state = new Function(
     ...Object.keys(deps),
@@ -182,6 +182,10 @@ async function readyCheckout() {
 }
 function networkError(status?: number) {
   return { isAxiosError: true, response: status ? { status } : undefined };
+}
+async function confirmedPurchase(h: ReturnType<typeof harness>) {
+  await h.preparePurchase();
+  await h.purchase();
 }
 
 describe("partner checkout recovery and user-facing failures", () => {
@@ -299,21 +303,21 @@ describe("partner checkout recovery and user-facing failures", () => {
   it("keeps the exact payment request after an uncertain failure, even if the form changes", async () => {
     const h = await readyCheckout();
     h.api.post.mockRejectedValueOnce(networkError());
-    await h.purchase();
+    await confirmedPurchase(h);
     const original = h.api.post.mock.calls.at(-1)![1];
     h.address.recipientName = "changed";
     h.api.post.mockResolvedValueOnce(response({ id: "order" }));
-    await h.purchase();
+    await confirmedPurchase(h);
     expect(h.api.post.mock.calls.at(-1)![1]).toEqual(original);
     expect(h.router.push).toHaveBeenCalledWith("/orders");
   });
   it("requires an updated quote after price rejection and never repeats stale payment", async () => {
     const h = await readyCheckout();
     h.api.post.mockRejectedValueOnce(networkError(409));
-    await h.purchase();
+    await confirmedPurchase(h);
     expect(h.quoteStale.value).toBe(true);
     const calls = h.api.post.mock.calls.length;
-    await h.purchase();
+    await confirmedPurchase(h);
     expect(h.api.post).toHaveBeenCalledTimes(calls);
     h.api.post.mockResolvedValueOnce(
       response({ ...quote, fingerprint: "b".repeat(64) }),
@@ -325,19 +329,113 @@ describe("partner checkout recovery and user-facing failures", () => {
     const h = await readyCheckout();
     h.api.post.mockClear();
     h.addressForm.value.validate.mockResolvedValueOnce(false);
-    await h.purchase();
+    await confirmedPurchase(h);
     expect(h.api.post).not.toHaveBeenCalled();
     h.balance.value = 0;
-    await h.purchase();
+    await confirmedPurchase(h);
     expect(h.api.post).not.toHaveBeenCalled();
     h.balance.value = 10000;
     h.store.setItem.mockImplementation(() => {
       throw new Error("blocked storage");
     });
-    await h.purchase();
+    await confirmedPurchase(h);
     expect(h.api.post).not.toHaveBeenCalled();
     expect(h.submitting.value).toBe(false);
     expect(h.checkoutError.value).toContain("存储");
+  });
+  it("requires final confirmation and cancellation never creates an order or recovery request", async () => {
+    const h = await readyCheckout();
+    h.api.post.mockClear();
+    await h.purchase();
+    expect(h.api.post).not.toHaveBeenCalled();
+    await h.preparePurchase();
+    expect(h.paymentReview.value).toMatchObject({
+      balanceCents: 10000,
+      resuming: false,
+      quote: { payableCents: 100 },
+      input: {
+        address: { recipientName: "合成收货人" },
+        items: [{ skuId: "sku", quantity: 1 }],
+      },
+    });
+    expect(h.api.post).not.toHaveBeenCalled();
+    expect(h.store.setItem).not.toHaveBeenCalled();
+    h.cancelPurchaseConfirmation();
+    await h.purchase();
+    expect(h.paymentReview.value).toBeNull();
+    expect(h.api.post).not.toHaveBeenCalled();
+    expect(h.submittedRequest.value).toBeNull();
+  });
+  it("sends exactly the displayed address, items, price and remark snapshot after final confirmation", async () => {
+    const h = await readyCheckout();
+    h.buyerRemark.value = "请先联系合成收货人";
+    await h.preparePurchase();
+    const approved = JSON.parse(JSON.stringify(h.paymentReview.value));
+    h.address.recipientName = "未确认的新收货人";
+    h.quantities.sku = 9;
+    h.quote.value.lines[0].quantity = 9;
+    h.quote.value.payableCents = 900;
+    h.quote.value.fingerprint = "c".repeat(64);
+    h.buyerRemark.value = "未确认的新备注";
+    await h.purchase();
+    expect(h.api.post.mock.calls.at(-1)).toEqual(["/orders", approved.input]);
+    expect(h.paymentReview.value).toBeNull();
+  });
+  it("allows only one submit while final confirmation is in flight", async () => {
+    const h = await readyCheckout();
+    await h.preparePurchase();
+    let finish!: () => void;
+    h.api.post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(response({ id: "order" }));
+        }),
+    );
+    const first = h.purchase();
+    await h.purchase();
+    h.cancelPurchaseConfirmation();
+    expect(h.submitting.value).toBe(true);
+    expect(h.paymentReview.value).not.toBeNull();
+    expect(
+      h.api.post.mock.calls.filter(([url]: [string]) => url === "/orders"),
+    ).toHaveLength(1);
+    finish();
+    await first;
+    expect(h.submitting.value).toBe(false);
+  });
+  it("opens only one confirmation when payment is clicked repeatedly during address validation", async () => {
+    const h = await readyCheckout();
+    let finish!: () => void;
+    h.addressForm.value.validate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(true);
+        }),
+    );
+    const first = h.preparePurchase();
+    await h.preparePurchase();
+    expect(h.preparingPurchase.value).toBe(true);
+    expect(h.addressForm.value.validate).toHaveBeenCalledTimes(1);
+    finish();
+    await first;
+    expect(h.paymentReview.value).not.toBeNull();
+    expect(
+      h.api.post.mock.calls.filter(([url]: [string]) => url === "/orders"),
+    ).toHaveLength(0);
+  });
+  it("displays the original confirmation when checking an uncertain order, even after balance was consumed", async () => {
+    const h = await readyCheckout();
+    h.api.post.mockRejectedValueOnce(networkError());
+    await confirmedPurchase(h);
+    const original = JSON.parse(JSON.stringify(h.submittedRequest.value));
+    h.address.recipientName = "不能进入原订单的信息";
+    h.balance.value = 0;
+    await h.preparePurchase();
+    expect(h.paymentReview.value.resuming).toBe(true);
+    expect(h.paymentReview.value.input).toEqual(original);
+    expect(h.paymentReview.value.balanceCents).toBe(0);
+    h.cancelPurchaseConfirmation();
+    expect(h.submittedRequest.value).toEqual(original);
   });
 });
 describe("recharge safety and recovery", () => {
@@ -348,7 +446,7 @@ describe("recharge safety and recovery", () => {
     h.api.post.mockRejectedValueOnce(networkError());
     await h.create();
     const input = readRecharge(store, "partner-A")!;
-    expect(input.amountCents).toBe(10000);
+    expect(input.amountCents).toBe(1000000);
     const reloaded = harness("Finance", store);
     await reloaded.load();
     expect(reloaded.pendingInput.value).toEqual(input);
