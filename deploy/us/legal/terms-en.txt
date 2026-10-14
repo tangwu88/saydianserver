@@ -1,0 +1,34 @@
+SayDian Terms of Use
+Version: global-appstore-2026-10-14-r3
+
+Effective date: October 14, 2026
+
+These Terms govern your use of SayDian, including the mobile app, compatible device features, and related service. The service is provided by the developer identified for SayDian in the App Store or Google Play ("SayDian", "we", "us", or "our").
+
+1. Supported devices and wellness use
+
+SayDian supports compatible devices, including smart rings and watches. Available features depend on the device, firmware, operating system, and services enabled for your account or region. The iOS app displays activity and sleep information. The Android app may also display other fitness or wellness readings when supported by the connected device and enabled in the app. Not every device supports every feature. It does not provide medical diagnosis, treatment, emergency services, or a substitute for professional medical advice. Do not use its readings to make medical decisions. Seek appropriate professional or emergency care when needed.
+
+2. Account and access
+
+You are responsible for providing accurate account information and safeguarding your sign-in credentials. Do not share an account or use another person's account without authorization. Features may require a compatible device, Bluetooth, a network connection, an optional permission, or a service available in your region. Features and readings vary by device model and firmware.
+
+3. Your content and data
+
+You retain ownership of information and files you submit. You grant SayDian the limited permission needed to host, process, and display that information solely to operate the feature you choose, such as an account profile, device synchronization, care sharing, feedback, AI assistance, or an optional purchase-related request. You must have the right to submit any contact, image, or other content you choose to use.
+
+4. Acceptable use
+
+Do not interfere with the service, bypass access controls, transmit malware, infringe others' rights, or use the service to harm others. We may suspend or restrict access where reasonably necessary to protect users, the service, or comply with law.
+
+5. Availability and third-party services
+
+We may maintain, update, change, or discontinue features. Some functions rely on your device, operating system, device model, location, or third-party providers. Where a commerce or payment feature is available, its specific offer, purchase, payment, delivery, return, or refund terms are presented in that feature before you confirm a transaction.
+
+6. Privacy and account deletion
+
+Our processing of personal data is described in the SayDian Privacy Policy. The international service connected to https://app.saydian.com stores active first-party service data in the United States. The China service separately retains its existing user data for its users under the applicable service policy. The two services maintain independent user databases, files and credentials; approved historical-data migration does not remove existing China-service records, as explained in the Privacy Policy. New international-app data is not synchronized back to Beijing. On first use after migration, you must sign in again; existing sessions from the previous service are not transferred. Local cached records and saved-device information are transferred only after the service verifies your account mapping; if verification or transfer fails, the original local cache is retained. The app also keeps an encrypted health-data cache on your phone; data awaiting synchronization remains local until the server confirms receipt. Optional third-party services may process data separately as explained in the Privacy Policy. You can request account deletion through Account settings or the support route below. Deletion may remove access to associated data, while limited information may remain where needed for security, dispute handling, or legal obligations.
+
+7. Changes and contact
+
+We may update these Terms when the service or applicable law changes. When required, we will provide notice through the app or service before material changes apply. For support, use Help and feedback in the app or https://app.saydian.com/global/support.

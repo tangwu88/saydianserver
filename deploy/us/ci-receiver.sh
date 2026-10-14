@@ -9,8 +9,9 @@ if [[ "$command" == status ]]; then
   cat "$root_dir/deployed-revision" 2>/dev/null || echo unversioned
   exit 0
 fi
-[[ "$command" =~ ^release\ ([0-9a-f]{40})$ ]] || { echo 'Only release SHA or status is allowed' >&2; exit 1; }
-revision=${BASH_REMATCH[1]}
+[[ "$command" =~ ^(release|bootstrap)\ ([0-9a-f]{40})$ ]] || { echo 'Only release SHA, bootstrap SHA or status is allowed' >&2; exit 1; }
+operation=${BASH_REMATCH[1]}
+revision=${BASH_REMATCH[2]}
 [[ "$(id -u)" == 0 && -d "$root_dir/private" ]]
 mkdir -p "$root_dir/releases"
 exec 9>"$root_dir/private/deploy.lock"
@@ -38,5 +39,9 @@ tar --no-same-owner --no-same-permissions -xzf "$stage/bundle.tgz" -C "$stage"
 export DOCKER_CONFIG="$stage/docker"
 mkdir -m 700 "$DOCKER_CONFIG"
 GITHUB_TOKEN="$registry_token" bash "$stage/deploy/scripts/ci-registry-login.sh" "$stage/deploy" >/dev/null
-GITHUB_TOKEN="$registry_token" RELEASE_SHA="$revision" RELEASE_SOURCE="$stage" bash "$stage/deploy/us/deploy.sh"
+if [[ "$operation" == bootstrap ]]; then
+  RELEASE_SHA="$revision" RELEASE_SOURCE="$stage" python3 "$stage/deploy/us/bootstrap.py"
+else
+  GITHUB_TOKEN="$registry_token" RELEASE_SHA="$revision" RELEASE_SOURCE="$stage" bash "$stage/deploy/us/deploy.sh"
+fi
 unset registry_token

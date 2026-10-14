@@ -15,6 +15,12 @@ on:
         description: Exact latest main SHA with a successful CI verify job
         required: true
         type: string
+      operation:
+        description: Ordinary release, or the independently tested fresh US bootstrap
+        required: true
+        type: choice
+        default: release
+        options: [release, bootstrap]
 
 permissions:
   contents: read
@@ -78,6 +84,13 @@ jobs:
       - name: Validate immutable release manifest
         run: |
           node deploy/scripts/release-manifest.mjs verify '${{ needs.resolve.outputs.revision }}' verified-release/release-manifest.json
+      - uses: actions/download-artifact@v4
+        if: inputs.operation == 'bootstrap'
+        with:
+          name: us-storage-6522ab9808803ac652412a0ed810c8addb473101
+          path: verified-storage
+          run-id: 38517270510
+          github-token: ${{ github.token }}
       - name: Deploy through constrained SSH receiver
         env:
           REVISION: ${{ needs.resolve.outputs.revision }}
@@ -87,10 +100,12 @@ jobs:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.US_DEPLOY_KNOWN_HOSTS }}
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
+          OPERATION: ${{ inputs.operation || 'release' }}
         run: |
           set -Eeuo pipefail
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
           [[ "$DEPLOY_HOST" = 47.85.43.52 ]]
+          [[ "$OPERATION" == release || "$OPERATION" == bootstrap ]]
           [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$REVISION"
           key_dir=$(mktemp -d)
@@ -101,14 +116,19 @@ jobs:
           chmod 600 "$key_dir/key" "$key_dir/known_hosts"
           git archive --format=tar HEAD deploy | tar -x -C "$bundle_dir"
           cp verified-release/release-manifest.json "$bundle_dir/deploy/release-manifest.json"
+          if [[ "$OPERATION" == bootstrap ]]; then
+            cp verified-storage/us-storage-manifest.json "$bundle_dir/deploy/us/storage-manifest.json"
+          fi
           tar -C "$bundle_dir" -czf deploy-bundle.tgz deploy
           test "$(stat -c %s deploy-bundle.tgz)" -le 10485760
           { printf '%s\n' "$GH_TOKEN"; cat deploy-bundle.tgz; } | \
             ssh -i "$key_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile="$key_dir/known_hosts" -o ConnectTimeout=15 \
               -o ServerAliveInterval=20 -o ServerAliveCountMax=15 -o TCPKeepAlive=yes \
-              "$DEPLOY_USER@$DEPLOY_HOST" "release $REVISION"
-          for path in /health/ready /global/health/ready; do
-            test "$(curl --fail --silent --max-time 15 https://app.saydian.com$path | jq -r .revision)" = "$REVISION"
-          done
+              "$DEPLOY_USER@$DEPLOY_HOST" "$OPERATION $REVISION"
+          if [[ "$OPERATION" == release ]]; then
+            for path in /health/ready /global/health/ready; do
+              test "$(curl --fail --silent --max-time 15 https://app.saydian.com$path | jq -r .revision)" = "$REVISION"
+            done
+          fi
           echo "### Verified US revision: $REVISION" >> "$GITHUB_STEP_SUMMARY"

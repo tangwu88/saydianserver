@@ -82,6 +82,7 @@ jobs:
           python3 -B deploy/scripts/verify-runtime-artifact.test.py
           node --test deploy/us/*.test.mjs
           python3 -B deploy/us/capacity_test.py
+          python3 -B deploy/us/bootstrap_test.py
           pnpm typecheck
           pnpm test
           pnpm build
