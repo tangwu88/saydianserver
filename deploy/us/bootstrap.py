@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from capacity import capacity
+from capacity import capacity,host_incremental
 
 ROOT = Path('/opt/saydian-us')
 if os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('US_BOOTSTRAP_CI_ROOT','').startswith('/tmp/saydian-us-ci-'):
@@ -68,12 +68,28 @@ def main():
            'databaseBytes':128*1024**2,'fileBytes':16*1024**2,'backupBytes':32*1024**2,
            'restoreBytes':128*1024**2,'transferBytes':256*1024**2,'logBytes':60*1024**2,'previousReleaseBytes':0}
     fs=os.statvfs(str(ROOT))
-    report=capacity(manifest,state,revision,fs.f_bavail*fs.f_frsize)
+    app_bytes,infra_bytes=host_incremental(manifest,state,str(ROOT))
+    report=capacity(manifest,state,revision,fs.f_bavail*fs.f_frsize,app_bytes,infra_bytes)
+    report.update(incrementalApplicationBytes=app_bytes,incrementalInfrastructureBytes=infra_bytes)
     print(json.dumps(report),flush=True)
     assert report['permitted'], '5GiB capacity gate failed before pulling'
     marker=private/'bootstrap-in-progress.json'
     if marker.exists():
-        assert json.loads(marker.read_text())['revision'] == revision, 'Resume same verified revision only'
+        previous=json.loads(marker.read_text())
+        if previous['revision'] != revision:
+            # Resume a failed *fresh* initialization with a newly CI-verified fix;
+            # never overwrite members or an accepted system, and preserve schema history.
+            pg=['docker','exec','-i','saydian-us-us-postgres-1','psql','-X','-v','ON_ERROR_STOP=1','-U','us_owner','-d','saydian_us','-At']
+            member_table=run(pg+['-c',"SELECT to_regclass('public.\"User\"')"]).strip()
+            if member_table:
+                assert run(pg+['-c','SELECT count(*) FROM "User"']).strip()==b'0', 'Existing members require recovery review'
+            migration_table=run(pg+['-c',"SELECT to_regclass('public._prisma_migrations')"]).strip()
+            if migration_table:
+                history=json.loads(run(pg+['-c','SELECT coalesce(json_agg(t),\'[]\'::json)::text FROM (SELECT migration_name,checksum,finished_at,rolled_back_at FROM "_prisma_migrations") t']))
+                known={entry['name']:entry['sha256'] for entry in manifest['migrations']}
+                assert all(row['rolled_back_at'] or row['finished_at'] and known.get(row['migration_name'])==row['checksum'] for row in history), 'Schema drift requires recovery review'
+            assert previous['storageRevision']==storage['revision'], 'Do not change private storage during recovery'
+            write_json(marker,{'revision':revision,'storageRevision':storage['revision'],'previousFailedRevision':previous['revision']})
     else:
         containers=run(['docker','ps','-aq','--filter','label=com.docker.compose.project=saydian-us']).strip()
         assert not containers, 'Fresh bootstrap refuses an existing US system'
