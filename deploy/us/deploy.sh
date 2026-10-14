@@ -24,7 +24,7 @@ with open(sys.argv[2],'x') as f:
  f.write('US_REVISION='+m['revision']+'\n')
  for name,image in m['images'].items(): f.write('US_'+name.upper()+'_IMAGE='+image['ref']+'\n')
 PY
-compose=(docker compose --project-name saydian-us --env-file "$env_file" --env-file "$next" -f "$source_dir/deploy/us/compose.json")
+compose=(docker compose --project-name saydian-us --env-file "$env_file" --env-file "$root_dir/private/infrastructure.env" --env-file "$next" -f "$source_dir/deploy/us/compose.json")
 "${compose[@]}" config --quiet
 "${compose[@]}" pull us-api us-worker us-admin
 # Validate schema history with the exact API image. Do not apply unreviewed SQL.
@@ -46,7 +46,7 @@ PY
 previous=$(readlink -f "$root_dir/current" || true)
 rollback() {
   if [[ "$previous" == "$root_dir"/releases/* && -f "$previous/deploy/us/images.env" ]]; then
-    docker compose --project-name saydian-us --env-file "$env_file" --env-file "$previous/deploy/us/images.env" -f "$previous/deploy/us/compose.json" up -d --no-deps us-api us-worker us-admin
+    docker compose --project-name saydian-us --env-file "$env_file" --env-file "$root_dir/private/infrastructure.env" --env-file "$previous/deploy/us/images.env" -f "$previous/deploy/us/compose.json" up -d --no-deps us-api us-worker us-admin
   fi
 }
 trap 'rollback' ERR

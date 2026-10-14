@@ -1,0 +1,19 @@
+{
+  "version": "global-appstore-2026-10-14-r3",
+  "reviewed": true,
+  "approval": "Human user explicitly approved both revised texts on 2026-10-14 in this task",
+  "documents": [
+    {
+      "file": "privacy-en.txt",
+      "documentType": "privacy_policy",
+      "title": "SayDian Privacy Policy",
+      "sha256": "11b8cd1705dd04202b975bcc0d4aff6cc456412f8dd09c89e9282350517c85e5"
+    },
+    {
+      "file": "terms-en.txt",
+      "documentType": "user_agreement",
+      "title": "SayDian Terms of Service",
+      "sha256": "c66e1a3c00318d696626f64f18156d567197634afbe378dc08127697f1a361b3"
+    }
+  ]
+}

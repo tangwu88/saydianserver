@@ -1,0 +1,44 @@
+SayDian Privacy Policy
+Version: global-appstore-2026-10-14-r3
+
+Effective date: October 14, 2026
+
+SayDian is operated by the developer identified for SayDian in the App Store or Google Play ("SayDian", "we", "us", or "our"). This notice explains how we process personal data when you use the app and connected device features.
+
+SayDian supports compatible devices, including smart rings and watches. Features vary by device, firmware, operating system, and services enabled for your account or region.
+
+1. Data we process
+
+We process account and profile information you provide, including email address or phone number, nickname, language, optional profile photo, gender, birth date, height, weight, and activity goals.
+
+We process wellness, activity, and device-reported readings that you choose to synchronize from a compatible device. The iOS app synchronizes and displays activity and sleep information. The Android app may also process heart rate, blood-oxygen, temperature, blood-pressure, ECG, HRV, and other fitness or wellness readings when supported by the connected device and enabled in the app. These readings are for personal wellness reference only and are not a medical diagnosis.
+
+We process connected-device information needed to provide the service, including device and installation identifiers, model, firmware, capabilities, connection status, and a device MAC address only when the hardware reports one. If remote notifications are available and enabled, we process the push registration identifier, platform, app version, and locale. The current Google Play release does not enable remote push notifications. Optional forwarding of phone notifications to a compatible device is controlled separately by your phone permissions.
+
+If you use feedback, support, AI assistance, reviews, or another user-content feature, we process the information you choose to submit, such as a message, optional contact details, and an optional image or file. If commerce is available in your region and you choose to use it, we process the account, delivery, order, and after-sales information needed to provide that feature.
+
+2. Optional device permissions
+
+Bluetooth is used to find, connect to, and exchange data with a compatible device. Camera and photo-library access are optional and used only when you choose a profile photo, upload an image or evidence file, create a photo face for a compatible device, or use a camera-remote feature. Contacts are used only when you choose to manage or transfer contacts to a compatible device.
+
+Location is optional. When you choose current-location weather, the current release rounds your coordinates to two decimal places and sends them to the SayDian international service to obtain a local forecast from its weather provider. If a separately configured weather provider is enabled, the app may send coordinates directly to that provider. Optional foreground workout routes are stored on your device.
+
+3. How we use data
+
+We use data to create and secure accounts; provide device connection, synchronization, wellness displays, family-care sharing that you explicitly enable, support, notifications, and optional commerce features; respond to requests; prevent misuse; and meet legal obligations.
+
+We do not sell personal data. We do not use wellness data for advertising or cross-app tracking.
+
+4. Service providers
+
+We use providers only as needed for a feature you choose. This can include a weather provider for weather requests, a push-notification provider for enabled notifications, and a payment provider when a supported purchase flow is available. Providers may process data for us only to provide the relevant service and not for their own advertising.
+
+5. United States storage, retention, security, and choices
+
+For the international app connected to https://app.saydian.com, SayDian stores active first-party account, device, synchronized wellness, and service data on servers located in the United States. The international and China services run the same server software with independently managed user data, databases, files, credentials, and runtime settings. The existing China-service data remains in China for use by China-service users and is managed under the applicable China-service policy. When an approved international account and its historical data are migrated, the original China-service records are not automatically removed or synchronized with subsequent United States updates. New international-app data is written to the United States service and is not synchronized back to China. The international service does not automatically fall back to the Beijing service. The app also keeps an encrypted health-data cache on your phone. Data awaiting synchronization remains local until the server confirms receipt. Optional third-party services, such as weather, may process information separately under their own policies; this United States storage statement describes SayDian's first-party servers and does not guarantee the processing location of those third parties.
+
+We retain account, device, synchronized, and service information while an account is active and afterward only as needed for security, dispute handling, or legal obligations. We use access controls and encrypted connections designed to protect data in transit. You may decline optional permissions, change them in your phone settings, stop sharing with care members, disable notifications, and request access, correction, or deletion through Account settings or the support page.
+
+6. Children, changes, and contact
+
+SayDian is not directed to children. If you are not old enough to consent under applicable law, use the service only with a parent or legal guardian's authorization. We may update this notice when the service or applicable law changes. For privacy questions or requests, use Help and feedback in the app or https://app.saydian.com/global/support.
