@@ -146,11 +146,9 @@ export class CommerceJobWorker {
     const cleanIdentity = (value: string) => value.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
     let remark = order.adminRemark ?? undefined;
     if (order.partnerId) {
-      // orders.upload limits remark to 150 characters; keep the required identity first.
-      const identity = `品牌伙伴 ID：${order.partnerId}\n品牌伙伴名称：${cleanIdentity(order.partner!.name)}`;
-      const number = `品牌伙伴编号：${cleanIdentity(order.partner!.partnerNo)}`;
+      // Keep the partner name and operational remarks; UUIDs/account numbers stay out of remarks.
+      const identity = `品牌伙伴名称：${cleanIdentity(order.partner!.name)}`;
       const parts = [identity];
-      if (identity.length + 1 + number.length <= 150) parts.push(number);
       if (order.adminRemark) parts.push(order.adminRemark);
       const complete = parts.join("\n");
       if (complete.length <= 150) remark = complete;
@@ -185,7 +183,7 @@ export class CommerceJobWorker {
         items: order.items.map((item) => ({
           outer_oi_id: item.id,
           sku_id: item.erpSkuIdSnapshot,
-          shop_sku_id: item.erpSkuIdSnapshot,
+          shop_sku_id: item.skuId,
           name: item.nameSnapshot,
           properties_value: item.specificationSnapshot,
           qty: item.quantity,

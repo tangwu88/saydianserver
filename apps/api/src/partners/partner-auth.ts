@@ -4,11 +4,14 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { compare } from "bcryptjs";
 import { PrismaService } from "../common/prisma.service";
 import { randomToken, safeObject, sha256 } from "../common/crypto";
 import type { RequestWithContext } from "../common/request-context";
+import { verifiedPartnerMember } from "./partner-onboarding.service";
+import { isH5PhoneTestSession } from "../auth/global-wechat-policy";
 
 @Injectable()
 export class PartnerAuthService {
@@ -73,7 +76,7 @@ export class PartnerAuthGuard implements CanActivate {
     if (!token) throw new UnauthorizedException("请先登录品牌伙伴平台");
     const session = await this.prisma.partnerSession.findUnique({
       where: { tokenHash: sha256(token) },
-      include: { partner: true },
+      include: { partner: true, memberSession: { include: { user: true } } },
     });
     if (
       !session ||
@@ -82,6 +85,47 @@ export class PartnerAuthGuard implements CanActivate {
       !session.partner.active
     )
       throw new UnauthorizedException("品牌伙伴登录已失效");
+    if (session.memberSessionId) {
+      const source = session.memberSession;
+      if (
+        !source ||
+        source.revokedAt ||
+        source.expiresAt <= new Date() ||
+        isH5PhoneTestSession(source.accessJti) ||
+        source.userId !== session.partner.linkedMemberId ||
+        !verifiedPartnerMember(source.user)
+      )
+        throw new UnauthorizedException("会员登录已失效，请从商城重新进入");
+    }
+    const path = (
+      (request.originalUrl || request.path || "").split("?")[0] ?? ""
+    ).replace(/\/$/, "");
+    if (
+      !/\/vip\/v1\/(?:auth\/(?:me|logout)|agreement(?:\/accept)?)$/.test(path)
+    ) {
+      const agreement = await this.prisma.partnerAgreement.findFirst({
+        where: { active: true, status: "PUBLISHED" },
+        select: { id: true },
+      });
+      if (
+        agreement &&
+        !(
+          await this.prisma.partnerAgreementAcceptance.findUnique({
+            where: {
+              partnerId_agreementId: {
+                partnerId: session.partnerId,
+                agreementId: agreement.id,
+              },
+            },
+            select: { acceptedAt: true },
+          })
+        )?.acceptedAt
+      )
+        throw new ForbiddenException({
+          errorKey: "PARTNER_AGREEMENT_REQUIRED",
+          message: "请先阅读并同意合作协议",
+        });
+    }
     request.authPartner = { id: session.partnerId, sessionId: session.id };
     return true;
   }

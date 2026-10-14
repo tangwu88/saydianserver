@@ -31,6 +31,7 @@ import { officialRedirectUri } from "../auth/wechat-h5-auth.service";
 type IntentForProvider = {
   id: string;
   userId?: string | null;
+  partnerId?: string | null;
   businessType?: string;
   paymentNo: string;
   amountCents: number;
@@ -124,7 +125,7 @@ export function assertGlobalPaymentScope(intent: {
 }) {
   if (intent.channel === PaymentChannel.APPLE_IAP) return;
   if (intent.businessType === "PARTNER_RECHARGE" &&
-      ([PaymentChannel.WECHAT_NATIVE, PaymentChannel.ALIPAY_PAGE, PaymentChannel.ALIPAY_WAP] as PaymentChannel[]).includes(intent.channel)) return;
+      ([PaymentChannel.WECHAT_NATIVE, PaymentChannel.WECHAT_JSAPI, PaymentChannel.WECHAT_H5, PaymentChannel.ALIPAY_PAGE, PaymentChannel.ALIPAY_WAP] as PaymentChannel[]).includes(intent.channel)) return;
   if (
     intent.businessType !== "COMMERCE_ORDER" ||
     !globalCommercePaymentChannels.some((channel) => channel === intent.channel)
@@ -620,10 +621,13 @@ export class PaymentProviderService {
         ] as PaymentChannel[]
       ).includes(intent.channel)
     ) {
+      const partner = intent.businessType === "PARTNER_RECHARGE" && intent.partnerId
+        ? await this.prisma.brandPartner.findUnique({ where: { id: intent.partnerId }, select: { linkedMemberId: true } }) : null;
+      const payerUserId = intent.userId || partner?.linkedMemberId;
       const payerOpenId =
         intent.channel === PaymentChannel.WECHAT_JSAPI
-          ? intent.userId
-            ? await this.resolveOfficialPayer(intent.userId, appId)
+          ? payerUserId
+            ? await this.resolveOfficialPayer(payerUserId, appId)
             : null
           : context.wechatOpenId;
       if (!payerOpenId) {
@@ -668,6 +672,7 @@ export class PaymentProviderService {
           "redirect_url",
           commercePaymentReturnUrl(intent.businessId),
         );
+      if (intent.businessType === "PARTNER_RECHARGE") url.searchParams.set("redirect_url", `${requiredEnv("PUBLIC_BASE_URL").replace(/\/$/, "")}/vip/recharges/${encodeURIComponent(intent.businessId)}`);
       return { type: "REDIRECT", url: url.toString() };
     }
     const prepayId = String(result.prepay_id ?? "");

@@ -13,6 +13,8 @@ import {
   channelLabel,
 } from "../recharge-recovery";
 import type { RechargeInput } from "../recharge-recovery";
+import { beginMemberLogin } from "../login-bridge";
+import { partnerPaymentChannels, invokePartnerPayment } from "../payments";
 import PageError from "../components/PageError.vue";
 import EmptyState from "../components/EmptyState.vue";
 const route = useRoute(),
@@ -39,14 +41,11 @@ const form = reactive({ amount: 10000, channel: "wechat_native" }),
   payDialog = ref(false),
   pendingInput = ref<RechargeInput | null>(null);
 const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-const channels = computed(() =>
-  capabilities.value.filter(
-    (item) =>
-      item.channel === "wechat_native" ||
-      item.channel === (mobile ? "alipay_wap" : "alipay_page") ||
-      item.channel === pendingInput.value?.channel,
-  ),
-);
+const wechat = /micromessenger/i.test(navigator.userAgent);
+async function authorizeWechat() { try { await beginMemberLogin(currentRecharge.value?.id ? `/recharges/${currentRecharge.value.id}` : "/wallet"); } catch { paymentError.value = "请允许浏览器保存登录状态后重试"; } }
+const environmentChannels = partnerPaymentChannels(navigator.userAgent);
+const channels = computed(() => capabilities.value.filter(item => environmentChannels.includes(item.channel) || item.channel === pendingInput.value?.channel));
+const invocationAllowed = computed(() => environmentChannels.includes(String(currentRecharge.value?.channel || form.channel).toLowerCase()));
 const title = computed(() =>
   depositMode.value ? "保证金" : ledgerMode.value ? "收支明细" : "余额充值",
 );
@@ -288,42 +287,13 @@ async function poll() {
     pollBusy.value = false;
   }
 }
-function invokeAlipay() {
-  const invoke = payment.value?.invoke;
-  try {
-    const url = new URL(invoke?.url || "");
-    if (
-      invoke?.type !== "FORM" ||
-      url.protocol !== "https:" ||
-      ![
-        "openapi.alipay.com",
-        "openapi-sandbox.dl.alipaydev.com",
-        "openapi.alipaydev.com",
-      ].includes(url.hostname) ||
-      url.pathname !== "/gateway.do" ||
-      url.username ||
-      url.password ||
-      url.port
-    )
-      throw new Error();
-    const formElement = document.createElement("form");
-    formElement.method = "POST";
-    formElement.action = url.toString();
-    formElement.target = "_blank";
-    formElement.rel = "noopener noreferrer";
-    Object.entries(invoke.fields || {}).forEach(([name, value]) => {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = name;
-      input.value = String(value);
-      formElement.appendChild(input);
-    });
-    document.body.appendChild(formElement);
-    formElement.submit();
-    formElement.remove();
-  } catch {
-    pollError.value = "支付页面暂不可用，请刷新充值状态";
-  }
+const invoking = ref(false);
+async function invokePayment() {
+  if (invoking.value || !invocationAllowed.value) return;
+  invoking.value = true; pollError.value = "";
+  try { await invokePartnerPayment(payment.value?.invoke); await poll(); }
+  catch (cause) { pollError.value = cause instanceof Error ? cause.message : "付款未完成，请查询充值状态"; }
+  finally { invoking.value = false; }
 }
 function closePayment() {
   stopPolling();
@@ -398,11 +368,12 @@ function closePayment() {
       >
       <el-alert
         v-if="!busy && !channels.some((item) => item.enabled)"
-        title="在线充值暂不可用，请联系管理员。"
+        :title="channels.find(item => item.reason)?.reason || '在线充值暂不可用，请联系管理员。'"
         type="info"
         :closable="false"
         class="section-space"
       />
+      <el-button v-if="wechat && !busy && !channels.some(item => item.enabled)" class="section-space" @click="authorizeWechat">微信授权后重新进入</el-button>
       <p v-if="paymentError" class="inline-error" role="alert">
         {{ paymentError }}
       </p>
@@ -550,11 +521,12 @@ function closePayment() {
           />
           <p v-if="payment?.invoke?.type === 'QR'">请用微信扫码付款</p>
           <el-button
-            v-if="payment?.invoke?.type === 'FORM'"
+            v-if="['FORM', 'JSAPI', 'REDIRECT'].includes(payment?.invoke?.type)"
             type="primary"
             size="large"
-            @click="invokeAlipay"
-            >打开支付宝付款</el-button
+            @click="invokePayment"
+            :loading="invoking" :disabled="!invocationAllowed"
+            >{{ payment?.invoke?.type === "FORM" ? "打开支付宝付款" : "打开微信付款" }}</el-button
           ><el-button
             v-else-if="!payment"
             type="primary"
@@ -563,11 +535,12 @@ function closePayment() {
             >继续付款</el-button
           >
           <p
-            v-else-if="!['QR', 'FORM'].includes(payment?.invoke?.type)"
+            v-else-if="!['QR', 'FORM', 'JSAPI', 'REDIRECT'].includes(payment?.invoke?.type)"
             class="muted"
           >
             正在核对支付结果
           </p>
+          <p v-if="!invocationAllowed" class="muted">请回到创建充值单时的浏览器继续付款；这里可以查询到账。</p>
           <div class="payment-refresh">
             <el-button :icon="Refresh" :loading="pollBusy" @click="poll"
               >我已付款，查询到账</el-button

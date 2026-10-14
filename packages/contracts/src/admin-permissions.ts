@@ -46,6 +46,8 @@ export const adminResourcePermissions: Record<string, Rule> = {
   "partner-levels": { read: [...operations, ...finance, ...view], write: operations },
   "partner-prices": { read: [...operations, ...finance, ...view], write: operations },
   "partner-finance": { read: finance, write: [] },
+  "partner-applications": { read: [], write: [] },
+  "partner-agreements": { read: [], write: [] },
   "account-deletions": { read: customer, write: app },
   "audit-logs": { read: [...health, ...view], write: [] },
   "api-docs": { read: ["*"], write: ["API_DOC_EDITOR"] },

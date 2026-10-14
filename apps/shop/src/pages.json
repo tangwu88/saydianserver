@@ -18,7 +18,8 @@
     { "path": "pages/points/index", "style": { "navigationBarTitleText": "积分与流水" } },
     { "path": "pages/coupon-gift/index", "style": { "navigationBarTitleText": "领取优惠券" } },
     { "path": "pages/help/index", "style": { "navigationBarTitleText": "帮助与服务" } },
-    { "path": "pages/employee/index", "style": { "navigationBarTitleText": "推广中心" } }
+    { "path": "pages/employee/index", "style": { "navigationBarTitleText": "推广中心" } },
+    { "path": "pages/partner/index", "style": { "navigationBarTitleText": "申请合作伙伴" } }
   ],
   "tabBar": {
     "color": "#69717b", "selectedColor": "#005bad", "backgroundColor": "#ffffff", "borderStyle": "white",

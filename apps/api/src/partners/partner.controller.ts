@@ -55,8 +55,10 @@ export class PartnerController {
   ) {}
 
   @Get("auth/me")
-  me(@CurrentPartner() partner: Partner) {
-    return this.partners.me(partner.id);
+  async me(@CurrentPartner() partner: Partner) {
+    const profile = await this.partners.me(partner.id);
+    const { wallet: _wallet, ...identity } = profile;
+    return identity;
   }
   @Post("auth/logout")
   logout(@CurrentPartner() partner: Partner) {
@@ -240,8 +242,8 @@ export class PartnerController {
     return this.partners.ledger(partner.id, account, page);
   }
   @Get("payment-capabilities")
-  paymentCapabilities() {
-    return this.partners.paymentCapabilities();
+  paymentCapabilities(@CurrentPartner() partner: Partner) {
+    return this.partners.paymentCapabilities(partner.id);
   }
   @Post("recharges")
   createRecharge(
@@ -249,7 +251,7 @@ export class PartnerController {
     @Body() body: unknown,
     @Req() request: RequestWithContext,
   ) {
-    return this.partners.createRecharge(partner.id, body, request.ip);
+    return this.partners.createRecharge(partner.id, body, request.ip, request.header("user-agent"));
   }
   @Get("recharges")
   recharges(@CurrentPartner() partner: Partner, @Query("page") page?: string) {

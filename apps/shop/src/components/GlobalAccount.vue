@@ -27,6 +27,7 @@
       <text v-if="recentOrdersError" class="recent-error">{{ recentOrdersError }}</text>
       <text v-else-if="!recentOrdersLoading && !(recentOrders || []).length" class="muted recent-state">暂无订单，去商城看看吧</text>
     </view>
+    <view v-if="!miniProgram" class="app-panel account-menu"><button @click="go('/pages/partner/index')"><text>申请合作伙伴 / 合作平台</text><text class="chevron">›</text></button></view>
     <view class="app-panel account-menu"><button v-for="item in shoppingMenus" :key="item.url" @click="go(item.url)"><text>{{ item.label }}</text><text class="chevron">›</text></button></view>
     <view class="app-panel account-menu"><button @click="help('agreement')"><text>用户协议</text><text class="chevron">›</text></button><button @click="help('privacy')"><text>隐私政策</text><text class="chevron">›</text></button></view>
     <button v-if="user" class="outline-btn logout" @click="$emit('logout')">退出登录</button>

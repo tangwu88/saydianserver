@@ -24464,7 +24464,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -24547,7 +24547,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -24720,7 +24720,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -24966,7 +24966,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -25131,7 +25131,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -25276,7 +25276,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -25378,7 +25378,1185 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerMemberController.status",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/partner/status",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "当前会员合作申请与账户状态",
+      "request": "已验证商城会员会话",
+      "response": "{partner,application}；仅该会员数据",
+      "dependency": "主库；会员绑定独立于推广归属",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "partner": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "application": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "userId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "contactName": {
+                      "type": "string"
+                    },
+                    "mobile": {
+                      "type": "string"
+                    },
+                    "region": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "PENDING",
+                        "APPROVED",
+                        "REJECTED"
+                      ]
+                    },
+                    "partnerId": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "userId",
+                    "name",
+                    "status"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "partner",
+            "application"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerMemberController.apply",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/partner/applications",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "会员提交合作申请",
+      "request": "{name,contactName,mobile,region,description,idempotencyKey}",
+      "response": "申请；同一会员仅一个待审核或通过申请，重试不重复",
+      "dependency": "已验证会员；总管理员审核",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "contactName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "mobile": {
+              "type": "string",
+              "minLength": 6,
+              "maxLength": 30
+            },
+            "region": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 90,
+              "pattern": "^[A-Za-z0-9:_-]+$"
+            }
+          },
+          "required": [
+            "name",
+            "contactName",
+            "mobile",
+            "region",
+            "description",
+            "idempotencyKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "contactName": {
+              "type": "string"
+            },
+            "mobile": {
+              "type": "string"
+            },
+            "region": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED"
+              ]
+            },
+            "partnerId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "userId",
+            "name",
+            "status"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerMemberController.ticket",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/partner/login-ticket",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "商城会员进入合作平台",
+      "request": "{codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话",
+      "response": "{ticket,expiresAt}；哈希存储，120秒一次性凭证",
+      "dependency": "已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "codeChallenge": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          "required": [
+            "codeChallenge"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "ticket": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ticket",
+            "expiresAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerMemberLoginController.login",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/auth/member-login",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "兑换会员一次性伙伴登录凭证",
+      "request": "{ticket,codeVerifier}",
+      "response": "{token,expiresAt}；同一凭证只成功一次；浏览器PKCE验证防止他人转发链接切换账户",
+      "dependency": "核对原会员会话、账户绑定、有效期及账户版本；支持微信H5授权后进入",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "ticket": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "codeVerifier": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43,128}$"
+            }
+          },
+          "required": [
+            "ticket",
+            "codeVerifier"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "token",
+            "expiresAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAgreementController.current",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/agreement",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "查看当前已发布合作协议",
+      "request": "伙伴会话",
+      "response": "{agreement,accepted,viewedAt?,acceptedAt?}；首次阅读登记；草稿不返回",
+      "dependency": "无已发布版本时不阻断现有使用",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "agreement": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "contentSha256": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "version",
+                    "content",
+                    "contentSha256"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "accepted": {
+              "type": "boolean"
+            },
+            "viewedAt": {
+              "type": "string"
+            },
+            "acceptedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "agreement",
+            "accepted"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAgreementController.accept",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/agreement/accept",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "同意当前合作协议",
+      "request": "{agreementId,contentSha256,agreed:true}",
+      "response": "{accepted,acceptedAt}；版本/hash匹配并已读取；重复不新增签署",
+      "dependency": "发布版本锁；不可变签署记录与审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "agreementId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "contentSha256": {
+              "type": "string"
+            },
+            "agreed": {
+              "const": true
+            }
+          },
+          "required": [
+            "agreementId",
+            "contentSha256",
+            "agreed"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "accepted": {
+              "const": true
+            },
+            "acceptedAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accepted",
+            "acceptedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerOnboardingAdminController.list",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-applications",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "status",
+          "type": "unknown",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "合作申请审核清单",
+      "request": "status?:PENDING/APPROVED/REJECTED、page?",
+      "response": "{items,total,page,pageSize}",
+      "dependency": "仅SUPER_ADMIN",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "contactName": {
+                    "type": "string"
+                  },
+                  "mobile": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "PENDING",
+                      "APPROVED",
+                      "REJECTED"
+                    ]
+                  },
+                  "partnerId": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "userId",
+                  "name",
+                  "status"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "page",
+            "pageSize"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerOnboardingAdminController.review",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partner-applications/:id/review",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "审核合作申请并开通账户",
+      "request": "id为申请UUID；{decision:APPROVED/REJECTED,levelId?,username?,reason?}；未通过原因必填",
+      "response": "审核结果；通过同事务创建零资金账户、绑定会员并审计",
+      "dependency": "仅SUPER_ADMIN；已有账号不按名称自动接管",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "enum": [
+                "APPROVED",
+                "REJECTED"
+              ]
+            },
+            "levelId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "username": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "decision"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "contactName": {
+              "type": "string"
+            },
+            "mobile": {
+              "type": "string"
+            },
+            "region": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED"
+              ]
+            },
+            "partnerId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "userId",
+            "name",
+            "status"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerOnboardingAdminController.link",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partners/:id/link-member",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "明确绑定账户所属商城会员",
+      "request": "id为伙伴UUID；{memberId:会员UUID或null}",
+      "response": "{linkedMemberId}；旧伙伴会话失效，审计前后绑定",
+      "dependency": "仅SUPER_ADMIN；唯一已验证会员；不修改会员推广归属",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "memberId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "memberId"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "linkedMemberId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "linkedMemberId"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerOnboardingAdminController.agreementsList",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-agreements",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "合作协议草稿与历史版本",
+      "request": "无",
+      "response": "{items}；最多100版本",
+      "dependency": "仅SUPER_ADMIN",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "contentSha256": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "version",
+                  "content",
+                  "contentSha256"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerOnboardingAdminController.draft",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partner-agreements/draft",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "保存可编辑协议草稿",
+      "request": "{id?,updatedAt?,title,version,content}",
+      "response": "草稿；已发布正文禁止修改",
+      "dependency": "仅SUPER_ADMIN；草稿不会自动生效",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,60}$"
+            },
+            "content": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50000
+            },
+            "updatedAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "version",
+            "content"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "title": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "contentSha256": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "version",
+            "content",
+            "contentSha256"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerOnboardingAdminController.publish",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partner-agreements/:id/publish",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "发布合作协议版本",
+      "request": "id为协议UUID；{contentSha256}",
+      "response": "当前已发布版本；其他版本停用",
+      "dependency": "仅SUPER_ADMIN；所有伙伴后续业务须同意当前已发布版本",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "contentSha256": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "contentSha256"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "title": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "contentSha256": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "version",
+            "content",
+            "contentSha256"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerOnboardingAdminController.acceptances",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-agreements/:id/acceptances",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-onboarding.controller.ts",
+      "summary": "查看协议阅读与签署记录",
+      "request": "id为协议UUID",
+      "response": "{items}；账户、首次阅读/同意时间、会话、IP、客户端；最多1000",
+      "dependency": "仅SUPER_ADMIN",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "partnerId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "agreementId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "viewedAt": {
+                    "type": "string"
+                  },
+                  "acceptedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "clientIp": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "userAgent": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "partnerId",
+                  "agreementId",
+                  "viewedAt",
+                  "acceptedAt"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -25461,7 +26639,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -25536,7 +26714,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -25583,7 +26761,7 @@ export const apiCatalog = {
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "当前品牌伙伴账户",
       "request": "本人伙伴会话",
-      "response": "账号、等级与资金账户；不返回密码哈希",
+      "response": "身份、账号和等级；不返回资金账户或密码哈希",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -25744,7 +26922,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -26134,7 +27312,7 @@ export const apiCatalog = {
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "品牌伙伴采购商品",
       "request": "search?、page?",
-      "response": "当前等级SKU合作价；无有效价不可采购；不返回成本或其他等级价格",
+      "response": "仅当前等级已设置有效合作价的SKU；无此类SKU的商品不进入列表与总数；不返回成本或其他等级价格",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -26281,7 +27459,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -26445,7 +27623,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -26595,7 +27773,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -26685,7 +27863,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -26786,6 +27964,8 @@ export const apiCatalog = {
             "channel": {
               "enum": [
                 "wechat_native",
+                "wechat_jsapi",
+                "wechat_h5",
                 "alipay_page",
                 "alipay_wap"
               ]
@@ -26850,7 +28030,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
@@ -26956,7 +28136,7 @@ export const apiCatalog = {
         },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },

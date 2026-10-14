@@ -148,7 +148,7 @@ describe("brand partner financial and access boundaries", () => {
       } as any),
     ).rejects.toThrow("登录已失效");
   });
-  it("only permits Native QR for partner recharge, preserving retail channel policy", () => {
+  it("permits partner Native QR while preserving retail channel policy", () => {
     expect(() =>
       assertGlobalPaymentScope({
         channel: PaymentChannel.WECHAT_NATIVE,

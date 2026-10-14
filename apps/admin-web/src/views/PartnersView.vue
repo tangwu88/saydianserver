@@ -41,6 +41,22 @@ onBeforeUnmount(() => {
   financeRequest++;
 });
 const accountForm = ref<FormInstance>();
+const memberDialog = ref(false), memberOptions = ref<any[]>([]), linkedMemberId = ref<string | null>(null), linkingPartner = ref<any>(), memberBusy = ref(false);
+let memberQuery = 0;
+async function searchMembers(query: string) {
+  const request = ++memberQuery; memberBusy.value = true;
+  try { const result = responseData<any>(await api.get("/members", { params: { search: query, pageSize: 30 } })); if (request === memberQuery) memberOptions.value = result.items; }
+  catch (cause) { ElMessage.error(readableError(cause)); }
+  finally { if (request === memberQuery) memberBusy.value = false; }
+}
+function openMemberLink(row: any) { linkingPartner.value = row; linkedMemberId.value = row.linkedMemberId; memberDialog.value = true; void searchMembers(""); }
+async function saveMemberLink() {
+  if (saving.value) return;
+  try { await ElMessageBox.confirm("绑定后，该会员可从商城进入此合作账户并在微信内充值。旧登录会话将失效。请核对会员身份。", "确认绑定", { confirmButtonText: "确认", cancelButtonText: "取消" }); } catch { return; }
+  saving.value = true;
+  try { await api.post(`/partners/${linkingPartner.value.id}/link-member`, { memberId: linkedMemberId.value || null }); memberDialog.value = false; ElMessage.success("绑定已更新"); await load(); }
+  catch (cause) { ElMessage.error(readableError(cause)); } finally { saving.value = false; }
+}
 const accountRules = computed<FormRules>(() =>
   dialogType.value === "account"
     ? Object.fromEntries(
@@ -499,6 +515,7 @@ async function copyPromotion() {
               >编辑</el-button
             ><el-button v-if="canManage" text @click="reset(scope.row)"
               >重置密码</el-button
+            ><el-button v-if="canManage" text @click="openMemberLink(scope.row)">{{ scope.row.linkedMemberId ? '会员绑定' : '绑定商城会员' }}</el-button
             ></template
           ></el-table-column
         ></el-table
@@ -967,6 +984,15 @@ async function copyPromotion() {
       </div></el-dialog
     >
   </section>
+<el-dialog v-model="memberDialog" title="绑定商城会员" width="min(580px,94vw)">
+<p>{{ linkingPartner?.name }} · {{ linkingPartner?.username }}</p>
+<p v-if="linkingPartner?.linkedMember">当前绑定：{{ linkingPartner.linkedMember.nickname }} · {{ linkingPartner.linkedMember.compatibilityId }}</p>
+<el-select v-model="linkedMemberId" filterable remote clearable :remote-method="searchMembers" :loading="memberBusy" placeholder="搜索会员名、会员编号、手机号或邮箱" style="width:100%">
+<el-option v-for="member in memberOptions" :key="member.id" :value="member.id" :label="`${member.nickname} · ${member.memberNo || member.compatibilityId || member.id} · ${member.mobile || member.phoneMasked || member.emailMasked || ''}`" />
+</el-select>
+<p class="muted">请绑定实际管理此合作账户的会员。清空并保存可解除绑定。会员推广归属不受此操作影响。</p>
+<template #footer><el-button @click="memberDialog = false">取消</el-button><el-button type="primary" :loading="saving" @click="saveMemberLink">保存绑定</el-button></template>
+</el-dialog>
 </template>
 <style scoped>
 .page {

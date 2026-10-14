@@ -39,7 +39,7 @@ describe("integrated Jushuitan adapter", () => {
       createdAt: new Date("2026-09-11T12:00:00Z"), province: "广东省", city: "深圳市", district: "南山区",
       addressDetail: "科技园 1 号", recipientName: "测试用户", recipientMobile: "13800138000",
       payableCents: 10_500, shippingCents: 500, adminRemark: "线下核对", buyerRemark: "工作日送达", erpOrderId: null,
-      items: [{ id: "line-1", erpSkuIdSnapshot: "SKU-1", nameSnapshot: "赛电手表", specificationSnapshot: "黑色", quantity: 1, unitPriceCents: 10_000, totalCents: 10_000 }],
+      items: [{ id: "line-1", skuId: "system-sku-1", erpSkuIdSnapshot: "SKU-1", nameSnapshot: "赛电手表", specificationSnapshot: "黑色", quantity: 1, unitPriceCents: 10_000, totalCents: 10_000 }],
       paymentIntents: [{ paymentNo: "PAY-1", paidAt: new Date("2026-09-11T12:01:00Z"), channel: "WECHAT_JSAPI", providerMerchantId: "merchant-1", amountCents: 10_500 }],
     };
     const prisma: any = { commerceOrder: { findUnique: vi.fn().mockResolvedValue(order), update: vi.fn() } };
@@ -53,7 +53,7 @@ describe("integrated Jushuitan adapter", () => {
       receiver_mobile: "13800138000",
       remark: "线下核对",
       buyer_message: "工作日送达",
-      items: [{ outer_oi_id: "line-1", sku_id: "SKU-1", shop_sku_id: "SKU-1", name: "赛电手表", properties_value: "黑色", qty: 1, base_price: 100, amount: 100 }],
+      items: [{ outer_oi_id: "line-1", sku_id: "SKU-1", shop_sku_id: "system-sku-1", name: "赛电手表", properties_value: "黑色", qty: 1, base_price: 100, amount: 100 }],
       order_date: "2026-09-11 20:00:00",
       pay: { outer_pay_id: "PAY-1", pay_date: "2026-09-11 20:01:00", payment: "WECHAT_JSAPI", seller_account: "merchant-1", buyer_account: "member-1", amount: 105 },
     });
