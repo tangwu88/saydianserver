@@ -12,13 +12,18 @@ import { PartnerCommerceService } from "./partner-commerce.service";
 import { PartnerMembersService } from "./partner-members.service";
 import { PartnerAdminController } from "./partner-admin.controller";
 import { PartnerAdminService } from "./partner-admin.service";
+import { AuthModule } from "../auth/auth.module";
+import { PartnerOnboardingService } from "./partner-onboarding.service";
+import { PartnerAgreementService } from "./partner-agreement.service";
+import { PartnerMemberController, PartnerMemberLoginController, PartnerAgreementController, PartnerOnboardingAdminController } from "./partner-onboarding.controller";
 
 @Module({
-  imports: [AdminModule, BillingModule, SupportModule],
+  imports: [AdminModule, BillingModule, SupportModule, AuthModule],
   controllers: [
     PartnerPublicController,
     PartnerController,
     PartnerAdminController,
+    PartnerMemberController, PartnerMemberLoginController, PartnerAgreementController, PartnerOnboardingAdminController,
   ],
   providers: [
     PartnerAuthGuard,
@@ -27,6 +32,7 @@ import { PartnerAdminService } from "./partner-admin.service";
     PartnerCommerceService,
     PartnerMembersService,
     PartnerAdminService,
+    PartnerOnboardingService, PartnerAgreementService,
   ],
 })
 export class PartnerModule {}

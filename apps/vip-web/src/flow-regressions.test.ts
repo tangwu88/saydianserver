@@ -25,6 +25,7 @@ import {
   isDefiniteOrderFailure,
 } from "./checkout-form";
 import { activeShortcut, safeReturnPath } from "./navigation";
+import { partnerPaymentChannels, invokePartnerPayment } from "./payments";
 import { recognizeAddress } from "./address-recognition";
 const { ElForm, ElFormItem, ID_INJECTION_KEY } = createRequire(import.meta.url)(
   "element-plus",
@@ -144,6 +145,8 @@ function harness(view: string, store = memoryStorage()) {
     clearRecharge,
     terminalPayment,
     channelLabel,
+    partnerPaymentChannels,
+    invokePartnerPayment,
     addressFields,
     addressError,
     isDefiniteOrderFailure,

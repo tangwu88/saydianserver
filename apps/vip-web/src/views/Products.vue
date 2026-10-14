@@ -465,7 +465,7 @@ async function purchase() {
           v-if="!products.length && !busy && !error"
           :title="search ? '未找到相关商品' : '暂无可采购商品'"
           :description="
-            search ? '试试其他名称，或清空搜索。' : '商品上架后会显示在这里。'
+            search ? '试试其他名称，或清空搜索。' : '可联系赛电开通商品合作价。'
           "
         />
       </div>

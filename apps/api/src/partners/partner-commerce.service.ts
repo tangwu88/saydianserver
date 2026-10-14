@@ -146,10 +146,15 @@ export class PartnerCommerceService {
   async products(partnerId: string, search: string, pageInput: unknown) {
     const partner = await this.currentPartner(this.prisma, partnerId),
       { page, pageSize, skip } = partnerPage(pageInput);
+    const pricedSku: Prisma.CommerceSkuWhereInput = {
+      enabled: true,
+      partnerPrices: { some: { levelId: partner.levelId, enabled: true, priceCents: { gt: 0, lte: PARTNER_MAX_CENTS } } },
+    };
     const where: Prisma.CommerceProductWhereInput = {
       source: { in: ["ERP", "LOCAL"] },
       localArchived: false,
       status: "PUBLISHED",
+      skus: { some: pricedSku },
       ...(search
         ? { name: { contains: search.trim(), mode: "insensitive" } }
         : {}),
@@ -159,10 +164,10 @@ export class PartnerCommerceService {
         where,
         include: {
           skus: {
-            where: { enabled: true },
+            where: pricedSku,
             include: {
               partnerPrices: {
-                where: { levelId: partner.levelId, enabled: true },
+                where: { levelId: partner.levelId, enabled: true, priceCents: { gt: 0, lte: PARTNER_MAX_CENTS } },
               },
             },
           },

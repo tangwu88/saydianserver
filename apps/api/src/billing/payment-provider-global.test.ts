@@ -107,6 +107,22 @@ function providerFixture(ready = false) {
   };
 }
 describe("global payment adapter boundary", () => {
+  it("uses only the explicitly linked verified member as a partner JSAPI payer", async () => {
+    const h = providerFixture(true);
+    (h.db as any).brandPartner = { findUnique: vi.fn().mockResolvedValue({ linkedMemberId: "linked-member" }) };
+    const payer = vi.spyOn(h.service, "resolveOfficialPayer").mockResolvedValue("trusted-official-openid");
+    const request = vi.spyOn(h.service as any, "wechatRequest").mockResolvedValue({ prepay_id: "synthetic-prepay" });
+    const result = await h.service.create({ ...intent(PaymentChannel.WECHAT_JSAPI), userId: null, partnerId: "partner", businessType: "PARTNER_RECHARGE" }, { wechatOpenId: "untrusted-client-openid" });
+    expect(payer).toHaveBeenCalledWith("linked-member", h.credentials.wechat_pay.appIdOfficial);
+    expect(request.mock.calls[0]?.[2]).toMatchObject({ payer: { openid: "trusted-official-openid" }, amount: { total: 100, currency: "CNY" } });
+    expect(result).toMatchObject({ type: "JSAPI", package: "prepay_id=synthetic-prepay", signType: "RSA" });
+  });
+  it("returns partner H5 payment to its original recharge rather than a retail order", async () => {
+    const h = providerFixture(true);
+    vi.spyOn(h.service as any, "wechatRequest").mockResolvedValue({ h5_url: "https://wx.tenpay.com/cgi-bin/mmpayweb-bin/checkmweb?prepay_id=synthetic" });
+    const result = await h.service.create({ ...intent(PaymentChannel.WECHAT_H5), userId: null, partnerId: "partner", businessType: "PARTNER_RECHARGE", businessId: "00000000-0000-4000-8000-000000000011" }, { clientIp: "127.0.0.1" });
+    expect(new URL(String(result.url)).searchParams.get("redirect_url")).toBe("https://demo.invalid/global/vip/recharges/00000000-0000-4000-8000-000000000011");
+  });
   it("signs Alipay browser payments with a fragment-free same-site return landing", async () => {
     const invoke = (await providerFixture(true).service.create(
       intent(PaymentChannel.ALIPAY_WAP),

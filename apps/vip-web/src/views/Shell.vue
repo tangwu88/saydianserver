@@ -5,6 +5,8 @@ import { Menu, SwitchButton } from "@element-plus/icons-vue";
 import { api, data, errorMessage, partnerTokenKey } from "../api";
 import { ElMessage } from "element-plus";
 import { menu, activeMenu, activeShortcut } from "../navigation";
+import AgreementGate from "../components/AgreementGate.vue";
+const agreementReady = ref(false);
 const route = useRoute(),
   router = useRouter(),
   profile = ref<any>(),
@@ -148,7 +150,7 @@ async function logout() {
           <el-icon><Menu /></el-icon>更多
         </button>
       </nav>
-      <main id="main-content"><router-view /></main>
+      <main id="main-content"><AgreementGate @ready="agreementReady = $event" @logout="logout" /><router-view v-if="agreementReady" /></main>
     </div>
   </div>
 </template>

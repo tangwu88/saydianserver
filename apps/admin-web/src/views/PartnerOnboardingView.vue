@@ -1,0 +1,47 @@
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { api, readableError, responseData } from "../api";
+const route = useRoute(), agreementMode = computed(() => route.path === "/partner-agreements");
+const items = ref<any[]>([]), levels = ref<any[]>([]), status = ref("PENDING"), page = ref(1), total = ref(0), busy = ref(false), saving = ref(false), error = ref("");
+const selected = ref<any>(), dialog = ref(false), receipts = ref<any[]>([]), receiptsOpen = ref(false);
+const review = reactive({ decision: "APPROVED", levelId: "", username: "", reason: "" });
+const draft = reactive<any>({ id: null, title: "赛电合作伙伴协议", version: "v1", content: "赛电合作伙伴协议（草稿，待审核发布）\n\n一、合作双方\n授权方：赛电。合作方：登录本平台的合作账户主体。\n\n二、合作内容\n双方就赛电产品采购、推广和会员服务开展合作。具体授权范围以双方确认的合作等级及书面约定为准。\n\n三、采购与结算\n采购价格、收货信息、数量及运费以每次确认订单为准。余额和保证金分别管理，保证金不用于消费。\n\n四、会员资料保护\n会员资料仅用于获准的服务范围，不得擅自复制、披露或用于无关用途。\n\n五、售后、期限及争议处理\n请在发布前补充正式约定，包括售后责任、有效期限、终止条件、联系方式及争议解决方式。\n\n六、电子确认\n合作账户阅读并同意已发布版本后，平台保存账户、协议版本及确认时间。" });
+async function load() {
+  busy.value = true; error.value = "";
+  try {
+    if (agreementMode.value) { items.value = responseData<any>(await api.get("/partner-agreements")).items; }
+    else { const result = responseData<any>(await api.get("/partner-applications", { params: { status: status.value, page: page.value } })); items.value = result.items; total.value = result.total; levels.value = responseData<any[]>(await api.get("/partner-levels")); }
+  } catch (cause) { error.value = readableError(cause); } finally { busy.value = false; }
+}
+function openReview(row: any) { selected.value = row; Object.assign(review, { decision: "APPROVED", levelId: levels.value.find(x => x.active)?.id || "", username: `vip${row.user.compatibilityId}`, reason: "" }); dialog.value = true; }
+async function saveReview() {
+  if (saving.value) return;
+  if (review.decision === "APPROVED" && (!review.levelId || !review.username.trim())) { ElMessage.warning("请选择合作等级并填写账号"); return; }
+  if (review.decision === "REJECTED" && !review.reason.trim()) { ElMessage.warning("请填写未通过原因"); return; }
+  saving.value = true;
+  try { await api.post(`/partner-applications/${selected.value.id}/review`, review); dialog.value = false; ElMessage.success("审核结果已保存"); await load(); } catch (cause) { ElMessage.error(readableError(cause)); } finally { saving.value = false; }
+}
+function editDraft(row?: any) { selected.value = row; if (row) Object.assign(draft, { ...row, id: row.status === "DRAFT" ? row.id : null, version: row.status === "DRAFT" ? row.version : `${row.version}-new`, updatedAt: row.status === "DRAFT" ? row.updatedAt : undefined }); else { draft.id = null; draft.updatedAt = undefined; } dialog.value = true; }
+async function saveDraft() { if (saving.value) return; saving.value = true; try { await api.post("/partner-agreements/draft", draft); dialog.value = false; ElMessage.success("草稿已保存，尚未生效"); await load(); } catch (cause) { ElMessage.error(readableError(cause)); } finally { saving.value = false; } }
+async function publish(row: any) {
+  try { await ElMessageBox.confirm(`发布 ${row.version} 后，所有合作账户需阅读同意该版本才能继续使用。请确认正式内容已审核。`, "发布合作协议", { confirmButtonText: "确认发布", cancelButtonText: "取消" }); }
+  catch { return; }
+  saving.value = true;
+  try { await api.post(`/partner-agreements/${row.id}/publish`, { contentSha256: row.contentSha256 }); ElMessage.success("协议已发布"); await load(); } catch (cause) { ElMessage.error(readableError(cause)); } finally { saving.value = false; }
+}
+async function showReceipts(row: any) { try { receipts.value = responseData<any>(await api.get(`/partner-agreements/${row.id}/acceptances`)).items; receiptsOpen.value = true; } catch (cause) { ElMessage.error(readableError(cause)); } }
+const date = (value: string) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
+watch(agreementMode, () => { dialog.value = false; page.value = 1; void load(); }); onMounted(load);
+</script>
+<template><section class="page" v-loading="busy">
+  <h2>{{ agreementMode ? '合作协议' : '合作申请审核' }}</h2><el-alert v-if="error" :title="error" type="error" :closable="false" />
+  <div class="toolbar"><el-select v-if="!agreementMode" v-model="status" style="width:160px" @change="page = 1; load()"><el-option label="待审核" value="PENDING" /><el-option label="已通过" value="APPROVED" /><el-option label="未通过" value="REJECTED" /><el-option label="全部" value="" /></el-select><el-button @click="load">刷新</el-button><el-button v-if="agreementMode" type="primary" @click="editDraft()">新建协议草稿</el-button></div>
+  <el-table v-if="!agreementMode" :data="items" border><el-table-column prop="name" label="合作名称" min-width="160" /><el-table-column prop="contactName" label="联系人" /><el-table-column prop="mobile" label="联系电话" min-width="150" /><el-table-column prop="region" label="地区" min-width="160" /><el-table-column label="会员"><template #default="s">{{ s.row.user.nickname }} · {{ s.row.user.compatibilityId }}</template></el-table-column><el-table-column label="申请时间" min-width="170"><template #default="s">{{ date(s.row.createdAt) }}</template></el-table-column><el-table-column label="状态"><template #default="s">{{ ({PENDING:'待审核',APPROVED:'已通过',REJECTED:'未通过'} as Record<string,string>)[s.row.status] }}</template></el-table-column><el-table-column label="操作"><template #default="s"><el-button text @click="openReview(s.row)">{{ s.row.status === 'PENDING' ? '审核' : '查看' }}</el-button></template></el-table-column></el-table>
+  <el-pagination v-if="!agreementMode" v-model:current-page="page" :page-size="20" :total="total" layout="prev,pager,next,total" @current-change="load" />
+  <el-table v-else :data="items" border><el-table-column prop="title" label="协议" min-width="200" /><el-table-column prop="version" label="版本" /><el-table-column label="状态"><template #default="s">{{ s.row.status === 'DRAFT' ? '草稿 · 未生效' : s.row.active ? '当前生效' : '历史版本' }}</template></el-table-column><el-table-column label="发布时间" min-width="180"><template #default="s">{{ date(s.row.publishedAt) }}</template></el-table-column><el-table-column label="操作" min-width="290"><template #default="s"><el-button text @click="editDraft(s.row)">{{ s.row.status === 'DRAFT' ? '编辑' : '查看 / 新建版本' }}</el-button><el-button v-if="s.row.status === 'DRAFT'" text type="primary" :disabled="saving" @click="publish(s.row)">发布</el-button><el-button v-else text @click="showReceipts(s.row)">签署记录</el-button></template></el-table-column></el-table>
+  <el-dialog v-model="dialog" :title="agreementMode ? '协议草稿' : '合作申请'" width="min(820px,94vw)"><template v-if="agreementMode"><el-alert title="草稿保存后不生效，审核正式内容后由总管理员发布。已发布正文不能修改。" type="info" :closable="false" /><el-form label-position="top"><el-form-item label="标题"><el-input v-model="draft.title" maxlength="100" /></el-form-item><el-form-item label="版本"><el-input v-model="draft.version" maxlength="60" /></el-form-item><el-form-item label="正文"><el-input v-model="draft.content" type="textarea" :rows="18" maxlength="50000" /></el-form-item></el-form></template><template v-else><p><b>{{ selected?.name }}</b> · {{ selected?.contactName }} · {{ selected?.mobile }}</p><p>{{ selected?.region }}</p><article class="application-description">{{ selected?.description }}</article><el-form v-if="selected?.status === 'PENDING'" label-position="top"><el-form-item label="审核结果"><el-radio-group v-model="review.decision"><el-radio value="APPROVED">通过</el-radio><el-radio value="REJECTED">未通过</el-radio></el-radio-group></el-form-item><template v-if="review.decision === 'APPROVED'"><el-form-item label="合作等级"><el-select v-model="review.levelId"><el-option v-for="level in levels.filter(x => x.active)" :key="level.id" :label="level.name" :value="level.id" /></el-select></el-form-item><el-form-item label="登录账号"><el-input v-model="review.username" maxlength="80" /></el-form-item><p>审核通过后可由商城会员进入；密码登录由管理员重置密码后使用。新账户余额和保证金均为零。</p></template><el-form-item :label="review.decision === 'REJECTED' ? '未通过原因（必填）' : '审核备注'"><el-input v-model="review.reason" type="textarea" maxlength="1000" /></el-form-item></el-form><p v-else>审核时间：{{ date(selected?.reviewedAt) }}<br />审核说明：{{ selected?.reviewReason || '—' }}<br />合作账号：{{ selected?.partner?.username || '—' }}</p></template><template #footer><el-button @click="dialog = false">关闭</el-button><el-button v-if="agreementMode || selected?.status === 'PENDING'" type="primary" :loading="saving" @click="agreementMode ? saveDraft() : saveReview()">{{ agreementMode ? '保存草稿' : '确认审核' }}</el-button></template></el-dialog>
+  <el-dialog v-model="receiptsOpen" title="阅读与签署记录" width="min(1000px,94vw)"><el-table :data="receipts"><el-table-column label="合作账户"><template #default="s">{{ s.row.partner.name }} · {{ s.row.partner.username }}</template></el-table-column><el-table-column label="首次阅读"><template #default="s">{{ date(s.row.viewedAt) }}</template></el-table-column><el-table-column label="同意时间"><template #default="s">{{ date(s.row.acceptedAt) }}</template></el-table-column><el-table-column prop="clientIp" label="IP" /><el-table-column prop="userAgent" label="客户端" show-overflow-tooltip /></el-table></el-dialog>
+</section></template>
+<style scoped>.toolbar{display:flex;gap:12px;margin:20px 0}.application-description{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8;background:#f5f7fa;padding:16px;border-radius:8px}.el-pagination{margin-top:20px}.el-form{margin-top:20px}</style>

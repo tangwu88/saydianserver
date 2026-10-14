@@ -23,6 +23,8 @@ const partnerSelect = {
   username: true,
   name: true,
   mobile: true,
+  linkedMemberId: true,
+  linkedMember: { select: { id: true, compatibilityId: true, nickname: true } },
   active: true,
   promotionCode: true,
   levelId: true,

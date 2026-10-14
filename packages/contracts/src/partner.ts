@@ -60,7 +60,7 @@ export interface PartnerCheckoutInput {
   buyerRemark?: string;
 }
 export type PartnerRechargeChannel =
-  "wechat_native" | "alipay_page" | "alipay_wap";
+  "wechat_native" | "wechat_jsapi" | "wechat_h5" | "alipay_page" | "alipay_wap";
 export interface PartnerRechargeInput {
   amountCents: number;
   channel: PartnerRechargeChannel;

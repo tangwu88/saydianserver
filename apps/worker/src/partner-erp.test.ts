@@ -27,6 +27,7 @@ function fixture() {
     items: [
       {
         id: "line",
+        skuId: "00000000-0000-4000-8000-000000000011",
         erpSkuIdSnapshot: "SKU",
         nameSnapshot: "合成商品",
         specificationSnapshot: "规格",
@@ -101,13 +102,14 @@ describe("partner balance ERP settlement", () => {
       h.worker.call.mock.calls[1][2][0].pay.outer_pay_id,
     );
   });
-  it("adds trusted partner ID, number and name to ERP remarks and preserves existing remarks", async () => {
+  it("adds trusted partner name without identifiers to ERP remarks and preserves existing remarks", async () => {
     const h = fixture();
     await h.worker.uploadOrder(h.order.id);
     const row = h.worker.call.mock.calls[0][2][0];
     expect(row.remark).toBe(
-      "品牌伙伴 ID：partner-A\n品牌伙伴名称：合成品牌伙伴\n品牌伙伴编号：VIP-SYNTHETIC\n工作日发货",
+      "品牌伙伴名称：合成品牌伙伴\n工作日发货",
     );
+    expect(row.items[0]).toMatchObject({ sku_id: "SKU", shop_sku_id: h.order.items[0]!.skuId });
     expect(row.buyer_message).toBe("请先联系收货人");
     expect(h.prisma.commerceOrder.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -135,10 +137,10 @@ describe("partner balance ERP settlement", () => {
     h.order.adminRemark = "";
     await h.worker.uploadOrder(h.order.id);
     expect(h.worker.call.mock.calls[0][2][0].remark).toBe(
-      "品牌伙伴 ID：partner-A\n品牌伙伴名称：合成 品牌伙伴\n品牌伙伴编号：VIP-SYNTHETIC",
+      "品牌伙伴名称：合成 品牌伙伴",
     );
   });
-  it("keeps the full partner ID and maximum-length name inside the ERP remark limit", async () => {
+  it("keeps the maximum-length name inside the ERP remark limit", async () => {
     const h = fixture();
     h.order.partnerId = h.order.partner.id =
       "00000000-0000-4000-8000-000000000001";
@@ -147,7 +149,8 @@ describe("partner balance ERP settlement", () => {
     await h.worker.uploadOrder(h.order.id);
     const remark = h.worker.call.mock.calls[0][2][0].remark;
     expect(remark.length).toBeLessThanOrEqual(150);
-    expect(remark).toContain(`品牌伙伴 ID：${h.order.partnerId}`);
+    expect(remark).not.toContain(h.order.partnerId);
+    expect(remark).not.toContain(h.order.partner.partnerNo);
     expect(remark).toContain(`品牌伙伴名称：${h.order.partner.name}`);
     expect(remark).toMatch(/…$/);
     expect(remark).not.toMatch(/[\ud800-\udbff]…$/);

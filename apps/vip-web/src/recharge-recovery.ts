@@ -18,7 +18,7 @@ export function readRecharge(
       !Number.isSafeInteger(input?.amountCents) ||
       input.amountCents <= 0 ||
       input.amountCents > 2147483647 ||
-      !["wechat_native", "alipay_page", "alipay_wap"].includes(input.channel) ||
+      !["wechat_native", "wechat_jsapi", "wechat_h5", "alipay_page", "alipay_wap"].includes(input.channel) ||
       !/^[-\w:]{8,90}$/.test(input.idempotencyKey)
     )
       throw new Error();
@@ -53,6 +53,8 @@ export function channelLabel(channel: string) {
     (
       {
         wechat_native: "微信扫码",
+        wechat_jsapi: "微信支付",
+        wechat_h5: "微信支付",
         alipay_page: "支付宝",
         alipay_wap: "支付宝",
       } as Record<string, string>

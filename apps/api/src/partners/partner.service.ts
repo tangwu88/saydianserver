@@ -179,8 +179,8 @@ export class PartnerService {
     return this.certificateData(partner);
   }
 
-  paymentCapabilities() {
-    return this.billing.partnerPaymentCapabilities();
+  paymentCapabilities(partnerId?: string) {
+    return this.billing.partnerPaymentCapabilities(partnerId);
   }
 
   async wallet(partnerId: string) {
@@ -254,7 +254,7 @@ export class PartnerService {
     };
   }
 
-  async createRecharge(partnerId: string, input: unknown, clientIp?: string) {
+  async createRecharge(partnerId: string, input: unknown, clientIp?: string, userAgent?: string) {
     const body = safeObject(input),
       amountCents = Number(body.amountCents),
       channel = String(body.channel ?? "").toUpperCase() as PaymentChannel;
@@ -266,6 +266,8 @@ export class PartnerService {
       !(
         [
           PaymentChannel.WECHAT_NATIVE,
+          PaymentChannel.WECHAT_JSAPI,
+          PaymentChannel.WECHAT_H5,
           PaymentChannel.ALIPAY_PAGE,
           PaymentChannel.ALIPAY_WAP,
         ] as PaymentChannel[]
@@ -285,6 +287,10 @@ export class PartnerService {
         )
           throw new ConflictException("充值请求编号已被不同参数使用");
         return existing;
+      }
+      if (userAgent) {
+        const allowed = /micromessenger/i.test(userAgent) ? ["WECHAT_JSAPI"] : /Android|iPhone|iPad|iPod/i.test(userAgent) ? ["WECHAT_H5", "ALIPAY_WAP"] : ["WECHAT_NATIVE", "ALIPAY_PAGE", "ALIPAY_WAP"];
+        if (!allowed.includes(channel)) throw new BadRequestException("此支付方式不适合当前浏览器，请重新选择");
       }
       const partner = await tx.brandPartner.findFirst({
         where: { id: partnerId, active: true },

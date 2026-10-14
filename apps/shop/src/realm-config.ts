@@ -12,7 +12,7 @@ export function resolveMallConfig(env: Record<string, unknown>, miniProgram = fa
 
 export function realmKey(key: string, realm: MallRealm) { return realm === "global" ? "saydian-global-mall:" + key : key; }
 export function globalPageAllowed(route: string) {
-  return /^\/pages\/(home|category|search|product|profile|login|help|cart|checkout|orders|order-detail|after-sale|addresses|address-edit|favorites|coupons|coupon-gift|points|employee)\/index(?:\?[^#]*)?$/.test(route) && !/[\\\r\n]/.test(route);
+  return /^\/pages\/(home|category|search|product|profile|login|help|cart|checkout|orders|order-detail|after-sale|addresses|address-edit|favorites|coupons|coupon-gift|points|employee|partner)\/index(?:\?[^#]*)?$/.test(route) && !/[\\\r\n]/.test(route);
 }
 export function globalApiAllowed(path: string, method = "GET") {
   // Routing only: the server still verifies identity, scope, market and channel
@@ -22,6 +22,8 @@ export function globalApiAllowed(path: string, method = "GET") {
   if (path === "/auth/referral") return method === "POST";
   if (path === "/auth/wechat/h5/account") return method === "GET";
   const route = path.split("?", 1)[0] ?? "";
+  if (route === "/partner/status") return method === "GET";
+  if (["/partner/applications", "/partner/login-ticket"].includes(route)) return method === "POST";
   if (route === '/storefront/after-sale-images') return method === 'POST';
   if (/^\/storefront\/after-sale-images\/(capabilities|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(route)) return method === 'GET';
   if (route === "/payments/create") return method === "POST";

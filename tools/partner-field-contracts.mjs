@@ -5,7 +5,7 @@ const key = { type: "string", minLength: 8, maxLength: 90, pattern: "^[A-Za-z0-9
 const object = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: true });
 const list = items => ({ type: "array", items });
 const nullableId = { oneOf: [id, { type: "null" }] };
-const source = "apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts";
+const source = "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts";
 const record = (requestSchema, responseSchema, requestExample = null) => ({ status: "request-reviewed", requestSchema, requestExample, responseSchema, responseExample: null, contentType: "application/json", source,
   note: "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。" });
 const items = { type: "array", minItems: 1, maxItems: 100, items: object({ skuId: id, quantity: { type: "integer", minimum: 1, maximum: 9999 } }, ["skuId", "quantity"]) };
@@ -14,7 +14,22 @@ const address = object({ recipientName: text, recipientMobile: text, province: t
 const wallet = object({ partnerId: id, balanceCents: amount, depositCents: amount, version: { type: "integer", minimum: 0 }, currency: { const: "CNY" } }, ["partnerId", "balanceCents", "depositCents", "version", "currency"]);
 const certificate = object({ issuer:text, partnerName:text, certificateNo:text, level:text, active:flag, registeredAt:text, generatedAt:text, scope:text, validity:text }, ["issuer","partnerName","certificateNo","level","active","registeredAt","generatedAt","scope","validity"]);
 const recharge = object({ id, rechargeNo: text, amountCents: cents, status: text, payment: object({ id, status: text, invoke: {} }) }, ["id", "rechargeNo", "amountCents", "status", "payment"]);
+const application = object({ id, userId:id, name:text, contactName:text, mobile:text, region:text, description:text, status:{enum:["PENDING","APPROVED","REJECTED"]}, partnerId:nullableId }, ["id","userId","name","status"]);
+const agreement = object({ id, title:text, version:text, content:text, contentSha256:text }, ["id","title","version","content","contentSha256"]);
 export const partnerFieldContracts = {
+  "PartnerMemberController.status": record(null, object({partner:{oneOf:[object({id,name:text,username:text,active:flag}),{type:"null"}]},application:{oneOf:[application,{type:"null"}]}},["partner","application"])),
+  "PartnerMemberController.apply": record(object({name:{type:"string",minLength:1,maxLength:80},contactName:{type:"string",minLength:1,maxLength:40},mobile:{type:"string",minLength:6,maxLength:30},region:{type:"string",minLength:1,maxLength:120},description:{type:"string",minLength:1,maxLength:2000},idempotencyKey:key},["name","contactName","mobile","region","description","idempotencyKey"]),application),
+  "PartnerMemberController.ticket": record(object({codeChallenge:{type:"string",pattern:"^[A-Za-z0-9_-]{43}$"}},["codeChallenge"]),object({ticket:text,expiresAt:text},["ticket","expiresAt"])),
+  "PartnerMemberLoginController.login": record(object({ticket:{type:"string",minLength:1,maxLength:200},codeVerifier:{type:"string",pattern:"^[A-Za-z0-9_-]{43,128}$"}},["ticket","codeVerifier"]),object({token:text,expiresAt:text},["token","expiresAt"])),
+  "PartnerAgreementController.current": record(null,object({agreement:{oneOf:[agreement,{type:"null"}]},accepted:flag,viewedAt:text,acceptedAt:{type:["string","null"]}},["agreement","accepted"])),
+  "PartnerAgreementController.accept": record(object({agreementId:id,contentSha256:text,agreed:{const:true}},["agreementId","contentSha256","agreed"]),object({accepted:{const:true},acceptedAt:text},["accepted","acceptedAt"])),
+  "PartnerOnboardingAdminController.list": record(null,object({items:list(application),total:amount,page:cents,pageSize:cents},["items","total","page","pageSize"])),
+  "PartnerOnboardingAdminController.review": record(object({decision:{enum:["APPROVED","REJECTED"]},levelId:id,username:text,reason:{type:"string",maxLength:1000}},["decision"]),application),
+  "PartnerOnboardingAdminController.link": record(object({memberId:nullableId},["memberId"]),object({linkedMemberId:nullableId},["linkedMemberId"])),
+  "PartnerOnboardingAdminController.agreementsList": record(null,object({items:list(agreement)},["items"])),
+  "PartnerOnboardingAdminController.draft": record(object({id:nullableId,title:text,version:{type:"string",pattern:"^[A-Za-z0-9_.-]{1,60}$"},content:{type:"string",minLength:1,maxLength:50000},updatedAt:text},["title","version","content"]),agreement),
+  "PartnerOnboardingAdminController.publish": record(object({contentSha256:text},["contentSha256"]),agreement),
+  "PartnerOnboardingAdminController.acceptances": record(null,object({items:list(object({id,partnerId:id,agreementId:id,sessionId:id,viewedAt:text,acceptedAt:{type:["string","null"]},clientIp:{type:["string","null"]},userAgent:{type:["string","null"]}},["id","partnerId","agreementId","viewedAt","acceptedAt"]))},["items"])),
   "PartnerPublicController.certificate": record(null, certificate),
   "PartnerController.certificate": record(null, object({...certificate.properties, verifyUrl:text, qrDataUrl:text}, [...certificate.required,"verifyUrl","qrDataUrl"])),
   "PartnerController.processing": record(null, object({items:list(object({id:text,name:text,remark:text,time:text,operator:text})),state:{enum:["WAITING_ORDER","UNAVAILABLE","PENDING","READY","ERROR"]},syncedAt:{type:["string","null"]},truncated:flag},["items","state","syncedAt","truncated"])),
@@ -23,7 +38,7 @@ export const partnerFieldContracts = {
   "PartnerController.wallet": record(null, wallet),
   "PartnerController.quote": record(object({ items }, ["items"]), quote),
   "PartnerController.createOrder": record(object({ items, address, expectedQuote: quote.properties.fingerprint, idempotencyKey: key, buyerRemark: { type: "string", maxLength: 500 } }, ["items", "address", "expectedQuote", "idempotencyKey"]), object({ id, orderNo: text, partnerId: id, userId: { type: "null" }, partnerLevelSnapshot: text, status: { const: "PAID" }, payableCents: cents, items: list(object({})) }, ["id", "orderNo", "partnerId", "status", "payableCents"])),
-  "PartnerController.createRecharge": record(object({ amountCents: cents, channel: { enum: ["wechat_native", "alipay_page", "alipay_wap"] }, idempotencyKey: key }, ["amountCents", "channel", "idempotencyKey"]), recharge),
+  "PartnerController.createRecharge": record(object({ amountCents: cents, channel: { enum: ["wechat_native", "wechat_jsapi", "wechat_h5", "alipay_page", "alipay_wap"] }, idempotencyKey: key }, ["amountCents", "channel", "idempotencyKey"]), recharge),
   "PartnerController.recharge": record(null, recharge),
   "PartnerAdminController.create": record(object({ username: { type: "string", pattern: "^[A-Za-z0-9_.-]{3,80}$" }, name: text, mobile: text, password: { type: "string", minLength: 10, maxLength: 128 }, levelId: id }, ["username", "name", "password", "levelId"]), object({ id, partnerNo: text, username: text, name: text, levelId: id, wallet: {} }, ["id", "partnerNo", "username", "name", "levelId", "wallet"])),
   "PartnerAdminController.update": record(object({ updatedAt: text, name: text, mobile: { type: ["string", "null"] }, levelId: id, active: flag }, ["updatedAt"]), object({ id, updatedAt: text }, ["id", "updatedAt"])),

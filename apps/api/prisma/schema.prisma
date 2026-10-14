@@ -316,7 +316,9 @@ model User {
   referralEmployeeId       String?                           @db.Uuid
   referralEmployee         CommerceEmployee?                 @relation("LockedReferral", fields: [referralEmployeeId], references: [id], onDelete: SetNull)
   partnerId                String?                           @db.Uuid
-  partner                  BrandPartner?                     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  partner                  BrandPartner?                     @relation("PartnerAssignedMembers", fields: [partnerId], references: [id], onDelete: Restrict)
+  ownedPartner             BrandPartner?                     @relation("PartnerOwner")
+  partnerApplications      PartnerApplication[]
   pointAccount             CommercePointAccount?
   pointLedger              CommercePointLedger[]
   legacySessions           LegacySessionCredential[]
@@ -341,39 +343,115 @@ model PartnerLevel {
 }
 
 model BrandPartner {
-  id            String            @id @default(uuid()) @db.Uuid
-  partnerNo     String            @unique
-  username      String            @unique
-  passwordHash  String
-  name          String
-  mobile        String?
-  active        Boolean           @default(true)
-  promotionCode String            @unique
-  levelId       String            @db.Uuid
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  level         PartnerLevel      @relation(fields: [levelId], references: [id], onDelete: Restrict)
-  sessions      PartnerSession[]
-  members       User[]
-  wallet        PartnerWallet?
-  ledger        PartnerLedger[]
-  recharges     PartnerRecharge[]
-  orders        CommerceOrder[]
-  payments      PaymentIntent[]
+  id                   String                       @id @default(uuid()) @db.Uuid
+  partnerNo            String                       @unique
+  username             String                       @unique
+  passwordHash         String
+  name                 String
+  mobile               String?
+  active               Boolean                      @default(true)
+  promotionCode        String                       @unique
+  levelId              String                       @db.Uuid
+  linkedMemberId       String?                      @unique @db.Uuid
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+  level                PartnerLevel                 @relation(fields: [levelId], references: [id], onDelete: Restrict)
+  sessions             PartnerSession[]
+  members              User[]                       @relation("PartnerAssignedMembers")
+  linkedMember         User?                        @relation("PartnerOwner", fields: [linkedMemberId], references: [id], onDelete: Restrict)
+  applications         PartnerApplication[]
+  loginTickets         PartnerLoginTicket[]
+  agreementAcceptances PartnerAgreementAcceptance[]
+  wallet               PartnerWallet?
+  ledger               PartnerLedger[]
+  recharges            PartnerRecharge[]
+  orders               CommerceOrder[]
+  payments             PaymentIntent[]
 
   @@index([levelId, active])
 }
 
 model PartnerSession {
-  id        String       @id @default(uuid()) @db.Uuid
-  partnerId String       @db.Uuid
-  tokenHash String       @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime     @default(now())
-  partner   BrandPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  id              String       @id @default(uuid()) @db.Uuid
+  partnerId       String       @db.Uuid
+  tokenHash       String       @unique
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime     @default(now())
+  partner         BrandPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  memberSessionId String?      @db.Uuid
+  memberSession   UserSession? @relation(fields: [memberSessionId], references: [id], onDelete: Cascade)
 
   @@index([partnerId, expiresAt])
+}
+
+model PartnerApplication {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  name           String
+  contactName    String
+  mobile         String
+  region         String
+  description    String
+  status         String        @default("PENDING")
+  idempotencyKey String        @unique
+  reviewedById   String?       @db.Uuid
+  reviewedAt     DateTime?
+  reviewReason   String?
+  partnerId      String?       @db.Uuid
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partner        BrandPartner? @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model PartnerLoginTicket {
+  tokenHash        String       @id
+  codeChallenge    String
+  partnerId        String       @db.Uuid
+  memberSessionId  String       @db.Uuid
+  partnerUpdatedAt DateTime
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  partner          BrandPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  memberSession    UserSession  @relation(fields: [memberSessionId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+}
+
+model PartnerAgreement {
+  id            String                       @id @default(uuid()) @db.Uuid
+  version       String                       @unique
+  title         String
+  content       String
+  contentSha256 String
+  status        String                       @default("DRAFT")
+  active        Boolean                      @default(false)
+  createdById   String                       @db.Uuid
+  publishedById String?                      @db.Uuid
+  publishedAt   DateTime?
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
+  acceptances   PartnerAgreementAcceptance[]
+}
+
+model PartnerAgreementAcceptance {
+  id          String           @id @default(uuid()) @db.Uuid
+  partnerId   String           @db.Uuid
+  agreementId String           @db.Uuid
+  sessionId   String           @db.Uuid
+  viewedAt    DateTime         @default(now())
+  acceptedAt  DateTime?
+  clientIp    String?
+  userAgent   String?
+  partner     BrandPartner     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  agreement   PartnerAgreement @relation(fields: [agreementId], references: [id], onDelete: Restrict)
+
+  @@unique([partnerId, agreementId])
 }
 
 model PartnerSkuPrice {
@@ -476,15 +554,17 @@ model CommerceWechatBindTicket {
 }
 
 model UserSession {
-  id               String    @id @default(uuid()) @db.Uuid
-  userId           String    @db.Uuid
-  accessJti        String    @unique
-  refreshTokenHash String    @unique
-  expiresAt        DateTime
-  revokedAt        DateTime?
-  lastUsedAt       DateTime?
-  createdAt        DateTime  @default(now())
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                  String               @id @default(uuid()) @db.Uuid
+  userId              String               @db.Uuid
+  accessJti           String               @unique
+  refreshTokenHash    String               @unique
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  lastUsedAt          DateTime?
+  createdAt           DateTime             @default(now())
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partnerSessions     PartnerSession[]
+  partnerLoginTickets PartnerLoginTicket[]
 
   @@index([userId, expiresAt])
 }

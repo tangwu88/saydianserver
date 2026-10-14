@@ -334,10 +334,18 @@ export class BillingService {
     }
   }
 
-  async partnerPaymentCapabilities() {
-    const channels = [PaymentChannel.WECHAT_NATIVE, PaymentChannel.ALIPAY_PAGE, PaymentChannel.ALIPAY_WAP];
+  async partnerPaymentCapabilities(partnerId?: string) {
+    const channels = [PaymentChannel.WECHAT_NATIVE, PaymentChannel.WECHAT_JSAPI, PaymentChannel.WECHAT_H5, PaymentChannel.ALIPAY_PAGE, PaymentChannel.ALIPAY_WAP];
     return { items: await Promise.all(channels.map(async channel => {
-      try { assertPaymentOutboundEnabled(); await this.providers.identity(channel); return { channel: channel.toLowerCase(), enabled: true, reason: null }; }
+      try { assertPaymentOutboundEnabled(); const identity = await this.providers.identity(channel);
+        if (channel === PaymentChannel.WECHAT_JSAPI) {
+          const partner = partnerId ? await this.prisma.brandPartner.findUnique({ where: { id: partnerId }, include: { linkedMember: true } }) : null;
+          const user = partner?.linkedMember;
+          if (!partner?.active || !user || user.status !== "ACTIVE" || !((user.mobile && user.mobileVerifiedAt) || (user.email && user.emailVerifiedAt))) return { channel: channel.toLowerCase(), enabled: false, reason: "请先在总后台绑定已验证的商城会员，再通过微信登录" };
+          if (!identity.appId) throw new BadRequestException("公众号支付未配置");
+          await this.providers.resolveOfficialPayer(user.id, identity.appId);
+        }
+        return { channel: channel.toLowerCase(), enabled: true, reason: null }; }
       catch { return { channel: channel.toLowerCase(), enabled: false, reason: "支付渠道尚未配置或暂不可用" }; }
     })) };
   }
@@ -355,6 +363,13 @@ export class BillingService {
     assertPaymentOutboundEnabled();
     assertGlobalPaymentSupported({ channel: recharge.channel, businessType: BusinessType.PARTNER_RECHARGE, currency: "CNY" });
     const identity = await this.providers.identity(recharge.channel);
+    if (recharge.channel === PaymentChannel.WECHAT_JSAPI) {
+      const partner = await this.prisma.brandPartner.findUnique({ where: { id: partnerId }, include: { linkedMember: true } });
+      const user = partner?.linkedMember;
+      if (!user || user.status !== "ACTIVE" || !((user.mobile && user.mobileVerifiedAt) || (user.email && user.emailVerifiedAt))) throw new BadRequestException("请先绑定已验证的商城会员，并在微信中登录");
+      if (!identity.appId) throw new BadRequestException("公众号支付未配置");
+          await this.providers.resolveOfficialPayer(user.id, identity.appId);
+    }
     const reserved = await this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "PartnerRecharge" WHERE id = ${rechargeId}::uuid FOR UPDATE`;
       const current = await tx.partnerRecharge.findUniqueOrThrow({ where: { id: rechargeId } });
