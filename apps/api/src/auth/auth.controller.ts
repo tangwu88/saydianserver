@@ -112,6 +112,12 @@ export class AuthController {
     return { loggedOut: true };
   }
 
+  @Get("migration-status")
+  @UseGuards(UserAuthGuard)
+  migrationStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.auth.migrationStatus(user.id);
+  }
+
   @Post("delete-account")
   @UseGuards(UserAuthGuard)
   deleteAccount(@CurrentUser() user: AuthenticatedUser) {

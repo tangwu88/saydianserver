@@ -180,6 +180,40 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.usMigrationInventory",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/us-migration/inventory",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "美国迁移脱敏候选清单",
+      "request": "page从1开始，每页100；仅SUPER_ADMIN",
+      "response": "协议来源、共享/无法归属标记、关联数量；approved恒为false，无迁移副作用",
+      "dependency": "北京源库只读快照；迁移须单独核对",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.uploadContentImage",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/content-images",
@@ -5935,6 +5969,31 @@ export const apiCatalog = {
         "contentType": "application/json",
         "source": "apps/api/src/auth/auth.controller.ts; apps/api/src/auth/auth.service.ts; packages/contracts/src/index.ts",
         "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "AuthController.migrationStatus",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/auth/migration-status",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/auth/auth.controller.ts",
+      "summary": "查询本人美国迁移核验状态",
+      "request": "仅美国部署、当前会员会话；不接受账号参数",
+      "response": "{completed:false} 或已核验批次、来源/目标账号和域名、verifiedAt",
+      "dependency": "私有迁移凭证；未完成迁移不得复制手机缓存",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/auth/auth.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
     },
     {

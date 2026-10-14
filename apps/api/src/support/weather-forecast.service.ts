@@ -49,7 +49,7 @@ export class WeatherForecastService {
     url.searchParams.set("lon", gridLon!);
     const headers: Record<string, string> = {
       "User-Agent":
-        "SAYDIANHealth/1.0 https://app.saydian.cn/global/health/support",
+        `SayDian/1.0 ${process.env.PUBLIC_BASE_URL ?? "https://app.saydian.cn"}/global/support`,
       ...(cached?.lastModified
         ? { "If-Modified-Since": cached.lastModified }
         : {}),

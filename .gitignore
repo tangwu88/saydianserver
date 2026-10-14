@@ -21,3 +21,6 @@ test-results/
 deploy-bundle.tgz
 deploy/.deployed-revision
 deploy/.ci-release.lock
+
+deploy/us/__pycache__/
+deploy/us/*.pyc

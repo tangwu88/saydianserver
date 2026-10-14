@@ -21,6 +21,16 @@ describe("one account domain with legacy transport aliases", () => {
     expect(() => assertDeploymentRealm({ NODE_ENV: "production", PUBLIC_BASE_URL: "https://app.saydian.cn" })).not.toThrow();
     expect(() => assertDeploymentRealm({ NODE_ENV: "production", PUBLIC_BASE_URL: "https://app.saydian.cn/global" })).toThrow("PUBLIC_BASE_URL");
   });
+  it("permits the US origin only for the independent US site", () => {
+    expect(() => assertDeploymentRealm({ NODE_ENV: "production", DEPLOYMENT_SITE: "us", PUBLIC_BASE_URL: "https://app.saydian.com" })).not.toThrow();
+    for (const [site, origin] of [["cn", "https://app.saydian.com"], ["us", "https://app.saydian.cn"], ["other", "https://app.saydian.com"], ["us", "https://app.saydian.com/global"]]) {
+      expect(() => assertDeploymentRealm({ NODE_ENV: "production", DEPLOYMENT_SITE: site, PUBLIC_BASE_URL: origin })).toThrow("PUBLIC_BASE_URL");
+    }
+  });
+  it("rejects a China signature under independently generated US keys", () => {
+    const token = sign({ sub: "member" }, "synthetic-China-independent-key", { issuer: authIssuer(), audience: authAudience() });
+    expect(() => verify(token, "synthetic-US-independent-key", { issuer: authIssuer(), audience: authAudience() })).toThrow();
+  });
   it("issues and refreshes existing claims without exposing private member fields", async () => {
     vi.stubEnv("ACCESS_TOKEN_SECRET", "synthetic-global-session-key-not-production");
     vi.stubEnv("REFRESH_TOKEN_PEPPER", "synthetic-global-refresh-key-not-production");

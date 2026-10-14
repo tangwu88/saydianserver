@@ -1,3 +1,4 @@
+import { usCandidateInventory } from "./us-candidate-inventory";
 import { adminDeviceIdentifier, legacyNativeDeviceKey } from "../common/device-identity";
 import { deductCommercePaymentStock } from "../commerce/commerce-payment-stock";
 import {
@@ -206,6 +207,8 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
+
+  usMigrationInventory(page: number) { return usCandidateInventory(this.prisma, page); }
 
   private assertMemberAdministrator(current: {
     role: string;

@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **432 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **434 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -165,7 +165,7 @@
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
 
-## V2 App 接口（125）
+## V2 App 接口（126）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -182,6 +182,7 @@
 | `POST /api/saydian-app/v2/auth/reset-password` | 验证码重置密码 | public | 国内{mobile,code,password/newPassword}；国际{challengeId,code,password} | Session；旧会话失效 | 对应部署的验证码供应商 |
 | `POST /api/saydian-app/v2/auth/refresh` | 轮换刷新令牌 | public | {refreshToken}；客户端必须串行刷新并替换旧令牌 | Session | 核心服务 |
 | `POST /api/saydian-app/v2/auth/logout` | 退出当前会话 | member | 无请求体 | {loggedOut:true} | 核心服务 |
+| `GET /api/saydian-app/v2/auth/migration-status` | 查询本人美国迁移核验状态 | member | 仅美国部署、当前会员会话；不接受账号参数 | {completed:false} 或已核验批次、来源/目标账号和域名、verifiedAt | 私有迁移凭证；未完成迁移不得复制手机缓存 |
 | `POST /api/saydian-app/v2/auth/delete-account` | 提交账号注销申请 | member | 无请求体 | 注销任务；并非立即删除全部数据 | 核心服务 |
 | `GET /api/saydian-app/v2/billing/offers` | 健康报告购买方案 | public | query:platform?；platform=android/ios/h5/mini_program/web，可选 | 后台启用且当前有效的版本化价格方案 | 核心服务 |
 | `POST /api/saydian-app/v2/billing/payments/wechat/refund-notify` | 微信退款结果回调 | public | header:*；微信支付API v3加密通知；必须校验平台签名并解密 | SUCCESS确认；处理中、关闭或异常不伪报退款成功 | 微信支付 |
@@ -295,7 +296,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（128）
+## 管理后台接口（129）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -304,6 +305,7 @@
 | `GET /api/saydian-app/admin/v1/health-reports/:id` | 后台查看健康报告进度和结果 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id；id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR | 报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文 | 报告队列与读取审计；AI结果仅供健康管理参考 |
 | `PATCH /api/saydian-app/admin/v1/health-reports/:id` | 超级管理员复核并编辑已生成健康报告 | admin: SUPER_ADMIN | path:id；id=报告UUID；仅SUPER_ADMIN；{content:{overview,trends:[{metric,text}],suggestions,limitations},expectedUpdatedAt}；指标、顺序和证据ID不可修改 | 更新后的报告正文；使用乐观锁，版本冲突返回409；HEALTH_REPORT_UPDATE审计只保存内容散列和变更章节，不保存报告正文 | 已生成READY报告；内容仅供日常健康管理参考 |
 | `POST /api/saydian-app/admin/v1/auth/login` | 后台登录 | public | JSON {username,password} | AdminSession；不能与 App Token 混用 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/us-migration/inventory` | 美国迁移脱敏候选清单 | admin: SUPER_ADMIN | query:page?；page从1开始，每页100；仅SUPER_ADMIN | 协议来源、共享/无法归属标记、关联数量；approved恒为false，无迁移副作用 | 北京源库只读快照；迁移须单独核对 |
 | `POST /api/saydian-app/admin/v1/content-images` | 上传后台文章或协议图片 | admin: SUPER_ADMIN, CONTENT_EDITOR | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR | {id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/commerce-images` | 上传商城商品或SKU图片 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/COMMERCE_OPERATIONS | {id,url,sha256,byteSize}；url可保存到商品封面、相册或SKU图片字段，不返回对象存储密钥 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/app-packages` | 上传赛电、Health 或 Say Ring 安装包 | admin: SUPER_ADMIN, APP_OPERATIONS | file:file，query:platform，query:product?；platform=android/harmonyos；product=saidian/saydian-global/say-ring，省略时兼容默认say-ring；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS | {fileName,url,sizeBytes,sha256}；按产品保存，赛电返回/api/地址，Health和Say Ring返回/global/api/地址；上传成功后仍需保存版本配置才发布 | 已配置对象存储 |

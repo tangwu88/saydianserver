@@ -80,6 +80,8 @@ jobs:
           pnpm api:docs:check
           pnpm tools:test
           python3 -B deploy/scripts/verify-runtime-artifact.test.py
+          node --test deploy/us/*.test.mjs
+          python3 -B deploy/us/capacity_test.py
           pnpm typecheck
           pnpm test
           pnpm build
@@ -182,6 +184,18 @@ jobs:
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AUTO_DEPLOY_ENABLED == 'true'
     uses: ./.github/workflows/deploy-production.yml
+    with:
+      revision: ${{ github.sha }}
+      build_run_id: ${{ format('{0}', github.run_id) }}
+    secrets: inherit
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+  auto-deploy-us:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AUTO_DEPLOY_US_ENABLED == 'true'
+    uses: ./.github/workflows/deploy-us.yml
     with:
       revision: ${{ github.sha }}
       build_run_id: ${{ format('{0}', github.run_id) }}

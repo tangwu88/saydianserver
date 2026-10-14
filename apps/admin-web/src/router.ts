@@ -9,6 +9,7 @@ import ApiDocsView from "./views/ApiDocsView.vue";
 import CommerceWithdrawalsView from "./views/CommerceWithdrawalsView.vue";
 import IntegrationsView from "./views/IntegrationsView.vue";
 import PartnersView from "./views/PartnersView.vue";
+import UsMigrationView from "./views/UsMigrationView.vue";
 
 const routes = [
   { path: "/login", component: LoginView },
@@ -20,6 +21,7 @@ const routes = [
       { path: "api-docs", component: ApiDocsView },
       { path: "commerce-withdrawals", component: CommerceWithdrawalsView },
       { path: "integrations", component: IntegrationsView },
+      { path: "us-migration", component: UsMigrationView },
       ...["partners", "partner-levels", "partner-prices", "partner-finance"].map(path => ({ path, component: PartnersView })),
       { path: ":resource", component: ResourceView },
     ],
