@@ -1,14 +1,15 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { partnerTokenKey } from "./api";
-import Login from "./views/Login.vue";
-import Shell from "./views/Shell.vue";
-import Dashboard from "./views/Dashboard.vue";
-import Promotion from "./views/Promotion.vue";
-import Members from "./views/Members.vue";
-import Products from "./views/Products.vue";
-import Orders from "./views/Orders.vue";
-import Certificate from "./views/Certificate.vue";
-import Finance from "./views/Finance.vue";
+import { ElMessageBox } from "element-plus";
+const Login = () => import("./views/Login.vue");
+const Shell = () => import("./views/Shell.vue");
+const Dashboard = () => import("./views/Dashboard.vue");
+const Promotion = () => import("./views/Promotion.vue");
+const Members = () => import("./views/Members.vue");
+const Products = () => import("./views/Products.vue");
+const Orders = () => import("./views/Orders.vue");
+const Certificate = () => import("./views/Certificate.vue");
+const Finance = () => import("./views/Finance.vue");
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   scrollBehavior: () => ({ top: 0 }),
@@ -44,4 +45,13 @@ router.beforeEach((to) => {
     return { path: "/login", query: { next: to.path } };
   if (to.path === "/login" && loggedIn) return "/";
   return true;
+});
+router.onError(() => {
+  void ElMessageBox.confirm(
+    "页面加载失败，请检查网络后刷新重试。",
+    "暂时无法打开",
+    { confirmButtonText: "刷新页面", cancelButtonText: "留在当前页" },
+  )
+    .then(() => location.reload())
+    .catch(() => {});
 });

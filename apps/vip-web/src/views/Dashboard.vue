@@ -49,7 +49,7 @@ async function load() {
 onMounted(load);
 </script>
 <template>
-  <section class="page" v-loading="busy">
+  <section class="page dashboard-page" v-loading="busy">
     <div class="page-head">
       <h1>{{ overview?.name ? `${overview.name}，你好` : "首页" }}</h1>
       <el-tag v-if="overview?.level" type="info">{{
@@ -95,7 +95,8 @@ onMounted(load);
           ><el-icon><User /></el-icon>我的会员</span
         ><strong>{{ overview?.memberCount ?? "—" }}<small> 人</small></strong
         ><span class="metric-link"
-          >{{ overview?.canViewMemberHealth ? "查看档案" : "查看会员" }} <el-icon><ArrowRight /></el-icon></span
+          >{{ overview?.canViewMemberHealth ? "查看档案" : "查看会员" }}
+          <el-icon><ArrowRight /></el-icon></span
       ></router-link>
       <router-link to="/orders" class="panel metric-card"
         ><span
@@ -124,7 +125,9 @@ onMounted(load);
           <dd>{{ overview?.username || "—" }}</dd>
         </div>
       </dl>
-      <router-link to="/certificate" class="action-link"><el-icon><DocumentChecked /></el-icon>查看 / 打印授权证书</router-link>
+      <router-link to="/certificate" class="action-link"
+        ><el-icon><DocumentChecked /></el-icon>查看 / 打印授权证书</router-link
+      >
       <details class="quiet-details">
         <summary>账户信息</summary>
         <p>伙伴编号：{{ overview?.partnerNo || "—" }}</p>
@@ -272,6 +275,86 @@ onMounted(load);
   }
   .metric-card strong {
     font-size: 28px;
+  }
+}
+@media (max-width: 600px), (max-width: 950px) and (max-height: 500px) {
+  .dashboard-page {
+    display: flex;
+    flex-direction: column;
+  }
+  .page-head {
+    order: 0;
+  }
+  .page-head h1 {
+    font-size: 20px;
+  }
+  .page-head .el-tag {
+    flex-shrink: 0;
+  }
+  .overview-grid {
+    order: 1;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .quick-links {
+    order: 2;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .dashboard-page > .panel {
+    order: 3;
+  }
+  .quick-link {
+    flex-direction: column;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 6px;
+    text-align: center;
+  }
+  .quick-link .action-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 22px;
+  }
+  .quick-link b {
+    font-size: 13px;
+  }
+  .quick-link small,
+  .quick-link > .el-icon:last-child {
+    display: none;
+  }
+  .quick-link > div {
+    flex: initial;
+    min-width: 0;
+  }
+  .balance-card {
+    padding: 20px;
+  }
+  .balance-card strong {
+    font-size: clamp(28px, 8vw, 34px);
+    overflow-wrap: anywhere;
+  }
+  .balance-detail {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .metric-card {
+    padding: 16px;
+  }
+  .metric-card strong {
+    margin: 14px 0;
+  }
+  .account-facts {
+    font-size: 13px;
+  }
+  .account-facts > div:last-child {
+    grid-column: 1 / -1;
+  }
+  .dashboard-page > .panel > .action-link {
+    width: 100%;
   }
 }
 </style>

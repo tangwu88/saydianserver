@@ -43,7 +43,11 @@ async function printCertificate() {
 onMounted(load);
 </script>
 <template>
-  <section class="page certificate-page" v-loading="busy">
+  <section
+    class="page certificate-page"
+    :class="{ 'public-certificate': publicView }"
+    v-loading="busy"
+  >
     <div class="page-head certificate-tools">
       <h1>{{ publicView ? "授权证书核验" : "电子授权证书" }}</h1>
       <div class="button-row">
@@ -285,6 +289,104 @@ onMounted(load);
   }
   .certificate-footer {
     flex-wrap: wrap;
+  }
+}
+@media screen and (max-width: 600px),
+  screen and (max-width: 950px) and (max-height: 500px) {
+  .page-head {
+    flex-wrap: wrap;
+  }
+  .page-head .button-row {
+    margin-left: auto;
+  }
+  .authorization-certificate {
+    padding: 28px 18px;
+    margin: 16px 0;
+    border-width: 5px;
+    outline-offset: -12px;
+  }
+  .certificate-logo {
+    width: 132px;
+    max-width: 52%;
+  }
+  .certificate-heading {
+    margin: 32px 0 18px;
+  }
+  .certificate-heading h2 {
+    font-size: 22px;
+    line-height: 1.6;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .certificate-heading p {
+    font-size: 9px;
+    letter-spacing: 1px;
+    line-height: 1.7;
+  }
+  .certificate-number {
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .intro {
+    margin-top: 30px;
+    font-size: 14px;
+  }
+  .partner-name {
+    font-size: 24px;
+    line-height: 1.6;
+  }
+  .cooperation-level {
+    font-size: 14px;
+  }
+  .authorization-scope {
+    margin: 24px 0;
+    padding: 14px 0;
+    font-size: 14px;
+  }
+  .certificate-facts {
+    margin: 22px 0;
+  }
+  .certificate-facts div {
+    grid-template-columns: 90px minmax(0, 1fr);
+    gap: 8px;
+    line-height: 1.7;
+  }
+  .certificate-facts dd {
+    overflow-wrap: anywhere;
+  }
+  .certificate-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 90px;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .certificate-footer b {
+    font-size: 13px;
+  }
+  .certificate-footer img {
+    width: 90px;
+    height: 90px;
+  }
+  .certificate-footer p {
+    line-height: 1.7;
+    margin: 8px 0;
+  }
+  .certificate-page > .certificate-tools:last-child {
+    font-size: 12px;
+    line-height: 1.8;
+  }
+  .verification-result {
+    margin: 16px;
+    padding: 24px 16px;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .public-certificate {
+    min-height: 100svh;
+    padding: calc(24px + env(safe-area-inset-top)) 16px 24px;
+  }
+  .public-certificate .verification-result {
+    margin: 16px 0;
   }
 }
 </style>

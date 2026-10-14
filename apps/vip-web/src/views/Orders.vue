@@ -121,7 +121,7 @@ async function copyTracking(value: string) {
       </div>
     </div>
     <PageError :message="error" @retry="load" />
-    <div class="panel" v-loading="busy">
+    <div class="panel order-list" v-loading="busy">
       <EmptyState
         v-if="!orders.length && !busy && !error"
         title="还没有采购订单"
@@ -169,6 +169,7 @@ async function copyTracking(value: string) {
     </div>
     <el-drawer
       v-model="drawer"
+      class="detail-drawer"
       title="采购订单详情"
       size="min(820px, 100vw)"
       @closed="
@@ -179,7 +180,7 @@ async function copyTracking(value: string) {
       ><div v-loading="detailBusy" :aria-busy="detailBusy">
         <PageError :message="detailError" @retry="open(selectedId)" /><template
           v-if="detail"
-          ><h2>{{ detail.orderNo }}</h2>
+          ><h2 class="detail-order-number">{{ detail.orderNo }}</h2>
           <el-tag>{{ statuses[detail.status] || detail.status }}</el-tag>
           <dl class="facts" style="margin-top: 26px">
             <div>
@@ -200,7 +201,12 @@ async function copyTracking(value: string) {
             </div>
             <div>
               <dt>发货处理</dt>
-              <dd>{{ erpStatuses[detail.erpStatus] || (detail.erpStatus ? "处理中" : "等待同步") }}</dd>
+              <dd>
+                {{
+                  erpStatuses[detail.erpStatus] ||
+                  (detail.erpStatus ? "处理中" : "等待同步")
+                }}
+              </dd>
             </div>
             <div>
               <dt>下单时间</dt>
@@ -208,12 +214,30 @@ async function copyTracking(value: string) {
             </div>
           </dl>
           <h3>收货信息</h3>
-          <p>{{ detail.recipientName }} · {{ detail.recipientMobile }}</p>
-          <p class="muted">
+          <p class="recipient-line">
+            {{ detail.recipientName }} · {{ detail.recipientMobile }}
+          </p>
+          <p class="muted recipient-line">
             {{ detail.province }} {{ detail.city }} {{ detail.district }}
             {{ detail.addressDetail }}
           </p>
-          <el-table :data="detail.items"
+          <div class="mobile-only detail-products">
+            <article
+              v-for="item in detail.items"
+              :key="item.id"
+              class="detail-product"
+            >
+              <b>{{ item.nameSnapshot }}</b>
+              <p class="muted">
+                {{ item.specificationSnapshot || "默认规格" }}
+              </p>
+              <div>
+                <span>单价 {{ money(item.unitPriceCents) }}</span
+                ><strong>× {{ item.quantity }}</strong>
+              </div>
+            </article>
+          </div>
+          <el-table :data="detail.items" class="desktop-only"
             ><el-table-column
               prop="nameSnapshot"
               label="商品"
@@ -316,7 +340,20 @@ async function copyTracking(value: string) {
           </div>
           <template v-if="detail.afterSales?.length"
             ><h3 style="margin-top: 26px">售后记录</h3>
-            <el-table :data="detail.afterSales"
+            <div class="mobile-only">
+              <article
+                v-for="sale in detail.afterSales"
+                :key="sale.id"
+                class="record-card"
+              >
+                <div class="record-head">
+                  <b class="record-number">{{ sale.afterSaleNo }}</b
+                  ><el-tag>{{ statuses[sale.status] || sale.status }}</el-tag>
+                </div>
+                <p>申请金额 {{ money(sale.requestedCents) }}</p>
+              </article>
+            </div>
+            <el-table :data="detail.afterSales" class="desktop-only"
               ><el-table-column
                 prop="afterSaleNo"
                 label="售后编号"
@@ -383,5 +420,90 @@ async function copyTracking(value: string) {
 .shipment p {
   font-size: 13px;
   margin-top: 12px;
+}
+.detail-order-number {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.recipient-line {
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+@media (max-width: 600px), (max-width: 950px) and (max-height: 500px) {
+  .order-list {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .order-list .record-card:first-child {
+    margin-top: 0;
+  }
+  .record-foot > span {
+    font-size: 13px;
+  }
+  .record-foot strong {
+    font-size: 19px;
+  }
+  .record-foot .el-button {
+    margin-left: auto;
+    padding: 10px;
+  }
+  .order-item {
+    gap: 10px;
+  }
+  .order-item img {
+    width: 48px;
+    height: 48px;
+  }
+  .order-item small {
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .order-item b {
+    overflow-wrap: anywhere;
+  }
+  .detail-order-number {
+    font-size: 17px;
+    margin-bottom: 12px;
+  }
+  .detail-products {
+    border: 1px solid #e8ebf1;
+    border-radius: 10px;
+    padding: 0 14px;
+  }
+  .detail-product {
+    padding: 14px 0;
+    border-bottom: 1px solid #edf0f4;
+    font-size: 14px;
+  }
+  .detail-product:last-child {
+    border-bottom: 0;
+  }
+  .detail-product > b {
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .detail-product p {
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 6px 0 10px;
+    overflow-wrap: anywhere;
+  }
+  .detail-product > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .shipment {
+    padding: 14px;
+  }
+  .shipment .button-row {
+    gap: 4px;
+  }
+  .record-head h3 {
+    margin: 0;
+    font-size: 16px;
+  }
 }
 </style>

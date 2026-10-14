@@ -24,7 +24,7 @@ import {
   addressError,
   isDefiniteOrderFailure,
 } from "./checkout-form";
-import { safeReturnPath } from "./navigation";
+import { activeShortcut, safeReturnPath } from "./navigation";
 import { recognizeAddress } from "./address-recognition";
 const { ElForm, ElFormItem, ID_INJECTION_KEY } = createRequire(import.meta.url)(
   "element-plus",
@@ -155,7 +155,7 @@ function harness(view: string, store = memoryStorage()) {
   const exports =
     view === "Products"
       ? "load, review, preparePurchase, purchase, cancelPurchaseConfirmation, paymentReview, preparingPurchase, quantities, address, addressForm, submittedRequest, submitting, quote, quoteStale, checkoutError, balance, buyerRemark, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
-      : "load, create, viewRecharge, poll, pendingInput, form, currentRecharge, payment, paymentError, pollError, paying";
+      : "load, create, viewRecharge, retryPayment, poll, pendingInput, form, currentRecharge, payment, paymentError, pollError, paying";
   const state = new Function(
     ...Object.keys(deps),
     `${code}\nreturn {${exports}};`,
@@ -439,6 +439,27 @@ describe("partner checkout recovery and user-facing failures", () => {
   });
 });
 describe("recharge safety and recovery", () => {
+  it("retries the exact selected recharge after its detail request fails", async () => {
+    const h = harness("Finance");
+    h.api.get.mockRejectedValueOnce(networkError());
+    await h.viewRecharge("synthetic-recharge-A");
+    expect(h.pollError.value).toBeTruthy();
+    expect(h.currentRecharge.value).toBeNull();
+    h.api.get.mockResolvedValueOnce(
+      response({
+        id: "synthetic-recharge-A",
+        status: "SUCCEEDED",
+        payment: { status: "succeeded" },
+      }),
+    );
+    await h.retryPayment();
+    expect(h.api.get.mock.calls.at(-1)).toEqual([
+      "/recharges/synthetic-recharge-A",
+    ]);
+    expect(h.currentRecharge.value.id).toBe("synthetic-recharge-A");
+    expect(h.pollError.value).toBe("");
+    expect(h.api.post).not.toHaveBeenCalled();
+  });
   it("retains one exact request across navigation/reload after a lost response", async () => {
     const store = memoryStorage(),
       h = harness("Finance", store);
@@ -504,6 +525,7 @@ describe("input and navigation boundaries", () => {
   });
   it("returns only to known partner pages after login", () => {
     expect(safeReturnPath("/orders")).toBe("/orders");
+    expect(safeReturnPath("/certificate")).toBe("/certificate");
     for (const path of [
       "//evil.invalid",
       "https://evil.invalid",
@@ -512,5 +534,13 @@ describe("input and navigation boundaries", () => {
       ["/orders"],
     ])
       expect(safeReturnPath(path)).toBe("/");
+  });
+  it("keeps the balance shortcut selected across all finance pages", () => {
+    for (const path of ["/wallet", "/ledger", "/deposit", "/recharges/123"])
+      expect(activeShortcut("/wallet", path)).toBe(true);
+    for (const path of ["/promotion", "/members", "/certificate", "/products"])
+      expect(activeShortcut("/wallet", path)).toBe(false);
+    expect(activeShortcut("/", "/orders")).toBe(false);
+    expect(activeShortcut("/orders", "/orders")).toBe(true);
   });
 });
