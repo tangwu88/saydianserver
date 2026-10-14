@@ -51,8 +51,17 @@ rollback() {
 }
 trap 'rollback' ERR
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 180 us-api us-worker us-admin
+curl_args=(--fail --silent --max-time 15)
+# Before the first DNS cutover, validate this host's real TLS gateway directly.
+# Accepted public deployments must continue validating the actual public DNS.
+if [[ $(python3 -c 'import json,sys; print("yes" if json.load(open(sys.argv[1])).get("publicAcceptance") is True else "no")' "$state") == no ]]; then
+  curl_args+=(--resolve app.saydian.com:443:127.0.0.1)
+fi
 for path in /health/ready /global/health/ready; do
-  curl --fail --silent --max-time 15 "https://app.saydian.com$path" | python3 -c 'import json,sys; assert json.load(sys.stdin)["revision"]==sys.argv[1]' "$revision"
+  curl "${curl_args[@]}" "https://app.saydian.com$path" | python3 -c 'import json,sys; assert json.load(sys.stdin)["revision"]==sys.argv[1]' "$revision"
+done
+for path in /admin/ /global/privacy-policy /global/terms /global/support /global/account-deletion /global/down; do
+  curl "${curl_args[@]}" "https://app.saydian.com$path" > /dev/null
 done
 ln -s "$source_dir" "$root_dir/current.next"
 mv -Tf "$root_dir/current.next" "$root_dir/current"
