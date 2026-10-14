@@ -234,6 +234,11 @@ async function viewRecharge(id: string) {
       pollError.value = errorMessage(cause);
   }
 }
+async function retryPayment() {
+  if (currentRecharge.value) await poll();
+  else if (selectedRechargeId.value)
+    await viewRecharge(selectedRechargeId.value);
+}
 async function resume() {
   if (!currentRecharge.value || paying.value) return;
   paying.value = true;
@@ -350,7 +355,7 @@ function closePayment() {
         ><small v-else>由管理员登记，不用于采购</small>
       </article>
     </div>
-    <div v-if="!depositMode && !ledgerMode" class="panel">
+    <div v-if="!depositMode && !ledgerMode" class="panel recharge-panel">
       <h2>充值金额</h2>
       <el-alert
         v-if="pendingInput"
@@ -405,6 +410,7 @@ function closePayment() {
         type="primary"
         size="large"
         :icon="CreditCard"
+        class="recharge-submit"
         :loading="paying"
         :disabled="
           !partnerId ||
@@ -417,7 +423,7 @@ function closePayment() {
         >{{ pendingInput ? "核对上次充值" : "去付款" }}</el-button
       >
     </div>
-    <div class="panel">
+    <div class="panel finance-records">
       <div class="records-heading">
         <h2>
           {{
@@ -508,15 +514,11 @@ function closePayment() {
     </div>
     <el-dialog
       v-model="payDialog"
+      class="mobile-sheet payment-sheet"
       title="充值付款"
       width="520px"
       @closed="closePayment"
-      ><PageError
-        :message="pollError"
-        @retry="
-          currentRecharge ? poll() : viewRecharge(String(route.params.id || ''))
-        "
-      />
+      ><PageError :message="pollError" @retry="retryPayment" />
       <div v-if="currentRecharge" class="payment">
         <strong>{{ money(currentRecharge.amountCents) }}</strong>
         <p class="record-number muted">{{ currentRecharge.rechargeNo }}</p>
@@ -677,6 +679,96 @@ function closePayment() {
   .amount-options .el-button {
     flex: 1;
     min-width: 72px;
+  }
+}
+@media (max-width: 600px), (max-width: 950px) and (max-height: 500px) {
+  .funds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .funds .panel {
+    padding: 16px 12px 8px;
+    min-width: 0;
+  }
+  .funds .muted {
+    font-size: 12px;
+    gap: 5px;
+  }
+  .funds strong {
+    font-size: clamp(17px, 5.4vw, 24px);
+    letter-spacing: -0.4px;
+    margin: 12px 0 4px;
+    overflow-wrap: anywhere;
+  }
+  .funds a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    font-size: 12px;
+  }
+  .funds small {
+    display: block;
+    line-height: 1.6;
+    padding: 8px 0;
+    font-size: 12px;
+  }
+  .amount-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 16px 0;
+  }
+  .amount-options .el-button {
+    width: 100%;
+    min-width: 0;
+  }
+  .recharge-panel :deep(.el-input-number) {
+    width: 100%;
+  }
+  .channel-options {
+    width: 100%;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .channel-options :deep(.el-radio-button) {
+    flex: 1;
+    min-width: 0;
+  }
+  .channel-options :deep(.el-radio-button__inner) {
+    width: 100%;
+    height: 100%;
+    padding: 12px 8px;
+    border-radius: 6px;
+    border: 1px solid #dce1e9;
+    box-shadow: none;
+    white-space: normal;
+    line-height: 1.5;
+  }
+  .channel-options :deep(.el-radio-button.is-active .el-radio-button__inner) {
+    border-color: #c9223b;
+  }
+  .recharge-submit {
+    width: 100%;
+  }
+  .finance-records {
+    background: transparent;
+    border: 0;
+    padding: 0;
+  }
+  .records-heading {
+    gap: 8px;
+    padding: 0 2px;
+  }
+  .record-head > strong {
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+  }
+  .record-reason {
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .payment > strong {
+    margin: 12px 0;
   }
 }
 </style>

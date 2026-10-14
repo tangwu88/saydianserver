@@ -299,6 +299,7 @@ function changeDeviceTab() {
     </div>
     <el-drawer
       v-model="drawer"
+      class="detail-drawer"
       :title="`${selected?.nickname || '会员'} · ${canViewMemberHealth ? '健康档案' : '会员资料'}`"
       size="min(900px, 100vw)"
       @closed="
@@ -382,7 +383,33 @@ function changeDeviceTab() {
             <dd>{{ profile.healthProfile?.timezone || "未建立档案" }}</dd>
           </div>
         </dl>
-        <el-table v-if="tab === 'devices'" :data="devices"
+        <div v-if="tab === 'devices'" class="mobile-only">
+          <EmptyState
+            v-if="!devices.length && !detailBusy && !detailError"
+            title="暂无设备"
+          />
+          <article v-for="item in devices" :key="item.id" class="record-card">
+            <b>{{ item.displayName || item.model || "设备" }}</b>
+            <dl class="mobile-record-facts">
+              <div>
+                <dt>型号</dt>
+                <dd>{{ item.model || "未填写" }}</dd>
+              </div>
+              <div>
+                <dt>最近连接</dt>
+                <dd>{{ date(item.lastSeenAt) }}</dd>
+              </div>
+              <div class="full">
+                <dt>设备编号</dt>
+                <dd>{{ item.deviceIdentifier }}</dd>
+              </div>
+            </dl>
+            <el-button type="primary" plain @click="openDevice(item)">{{
+              canViewMemberHealth ? "连接与测量" : "连接记录"
+            }}</el-button>
+          </article>
+        </div>
+        <el-table v-if="tab === 'devices'" :data="devices" class="desktop-only"
           ><el-table-column
             prop="displayName"
             label="设备名称"
@@ -403,7 +430,27 @@ function changeDeviceTab() {
             ></el-table-column
           ></el-table
         ><template v-if="tab === 'health'"
-          ><el-table :data="health"
+          ><div class="mobile-only">
+            <EmptyState
+              v-if="!health.length && !detailBusy && !detailError"
+              title="暂无健康与测量记录"
+            />
+            <article v-for="row in health" :key="row.id" class="record-card">
+              <b>{{ healthMetricLabel(row.metric) }}</b>
+              <p class="muted mobile-record-time">
+                {{ healthTime(row.observedAt, row.timezoneOffsetMinutes) }}
+              </p>
+              <p class="mobile-readings">{{ readings(row) }}</p>
+              <el-button
+                v-if="row.ecgArtifact"
+                text
+                type="primary"
+                @click="downloadEcg(row.id)"
+                >心电波形</el-button
+              >
+            </article>
+          </div>
+          <el-table :data="health" class="desktop-only"
             ><el-table-column label="指标" width="100"
               ><template #default="scope">{{
                 healthMetricLabel(scope.row.metric)
@@ -439,7 +486,32 @@ function changeDeviceTab() {
             layout="prev, pager, next, total"
             @current-change="loadDetails" /></template
         ><template v-if="tab === 'reports'"
-          ><el-table :data="reports"
+          ><div class="mobile-only">
+            <EmptyState
+              v-if="!reports.length && !detailBusy && !detailError"
+              title="暂无健康报告"
+            />
+            <article v-for="row in reports" :key="row.id" class="record-card">
+              <b>健康报告</b>
+              <p class="mobile-record-time">
+                {{ String(row.windowStart).slice(0, 10) }} 至
+                {{ String(row.windowEnd).slice(0, 10) }}
+              </p>
+              <div class="record-foot">
+                <span class="muted">{{
+                  row.status === "READY"
+                    ? "已生成"
+                    : row.status === "REVOKED"
+                      ? "已撤回"
+                      : "尚未生成"
+                }}</span
+                ><el-button type="primary" plain @click="openReport(row.id)"
+                  >查看报告</el-button
+                >
+              </div>
+            </article>
+          </div>
+          <el-table :data="reports" class="desktop-only"
             ><el-table-column label="报告周期"
               ><template #default="scope"
                 >{{ String(scope.row.windowStart).slice(0, 10) }} 至
@@ -473,6 +545,7 @@ function changeDeviceTab() {
     ></el-drawer>
     <el-dialog
       v-model="reportDialog"
+      class="mobile-sheet"
       title="会员健康报告"
       width="760px"
       @closed="
@@ -506,6 +579,7 @@ function changeDeviceTab() {
     ></el-dialog>
     <el-dialog
       v-model="deviceDialog"
+      class="mobile-sheet"
       :title="device?.displayName || '设备记录'"
       width="900px"
       @closed="
@@ -518,8 +592,33 @@ function changeDeviceTab() {
         ><el-tab-pane label="连接记录" name="connections" /><el-tab-pane
           v-if="canViewMemberHealth"
           label="测量记录"
-          name="measurements" /></el-tabs
-      ><el-table :data="child.items" v-loading="deviceBusy"
+          name="measurements"
+      /></el-tabs>
+      <div class="mobile-only" v-loading="deviceBusy">
+        <EmptyState
+          v-if="!child.items.length && !deviceBusy && !deviceError"
+          :title="deviceTab === 'connections' ? '暂无连接记录' : '暂无测量记录'"
+        />
+        <article v-for="row in child.items" :key="row.id" class="record-card">
+          <b>{{
+            deviceTab === "connections"
+              ? row.displayName || "设备连接"
+              : healthMetricLabel(row.metric)
+          }}</b>
+          <p class="muted mobile-record-time">
+            {{
+              deviceTab === "connections"
+                ? date(row.connectedAt)
+                : healthTime(row.observedAt, row.timezoneOffsetMinutes)
+            }}
+          </p>
+          <p v-if="deviceTab === 'connections'" class="mobile-readings">
+            固件 {{ row.firmware || "未记录" }}
+          </p>
+          <p v-else class="mobile-readings">{{ readings(row) }}</p>
+        </article>
+      </div>
+      <el-table :data="child.items" v-loading="deviceBusy" class="desktop-only"
         ><el-table-column label="时间" width="180"
           ><template #default="scope">{{
             date(scope.row.connectedAt || scope.row.observedAt)
@@ -588,5 +687,54 @@ function changeDeviceTab() {
 }
 .record-head {
   flex-wrap: wrap;
+}
+@media (max-width: 600px), (max-width: 950px) and (max-height: 500px) {
+  .toolbar > .el-input {
+    flex-basis: calc(100% - 72px);
+    max-width: none !important;
+  }
+  .member-meta {
+    overflow-wrap: anywhere;
+    margin: 10px 0;
+  }
+  .member-grid .record-card {
+    padding: 14px;
+  }
+  .member-name b {
+    font-size: 15px;
+  }
+  .member-name .el-icon {
+    display: none;
+  }
+  .mobile-record-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin: 14px 0;
+    font-size: 13px;
+  }
+  .mobile-record-facts .full {
+    grid-column: 1 / -1;
+  }
+  .mobile-record-facts dt {
+    color: #637084;
+    margin-bottom: 5px;
+  }
+  .mobile-record-facts dd {
+    margin: 0;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .mobile-record-time {
+    font-size: 12px;
+    line-height: 1.6;
+    margin: 8px 0;
+  }
+  .mobile-readings {
+    font-size: 14px;
+    line-height: 1.8;
+    overflow-wrap: anywhere;
+    margin: 10px 0 0;
+  }
 }
 </style>

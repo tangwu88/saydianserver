@@ -158,4 +158,40 @@ async function copy() {
     margin: 12px 0 20px;
   }
 }
+@media (max-width: 600px), (max-width: 950px) and (max-height: 500px) {
+  .promotion-panel {
+    gap: 16px;
+  }
+  .qr-card {
+    width: min(248px, 100%);
+    padding: 12px;
+  }
+  .qr-card h2 {
+    font-size: 16px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .qr-card img {
+    width: 200px;
+  }
+  .promotion-actions .button-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .promotion-actions .button-row > * {
+    width: 100%;
+  }
+  .promotion-actions > p {
+    line-height: 1.7;
+    margin-bottom: 12px;
+  }
+  .plain-input {
+    font-size: 14px;
+    min-height: 44px;
+  }
+  .quiet-details {
+    margin-top: 12px;
+  }
+}
 </style>

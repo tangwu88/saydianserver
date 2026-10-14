@@ -217,4 +217,53 @@ async function login() {
     margin-top: 36px;
   }
 }
+@media (max-width: 600px), (max-width: 950px) and (max-height: 500px) {
+  .login-screen {
+    min-height: 100svh;
+  }
+  .brand-story {
+    height: auto;
+    padding: calc(24px + env(safe-area-inset-top)) 24px 26px;
+  }
+  .wordmark {
+    font-size: 22px;
+    letter-spacing: 2px;
+  }
+  .wordmark span {
+    font-size: 16px;
+  }
+  .story-content {
+    margin-top: 18px;
+  }
+  .story-content h1 {
+    font-size: 21px;
+    margin: 0;
+  }
+  .login-side {
+    padding: 28px 24px calc(24px + env(safe-area-inset-bottom));
+  }
+  .eyebrow {
+    margin-bottom: 12px;
+  }
+  .login-card h2 {
+    font-size: 24px;
+  }
+  .login-card label {
+    margin-top: 20px;
+  }
+  .login-card :deep(.el-input__inner) {
+    font-size: 16px;
+  }
+  .login-button {
+    height: 48px;
+    margin-top: 26px;
+  }
+  .help {
+    font-size: 13px;
+    margin-top: 20px;
+  }
+  .copyright {
+    margin-top: 24px;
+  }
+}
 </style>

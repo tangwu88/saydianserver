@@ -382,13 +382,13 @@ async function purchase() {
 }
 </script>
 <template>
-  <section class="page">
+  <section class="page products-page">
     <div class="page-head">
       <h1>商品采购</h1>
       <el-tag v-if="level" type="info">{{ level }} · 合作价</el-tag>
     </div>
     <PageError :message="error" @retry="load" />
-    <div class="panel">
+    <div class="panel catalog-panel">
       <form
         class="toolbar"
         @submit.prevent="
@@ -427,7 +427,7 @@ async function purchase() {
               :key="sku.id"
               class="sku-row"
             >
-              <div>
+              <div class="sku-description">
                 {{ sku.specification || "默认规格"
                 }}<small v-if="sku.stock <= 0">可下单，需安排补货</small>
               </div>
@@ -486,10 +486,12 @@ async function purchase() {
       <div class="button-row">
         <el-button
           v-if="itemCount && !submittedRequest"
+          class="clear-cart"
           text
           :icon="Delete"
+          aria-label="清空已选商品"
           @click="clearCart"
-          >清空</el-button
+          ><span>清空</span></el-button
         ><el-button
           type="primary"
           size="large"
@@ -503,6 +505,7 @@ async function purchase() {
     </div>
     <el-dialog
       v-model="checkout"
+      class="mobile-sheet checkout-sheet"
       title="确认订单"
       width="760px"
       :close-on-click-modal="false"
@@ -590,6 +593,7 @@ async function purchase() {
           ref="addressForm"
           :model="address"
           :rules="rules"
+          scroll-to-error
           label-position="top"
           :disabled="
             submitting ||
@@ -633,6 +637,8 @@ async function purchase() {
               v-model="address.addressDetail"
               maxlength="300"
               placeholder="街道、楼栋、门牌号"
+              type="textarea"
+              :autosize="{ minRows: 2, maxRows: 4 }"
               autocomplete="shipping street-address" /></el-form-item
           ><el-form-item label="备注（选填）"
             ><el-input v-model="buyerRemark" maxlength="500" /></el-form-item
@@ -697,6 +703,7 @@ async function purchase() {
     </el-dialog>
     <el-dialog
       v-model="confirmationVisible"
+      class="mobile-sheet confirmation-sheet"
       :title="paymentReview?.resuming ? '核对原订单' : '确认付款'"
       width="620px"
       append-to-body
@@ -966,7 +973,7 @@ async function purchase() {
     grid-template-columns: 1fr 140px;
     gap: 10px;
   }
-  .sku-row > div {
+  .sku-row > .sku-description {
     grid-column: 1/-1;
   }
   .product-main h2 {
@@ -997,6 +1004,202 @@ async function purchase() {
   }
   .address-grid {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px), (max-width: 950px) and (max-height: 500px) {
+  .products-page {
+    padding-bottom: 88px;
+  }
+  .catalog-panel {
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+  .toolbar {
+    padding: 12px;
+    border: 1px solid #e8ebf1;
+    border-radius: 12px;
+    background: white;
+  }
+  .toolbar > .el-input {
+    max-width: none !important;
+  }
+  .wallet-link {
+    flex-basis: 100%;
+    min-height: 32px;
+    font-size: 13px;
+  }
+  .product {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    background: white;
+    border: 1px solid #e8ebf1;
+    border-radius: 12px;
+  }
+  .product > img,
+  .product-placeholder {
+    width: 64px;
+    height: 64px;
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .product-main {
+    display: contents;
+  }
+  .product-main h2 {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    margin: 0;
+    font-size: 15px;
+  }
+  .sku-row,
+  .product-main > details,
+  .product-main > p {
+    grid-column: 1 / -1;
+  }
+  .sku-row {
+    grid-template-columns: minmax(0, 1fr) 144px;
+    border-top: 1px solid #edf0f4;
+    padding: 12px 0 0;
+    gap: 8px;
+  }
+  .sku-row > .sku-description {
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+    grid-column: 1 / -1;
+  }
+  .sku-row .el-input-number {
+    width: 144px;
+  }
+  .sku-row .price {
+    font-size: 18px;
+    overflow-wrap: anywhere;
+  }
+  .checkout-bar {
+    position: fixed;
+    z-index: 45;
+    bottom: calc(var(--vip-bottom-nav-height) + 8px);
+    left: 14px;
+    right: 14px;
+    padding: 10px 12px;
+    min-height: 66px;
+  }
+  .checkout-bar > div:first-child {
+    min-width: 0;
+  }
+  .checkout-bar > div:first-child > span {
+    font-size: 12px;
+    color: #637084;
+  }
+  .checkout-bar strong {
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+  .checkout-bar .button-row {
+    flex-shrink: 0;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+  .checkout-bar .clear-cart {
+    width: 44px;
+    padding: 0;
+  }
+  .clear-cart span {
+    display: none;
+  }
+  .checkout-item {
+    gap: 10px;
+    line-height: 1.6;
+  }
+  .checkout-item > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .address-title {
+    margin: 18px 0 12px;
+    font-size: 17px;
+  }
+  .address-recognition {
+    padding: 12px;
+    margin-bottom: 16px;
+  }
+  .address-recognition label {
+    font-size: 14px;
+  }
+  .address-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 12px;
+  }
+  .quote-totals {
+    display: grid;
+    justify-content: stretch;
+    gap: 8px;
+  }
+  .quote-totals strong {
+    font-size: 24px;
+  }
+  .balance-note {
+    text-align: left;
+    line-height: 1.7;
+    margin-bottom: 0;
+  }
+  .confirmation-recipient {
+    padding: 14px;
+  }
+  .confirmation-recipient > div {
+    min-width: 0;
+  }
+  .confirmation-recipient span {
+    display: block;
+    margin: 6px 0 0;
+    font-size: 14px;
+  }
+  .confirmation-heading {
+    margin-bottom: 8px;
+  }
+}
+@media (min-width: 601px) and (max-width: 950px) and (max-height: 500px) {
+  .product {
+    padding: 12px;
+    gap: 8px;
+  }
+  .checkout-bar {
+    min-height: 56px;
+    padding: 5px 12px;
+  }
+  .page-head {
+    display: none;
+  }
+  .toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .wallet-link {
+    white-space: nowrap;
+    min-height: 44px;
+  }
+  .product > img,
+  .product-placeholder {
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .product-main h2 {
+    align-self: start;
+  }
+  .sku-row {
+    grid-column: 2;
+    grid-template-columns: minmax(0, 1fr) 100px 144px;
+    padding-top: 8px;
+  }
+  .sku-row > .sku-description {
+    grid-column: auto;
+  }
+  .sku-row .price {
+    font-size: 16px;
   }
 }
 </style>
