@@ -36,7 +36,7 @@ describe("public weather forecast", () => {
     );
     expect(options).toMatchObject({
       redirect: "error",
-      headers: { "User-Agent": expect.stringContaining("SAYDIANHealth/") },
+      headers: { "User-Agent": expect.stringContaining("SayDian/1.0") },
     });
     expect(await service.forecast("39.9041", "116.4039")).toBe(first);
     expect(fetcher).toHaveBeenCalledOnce();

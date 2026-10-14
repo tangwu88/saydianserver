@@ -51,6 +51,12 @@ export class AdminController {
     private readonly support: SupportService,
   ) {}
 
+  @Get("us-migration/inventory")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  usMigrationInventory(@Query("page") page?: string) {
+    return this.admin.usMigrationInventory(Number(page ?? 1));
+  }
+
   @Post("content-images")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_EDITOR)
   @UseInterceptors(

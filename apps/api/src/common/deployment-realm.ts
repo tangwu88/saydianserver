@@ -29,13 +29,20 @@ export function assertDeploymentRealm(
   }
   if (environment.NODE_ENV === "production") {
     const publicBase = new URL(environment.PUBLIC_BASE_URL ?? "");
+    const site = environment.DEPLOYMENT_SITE ?? "cn";
+    const origins: Record<string, string> = {
+      cn: "https://app.saydian.cn",
+      us: "https://app.saydian.com",
+    };
     if (
-      publicBase.origin !== "https://app.saydian.cn" ||
+      !origins[site] ||
+      publicBase.origin !== origins[site] ||
+      publicBase.username || publicBase.password ||
       publicBase.pathname !== "/" ||
       publicBase.search ||
       publicBase.hash
     ) {
-      throw new Error("PUBLIC_BASE_URL must be https://app.saydian.cn");
+      throw new Error("PUBLIC_BASE_URL must match the approved DEPLOYMENT_SITE origin");
     }
   }
 }

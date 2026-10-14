@@ -39,6 +39,7 @@ export const adminResourcePermissions: Record<string, Rule> = {
   notifications: { read: [...app, ...customer, ...view], write: app },
   "notification-campaigns": { read: [...app, ...view], write: app },
   settings: { read: [...app, ...view], write: app },
+  "us-migration": { read: [], write: [] },
   integrations: { read: ["INTEGRATION_ADMIN", ...view], write: ["INTEGRATION_ADMIN"] },
   "admin-users": { read: [], write: [] },
   partners: { read: [...operations, ...finance, ...view], write: [] },

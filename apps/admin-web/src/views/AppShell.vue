@@ -30,6 +30,7 @@ const groups = [
     ["/articles", "内容"], ["/article-categories", "内容分类"],
     ["/legal-documents", "协议"], ["/feedback", "反馈"],
     ["/settings", "客服与更新"],
+    ["/us-migration", "美国迁移核对"],
   ] },
   { title: "系统", items: [
     ["/api-docs", "接口中心"], ["/integrations", "第三方服务"],

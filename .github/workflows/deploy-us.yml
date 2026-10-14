@@ -1,0 +1,114 @@
+name: Deploy US
+
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      build_run_id:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Exact latest main SHA with a successful CI verify job
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saydian-us-production
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      revision: ${{ steps.target.outputs.revision }}
+      build_run_id: ${{ steps.target.outputs.build_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - id: target
+        env:
+          REVISION: ${{ inputs.revision }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$REVISION"
+          if [ '${{ github.event_name }}' = workflow_dispatch ]; then
+            BUILD_RUN_ID=
+            while read -r run_id; do
+              [[ "$run_id" =~ ^[0-9]+$ ]] || continue
+              result=$(gh run view "$run_id" --json jobs --jq '[.jobs[] | select(.name == "verify" and .conclusion == "success")] | length')
+              if [[ "$result" -ge 1 ]]; then BUILD_RUN_ID=$run_id; break; fi
+            done < <(gh run list --workflow ci.yml --commit "$REVISION" --event push --limit 20 --json databaseId --jq '.[].databaseId')
+          fi
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+          echo "build_run_id=$BUILD_RUN_ID" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production-us
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.revision }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ needs.resolve.outputs.revision }}
+          path: verified-release
+          run-id: ${{ needs.resolve.outputs.build_run_id }}
+          github-token: ${{ github.token }}
+      - name: Validate immutable release manifest
+        run: |
+          node deploy/scripts/release-manifest.mjs verify '${{ needs.resolve.outputs.revision }}' verified-release/release-manifest.json
+      - name: Deploy through constrained SSH receiver
+        env:
+          REVISION: ${{ needs.resolve.outputs.revision }}
+          DEPLOY_HOST: ${{ secrets.US_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.US_DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.US_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.US_DEPLOY_KNOWN_HOSTS }}
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          [[ "$DEPLOY_HOST" = 47.85.43.52 ]]
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$REVISION"
+          key_dir=$(mktemp -d)
+          bundle_dir=$(mktemp -d)
+          trap 'rm -rf -- "$key_dir" "$bundle_dir" deploy-bundle.tgz' EXIT
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$key_dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$key_dir/known_hosts"
+          chmod 600 "$key_dir/key" "$key_dir/known_hosts"
+          git archive --format=tar HEAD deploy | tar -x -C "$bundle_dir"
+          cp verified-release/release-manifest.json "$bundle_dir/deploy/release-manifest.json"
+          tar -C "$bundle_dir" -czf deploy-bundle.tgz deploy
+          test "$(stat -c %s deploy-bundle.tgz)" -le 10485760
+          { printf '%s\n' "$GH_TOKEN"; cat deploy-bundle.tgz; } | \
+            ssh -i "$key_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$key_dir/known_hosts" -o ConnectTimeout=15 \
+              -o ServerAliveInterval=20 -o ServerAliveCountMax=15 -o TCPKeepAlive=yes \
+              "$DEPLOY_USER@$DEPLOY_HOST" "release $REVISION"
+          for path in /health/ready /global/health/ready; do
+            test "$(curl --fail --silent --max-time 15 https://app.saydian.com$path | jq -r .revision)" = "$REVISION"
+          done
+          echo "### Verified US revision: $REVISION" >> "$GITHUB_STEP_SUMMARY"

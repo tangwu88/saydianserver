@@ -47,6 +47,7 @@ import { isOwnPromoter } from "../common/member-promoter-identity";
 import { wechatMiniConfiguration } from "../common/wechat-mini-config";
 import { globalLegalBundle } from "./global-legal";
 import { businessWritesPaused, shouldPauseWorkers } from "@saydian/app-contracts";
+import { usMigrationStatus } from "./us-migration-status";
 
 const accessLifetimeSeconds = 15 * 60;
 const refreshLifetimeMs = 30 * 24 * 60 * 60 * 1000;
@@ -68,6 +69,12 @@ export class AuthService {
     private readonly integrationSecrets: IntegrationSecretsService,
     private readonly wechatApp: WechatAppAuthService,
   ) {}
+
+  async migrationStatus(userId: string) {
+    if (process.env.DEPLOYMENT_SITE !== "us") return { completed: false };
+    const setting = await this.prisma.appSetting.findUnique({ where: { key: `global_us_migration:${userId}` } });
+    return usMigrationStatus(userId, setting && !setting.public ? setting.value : null);
+  }
 
   async register(
     input: RegisterInput,
