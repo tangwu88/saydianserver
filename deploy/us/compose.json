@@ -88,7 +88,7 @@
       }
     },
     "us-minio": {
-      "image": "minio/minio:RELEASE.2024-08-17T01-24-54Z",
+      "image": "${US_MINIO_IMAGE:?Use CI-verified immutable US storage image}",
       "mem_limit": "192m",
       "cpus": 0.25,
       "pids_limit": 100,
@@ -122,14 +122,18 @@
       "healthcheck": {
         "test": [
           "CMD",
-          "mc",
-          "ready",
-          "local"
+          "sh",
+          "-ec",
+          "wget -qO- http://127.0.0.1:9000/minio/health/ready >/dev/null"
         ],
         "interval": "10s",
         "timeout": "5s",
         "retries": 20
-      }
+      },
+      "read_only": true,
+      "tmpfs": [
+        "/tmp:size=16m,mode=1777"
+      ]
     },
     "us-api": {
       "image": "${US_API_IMAGE:?Use verified immutable release image}",
@@ -346,7 +350,7 @@
       ]
     },
     "us-minio-init": {
-      "image": "minio/mc:RELEASE.2024-08-17T11-33-50Z",
+      "image": "${US_MC_IMAGE:?Use CI-verified immutable US storage client image}",
       "profiles": [
         "bootstrap"
       ],

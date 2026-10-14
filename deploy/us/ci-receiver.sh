@@ -11,7 +11,7 @@ if [[ "$command" == status ]]; then
 fi
 [[ "$command" =~ ^release\ ([0-9a-f]{40})$ ]] || { echo 'Only release SHA or status is allowed' >&2; exit 1; }
 revision=${BASH_REMATCH[1]}
-[[ "$(id -u)" == 0 && -d "$root_dir/deploy" ]]
+[[ "$(id -u)" == 0 && -d "$root_dir/private" ]]
 mkdir -p "$root_dir/releases"
 exec 9>"$root_dir/private/deploy.lock"
 flock -n 9 || { echo 'Another release is running' >&2; exit 1; }
