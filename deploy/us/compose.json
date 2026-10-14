@@ -329,7 +329,8 @@
         "no-new-privileges:true"
       ],
       "networks": [
-        "us_private"
+        "us_private",
+        "us_egress"
       ],
       "read_only": true,
       "tmpfs": [
@@ -345,6 +346,12 @@
       "ports": [
         "127.0.0.1:18181:8080"
       ],
+      "healthcheck": {
+        "test": ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:8080/admin/"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12
+      },
       "volumes": [
         "/opt/saydian-us/downloads:/usr/share/nginx/html/down/files:ro"
       ]

@@ -1,4 +1,5 @@
 import { DeleteObjectsCommand, S3Client } from "@aws-sdk/client-s3";
+import { createHash } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import {
   resolveWorkerSecrets,
@@ -63,12 +64,21 @@ export async function deleteObjectKeys(
 ): Promise<void> {
   for (let offset = 0; offset < objectKeys.length; offset += 1000) {
     const keys = objectKeys.slice(offset, offset + 1000);
-    const result = await client.send(
-      new DeleteObjectsCommand({
+    const command = new DeleteObjectsCommand({
         Bucket: bucket,
         Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
-      }),
-    );
+      });
+    // S3-compatible stores can require MD5 even when the SDK adds CRC32.
+    // Hash the serialized XML before signing, rather than reconstructing it.
+    command.middlewareStack.add((next) => async (args) => {
+      const request = args.request as { body?: string | Uint8Array; headers: Record<string, string> };
+      if (typeof request.body !== "string" && !(request.body instanceof Uint8Array)) {
+        throw new Error("Object deletion request body is not buffered");
+      }
+      request.headers["content-md5"] = createHash("md5").update(request.body).digest("base64");
+      return next(args);
+    }, { step: "build", name: "deleteObjectsContentMd5", priority: "high" });
+    const result = await client.send(command);
     if (result.Errors?.length) {
       throw new Error(
         `Object storage rejected ${result.Errors.length} deletion(s)`,

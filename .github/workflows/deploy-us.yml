@@ -128,7 +128,7 @@ jobs:
               "$DEPLOY_USER@$DEPLOY_HOST" "$OPERATION $REVISION"
           if [[ "$OPERATION" == release ]]; then
             for path in /health/ready /global/health/ready; do
-              test "$(curl --fail --silent --max-time 15 https://app.saydian.com$path | jq -r .revision)" = "$REVISION"
+              test "$(curl --resolve "app.saydian.com:443:$DEPLOY_HOST" --fail --silent --max-time 15 https://app.saydian.com$path | jq -r .revision)" = "$REVISION"
             done
           fi
           echo "### Verified US revision: $REVISION" >> "$GITHUB_STEP_SUMMARY"

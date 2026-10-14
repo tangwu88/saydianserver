@@ -189,6 +189,7 @@ mc rm app/saydian-us-private/bootstrap-probe >/dev/null
     run(compose+['up','-d','--wait','--wait-timeout','180','us-api','us-worker','us-admin'])
     health=json.loads(run(['curl','--fail','--silent','--max-time','15','http://127.0.0.1:18180/health/ready']))
     assert health['revision'] == revision
+    run(['curl','--fail','--silent','--max-time','15','http://127.0.0.1:18181/admin/'])
     for cid in run(compose+['ps','-q']).decode().splitlines():
         item=json.loads(run(['docker','inspect',cid]))[0]
         assert item['State']['Running'] and not item['State']['OOMKilled'] and item['RestartCount'] == 0
