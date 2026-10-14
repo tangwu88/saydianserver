@@ -83,6 +83,7 @@ jobs:
           node --test deploy/us/*.test.mjs
           python3 -B deploy/us/capacity_test.py
           python3 -B deploy/us/bootstrap_test.py
+          python3 -B deploy/scripts/measure-image-layers.test.py
           pnpm typecheck
           pnpm test
           pnpm build

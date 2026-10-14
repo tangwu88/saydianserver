@@ -354,7 +354,7 @@
       "profiles": [
         "bootstrap"
       ],
-      "mem_limit": "64m",
+      "mem_limit": "128m",
       "cpus": 0.25,
       "pids_limit": 60,
       "networks": [

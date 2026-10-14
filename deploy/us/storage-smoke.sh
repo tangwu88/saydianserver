@@ -21,7 +21,7 @@ for attempt in {1..45}; do
   sleep 1
 done
 [[ "$ready" == true ]]
-docker run --rm --network "$network" --memory 64m --read-only --pids-limit 60 \
+docker run --rm --network "$network" --memory 128m --read-only --pids-limit 60 \
   --tmpfs /tmp:size=8m --tmpfs /root/.mc:size=8m \
   --entrypoint /bin/sh "ghcr.io/tangwu88/saydianserver-us-mc:sha-$revision" -ec '
     mc alias set local http://storage:9000 ci-us-owner synthetic-ci-us-owner-password >/dev/null

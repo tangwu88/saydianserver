@@ -20,6 +20,12 @@ export function validateManifest(input, revision) {
     assert(typeof image?.ref === "string" && image.ref.startsWith(prefix) && digest.test(image.ref.slice(prefix.length)), "Invalid immutable image reference");
     assert(Number.isSafeInteger(image.sizeBytes) && image.sizeBytes > 0, "Invalid image size");
     assert(/^sha256:[a-f0-9]{64}$/.test(image.imageId), "Invalid runtime image identity");
+    if (image.layers !== undefined) {
+      assert(Array.isArray(image.layers) && image.layers.length, "Runtime layers missing");
+      for (const layer of image.layers) {
+        assert(/^sha256:[a-f0-9]{64}$/.test(layer?.diffId) && Number.isSafeInteger(layer.uncompressedBytes) && layer.uncompressedBytes > 0, "Invalid measured runtime layer");
+      }
+    }
   }
   assert(Array.isArray(input.migrations) && input.migrations.length, "Migration inventory missing");
   const names = new Set();
@@ -67,7 +73,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       const ref = image.RepoDigests.find(ref => ref.startsWith(`${repository}-${name}@sha256:`));
       assert(ref?.endsWith(`@${image.Id}`), "Build and production must use the same containerd manifest identity");
       assert(image.Descriptor?.mediaType === "application/vnd.oci.image.manifest.v1+json" || image.Descriptor?.mediaType === "application/vnd.docker.distribution.manifest.v2+json", "Expected a single-platform runtime manifest");
-      return [name, { ref, imageId: image.Id, sizeBytes: image.Size }];
+      const layers = JSON.parse(execFileSync("python3", ["deploy/scripts/measure-image-layers.py", ref], { encoding: "utf8" }));
+      assert.deepEqual(layers.map(layer => layer.diffId), image.RootFS.Layers, "Saved layers differ from tested runtime image");
+      return [name, { ref, imageId: image.Id, sizeBytes: image.Size, layers }];
     }));
     writeFileSync(file, JSON.stringify(validateManifest({ schemaVersion: 1, revision, images, migrations }, revision), null, 2) + "\n");
   } else {
