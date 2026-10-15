@@ -195,3 +195,44 @@ describe("Say Ring public AI visibility", () => {
     await expect(h.service.appDisplayConfig("say-ring")).rejects.toThrow("应用显示设置暂时无法读取");
   });
 });
+
+describe("CN display product isolation", () => {
+  it.each([true, false])(
+    "reads only CN flag %s without Ring fallback",
+    async (hideAi) => {
+      const h = harness([
+        {
+          key: "cn_app_display",
+          public: true,
+          value: { hideAi, privateNote: "discard", sleepAiEnabled: true },
+        },
+        {
+          key: "say_ring_app_display",
+          public: true,
+          value: { hideAi: !hideAi },
+        },
+      ]);
+      expect(await h.service.appDisplayConfig("saydian-app-cn")).toEqual({
+        product: "saydian-app-cn",
+        hideAi,
+      });
+      expect(h.findFirst).toHaveBeenCalledWith({
+        where: { key: "cn_app_display", public: true },
+        select: { value: true },
+      });
+      expect(await h.service.appDisplayConfig("say-ring")).toEqual({
+        product: "say-ring",
+        hideAi: !hideAi,
+      });
+    },
+  );
+  it("does not reuse Ring when CN has no published value", async () => {
+    const h = harness([
+      { key: "say_ring_app_display", public: true, value: { hideAi: true } },
+    ]);
+    expect(await h.service.appDisplayConfig("saydian-app-cn")).toEqual({
+      product: "saydian-app-cn",
+      hideAi: false,
+    });
+  });
+});

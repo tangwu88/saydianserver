@@ -1856,6 +1856,7 @@ export class AdminService {
             "say_ring_app_update",
             "cn_app_update",
             "say_ring_app_display",
+            "cn_app_display",
             "say_ring_map",
           ],
         },
@@ -1872,6 +1873,7 @@ export class AdminService {
       "say_ring_app_update",
       "cn_app_update",
       "say_ring_app_display",
+      "cn_app_display",
       "say_ring_map",
     ];
     if (!allowedKeys.includes(key)) {
@@ -1882,7 +1884,7 @@ export class AdminService {
     if (!Object.keys(value).length) {
       throw new BadRequestException("设置内容不能为空");
     }
-    if (key === "say_ring_app_display") {
+    if (key === "say_ring_app_display" || key === "cn_app_display") {
       if (typeof value.hideAi !== "boolean") {
         throw new BadRequestException("隐藏 AI 内容必须为开启或关闭");
       }
@@ -1896,7 +1898,8 @@ export class AdminService {
         throw new BadRequestException("睡眠 AI 分析必须为开启或关闭");
       value = {
         hideAi: value.hideAi,
-        ...(typeof value.sleepAiEnabled === "boolean"
+        ...(key === "say_ring_app_display" &&
+        typeof value.sleepAiEnabled === "boolean"
           ? { sleepAiEnabled: value.sleepAiEnabled }
           : {}),
       };
@@ -1952,10 +1955,10 @@ export class AdminService {
         value = (key === "cn_app_update"
           ? parseGlobalDownloadManifest(value, "saydian-app-cn")
           : key === "global_app_update"
-          ? parseGlobalDownloadManifest(value)
-          : key === "say_ring_app_update"
-            ? parseGlobalDownloadManifest(value, "say-ring")
-            : parseDownloadManifest(value)) as unknown as Record<
+            ? parseGlobalDownloadManifest(value)
+            : key === "say_ring_app_update"
+              ? parseGlobalDownloadManifest(value, "say-ring")
+              : parseDownloadManifest(value)) as unknown as Record<
           string,
           unknown
         >;

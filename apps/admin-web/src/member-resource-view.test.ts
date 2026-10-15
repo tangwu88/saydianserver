@@ -884,8 +884,8 @@ describe("international settings first configuration", () => {
     h.route.params.resource = "settings";
     h.api.get.mockResolvedValueOnce({ data: { data: [] } });
     await h.load();
-    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "app_update", "global_app_update", "say_ring_app_update", "cn_app_update", "say_ring_app_display", "say_ring_map"]);
-    expect(h.rows.value.filter((row: any) => row.key !== "say_ring_app_display").every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
+    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "app_update", "global_app_update", "say_ring_app_update", "cn_app_update", "say_ring_app_display", "cn_app_display", "say_ring_map"]);
+    expect(h.rows.value.filter((row: any) => !["say_ring_app_display", "cn_app_display"].includes(row.key)).every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
     expect(h.columns.value).toEqual(["appScope", "name", "configuration", "public", "updatedAt"]);
     expect(h.api.patch).not.toHaveBeenCalled();
     expect(h.api.post).not.toHaveBeenCalled();
@@ -1499,5 +1499,19 @@ describe("admin account editor validation", () => {
     pending.resolve({});
     await saving;
     expect(h.dialogVisible.value).toBe(false);
+  });
+});
+
+describe("CN AI visibility editor", () => {
+  it("publishes only the CN flag, leaving Ring independent", async () => {
+    const h = harness();
+    h.route.params.resource = "settings";
+    const rows = await h.withDownloadSetting([]);
+    const row = rows.find((item: any) => item.key === "cn_app_display");
+    expect(row.name).toBe("Saydian赛电 显示设置");
+    await h.openEdit(row);
+    h.form.value.hideAi = true;
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledWith("/settings/cn_app_display", {value:{hideAi:true},public:true});
   });
 });

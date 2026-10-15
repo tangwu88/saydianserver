@@ -101,13 +101,14 @@ const settingProducts = (key: unknown): string[] => {
     global_app_update: ["saydian-global"],
     say_ring_app_update: ["say-ring"],
     cn_app_update: ["saydian-app-cn"],
+    cn_app_display: ["saydian-app-cn"],
     say_ring_app_display: ["say-ring"],
     say_ring_map: ["say-ring"],
   };
   return products[String(key ?? "")] ?? [];
 };
 const isAppUpdateSetting = (key: unknown): boolean => appUpdateSettingKeys.has(String(key ?? ""));
-const isAppDisplaySetting = (key: unknown): boolean => key === "say_ring_app_display";
+const isAppDisplaySetting = (key: unknown): boolean => key === "say_ring_app_display" || key === "cn_app_display";
 const isGlobalSupportSetting = (key: unknown): boolean => key === "global_support";
 const supportPhonePattern = /^\+?[0-9][0-9 -]{4,20}$/;
 const supportEditorFromValue = (value: unknown): Row => {
@@ -400,6 +401,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
     { key: "say_ring_app_update", name: "Say Ring App 更新" },
     { key: "cn_app_update", name: "赛电健康（简体中文版）App 更新" },
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
+    { key: "cn_app_display", name: "Saydian赛电 显示设置" },
     { key: "say_ring_map", name: "Say Ring 运动地图" },
   ];
   return definitions.map((definition) => {
@@ -1024,7 +1026,7 @@ async function save(): Promise<void> {
               configured: form.value.value?.configured === true,
             }
           : isAppDisplaySetting(form.value.key)
-            ? { hideAi: form.value.hideAi === true, sleepAiEnabled: form.value.sleepAiEnabled === true }
+            ? { hideAi: form.value.hideAi === true, ...(form.value.key === "say_ring_app_display" ? { sleepAiEnabled: form.value.sleepAiEnabled === true } : {}) }
             : isAppUpdateSetting(form.value.key)
               ? downloadEditorToManifest(form.value.key, form.value.downloadEditor as DownloadManifestEditor)
               : JSON.parse(String(form.value.valueText || "{}"));
@@ -1993,9 +1995,9 @@ onBeforeUnmount(() => {
           <el-form-item v-if="!isAppDisplaySetting(form.key)" label="公开"><el-switch v-model="form.public" /></el-form-item>
           <template v-if="isAppDisplaySetting(form.key)">
             <el-form-item label="隐藏 AI 内容"><el-switch v-model="form.hideAi" active-text="隐藏" inactive-text="显示" /></el-form-item>
-            <el-form-item label="AI 睡眠报告"><el-switch v-model="form.sleepAiEnabled" active-text="开启睡眠评分与报告" inactive-text="关闭" /></el-form-item>
-            <el-alert title="睡眠 AI 由独立开关控制；开启后仍须会员在 App 主动确认上传及第三方分析。不会同时开启其他 AI 入口。" type="info" :closable="false" />
-            <el-alert title="隐藏开关控制 AI 问答和综合健康报告，不影响独立的睡眠报告开关。保存后 App 会在重新打开或回到前台时刷新设置。" type="info" :closable="false" show-icon />
+            <el-form-item v-if="form.key === 'say_ring_app_display'" label="AI 睡眠报告"><el-switch v-model="form.sleepAiEnabled" active-text="开启睡眠评分与报告" inactive-text="关闭" /></el-form-item>
+            <el-alert v-if="form.key === 'say_ring_app_display'" title="睡眠 AI 由独立开关控制；开启后仍须会员在 App 主动确认上传及第三方分析。不会同时开启其他 AI 入口。" type="info" :closable="false" />
+            <el-alert :title="form.key === 'cn_app_display' ? '仅控制 Saydian赛电（cc.saidian.app / cc.saidian.app.hm）的 AI 入口和内容，不影响 Say Ring 或其他 App。需安装支持此设置的新版 App，重新打开或回到前台时刷新。' : '隐藏开关控制 AI 问答和综合健康报告，不影响独立的睡眠报告开关。保存后 App 会在重新打开或回到前台时刷新设置。'" type="info" :closable="false" show-icon />
           </template>
           <template v-else-if="isGlobalSupportSetting(form.key) && form.supportEditor">
             <el-alert title="Say Ring 与国际版 App 的“联系客服”页面读取这里的客服电话和微信公众号。旧版误填在 configured 字段里的手机号会自动带入，保存后将转换为正确格式。" type="info" :closable="false" show-icon />

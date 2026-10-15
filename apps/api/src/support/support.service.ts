@@ -124,23 +124,30 @@ export class SupportService implements OnModuleInit {
   }
 
   async appDisplayConfig(productInput?: string) {
-    if (productInput !== "say-ring") {
+    if (productInput !== "say-ring" && productInput !== "saydian-app-cn") {
       throw new NotFoundException("应用显示设置不存在");
     }
     const setting = await this.prisma.appSetting.findFirst({
-      where: { key: "say_ring_app_display", public: true },
+      where: {
+        key:
+          productInput === "saydian-app-cn"
+            ? "cn_app_display"
+            : "say_ring_app_display",
+        public: true,
+      },
       select: { value: true },
     });
-    if (!setting) return { product: "say-ring", hideAi: false };
+    if (!setting) return { product: productInput, hideAi: false };
     const value = safeObject(setting.value);
     if (typeof value.hideAi !== "boolean") {
       throw new ServiceUnavailableException("应用显示设置暂时无法读取");
     }
     // Whitelist the public display flag instead of returning arbitrary JSON.
     return {
-      product: "say-ring",
+      product: productInput,
       hideAi: value.hideAi,
-      ...(typeof value.sleepAiEnabled === "boolean"
+      ...(productInput === "say-ring" &&
+      typeof value.sleepAiEnabled === "boolean"
         ? { sleepAiEnabled: value.sleepAiEnabled }
         : {}),
     };

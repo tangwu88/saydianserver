@@ -103,6 +103,7 @@ describe("global admin support and download configuration", () => {
             "say_ring_app_update",
             "cn_app_update",
             "say_ring_app_display",
+            "cn_app_display",
             "say_ring_map",
           ],
         },
@@ -280,6 +281,7 @@ describe("global admin support and download configuration", () => {
             "say_ring_app_update",
             "cn_app_update",
             "say_ring_app_display",
+            "cn_app_display",
             "say_ring_map",
           ],
         },
@@ -439,5 +441,31 @@ describe("global administrator legal-document data source", () => {
       }),
     });
     expect(h.globalLegalDocument.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("CN display settings administration", () => {
+  it.each([true, false])("saves only its own boolean %s", async (hideAi) => {
+    const h = harness();
+    const result = await h.service.updateSetting("cn_app_display", {
+      value: { hideAi, sleepAiEnabled: true, privateNote: "discard" },
+    });
+    expect(result.value).toEqual({ hideAi });
+    expect(h.appSetting.upsert.mock.calls[0]?.[0].where).toEqual({
+      key: "cn_app_display",
+    });
+  });
+  it("rejects a private or nonboolean flag", () => {
+    const h = harness();
+    expect(() =>
+      h.service.updateSetting("cn_app_display", { value: { hideAi: "true" } }),
+    ).toThrow();
+    expect(() =>
+      h.service.updateSetting("cn_app_display", {
+        value: { hideAi: true },
+        public: false,
+      }),
+    ).toThrow();
+    expect(h.appSetting.upsert).not.toHaveBeenCalled();
   });
 });
