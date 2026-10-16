@@ -75,7 +75,7 @@ describe("current Say Ring public legal pages", () => {
     const { service } = fixture();
     const html = await service.sayRingLegalPage("privacy");
     expect(html).toContain("步数、距离、热量、睡眠阶段与时长");
-    expect(html).toContain("不表示该构建已上架");
+    expect(html).toContain("不表示某构建已经通过审核或上架");
     expect(html).toContain("仅限活动与睡眠的远程关爱");
     expect(html).toContain("不提供心率、血氧、血压、血糖、心电、心率变异性、体温等生理指标的测量、展示或账号同步功能");
     expect(html).not.toContain("不采集");
@@ -84,7 +84,16 @@ describe("current Say Ring public legal pages", () => {
     expect(html).toContain("Xuewu Tang");
     expect(html).toContain("kf@saydian.com");
     expect(html).toContain("保存期限及访问、删除、撤回和注销权利不因本说明改变");
-    expect(html).toContain("以下独立说明仅适用于实际提供可选睡眠 AI 的 Android 或历史版本");
+    expect(html).toContain('data-min-build="1062" data-max-build="1064"');
+    expect(html).toContain('data-current-build="1101"');
+    expect(html).toContain("本次 1.0.2（构建 1101）");
+    expect(html).toContain("固件自动监测开关及监测间隔");
+    expect(html).toContain("再明确确认本次睡眠摘要上传");
+    expect(html).toContain("智谱 BigModel");
+    expect(html).toContain("不发送姓名、联系方式、头像、App 账号标识、设备 UUID/MAC 或原始逐段睡眠时间轴");
+    expect(html).toContain("不是设备评分或临床评估");
+    expect(html).toContain("以下独立说明适用于实际提供可选睡眠 AI 的版本，包括本次 iOS 构建 1101");
+    expect(html).not.toContain("iOS 构建 1062 起的活动与睡眠版不提供此功能");
     expect(html).toContain(`<article data-document-type="${privacy.documentType}" data-version="${privacy.version}">${privacy.contentHtml}</article>`);
     expect(html).toContain(`<article data-document-type="${sleep.documentType}" data-version="${sleep.version}">${sleep.contentHtml}</article>`);
   });
@@ -92,9 +101,12 @@ describe("current Say Ring public legal pages", () => {
   it("localizes scope for a valid English fallback and does not relabel it as a Chinese policy", () => {
     const html = renderSayRingLegalPage({ ...privacy, locale: "en" }, { ...sleep, locale: "en" });
     expect(html).toContain('lang="en"');
-    expect(html).toContain("starting with build 1062");
-    expect(html).toContain("does not indicate App Store availability");
-    expect(html).toContain("does not offer measurement, display or account-sync features for physiological readings");
+    expect(html).toContain("iOS builds 1062 through 1064");
+    expect(html).toContain("does not claim review approval or App Store availability");
+    expect(html).toContain("Version 1.0.2 (build 1101)");
+    expect(html).toContain("explicitly confirm uploading the selected summary");
+    expect(html).toContain("not a device or clinical score");
+    expect(html).toContain("These builds do not offer measurement, display or account-sync features for physiological readings");
     expect(html).toContain("does not delete existing local or cloud records");
     expect(html).not.toContain("iOS 活动与睡眠版适用说明");
   });
