@@ -351,12 +351,45 @@ export class PartnerAdminService {
     if (!isUuid(levelId)) throw new BadRequestException("请选择合作等级");
     const { page, pageSize, skip } = partnerPage(pageInput);
     const where: Prisma.CommerceSkuWhereInput = {
+      partnerPrices: { some: { levelId } },
       product: {
         localArchived: false,
-        ...(search
-          ? { name: { contains: search.trim(), mode: "insensitive" } }
-          : {}),
       },
+      ...(search.trim()
+        ? {
+            OR: [
+              {
+                product: {
+                  name: { contains: search.trim(), mode: "insensitive" },
+                },
+              },
+              {
+                specification: { contains: search.trim(), mode: "insensitive" },
+              },
+              {
+                partnerPrices: {
+                  some: {
+                    levelId,
+                    OR: [
+                      {
+                        productName: {
+                          contains: search.trim(),
+                          mode: "insensitive",
+                        },
+                      },
+                      {
+                        specification: {
+                          contains: search.trim(),
+                          mode: "insensitive",
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.commerceSku.findMany({
@@ -366,6 +399,7 @@ export class PartnerAdminService {
           specification: true,
           enabled: true,
           salePriceCents: true,
+          erpSkuId: true,
           product: { select: { id: true, name: true, status: true } },
           partnerPrices: { where: { levelId } },
         },
@@ -378,12 +412,177 @@ export class PartnerAdminService {
     return {
       items: rows.map(({ partnerPrices, ...row }) => ({
         ...row,
+        sourceName: row.product.name,
+        sourceSpecification: row.specification,
+        product: {
+          ...row.product,
+          name: partnerPrices[0]?.productName ?? row.product.name,
+        },
+        specification: partnerPrices[0]?.specification ?? row.specification,
+        salePriceCents:
+          partnerPrices[0]?.retailPriceCents ?? row.salePriceCents,
         price: partnerPrices[0] ?? null,
       })),
       total,
       page,
       pageSize,
     };
+  }
+
+  async importOptions(levelId: string, search: string, pageInput: unknown) {
+    if (!isUuid(levelId)) throw new BadRequestException("请选择合作等级");
+    const { page, pageSize, skip } = partnerPage(pageInput);
+    const where: Prisma.CommerceSkuWhereInput = {
+      product: { localArchived: false, source: { in: ["ERP", "LOCAL"] } },
+      ...(search.trim()
+        ? {
+            OR: [
+              {
+                product: {
+                  name: { contains: search.trim(), mode: "insensitive" },
+                },
+              },
+              { erpSkuId: { contains: search.trim(), mode: "insensitive" } },
+              {
+                specification: { contains: search.trim(), mode: "insensitive" },
+              },
+            ],
+          }
+        : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.commerceSku.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          erpSkuId: true,
+          specification: true,
+          salePriceCents: true,
+          enabled: true,
+          product: {
+            select: { id: true, name: true, displayName: true, status: true },
+          },
+          partnerPrices: { where: { levelId }, select: { levelId: true } },
+        },
+      }),
+      this.prisma.commerceSku.count({ where }),
+    ]);
+    return {
+      items: items.map(({ partnerPrices, ...row }) => ({
+        ...row,
+        imported: partnerPrices.length > 0,
+      })),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  async importPrices(
+    actorId: string,
+    levelId: string,
+    input: unknown,
+    requestId: string,
+  ) {
+    const body = safeObject(input),
+      ids = body.skuIds;
+    if (
+      !isUuid(levelId) ||
+      !Array.isArray(ids) ||
+      !ids.length ||
+      ids.length > 100 ||
+      ids.some((id) => typeof id !== "string" || !isUuid(id)) ||
+      new Set(ids).size !== ids.length
+    )
+      throw new BadRequestException("请选择1至100个不同的商品规格");
+    return this.prisma.$transaction(async (tx) => {
+      if (!(await tx.partnerLevel.findUnique({ where: { id: levelId } })))
+        throw new NotFoundException("合作等级不存在");
+      const skuIds = [...ids].sort() as string[];
+      for (const skuId of skuIds)
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`partner-price:${levelId}:${skuId}`}))`;
+      const skus = await tx.commerceSku.findMany({
+        where: {
+          id: { in: skuIds },
+          product: { localArchived: false, source: { in: ["ERP", "LOCAL"] } },
+        },
+        include: { product: true },
+      });
+      if (skus.length !== skuIds.length)
+        throw new ConflictException("部分商城商品已删除，请刷新后导入");
+      const result = await tx.partnerSkuPrice.createMany({
+        data: skus.map((sku) => ({
+          levelId,
+          skuId: sku.id,
+          productName: sku.product.displayName || sku.product.name,
+          specification: sku.specification ?? "",
+          retailPriceCents: sku.salePriceCents,
+          priceCents: Math.max(1, sku.salePriceCents),
+          enabled: false,
+        })),
+        skipDuplicates: true,
+      });
+      await this.audit(
+        tx,
+        actorId,
+        "PARTNER_PRODUCTS_IMPORTED",
+        levelId,
+        { skuIds, imported: result.count },
+        requestId,
+      );
+      return { imported: result.count, skipped: skuIds.length - result.count };
+    });
+  }
+
+  async deletePrices(
+    actorId: string,
+    levelId: string,
+    input: unknown,
+    requestId: string,
+  ) {
+    const rows = safeObject(input).items;
+    if (
+      !isUuid(levelId) ||
+      !Array.isArray(rows) ||
+      !rows.length ||
+      rows.length > 100
+    )
+      throw new BadRequestException("请选择1至100个已导入规格");
+    const items = rows
+      .map((raw) => {
+        const row = safeObject(raw);
+        if (typeof row.skuId !== "string" || !isUuid(row.skuId))
+          throw new BadRequestException("商品规格不正确");
+        return {
+          skuId: String(row.skuId),
+          updatedAt: expectedTime(row.updatedAt),
+        };
+      })
+      .sort((a, b) => a.skuId.localeCompare(b.skuId));
+    if (new Set(items.map((item) => item.skuId)).size !== items.length)
+      throw new BadRequestException("商品规格不能重复");
+    return this.prisma.$transaction(async (tx) => {
+      for (const item of items) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`partner-price:${levelId}:${item.skuId}`}))`;
+        const result = await tx.partnerSkuPrice.deleteMany({
+          where: { levelId, skuId: item.skuId, updatedAt: item.updatedAt },
+        });
+        if (result.count !== 1)
+          throw new ConflictException("商品配置已变化，请刷新后再删除");
+      }
+      await this.audit(
+        tx,
+        actorId,
+        "PARTNER_PRODUCTS_REMOVED",
+        levelId,
+        { skuIds: items.map((item) => item.skuId) },
+        requestId,
+      );
+      return { deleted: items.length };
+    });
   }
 
   async savePrice(
@@ -396,6 +595,34 @@ export class PartnerAdminService {
     const body = safeObject(input),
       priceCents = Number(body.priceCents),
       enabled = body.enabled ?? true;
+    if (
+      ["skuId", "erpSkuId", "productId", "levelId"].some((key) => key in body)
+    )
+      throw new BadRequestException("不能更换原商品或ERP编码");
+    const overrides = {
+      ...(body.productName !== undefined
+        ? { productName: text(body.productName, "商品名称", 200) }
+        : {}),
+      ...(body.specification !== undefined
+        ? { specification: String(body.specification ?? "").trim() }
+        : {}),
+      ...(body.retailPriceCents !== undefined
+        ? {
+            retailPriceCents:
+              body.retailPriceCents === null
+                ? null
+                : Number(body.retailPriceCents),
+          }
+        : {}),
+    };
+    if (
+      (overrides.specification?.length ?? 0) > 300 ||
+      (overrides.retailPriceCents != null &&
+        (!Number.isSafeInteger(overrides.retailPriceCents) ||
+          overrides.retailPriceCents < 0 ||
+          overrides.retailPriceCents > PARTNER_MAX_CENTS))
+    )
+      throw new BadRequestException("规格名称或零售价不正确");
     if (
       !isUuid(levelId) ||
       !isUuid(skuId) ||
@@ -424,15 +651,15 @@ export class PartnerAdminService {
         throw new ConflictException("合作价已变化，请刷新");
       const price = await tx.partnerSkuPrice.upsert({
         where: { levelId_skuId: { levelId, skuId } },
-        create: { levelId, skuId, priceCents, enabled },
-        update: { priceCents, enabled },
+        create: { levelId, skuId, priceCents, enabled, ...overrides },
+        update: { priceCents, enabled, ...overrides },
       });
       await this.audit(
         tx,
         actorId,
         "PARTNER_PRICE_SAVED",
         skuId,
-        { levelId, priceCents, enabled },
+        { levelId, priceCents, enabled, ...overrides },
         requestId,
       );
       return price;

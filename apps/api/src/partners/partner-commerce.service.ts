@@ -148,7 +148,13 @@ export class PartnerCommerceService {
       { page, pageSize, skip } = partnerPage(pageInput);
     const pricedSku: Prisma.CommerceSkuWhereInput = {
       enabled: true,
-      partnerPrices: { some: { levelId: partner.levelId, enabled: true, priceCents: { gt: 0, lte: PARTNER_MAX_CENTS } } },
+      partnerPrices: {
+        some: {
+          levelId: partner.levelId,
+          enabled: true,
+          priceCents: { gt: 0, lte: PARTNER_MAX_CENTS },
+        },
+      },
     };
     const where: Prisma.CommerceProductWhereInput = {
       source: { in: ["ERP", "LOCAL"] },
@@ -156,7 +162,29 @@ export class PartnerCommerceService {
       status: "PUBLISHED",
       skus: { some: pricedSku },
       ...(search
-        ? { name: { contains: search.trim(), mode: "insensitive" } }
+        ? {
+            OR: [
+              { name: { contains: search.trim(), mode: "insensitive" } },
+              {
+                skus: {
+                  some: {
+                    ...pricedSku,
+                    partnerPrices: {
+                      some: {
+                        levelId: partner.levelId,
+                        enabled: true,
+                        priceCents: { gt: 0, lte: PARTNER_MAX_CENTS },
+                        productName: {
+                          contains: search.trim(),
+                          mode: "insensitive",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          }
         : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
@@ -167,7 +195,11 @@ export class PartnerCommerceService {
             where: pricedSku,
             include: {
               partnerPrices: {
-                where: { levelId: partner.levelId, enabled: true, priceCents: { gt: 0, lte: PARTNER_MAX_CENTS } },
+                where: {
+                  levelId: partner.levelId,
+                  enabled: true,
+                  priceCents: { gt: 0, lte: PARTNER_MAX_CENTS },
+                },
               },
             },
           },
@@ -182,13 +214,19 @@ export class PartnerCommerceService {
       level: partner.level.name,
       items: rows.map((row) => ({
         id: row.id,
-        name: row.displayName || row.name,
+        name:
+          row.skus[0]?.partnerPrices[0]?.productName ?? (row.displayName || row.name),
         coverImage: row.coverImage,
         subtitle: row.subtitle,
         fulfillmentSource: row.source,
         skus: row.skus.map((sku) => ({
           id: sku.id,
-          specification: sku.specification,
+          name:
+            sku.partnerPrices[0]?.productName ?? (row.displayName || row.name),
+          specification:
+            sku.partnerPrices[0]?.specification ?? sku.specification,
+          retailPriceCents:
+            sku.partnerPrices[0]?.retailPriceCents ?? sku.salePriceCents,
           image: sku.image,
           stock: sku.stock,
           distributionPriceCents: sku.partnerPrices[0]?.priceCents ?? null,
@@ -237,8 +275,9 @@ export class PartnerCommerceService {
         quantity: item.quantity,
         unitPriceCents: positiveCents(price.priceCents),
         totalCents: positiveCents(price.priceCents * item.quantity),
-        name: price.sku.product.displayName || price.sku.product.name,
-        specification: price.sku.specification,
+        name:
+          price.productName ?? (price.sku.product.displayName || price.sku.product.name),
+        specification: price.specification ?? price.sku.specification,
         image: price.sku.image || price.sku.product.coverImage,
         erpSkuId: price.sku.erpSkuId,
       };
@@ -271,6 +310,8 @@ export class PartnerCommerceService {
           quantity: item.quantity,
           unitPriceCents: item.unitPriceCents,
           fulfillmentSource: item.fulfillmentSource,
+          name: item.name,
+          specification: item.specification,
         })),
         shippingCents,
       }),

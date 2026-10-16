@@ -24853,20 +24853,106 @@ export const apiCatalog = {
       ],
       "envelope": "v2",
       "source": "apps/api/src/partners/partner-admin.controller.ts",
-      "summary": "查询等级SKU合作价",
+      "summary": "查询已导入伙伴商品",
       "request": "levelId、search?、page?",
-      "response": "商品SKU零售价及指定等级合作价",
-      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "response": "仅当前等级已有配置的SKU，返回伙伴独立名称/规格/零售价及原ERP编码",
+      "dependency": "主库；不实时调用ERP；保留已有合作价",
       "successStatus": 200,
       "contract": {
-        "status": "unreviewed",
+        "status": "request-reviewed",
         "requestSchema": null,
         "requestExample": null,
-        "responseSchema": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "erpSkuId": {
+                    "type": "string"
+                  },
+                  "specification": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "salePriceCents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "product": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": true
+                  },
+                  "price": {
+                    "type": "object",
+                    "properties": {
+                      "priceCents": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2147483647
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "updatedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": true
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "page",
+            "pageSize"
+          ],
+          "additionalProperties": true
+        },
         "responseExample": null,
         "contentType": "application/json",
-        "source": "apps/api/src/partners/partner-admin.controller.ts",
-        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
       }
     },
     {
@@ -24900,9 +24986,9 @@ export const apiCatalog = {
       ],
       "envelope": "v2",
       "source": "apps/api/src/partners/partner-admin.controller.ts",
-      "summary": "设置等级SKU合作价",
-      "request": "levelId、skuId；{priceCents,enabled?,updatedAt:旧时间|null}",
-      "response": "CAS更新价格；缺价不回退零售价，不追改订单",
+      "summary": "编辑伙伴商品及等级合作价",
+      "request": "levelId、skuId；{priceCents,enabled?,productName?,specification?,retailPriceCents?,updatedAt:旧时间|null}",
+      "response": "CAS更新展示名称、规格及价格；禁止更换原SKU/ERP绑定；不追改商城或历史订单",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -24913,6 +24999,23 @@ export const apiCatalog = {
             "priceCents": {
               "type": "integer",
               "minimum": 1,
+              "maximum": 2147483647
+            },
+            "productName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "specification": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "retailPriceCents": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
               "maximum": 2147483647
             },
             "enabled": {
@@ -24961,6 +25064,259 @@ export const apiCatalog = {
             "priceCents",
             "enabled",
             "updatedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.importOptions",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partner-prices/import-options",
+      "auth": "admin",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "levelId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "search",
+          "type": "unknown",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "查询商城导入候选规格",
+      "request": "levelId、search?、page?",
+      "response": "未删除的ERP/本地商城规格，标记当前等级已导入项，每页30条",
+      "dependency": "主库；后台伙伴商品读权限",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "erpSkuId": {
+                    "type": "string"
+                  },
+                  "imported": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "page",
+            "pageSize"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.importPrices",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partner-prices/:levelId/import",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "levelId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "手动导入伙伴商品规格",
+      "request": "levelId；{skuIds:不同UUID数组，1至100项}",
+      "response": "快照商城名称、规格和零售价；保留原SKU与ERP编码；新合作价停用；重复导入不覆盖",
+      "dependency": "超级管理员/商城运营；事务及审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "skuIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "minItems": 1,
+              "maxItems": 100,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "skuIds"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "imported": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "skipped": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "imported",
+            "skipped"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
+        "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.deletePrices",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partner-prices/:levelId/batch-delete",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "levelId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "批量移除等级伙伴商品",
+      "request": "levelId；{items:[{skuId,updatedAt:旧时间}]}，1至100项",
+      "response": "全部CAS校验，冲突整批回滚；仅删当前等级配置，商城/其他等级/历史订单保留",
+      "dependency": "超级管理员/商城运营；事务及审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "skuId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "skuId",
+                  "updatedAt"
+                ],
+                "additionalProperties": true
+              },
+              "minItems": 1,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "deleted": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "deleted"
           ],
           "additionalProperties": true
         },

@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **447 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **450 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -299,7 +299,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（136）
+## 管理后台接口（139）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -424,8 +424,11 @@
 | `GET /api/saydian-app/admin/v1/partner-levels` | 合作等级列表 | admin | 无请求体 | 战略合作/核心合作/优选合作默认等级及新增等级 | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/admin/v1/partner-levels` | 新增合作价格等级 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {name,sort?,active?} | 等级记录；不创建上下级分佣关系 | 主库；伙伴身份与会员/员工推广隔离 |
 | `PATCH /api/saydian-app/admin/v1/partner-levels/:id` | 编辑合作等级 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；{name,sort?,active?,updatedAt} | CAS更新等级；停用等级暂停新采购 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/admin/v1/partner-prices` | 查询等级SKU合作价 | admin | query:levelId，query:search?，query:page?；levelId、search?、page? | 商品SKU零售价及指定等级合作价 | 主库；伙伴身份与会员/员工推广隔离 |
-| `PATCH /api/saydian-app/admin/v1/partner-prices/:levelId/:skuId` | 设置等级SKU合作价 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:levelId，path:skuId；levelId、skuId；{priceCents,enabled?,updatedAt:旧时间\|null} | CAS更新价格；缺价不回退零售价，不追改订单 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/admin/v1/partner-prices` | 查询已导入伙伴商品 | admin | query:levelId，query:search?，query:page?；levelId、search?、page? | 仅当前等级已有配置的SKU，返回伙伴独立名称/规格/零售价及原ERP编码 | 主库；不实时调用ERP；保留已有合作价 |
+| `PATCH /api/saydian-app/admin/v1/partner-prices/:levelId/:skuId` | 编辑伙伴商品及等级合作价 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:levelId，path:skuId；levelId、skuId；{priceCents,enabled?,productName?,specification?,retailPriceCents?,updatedAt:旧时间\|null} | CAS更新展示名称、规格及价格；禁止更换原SKU/ERP绑定；不追改商城或历史订单 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/admin/v1/partner-prices/import-options` | 查询商城导入候选规格 | admin | query:levelId，query:search?，query:page?；levelId、search?、page? | 未删除的ERP/本地商城规格，标记当前等级已导入项，每页30条 | 主库；后台伙伴商品读权限 |
+| `POST /api/saydian-app/admin/v1/partner-prices/:levelId/import` | 手动导入伙伴商品规格 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:levelId；levelId；{skuIds:不同UUID数组，1至100项} | 快照商城名称、规格和零售价；保留原SKU与ERP编码；新合作价停用；重复导入不覆盖 | 超级管理员/商城运营；事务及审计 |
+| `POST /api/saydian-app/admin/v1/partner-prices/:levelId/batch-delete` | 批量移除等级伙伴商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:levelId；levelId；{items:[{skuId,updatedAt:旧时间}]}，1至100项 | 全部CAS校验，冲突整批回滚；仅删当前等级配置，商城/其他等级/历史订单保留 | 超级管理员/商城运营；事务及审计 |
 | `GET /api/saydian-app/admin/v1/partner-finance/:id/wallet` | 查询品牌伙伴资金账户 | admin | path:id；id为伙伴UUID | 独立消费余额和保证金，整数分 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/admin/v1/partner-finance/:id/ledger` | 查询品牌伙伴资金账本 | admin | path:id，query:account?，query:page?；id为伙伴UUID、account?、page? | 不可变资金明细 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/admin/v1/partner-finance/:id/orders` | 查询品牌伙伴采购订单 | admin | path:id，query:page?；id为伙伴UUID、page?；财务只读 | {items,total,page,pageSize}；金额、商品、地址及发货，无支付原始响应 | 主库；含已停用伙伴历史交易 |

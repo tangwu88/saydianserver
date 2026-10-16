@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BusinessType, PaymentChannel, PrismaClient } from "@prisma/client";
 import { PartnerService } from "./partner.service";
@@ -818,6 +820,54 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
         "negative",
       ),
     ).rejects.toThrow("正数");
+  });
+  it("rehearses the exact additive catalog SQL on a temporary old-schema copy and rolls it back", async () => {
+    const before = await prisma.partnerSkuPrice.findMany({ orderBy: [{ levelId: "asc" }, { skuId: "asc" }] });
+    const sql = readFileSync(resolve(__dirname, "../../prisma/migrations/20261016070000_partner_catalog_overrides/migration.sql"), "utf8");
+    await expect(prisma.$transaction(async tx => {
+      await tx.$executeRawUnsafe('CREATE TEMP TABLE "PartnerSkuPrice" (LIKE public."PartnerSkuPrice" INCLUDING DEFAULTS) ON COMMIT DROP');
+      await tx.$executeRawUnsafe('ALTER TABLE pg_temp."PartnerSkuPrice" DROP COLUMN "productName", DROP COLUMN "specification", DROP COLUMN "retailPriceCents"');
+      await tx.$executeRawUnsafe('INSERT INTO pg_temp."PartnerSkuPrice" ("levelId", "skuId", "priceCents", "enabled", "updatedAt") VALUES ($1::uuid,$2::uuid,1234,true,\'2026-10-01T00:00:00.000Z\')', a.levelId, sku.id);
+      const oldRows = await tx.$queryRawUnsafe<any[]>('SELECT "levelId", "skuId", "priceCents", "enabled", "updatedAt" FROM pg_temp."PartnerSkuPrice"');
+      for (const statement of sql.split(";").map(value => value.trim()).filter(Boolean)) await tx.$executeRawUnsafe(statement);
+      const upgraded = await tx.$queryRawUnsafe<any[]>('SELECT "levelId", "skuId", "priceCents", "enabled", "updatedAt", "productName", "specification", "retailPriceCents" FROM pg_temp."PartnerSkuPrice"');
+      expect(upgraded).toEqual(oldRows.map(row => ({ ...row, productName: null, specification: null, retailPriceCents: null })));
+      throw new Error("synthetic catalog migration rollback");
+    })).rejects.toThrow("synthetic catalog migration rollback");
+    expect(await prisma.partnerSkuPrice.findMany({ orderBy: [{ levelId: "asc" }, { skuId: "asc" }] })).toEqual(before);
+  });
+  it("imports an independent catalog, snapshots partner names, and atomically removes configurations without changing ERP or history", async () => {
+    const level = await prisma.partnerLevel.create({ data: { code: `catalog-${suffix}`, name: `合成目录-${suffix}` } });
+    const buyer = await admin.create(actorId, { username: `qa-catalog-${suffix}`, name: "合成目录买家", password: "synthetic-partner-password", levelId: level.id }, suffix);
+    const item = await prisma.commerceProduct.create({ data: {
+      erpItemId: `CATALOG-${suffix}`, name: `合成目录商品-${suffix}`, source: "ERP", status: "PUBLISHED", gallery: [], tags: [],
+      skus: { create: [1, 2].map(n => ({ erpItemId: `CATALOG-${suffix}`, erpSkuId: `CATALOG-${suffix}-${n}`, specification: `原规格${n}`, salePriceCents: 8000, stock: 10 })) },
+    }, include: { skus: true } });
+    const ids = item.skus.map(row => row.id).sort();
+    expect((await admin.prices(level.id, suffix, 1)).total).toBe(0);
+    const imported = await Promise.all([1, 2].map(() => admin.importPrices(actorId, level.id, { skuIds: ids }, suffix)));
+    expect(imported.reduce((sum, row) => sum + row.imported, 0)).toBe(2);
+    expect((await commerce.products(buyer.id, suffix, 1)).total).toBe(0);
+    let price = await prisma.partnerSkuPrice.findUniqueOrThrow({ where: { levelId_skuId: { levelId: level.id, skuId: ids[0]! } } });
+    price = await admin.savePrice(actorId, level.id, ids[0]!, { productName: `伙伴定制名-${suffix}`, specification: "伙伴礼盒规格", retailPriceCents: 9900, priceCents: 5000, enabled: true, updatedAt: price.updatedAt.toISOString() }, suffix);
+    await admin.importPrices(actorId, level.id, { skuIds: ids }, suffix);
+    expect((await admin.prices(level.id, "伙伴定制名", 1)).items[0]?.product.name).toBe(`伙伴定制名-${suffix}`);
+    expect((await commerce.products(buyer.id, "伙伴定制名", 1)).items[0]?.skus[0]).toMatchObject({ name: `伙伴定制名-${suffix}`, specification: "伙伴礼盒规格", distributionPriceCents: 5000 });
+    await admin.rechargeBalance(actorId, buyer.id, { amountCents: 100000, reason: "合成资金", idempotencyKey: randomUUID() }, suffix);
+    const items = [{ skuId: ids[0]!, quantity: 1 }], quote = await commerce.quote(buyer.id, { items });
+    const order = await commerce.createOrder(buyer.id, { items, address, expectedQuote: quote.fingerprint, idempotencyKey: randomUUID() });
+    expect(order.items[0]).toMatchObject({ nameSnapshot: `伙伴定制名-${suffix}`, specificationSnapshot: "伙伴礼盒规格", skuId: ids[0], erpSkuIdSnapshot: item.skus.find(row => row.id === ids[0])!.erpSkuId });
+    const rows = await prisma.partnerSkuPrice.findMany({ where: { levelId: level.id }, orderBy: { skuId: "asc" } });
+    await expect(admin.deletePrices(actorId, level.id, { items: rows.map((row, index) => ({ skuId: row.skuId, updatedAt: index ? "2000-01-01T00:00:00.000Z" : row.updatedAt.toISOString() })) }, suffix)).rejects.toThrow("已变化");
+    expect(await prisma.partnerSkuPrice.count({ where: { levelId: level.id } })).toBe(2);
+    await admin.importPrices(actorId, a.levelId, { skuIds: ids }, suffix);
+    await admin.deletePrices(actorId, level.id, { items: rows.map(row => ({ skuId: row.skuId, updatedAt: row.updatedAt.toISOString() })) }, suffix);
+    expect((await commerce.products(buyer.id, suffix, 1)).total).toBe(0);
+    await expect(commerce.quote(buyer.id, { items })).rejects.toThrow("未设置合作价");
+    expect(await prisma.partnerSkuPrice.count({ where: { levelId: a.levelId, skuId: { in: ids } } })).toBe(2);
+    expect((await prisma.commerceSku.findUniqueOrThrow({ where: { id: ids[0]! } })).erpSkuId).toBe(item.skus.find(row => row.id === ids[0])!.erpSkuId);
+    expect((await commerce.order(buyer.id, order.id)).items[0]).toMatchObject({ nameSnapshot: `伙伴定制名-${suffix}`, specificationSnapshot: "伙伴礼盒规格" });
+    expect((await prisma.commerceProduct.findUniqueOrThrow({ where: { id: item.id } })).name).toBe(item.name);
   });
   it("records deposit once and rolls back money when the audit cannot be saved", async () => {
     const before = await partners.wallet(b.id);
