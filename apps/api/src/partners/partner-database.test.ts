@@ -837,7 +837,7 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
     expect(await prisma.partnerSkuPrice.findMany({ orderBy: [{ levelId: "asc" }, { skuId: "asc" }] })).toEqual(before);
   });
   it("imports an independent catalog, snapshots partner names, and atomically removes configurations without changing ERP or history", async () => {
-    const level = await prisma.partnerLevel.create({ data: { code: `catalog-${suffix}`, name: `合成目录-${suffix}` } });
+    const level = await prisma.partnerLevel.create({ data: { code: `catalog-${suffix}`, name: `合成目录-${suffix}`, sort: 10000 } });
     const buyer = await admin.create(actorId, { username: `qa-catalog-${suffix}`, name: "合成目录买家", password: "synthetic-partner-password", levelId: level.id }, suffix);
     const item = await prisma.commerceProduct.create({ data: {
       erpItemId: `CATALOG-${suffix}`, name: `合成目录商品-${suffix}`, source: "ERP", status: "PUBLISHED", gallery: [], tags: [],

@@ -22,3 +22,4 @@
 - Git HTTPS push 两次连接重置，改用 Git Data API 上传同一 blob/tree/commit；提交 SHA 和树 SHA 均与本地完全相同，远端引用只允许从原父提交快进，没有强推或重建不同源码。
 - 新 SQL 的自动发布登记、PR/main CI、实际部署和线上资源回查结果，在相应步骤真正完成后补记。
 - 运行38866634086的真实PostgreSQL步骤已成功（job 116860868848）；修复后原SQL旧表升级/事务回滚与新增目录完整用例均通过。结合上述独立DDL兼容审阅，按原SQL精确SHA-256登记compatible-migrations.json。后续仅增加该登记及验收文档，业务代码与已验证SQL未变；主分支完整CI仍为上线门禁。
+- main运行38867545286：根级全部检查及真实PostgreSQL通过；HTTP验收在伙伴健康权限断言失败。新目录验收等级未显式设置sort，默认0排在预置战略等级之前，污染后续HTTP测试对首个启用等级的假设；按已有onboarding实库fixture约定设置sort=10000。仅修改合成测试数据排序，业务代码、SQL及生产数据不变，重新运行完整main流水线。
