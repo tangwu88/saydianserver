@@ -206,7 +206,7 @@ async function load() {
     level.value = result.level;
     for (const product of products.value)
       for (const sku of product.skus) {
-        catalog[sku.id] = { ...sku, name: product.name };
+        catalog[sku.id] = { ...sku, name: sku.name ?? product.name };
         quantities[sku.id] ??= 0;
       }
   } catch (cause) {
@@ -428,8 +428,11 @@ async function purchase() {
               class="sku-row"
             >
               <div class="sku-description">
-                {{ sku.specification || "默认规格"
-                }}<small v-if="sku.stock <= 0">可下单，需安排补货</small>
+                {{
+                  sku.name && sku.name !== product.name ? sku.name + " · " : ""
+                }}{{ sku.specification || "默认规格" }}
+                <small v-if="sku.retailPriceCents != null">零售价 {{ money(sku.retailPriceCents) }}</small>
+                <small v-if="sku.stock <= 0">可下单，需安排补货</small>
               </div>
               <b class="price">{{ money(sku.distributionPriceCents) }}</b
               ><el-input-number
@@ -438,7 +441,7 @@ async function purchase() {
                 :max="9999"
                 :precision="0"
                 :disabled="!!submittedRequest"
-                :aria-label="`${product.name} ${sku.specification || '默认规格'} 数量`"
+                :aria-label="`${sku.name || product.name} ${sku.specification || '默认规格'} 数量`"
               />
             </div>
             <details

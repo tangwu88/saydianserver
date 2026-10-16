@@ -35,27 +35,153 @@ const dialog = ref(false),
   selectedPartner = ref<any>(),
   orderDetail = ref<any>();
 const pendingFunds = ref<{ url: string; body: Record<string, unknown> }>();
+const selectedPrices = ref<any[]>([]),
+  importDialog = ref(false),
+  importRows = ref<any[]>([]),
+  importSelected = ref<any[]>([]),
+  importSearch = ref(""),
+  importPage = ref(1),
+  importTotal = ref(0),
+  importBusy = ref(false),
+  importLevel = ref(""),
+  editPriceLevel = ref("");
+let importRequest = 0;
+async function loadImport() {
+  const request = ++importRequest;
+  importBusy.value = true;
+  importRows.value = [];
+  importSelected.value = [];
+  try {
+    const result = responseData<any>(
+      await api.get("/partner-prices/import-options", {
+        params: {
+          levelId: importLevel.value,
+          search: importSearch.value,
+          page: importPage.value,
+        },
+      }),
+    );
+    if (request === importRequest) {
+      importRows.value = result.items;
+      importTotal.value = result.total;
+    }
+  } catch (cause) {
+    if (request === importRequest) ElMessage.error(readableError(cause));
+  } finally {
+    if (request === importRequest) importBusy.value = false;
+  }
+}
+function openImport() {
+  if (!canPrice.value || !levelId.value) return;
+  importLevel.value = levelId.value;
+  importPage.value = 1;
+  importSearch.value = "";
+  importTotal.value = 0;
+  importDialog.value = true;
+  void loadImport();
+}
+async function importProducts() {
+  if (!canPrice.value || saving.value || !importSelected.value.length) return;
+  saving.value = true;
+  try {
+    const result = responseData<any>(
+      await api.post(`/partner-prices/${importLevel.value}/import`, {
+        skuIds: importSelected.value.map((row) => row.id),
+      }),
+    );
+    ElMessage.success(
+      `已导入 ${result.imported} 个规格，已存在 ${result.skipped} 个；请编辑并启用合作价`,
+    );
+    importDialog.value = false;
+    page.value = 1;
+    await load();
+  } catch (cause) {
+    ElMessage.error(readableError(cause));
+  } finally {
+    saving.value = false;
+  }
+}
+async function deleteProducts() {
+  if (!canPrice.value || saving.value || !selectedPrices.value.length) return;
+  const targetLevel = levelId.value,
+    items = selectedPrices.value.map((row) => ({
+      skuId: row.id,
+      updatedAt: row.price.updatedAt,
+    }));
+  saving.value = true;
+  try {
+    await ElMessageBox.confirm(
+      `从当前合作等级移除选中的 ${items.length} 个规格？商城商品、ERP 编码及历史订单将保留。`,
+      "批量删除",
+      { type: "warning" },
+    );
+    await api.post(`/partner-prices/${targetLevel}/batch-delete`, { items });
+    ElMessage.success("已删除所选伙伴商品配置");
+    page.value = 1;
+    await load();
+  } catch (cause) {
+    if (cause !== "cancel" && cause !== "close")
+      ElMessage.error(readableError(cause));
+  } finally {
+    saving.value = false;
+  }
+}
 const ledgerDetail = ref<any>();
 let financeRequest = 0;
 onBeforeUnmount(() => {
   financeRequest++;
 });
 const accountForm = ref<FormInstance>();
-const memberDialog = ref(false), memberOptions = ref<any[]>([]), linkedMemberId = ref<string | null>(null), linkingPartner = ref<any>(), memberBusy = ref(false);
+const memberDialog = ref(false),
+  memberOptions = ref<any[]>([]),
+  linkedMemberId = ref<string | null>(null),
+  linkingPartner = ref<any>(),
+  memberBusy = ref(false);
 let memberQuery = 0;
 async function searchMembers(query: string) {
-  const request = ++memberQuery; memberBusy.value = true;
-  try { const result = responseData<any>(await api.get("/members", { params: { search: query, pageSize: 30 } })); if (request === memberQuery) memberOptions.value = result.items; }
-  catch (cause) { ElMessage.error(readableError(cause)); }
-  finally { if (request === memberQuery) memberBusy.value = false; }
+  const request = ++memberQuery;
+  memberBusy.value = true;
+  try {
+    const result = responseData<any>(
+      await api.get("/members", { params: { search: query, pageSize: 30 } }),
+    );
+    if (request === memberQuery) memberOptions.value = result.items;
+  } catch (cause) {
+    ElMessage.error(readableError(cause));
+  } finally {
+    if (request === memberQuery) memberBusy.value = false;
+  }
 }
-function openMemberLink(row: any) { linkingPartner.value = row; linkedMemberId.value = row.linkedMemberId; memberDialog.value = true; void searchMembers(""); }
+function openMemberLink(row: any) {
+  linkingPartner.value = row;
+  linkedMemberId.value = row.linkedMemberId;
+  memberDialog.value = true;
+  void searchMembers("");
+}
 async function saveMemberLink() {
   if (saving.value) return;
-  try { await ElMessageBox.confirm("绑定后，该会员可从商城进入此合作账户并在微信内充值。旧登录会话将失效。请核对会员身份。", "确认绑定", { confirmButtonText: "确认", cancelButtonText: "取消" }); } catch { return; }
+  try {
+    await ElMessageBox.confirm(
+      "绑定后，该会员可从商城进入此合作账户并在微信内充值。旧登录会话将失效。请核对会员身份。",
+      "确认绑定",
+      { confirmButtonText: "确认", cancelButtonText: "取消" },
+    );
+  } catch {
+    return;
+  }
   saving.value = true;
-  try { await api.post(`/partners/${linkingPartner.value.id}/link-member`, { memberId: linkedMemberId.value || null }); memberDialog.value = false; ElMessage.success("绑定已更新"); await load(); }
-  catch (cause) { ElMessage.error(readableError(cause)); } finally { saving.value = false; }
+  try {
+    await api.post(`/partners/${linkingPartner.value.id}/link-member`, {
+      memberId: linkedMemberId.value || null,
+    });
+    memberDialog.value = false;
+    ElMessage.success("绑定已更新");
+    await load();
+  } catch (cause) {
+    ElMessage.error(readableError(cause));
+  } finally {
+    saving.value = false;
+  }
 }
 const accountRules = computed<FormRules>(() =>
   dialogType.value === "account"
@@ -136,6 +262,7 @@ async function loadPartners(searchInput = search.value) {
     total.value = result.total;
 }
 async function load() {
+  selectedPrices.value = [];
   loading.value = true;
   try {
     levels.value = responseData(await api.get("/partner-levels"));
@@ -274,7 +401,11 @@ function open(type: string, row?: any) {
     Object.assign(form, {
       amount: row.price ? row.price.priceCents / 100 : undefined,
       enabled: row.price?.enabled ?? true,
+      productName: row.product.name,
+      specification: row.specification ?? "",
+      retailAmount: row.salePriceCents / 100,
     });
+  if (type === "price") editPriceLevel.value = levelId.value;
   if (type === "deposit" || type === "balance")
     Object.assign(form, {
       amount: 0,
@@ -303,11 +434,17 @@ async function save() {
         await api.patch(`/partner-levels/${edit.value.id}`, { ...form });
       else await api.post("/partner-levels", { ...form });
     } else if (dialogType.value === "price") {
-      await api.patch(`/partner-prices/${levelId.value}/${edit.value.id}`, {
-        priceCents: Math.round(Number(form.amount) * 100),
-        enabled: form.enabled,
-        updatedAt: edit.value.price?.updatedAt ?? null,
-      });
+      await api.patch(
+        `/partner-prices/${editPriceLevel.value}/${edit.value.id}`,
+        {
+          priceCents: Math.round(Number(form.amount) * 100),
+          productName: form.productName,
+          specification: form.specification,
+          retailPriceCents: Math.round(Number(form.retailAmount) * 100),
+          enabled: form.enabled,
+          updatedAt: edit.value.price?.updatedAt ?? null,
+        },
+      );
     } else {
       if (!canFinance.value || !partnerId.value) {
         ElMessage.error("仅超级管理员可以登记伙伴资金");
@@ -515,7 +652,13 @@ async function copyPromotion() {
               >编辑</el-button
             ><el-button v-if="canManage" text @click="reset(scope.row)"
               >重置密码</el-button
-            ><el-button v-if="canManage" text @click="openMemberLink(scope.row)">{{ scope.row.linkedMemberId ? '会员绑定' : '绑定商城会员' }}</el-button
+            ><el-button
+              v-if="canManage"
+              text
+              @click="openMemberLink(scope.row)"
+              >{{
+                scope.row.linkedMemberId ? "会员绑定" : "绑定商城会员"
+              }}</el-button
             ></template
           ></el-table-column
         ></el-table
@@ -541,12 +684,35 @@ async function copyPromotion() {
           ></el-table-column
         ></el-table
       >
+      <div v-if="resource === 'partner-prices'" style="margin: 12px 0">
+        <p>
+          仅显示当前合作等级已导入的规格。名称、零售价与合作价独立维护，库存及
+          ERP 编码沿用商城原规格。
+        </p>
+        <el-button
+          v-if="canPrice"
+          type="primary"
+          :disabled="!levelId || saving"
+          @click="openImport"
+          >从商城导入</el-button
+        >
+        <el-button
+          v-if="canPrice"
+          type="danger"
+          :disabled="!selectedPrices.length || saving || loading"
+          @click="deleteProducts"
+          >批量删除（{{ selectedPrices.length }}）</el-button
+        >
+      </div>
       <el-table
         v-if="resource === 'partner-prices'"
         :data="prices"
+        row-key="id"
+        @selection-change="selectedPrices = $event"
         border
         stripe
-        ><el-table-column label="商品" min-width="200"
+        ><el-table-column v-if="canPrice" type="selection" width="45" />
+        <el-table-column label="商品" min-width="200"
           ><template #default="scope">{{
             scope.row.product.name
           }}</template></el-table-column
@@ -558,7 +724,12 @@ async function copyPromotion() {
           ><template #default="scope">{{
             money(scope.row.salePriceCents)
           }}</template></el-table-column
-        ><el-table-column label="合作价" width="140"
+        ><el-table-column
+          prop="erpSkuId"
+          label="原 ERP 规格编码"
+          min-width="150"
+        />
+        <el-table-column label="合作价" width="140"
           ><template #default="scope">{{
             money(scope.row.price?.priceCents)
           }}</template></el-table-column
@@ -569,7 +740,7 @@ async function copyPromotion() {
         ><el-table-column v-if="canPrice" label="操作" width="120"
           ><template #default="scope"
             ><el-button @click="open('price', scope.row)"
-              >设置合作价</el-button
+              >编辑商品</el-button
             ></template
           ></el-table-column
         ></el-table
@@ -789,6 +960,85 @@ async function copyPromotion() {
       </template>
     </el-dialog>
     <el-dialog
+      v-model="importDialog"
+      title="从商城商品列表导入规格"
+      width="min(1000px, 95vw)"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!saving"
+      :show-close="!saving"
+    >
+      <p>
+        导入到：{{
+          levels.find((level) => level.id === importLevel)?.name
+        }}。已导入规格不会重复创建或覆盖；新规格需编辑并启用合作价。
+      </p>
+      <el-input
+        v-model="importSearch"
+        placeholder="搜索商城商品、规格或 ERP 编码"
+        :disabled="saving"
+        @keyup.enter="
+          importPage = 1;
+          loadImport();
+        "
+      />
+      <el-button
+        :disabled="saving"
+        @click="
+          importPage = 1;
+          loadImport();
+        "
+        >查询</el-button
+      >
+      <el-table
+        v-loading="importBusy"
+        :data="importRows"
+        row-key="id"
+        @selection-change="importSelected = $event"
+      >
+        <el-table-column
+          type="selection"
+          width="45"
+          :selectable="(row: any) => !row.imported && !saving"
+        />
+        <el-table-column prop="product.name" label="商城商品" min-width="180" />
+        <el-table-column prop="specification" label="规格" min-width="180" />
+        <el-table-column prop="erpSkuId" label="ERP 编码" min-width="150" />
+        <el-table-column label="零售价"
+          ><template #default="scope">{{
+            money(scope.row.salePriceCents)
+          }}</template></el-table-column
+        >
+        <el-table-column label="状态"
+          ><template #default="scope">{{
+            scope.row.imported
+              ? "已导入"
+              : scope.row.product.status === "PUBLISHED" && scope.row.enabled
+                ? "可导入"
+                : "商城未上架或规格停用"
+          }}</template></el-table-column
+        >
+      </el-table>
+      <el-pagination
+        v-model:current-page="importPage"
+        :page-size="30"
+        :total="importTotal"
+        :disabled="saving"
+        layout="prev, pager, next, total"
+        @current-change="loadImport"
+      />
+      <template #footer
+        ><el-button :disabled="saving" @click="importDialog = false"
+          >取消</el-button
+        ><el-button
+          type="primary"
+          :loading="saving"
+          :disabled="!importSelected.length || importBusy"
+          @click="importProducts"
+          >导入选中规格（{{ importSelected.length }}）</el-button
+        ></template
+      >
+    </el-dialog>
+    <el-dialog
       :model-value="!!ledgerDetail"
       title="资金登记日志"
       width="min(680px, 94vw)"
@@ -900,8 +1150,23 @@ async function copyPromotion() {
             ><el-switch v-model="form.active" /></el-form-item></template
         ><template v-else-if="dialogType === 'price'"
           ><p>
-            {{ edit?.product.name }} · {{ edit?.specification || "默认规格" }}
+            商城原商品：{{ edit?.sourceName || edit?.product.name }} ·
+            {{ edit?.sourceSpecification || "默认规格" }}<br />
+            ERP 规格编码：{{ edit?.erpSkuId }}（保持原绑定）
           </p>
+          <el-form-item label="伙伴商品名称" required
+            ><el-input v-model="form.productName" maxlength="200"
+          /></el-form-item>
+          <el-form-item label="伙伴规格名称"
+            ><el-input v-model="form.specification" maxlength="300"
+          /></el-form-item>
+          <el-form-item label="伙伴零售价（元）"
+            ><el-input-number
+              v-model="form.retailAmount"
+              :min="0"
+              :max="21474836.47"
+              :precision="2"
+          /></el-form-item>
           <el-form-item label="合作价（元）"
             ><el-input-number
               v-model="form.amount"
@@ -984,15 +1249,43 @@ async function copyPromotion() {
       </div></el-dialog
     >
   </section>
-<el-dialog v-model="memberDialog" title="绑定商城会员" width="min(580px,94vw)">
-<p>{{ linkingPartner?.name }} · {{ linkingPartner?.username }}</p>
-<p v-if="linkingPartner?.linkedMember">当前绑定：{{ linkingPartner.linkedMember.nickname }} · {{ linkingPartner.linkedMember.compatibilityId }}</p>
-<el-select v-model="linkedMemberId" filterable remote clearable :remote-method="searchMembers" :loading="memberBusy" placeholder="搜索会员名、会员编号、手机号或邮箱" style="width:100%">
-<el-option v-for="member in memberOptions" :key="member.id" :value="member.id" :label="`${member.nickname} · ${member.memberNo || member.compatibilityId || member.id} · ${member.mobile || member.phoneMasked || member.emailMasked || ''}`" />
-</el-select>
-<p class="muted">请绑定实际管理此合作账户的会员。清空并保存可解除绑定。会员推广归属不受此操作影响。</p>
-<template #footer><el-button @click="memberDialog = false">取消</el-button><el-button type="primary" :loading="saving" @click="saveMemberLink">保存绑定</el-button></template>
-</el-dialog>
+  <el-dialog
+    v-model="memberDialog"
+    title="绑定商城会员"
+    width="min(580px,94vw)"
+  >
+    <p>{{ linkingPartner?.name }} · {{ linkingPartner?.username }}</p>
+    <p v-if="linkingPartner?.linkedMember">
+      当前绑定：{{ linkingPartner.linkedMember.nickname }} ·
+      {{ linkingPartner.linkedMember.compatibilityId }}
+    </p>
+    <el-select
+      v-model="linkedMemberId"
+      filterable
+      remote
+      clearable
+      :remote-method="searchMembers"
+      :loading="memberBusy"
+      placeholder="搜索会员名、会员编号、手机号或邮箱"
+      style="width: 100%"
+    >
+      <el-option
+        v-for="member in memberOptions"
+        :key="member.id"
+        :value="member.id"
+        :label="`${member.nickname} · ${member.memberNo || member.compatibilityId || member.id} · ${member.mobile || member.phoneMasked || member.emailMasked || ''}`"
+      />
+    </el-select>
+    <p class="muted">
+      请绑定实际管理此合作账户的会员。清空并保存可解除绑定。会员推广归属不受此操作影响。
+    </p>
+    <template #footer
+      ><el-button @click="memberDialog = false">取消</el-button
+      ><el-button type="primary" :loading="saving" @click="saveMemberLink"
+        >保存绑定</el-button
+      ></template
+    >
+  </el-dialog>
 </template>
 <style scoped>
 .page {

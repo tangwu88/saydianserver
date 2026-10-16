@@ -455,13 +455,16 @@ model PartnerAgreementAcceptance {
 }
 
 model PartnerSkuPrice {
-  levelId    String       @db.Uuid
-  skuId      String       @db.Uuid
-  priceCents Int
-  enabled    Boolean      @default(true)
-  updatedAt  DateTime     @updatedAt
-  level      PartnerLevel @relation(fields: [levelId], references: [id], onDelete: Restrict)
-  sku        CommerceSku  @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  levelId          String       @db.Uuid
+  skuId            String       @db.Uuid
+  priceCents       Int
+  productName      String?
+  specification    String?
+  retailPriceCents Int?
+  enabled          Boolean      @default(true)
+  updatedAt        DateTime     @updatedAt
+  level            PartnerLevel @relation(fields: [levelId], references: [id], onDelete: Restrict)
+  sku              CommerceSku  @relation(fields: [skuId], references: [id], onDelete: Cascade)
 
   @@id([levelId, skuId])
 }

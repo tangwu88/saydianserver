@@ -117,6 +117,34 @@ export class PartnerAdminController {
       request.requestId,
     );
   }
+  @Get("partner-prices/import-options")
+  importOptions(
+    @Query("levelId") levelId: string,
+    @Query("search") search = "",
+    @Query("page") page?: string,
+  ) {
+    return this.admin.importOptions(levelId, search, page);
+  }
+  @Post("partner-prices/:levelId/import")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  importPrices(
+    @CurrentAdmin() actor: Admin,
+    @Param("levelId") levelId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithContext,
+  ) {
+    return this.admin.importPrices(actor.id, levelId, body, request.requestId);
+  }
+  @Post("partner-prices/:levelId/batch-delete")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  deletePrices(
+    @CurrentAdmin() actor: Admin,
+    @Param("levelId") levelId: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithContext,
+  ) {
+    return this.admin.deletePrices(actor.id, levelId, body, request.requestId);
+  }
   @Get("partner-finance/:id/wallet")
   wallet(@Param("id") id: string) {
     return this.admin.wallet(id);
