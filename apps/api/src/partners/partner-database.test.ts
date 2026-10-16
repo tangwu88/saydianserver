@@ -828,9 +828,9 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
       await tx.$executeRawUnsafe('CREATE TEMP TABLE "PartnerSkuPrice" (LIKE public."PartnerSkuPrice" INCLUDING DEFAULTS) ON COMMIT DROP');
       await tx.$executeRawUnsafe('ALTER TABLE pg_temp."PartnerSkuPrice" DROP COLUMN "productName", DROP COLUMN "specification", DROP COLUMN "retailPriceCents"');
       await tx.$executeRawUnsafe('INSERT INTO pg_temp."PartnerSkuPrice" ("levelId", "skuId", "priceCents", "enabled", "updatedAt") VALUES ($1::uuid,$2::uuid,1234,true,\'2026-10-01T00:00:00.000Z\')', a.levelId, sku.id);
-      const oldRows = await tx.$queryRawUnsafe<any[]>('SELECT * FROM pg_temp."PartnerSkuPrice"');
+      const oldRows = await tx.$queryRawUnsafe<any[]>('SELECT "levelId", "skuId", "priceCents", "enabled", "updatedAt" FROM pg_temp."PartnerSkuPrice"');
       for (const statement of sql.split(";").map(value => value.trim()).filter(Boolean)) await tx.$executeRawUnsafe(statement);
-      const upgraded = await tx.$queryRawUnsafe<any[]>('SELECT * FROM pg_temp."PartnerSkuPrice"');
+      const upgraded = await tx.$queryRawUnsafe<any[]>('SELECT "levelId", "skuId", "priceCents", "enabled", "updatedAt", "productName", "specification", "retailPriceCents" FROM pg_temp."PartnerSkuPrice"');
       expect(upgraded).toEqual(oldRows.map(row => ({ ...row, productName: null, specification: null, retailPriceCents: null })));
       throw new Error("synthetic catalog migration rollback");
     })).rejects.toThrow("synthetic catalog migration rollback");
