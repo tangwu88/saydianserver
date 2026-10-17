@@ -424,7 +424,7 @@
 | `GET /api/saydian-app/admin/v1/partner-levels` | 合作等级列表 | admin | 无请求体 | 战略合作/核心合作/优选合作默认等级及新增等级 | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/admin/v1/partner-levels` | 新增合作价格等级 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {name,sort?,active?} | 等级记录；不创建上下级分佣关系 | 主库；伙伴身份与会员/员工推广隔离 |
 | `PATCH /api/saydian-app/admin/v1/partner-levels/:id` | 编辑合作等级 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；{name,sort?,active?,updatedAt} | CAS更新等级；停用等级暂停新采购 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/admin/v1/partner-prices` | 查询已导入伙伴商品 | admin | query:levelId，query:search?，query:page?；levelId、search?、page? | 仅当前等级已有配置的SKU，返回伙伴独立名称/规格/零售价及原ERP编码 | 主库；不实时调用ERP；保留已有合作价 |
+| `GET /api/saydian-app/admin/v1/partner-prices` | 查询已导入伙伴商品 | admin | query:levelId，query:search?，query:page?，query:groupBy?；levelId、search?、page?、groupBy?:product | 默认SKU分页；groupBy=product按商城商品分页并包含当前等级全部已导入规格，返回独立名称/规格/零售价及原ERP编码 | 主库；不实时调用ERP；保留已有合作价 |
 | `PATCH /api/saydian-app/admin/v1/partner-prices/:levelId/:skuId` | 编辑伙伴商品及等级合作价 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:levelId，path:skuId；levelId、skuId；{priceCents,enabled?,productName?,specification?,retailPriceCents?,updatedAt:旧时间\|null} | CAS更新展示名称、规格及价格；禁止更换原SKU/ERP绑定；不追改商城或历史订单 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/admin/v1/partner-prices/import-options` | 查询商城导入候选规格 | admin | query:levelId，query:search?，query:page?；levelId、search?、page? | 未删除的ERP/本地商城规格，标记当前等级已导入项，每页30条 | 主库；后台伙伴商品读权限 |
 | `POST /api/saydian-app/admin/v1/partner-prices/:levelId/import` | 手动导入伙伴商品规格 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:levelId；levelId；{skuIds:不同UUID数组，1至100项} | 快照商城名称、规格和零售价；保留原SKU与ERP编码；新合作价停用；重复导入不覆盖 | 超级管理员/商城运营；事务及审计 |

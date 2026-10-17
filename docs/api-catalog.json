@@ -24848,13 +24848,19 @@
           "name": "page",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "groupBy",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/partners/partner-admin.controller.ts",
       "summary": "查询已导入伙伴商品",
-      "request": "levelId、search?、page?",
-      "response": "仅当前等级已有配置的SKU，返回伙伴独立名称/规格/零售价及原ERP编码",
+      "request": "levelId、search?、page?、groupBy?:product",
+      "response": "默认SKU分页；groupBy=product按商城商品分页并包含当前等级全部已导入规格，返回独立名称/规格/零售价及原ERP编码",
       "dependency": "主库；不实时调用ERP；保留已有合作价",
       "successStatus": 200,
       "contract": {

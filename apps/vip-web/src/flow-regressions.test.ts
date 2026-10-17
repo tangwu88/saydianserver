@@ -27,6 +27,7 @@ import {
 import { activeShortcut, safeReturnPath } from "./navigation";
 import { partnerPaymentChannels, invokePartnerPayment } from "./payments";
 import { recognizeAddress } from "./address-recognition";
+import { money } from "./present";
 const { ElForm, ElFormItem, ID_INJECTION_KEY } = createRequire(import.meta.url)(
   "element-plus",
 ) as typeof import("element-plus");
@@ -151,13 +152,14 @@ function harness(view: string, store = memoryStorage()) {
     addressError,
     isDefiniteOrderFailure,
     recognizeAddress,
+    money,
     navigator: { userAgent: "Desktop" },
     setInterval: vi.fn(() => 1),
     clearInterval: vi.fn(),
   };
   const exports =
     view === "Products"
-      ? "load, review, preparePurchase, purchase, cancelPurchaseConfirmation, paymentReview, preparingPurchase, quantities, address, addressForm, submittedRequest, submitting, quote, quoteStale, checkoutError, balance, buyerRemark, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
+      ? "load, productPrice, selectedCount, review, preparePurchase, purchase, cancelPurchaseConfirmation, paymentReview, preparingPurchase, quantities, address, addressForm, submittedRequest, submitting, quote, quoteStale, checkoutError, balance, buyerRemark, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
       : "load, create, viewRecharge, retryPayment, poll, pendingInput, form, currentRecharge, payment, paymentError, pollError, paying";
   const state = new Function(
     ...Object.keys(deps),
@@ -192,6 +194,21 @@ async function confirmedPurchase(h: ReturnType<typeof harness>) {
 }
 
 describe("partner checkout recovery and user-facing failures", () => {
+  it("summarizes grouped prices and selected SKU quantities without mixing products", () => {
+    const h = harness("Products");
+    const product = {
+      skus: [
+        { id: "a", purchasable: true, distributionPriceCents: 600 },
+        { id: "b", purchasable: true, distributionPriceCents: 900 },
+      ],
+    };
+    h.quantities.a = 2;
+    h.quantities.b = 3;
+    h.quantities.other = 99;
+    expect(h.selectedCount(product)).toBe(5);
+    expect(h.productPrice(product)).toContain("~");
+    expect(h.productPrice({ skus: [] })).toBe("暂无合作价");
+  });
   it("keeps restored empty addresses quiet and reports Chinese errors on validation", async () => {
     // Mount real Element Plus form items. Their required prop used to append an
     // English change validator, which the earlier form stub could not detect.
