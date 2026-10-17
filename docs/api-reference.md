@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **450 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **451 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -299,7 +299,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（139）
+## 管理后台接口（140）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -354,6 +354,7 @@
 | `POST /api/saydian-app/admin/v1/commerce-products` | 拒绝手工新增ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 请先通过聚水潭商品同步建立商品和SKU | HTTP 400；不会创建第二套库存 | 聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products/erp-import` | 按SKU定位SPU并实时导入ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存 | 聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误 | 聚水潭商品查询与库存查询 |
 | `POST /api/saydian-app/admin/v1/commerce-products/batch` | 商品批量上下架与归档 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {ids:商品UUID数组,action:PUBLISH/DISABLE/ARCHIVE}；ERP和自建商品保留各自库存权威 | 批量处理结果 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `POST /api/saydian-app/admin/v1/commerce-products/:id/erp-assignment` | 核对并校正ERP规格归属 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；path:id；{action:preview\|apply,fingerprint?:预览摘要}；最多100规格 | 按精确SKU实时核对ERP款式；预览无业务写入，确认时重查ERP并CAS校验版本，仅修改规格productId/erpItemId；新款式为草稿，保留SKU、库存、价格、合作价与订单快照 | 超级管理员/商城运营；事务、行锁、审计；无SQL迁移 |
 | `POST /api/saydian-app/admin/v1/commerce-products/inventory-sync` | 实时同步聚水潭库存 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 无参数；同步未归档ERP商品的启用SKU，最多5000个 | 返回商品数、SKU数及更新SKU数；只扣除尚未同步ERP的已付款本站订单；未付款不占库存；同步时按SKU记录旧订单库存释放，付款再扣、取消不重复返还；允许已付款超卖并保留负库存缺货数，只更新库存；缺失或无效数量不补零，订单或SKU并发变化时整次回滚；400/409分别返回SKU校验、并发冲突的受控中文诊断及inventory_sync_* errorKey；500返回inventory_sync_internal，可含结构化Prisma错误码，不回显内部错误原文；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误 | 聚水潭库存查询；本地SKU库存与订单占用；管理员审计 |
 | `PATCH /api/saydian-app/admin/v1/commerce-products/:id/skus` | 快速修改商品SKU售价与库存 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{skus:[{id:SKU UUID,updatedAt:当前更新时间,salePriceCents:整数分,stock:非负整数，或原样保留当前超卖负数}]}；每次1至100条 | 原子更新并返回商品；版本过期409且不部分保存；ERP商品后续同步可能覆盖手工值 | 主库商城/聚水潭 |
 | `PATCH /api/saydian-app/admin/v1/commerce-products/:id` | 编辑商品展示资料 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?} | 展示资料；ERP编号、内部名称、SKU和库存不会被覆盖 | 主库商城/聚水潭 |

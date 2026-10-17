@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { api, readableError, responseData } from "../api";
 import ContentImageField from "./ContentImageField.vue";
+import ProductErpAssignmentRepair from "./ProductErpAssignmentRepair.vue";
 
 type Row = Record<string, any>;
 type SkuDraft = {
@@ -111,7 +112,7 @@ async function saveAdjustments(): Promise<void> {
         <h3>SKU 与库存</h3>
         <small v-if="!editing">修改后会立即影响商城售价和可售库存</small>
       </div>
-      <el-button v-if="canEdit && !editing" type="primary" plain size="small" @click="startEditing">快速修改</el-button>
+      <div v-if="canEdit && !editing"><ProductErpAssignmentRepair v-if="product.source === 'ERP'" :key="product.id" :product-id="product.id" @saved="emit('saved', $event)" /><el-button type="primary" plain size="small" @click="startEditing">快速修改</el-button></div>
     </div>
 
     <el-alert

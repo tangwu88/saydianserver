@@ -225,6 +225,7 @@ export class PartnerCommerceService {
       level: partner.level.name,
       items: rows.map((row) => ({
         id: row.id,
+        erpItemId: row.erpItemId,
         name:
           new Set(
             row.skus.map(

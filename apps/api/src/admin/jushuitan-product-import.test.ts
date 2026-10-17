@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { importJushuitanProductBySku } from "./jushuitan-product-import";
+import {
+  importJushuitanProductBySku,
+  lookupJushuitanAssignments,
+} from "./jushuitan-product-import";
 
 function providerResponse(payload: unknown, status = 200): Response {
   return {
@@ -108,6 +111,69 @@ afterEach(() => {
 });
 
 describe("administrator direct Jushuitan product import", () => {
+  it("splits 21 exact SKU lookups into provider batches of at most 20", async () => {
+    const h = fixture();
+    const ids = Array.from({ length: 21 }, (_, index) => `SKU-${index}`);
+    const fetchMock = vi.fn(async (_url: unknown, options: any) => {
+      const request = JSON.parse(options.body);
+      const requested = request.sku_ids.split(",");
+      expect(requested.length).toBeLessThanOrEqual(20);
+      return providerResponse({
+        code: 0,
+        datas: requested.map((id: string) => ({ ...product, sku_id: id })),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await lookupJushuitanAssignments(
+      h.prisma as any,
+      h.secrets as any,
+      ids,
+    );
+    expect(result.map((row) => row.erpSkuId)).toEqual(ids);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it("keeps R7 and R7y item IDs separate during exact assignment lookups", async () => {
+    const h = fixture();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        providerResponse({
+          code: 0,
+          datas: [
+            { ...product, sku_id: "sd-ring-R7y-silver-9", i_id: "sd-ring-R7y" },
+            { ...product, sku_id: "sd-ring-R7-black-7", i_id: "sd-ring-R7" },
+            { ...product, sku_id: "sd-ring-R7y-silver-90", i_id: "unrelated" },
+          ],
+        }),
+      ),
+    );
+    const rows = await lookupJushuitanAssignments(
+      h.prisma as any,
+      h.secrets as any,
+      ["sd-ring-R7-black-7", "sd-ring-R7y-silver-9"],
+    );
+    expect(rows.map((row) => row.erpItemId)).toEqual([
+      "sd-ring-R7",
+      "sd-ring-R7y",
+    ]);
+    expect(h.tx.commerceProduct.upsert).not.toHaveBeenCalled();
+  });
+  it("refuses to guess an assignment when the ERP item ID is missing", async () => {
+    const h = fixture();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          providerResponse({ code: 0, datas: [{ ...product, i_id: "" }] }),
+        ),
+    );
+    await expect(
+      lookupJushuitanAssignments(h.prisma as any, h.secrets as any, [
+        String(product.sku_id),
+      ]),
+    ).rejects.toThrow("唯一款式编码");
+  });
   it("queries the configured V2 product and inventory APIs by exact SKU before importing", async () => {
     const h = fixture({
       apiBase: "https://openapi.jushuitan.com",

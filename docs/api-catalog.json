@@ -1903,6 +1903,47 @@
       }
     },
     {
+      "key": "AdminController.reconcileCommerceProduct",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-products/:id/erp-assignment",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "核对并校正ERP规格归属",
+      "request": "path:id；{action:preview|apply,fingerprint?:预览摘要}；最多100规格",
+      "response": "按精确SKU实时核对ERP款式；预览无业务写入，确认时重查ERP并CAS校验版本，仅修改规格productId/erpItemId；新款式为草稿，保留SKU、库存、价格、合作价与订单快照",
+      "dependency": "超级管理员/商城运营；事务、行锁、审计；无SQL迁移",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.syncCommerceInventory",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/commerce-products/inventory-sync",

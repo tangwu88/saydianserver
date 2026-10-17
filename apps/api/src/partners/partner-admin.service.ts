@@ -483,6 +483,8 @@ export class PartnerAdminService {
           displayName: true,
           coverImage: true,
           status: true,
+          erpItemId: true,
+          source: true,
           skus: {
             where: imported,
             orderBy: { id: "asc" },

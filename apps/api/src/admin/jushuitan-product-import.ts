@@ -7,7 +7,10 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { IntegrationState, Prisma, ProductStatus } from "@prisma/client";
-import { deferredStockItems, markPaymentStockItems } from "../commerce/commerce-payment-stock";
+import {
+  deferredStockItems,
+  markPaymentStockItems,
+} from "../commerce/commerce-payment-stock";
 import { createHash } from "node:crypto";
 import { safeObject } from "../common/crypto";
 import { markIntegrationVerified } from "../common/integration-health";
@@ -30,7 +33,7 @@ type JushuitanSettings = {
   inventoryOperation: string;
 };
 
-type JushuitanProduct = {
+export type JushuitanProduct = {
   erpItemId: string;
   erpSkuId: string;
   name: string;
@@ -151,9 +154,10 @@ export async function syncJushuitanInventory(
     if (error instanceof HttpException) throw error;
     // Only expose a structured Prisma code, never a database message or URL.
     const code = (error as { code?: unknown } | null)?.code;
-    const diagnostic = typeof code === "string" && /^P\d{4}$/.test(code)
-      ? `（数据库错误码 ${code}）`
-      : "";
+    const diagnostic =
+      typeof code === "string" && /^P\d{4}$/.test(code)
+        ? `（数据库错误码 ${code}）`
+        : "";
     throw new InternalServerErrorException({
       errorKey: "inventory_sync_internal",
       message: `本站库存同步执行失败${diagnostic}；请联系管理员核查本次请求，勿将其视为同步成功`,
@@ -436,12 +440,14 @@ async function performJushuitanInventorySync(
     orderBy: { id: "asc" },
   });
   const pendingWhere = {
-    skuId: { in: skus.map(sku => sku.id) },
+    skuId: { in: skus.map((sku) => sku.id) },
     order: { executionOwner: "NEW_SYSTEM", status: "PENDING_PAYMENT" as const },
   };
   const pendingSelect = { ...reservationSelect, orderId: true } as const;
   const pending = await prisma.commerceOrderItem.findMany({
-    where: pendingWhere, select: pendingSelect, orderBy: { id: "asc" },
+    where: pendingWhere,
+    select: pendingSelect,
+    orderBy: { id: "asc" },
   });
   const reserved = new Map<string, number>();
   for (const item of reservations)
@@ -471,14 +477,23 @@ async function performJushuitanInventorySync(
   const changed = updates.filter((sku) => sku.newStock !== sku.stock);
   await prisma.$transaction(
     async (tx) => {
-      const orderIds = [...new Set([...pending.map(item => item.orderId)])].sort();
-      if (orderIds.length) await tx.$queryRaw(Prisma.sql`SELECT id FROM "CommerceOrder" WHERE id IN (${Prisma.join(orderIds.map(id => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`);
+      const orderIds = [
+        ...new Set([...pending.map((item) => item.orderId)]),
+      ].sort();
+      if (orderIds.length)
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM "CommerceOrder" WHERE id IN (${Prisma.join(orderIds.map((id) => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`,
+        );
       const currentPending = await tx.commerceOrderItem.findMany({
-        where: pendingWhere, select: pendingSelect, orderBy: { id: "asc" },
+        where: pendingWhere,
+        select: pendingSelect,
+        orderBy: { id: "asc" },
       });
-      if (JSON.stringify(currentPending) !== JSON.stringify(pending)) throw new ConflictException({
-        errorKey: "inventory_sync_concurrent_change", message: "同步期间待付款订单已变化；本次未更新，请重新同步",
-      });
+      if (JSON.stringify(currentPending) !== JSON.stringify(pending))
+        throw new ConflictException({
+          errorKey: "inventory_sync_concurrent_change",
+          message: "同步期间待付款订单已变化；本次未更新，请重新同步",
+        });
       const currentReservations = await tx.commerceOrderItem.findMany({
         where: reservationWhere,
         select: reservationSelect,
@@ -495,12 +510,24 @@ async function performJushuitanInventorySync(
       // ERP stock replaces historical checkout holds. Persist that evidence in the
       // same transaction so later payment/cancellation cannot deduct/return twice.
       const deferred = await deferredStockItems(tx, pending);
-      const releasedSkuIds = new Set(pending.filter(item => !deferred.has(item.id)).map(item => item.skuId));
-      for (const orderId of orderIds) await markPaymentStockItems(tx, orderId,
-        pending.filter(item => item.orderId === orderId && !deferred.has(item.id)));
+      const releasedSkuIds = new Set(
+        pending
+          .filter((item) => !deferred.has(item.id))
+          .map((item) => item.skuId),
+      );
+      for (const orderId of orderIds)
+        await markPaymentStockItems(
+          tx,
+          orderId,
+          pending.filter(
+            (item) => item.orderId === orderId && !deferred.has(item.id),
+          ),
+        );
       // Even an unchanged number needs a SKU CAS when releasing a historical
       // hold: policy evidence must not commit against a concurrent stock edit.
-      for (const sku of updates.filter(sku => sku.newStock !== sku.stock || releasedSkuIds.has(sku.id))) {
+      for (const sku of updates.filter(
+        (sku) => sku.newStock !== sku.stock || releasedSkuIds.has(sku.id),
+      )) {
         const result = await tx.commerceSku.updateMany({
           where: {
             id: sku.id,
@@ -728,9 +755,10 @@ async function callJushuitan(
         "聚水潭未授权商品或库存查询接口（错误码 190），请先补充接口权限",
       );
     }
-    const diagnostic = Number.isSafeInteger(code) && code !== 0
-      ? `错误码 ${code}`
-      : `HTTP ${response.status}`;
+    const diagnostic =
+      Number.isSafeInteger(code) && code !== 0
+        ? `错误码 ${code}`
+        : `HTTP ${response.status}`;
     throw new JushuitanUnavailableException(
       `聚水潭接口拒绝请求（${diagnostic}）；请核对接口路径、应用授权及访问令牌有效期`,
     );
@@ -814,6 +842,61 @@ function jushuitanRows(
   ];
   const selected = candidates.find(Array.isArray);
   return Array.isArray(selected) ? selected.map(safeObject) : [];
+}
+
+export async function lookupJushuitanAssignments(
+  prisma: PrismaService,
+  secrets: IntegrationSecretsService,
+  skuIds: string[],
+): Promise<JushuitanProduct[]> {
+  if (
+    !skuIds.length ||
+    skuIds.length > 100 ||
+    new Set(skuIds.map((id) => id.toLowerCase())).size !== skuIds.length
+  )
+    throw new BadRequestException("请选择1至100个不同的ERP规格");
+  if (skuIds.some((id) => !id.trim() || /[,\r\n]/.test(id)))
+    throw new BadRequestException("ERP SKU 编码格式不正确");
+  const settings = await jushuitanSettings(prisma, secrets);
+  const rows: Record<string, unknown>[] = [];
+  const deadline = Date.now() + 40000;
+  // /open/sku/query accepts at most 20 SKU codes per request.
+  for (let offset = 0; offset < skuIds.length; offset += 20) {
+    for (let page = 1; page <= 100; page++) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0)
+        throw new JushuitanUnavailableException("商品核对超时，本次未校正");
+      const result = await callJushuitan(
+        settings,
+        settings.skuOperation,
+        {
+          sku_ids: skuIds.slice(offset, offset + 20).join(","),
+          page_index: page,
+          page_size: 100,
+        },
+        Math.min(20000, remaining),
+      );
+      const found = jushuitanRows(result);
+      rows.push(...found);
+      if (!hasNextPage(result) || !found.length) break;
+      if (page === 100)
+        throw new JushuitanUnavailableException("商品核对结果超过分页上限");
+    }
+  }
+  return skuIds.map((id) => {
+    const matches = rows.filter(
+      (row) => normalizedSku(row) === id.toLowerCase(),
+    );
+    if (
+      !matches.length ||
+      matches.some((row) => !itemId(row)) ||
+      new Set(matches.map(itemId)).size !== 1
+    )
+      throw new JushuitanUnavailableException(
+        "聚水潭未完整返回规格的唯一款式编码，本次未校正",
+      );
+    return mapJushuitanProduct(matches[0]!);
+  });
 }
 
 function exactSkuRow(

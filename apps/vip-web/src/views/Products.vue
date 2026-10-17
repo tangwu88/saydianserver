@@ -437,6 +437,9 @@ async function purchase() {
           /><el-icon v-else class="product-placeholder"><Picture /></el-icon>
           <div class="product-main">
             <h2>{{ product.name }}</h2>
+            <p v-if="product.fulfillmentSource === 'ERP'" class="muted">
+              款式：{{ product.erpItemId }}
+            </p>
             <details class="product-specs" :open="product.skus.length === 1">
               <summary>
                 <span

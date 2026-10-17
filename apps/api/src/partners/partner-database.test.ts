@@ -16,6 +16,7 @@ import {
 import { BillingService } from "../billing/billing.service";
 import { AdminService } from "../admin/admin.service";
 import { sha256 } from "../common/crypto";
+import { reconcileErpProduct } from "../admin/erp-product-assignment";
 
 // Real row-lock/concurrency acceptance. Fixture funds are synthetic and never dispatched.
 // Accounting is append-only: keep this namespace in the disposable local/CI database.
@@ -210,6 +211,39 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
   });
   afterAll(async () => {
     await prisma?.$disconnect();
+  });
+
+  it("repairs mixed ERP product assignments without changing partner prices or order snapshots", async () => {
+    const key = randomUUID(), item = `R7-${key}`, targetItem = `R7y-${key}`;
+    const owner = await prisma.user.create({ data: { nickname: `SYNTHETIC_ASSIGNMENT_${key}` } });
+    const original = await prisma.commerceProduct.create({ data: {
+      erpItemId: item, source: "ERP", name: "合成混放商品", status: "PUBLISHED", sort: 10000, gallery: [], tags: [],
+      skus: { create: [
+        { erpItemId: item, erpSkuId: `R7-black-${key}`, salePriceCents: 1000, stock: 7 },
+        { erpItemId: item, erpSkuId: `R7y-silver-${key}`, salePriceCents: 2000, stock: -2 },
+      ] },
+    }, include: { skus: true } });
+    const moved = original.skus.find(sku => sku.erpSkuId.startsWith("R7y-"))!;
+    const level = await prisma.partnerLevel.create({ data: { code: key, name: "合成归属等级", sort: 10000 } });
+    const price = await prisma.partnerSkuPrice.create({ data: { levelId: level.id, skuId: moved.id, priceCents: 1500, productName: "伙伴自定义名", specification: "伙伴自定义规格" } });
+    const order = await prisma.commerceOrder.create({ data: {
+      userId: owner.id, orderNo: key, idempotencyKey: key, subtotalCents: 2000, payableCents: 2000,
+      recipientName: "合成", recipientMobile: "19900000000", province: "合成省", city: "合成市", district: "合成区", addressDetail: "不发货测试",
+      items: { create: { productId: original.id, skuId: moved.id, erpSkuIdSnapshot: moved.erpSkuId, nameSnapshot: "历史名称", unitPriceCents: 2000, totalCents: 2000, quantity: 1 } },
+    }, include: { items: true } });
+    const lookup = vi.fn(async () => original.skus.map(sku => ({
+      erpSkuId: sku.erpSkuId, erpItemId: sku.id === moved.id ? targetItem : item,
+      name: "合成正确款式", gallery: [], tags: [],
+    })) as any);
+    const preview: any = await reconcileErpProduct(prisma as any, {} as any, original.id, { action: "preview" }, actorId, key, lookup);
+    expect(preview.changed).toBe(1);
+    const result: any = await reconcileErpProduct(prisma as any, {} as any, original.id, { action: "apply", fingerprint: preview.fingerprint }, actorId, key, lookup);
+    const corrected = await prisma.commerceSku.findUniqueOrThrow({ where: { id: moved.id }, include: { product: true } });
+    expect(corrected).toMatchObject({ erpSkuId: moved.erpSkuId, erpItemId: targetItem, salePriceCents: 2000, stock: -2, product: { erpItemId: targetItem, status: "DRAFT" } });
+    expect(corrected.productId).not.toBe(original.id);
+    expect(await prisma.partnerSkuPrice.findUnique({ where: { levelId_skuId: { levelId: level.id, skuId: moved.id } } })).toEqual(price);
+    expect(await prisma.commerceOrderItem.findMany({ where: { orderId: order.id } })).toEqual(order.items);
+    expect(result.product.skus).toHaveLength(1);
   });
 
   it("creates independent zero-funded accounts and level prices without a hidden member", async () => {
