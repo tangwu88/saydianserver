@@ -174,10 +174,20 @@ export class PartnerCommerceService {
                         levelId: partner.levelId,
                         enabled: true,
                         priceCents: { gt: 0, lte: PARTNER_MAX_CENTS },
-                        productName: {
-                          contains: search.trim(),
-                          mode: "insensitive",
-                        },
+                        OR: [
+                          {
+                            productName: {
+                              contains: search.trim(),
+                              mode: "insensitive",
+                            },
+                          },
+                          {
+                            specification: {
+                              contains: search.trim(),
+                              mode: "insensitive",
+                            },
+                          },
+                        ],
                       },
                     },
                   },
@@ -193,6 +203,7 @@ export class PartnerCommerceService {
         include: {
           skus: {
             where: pricedSku,
+            orderBy: { id: "asc" },
             include: {
               partnerPrices: {
                 where: {
@@ -215,7 +226,16 @@ export class PartnerCommerceService {
       items: rows.map((row) => ({
         id: row.id,
         name:
-          row.skus[0]?.partnerPrices[0]?.productName ?? (row.displayName || row.name),
+          new Set(
+            row.skus.map(
+              (sku) =>
+                sku.partnerPrices[0]?.productName ??
+                (row.displayName || row.name),
+            ),
+          ).size === 1
+            ? (row.skus[0]?.partnerPrices[0]?.productName ??
+              (row.displayName || row.name))
+            : row.displayName || row.name,
         coverImage: row.coverImage,
         subtitle: row.subtitle,
         fulfillmentSource: row.source,
@@ -276,7 +296,8 @@ export class PartnerCommerceService {
         unitPriceCents: positiveCents(price.priceCents),
         totalCents: positiveCents(price.priceCents * item.quantity),
         name:
-          price.productName ?? (price.sku.product.displayName || price.sku.product.name),
+          price.productName ??
+          (price.sku.product.displayName || price.sku.product.name),
         specification: price.specification ?? price.sku.specification,
         image: price.sku.image || price.sku.product.coverImage,
         erpSkuId: price.sku.erpSkuId,

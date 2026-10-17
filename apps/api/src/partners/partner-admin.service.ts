@@ -429,6 +429,109 @@ export class PartnerAdminService {
     };
   }
 
+  async groupedPrices(levelId: string, search: string, pageInput: unknown) {
+    if (!isUuid(levelId)) throw new BadRequestException("请选择合作等级");
+    const { page, pageSize, skip } = partnerPage(pageInput);
+    const text = { contains: search.trim(), mode: "insensitive" as const };
+    const imported: Prisma.CommerceSkuWhereInput = {
+      partnerPrices: { some: { levelId } },
+    };
+    const where: Prisma.CommerceProductWhereInput = {
+      localArchived: false,
+      skus: { some: imported },
+      ...(search.trim()
+        ? {
+            OR: [
+              { name: text },
+              { displayName: text },
+              {
+                skus: {
+                  some: {
+                    ...imported,
+                    OR: [
+                      { erpSkuId: text },
+                      { specification: text },
+                      {
+                        partnerPrices: {
+                          some: {
+                            levelId,
+                            OR: [
+                              { productName: text },
+                              { specification: text },
+                            ],
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+    // Page by product, then include every imported sibling SKU. Never group a SKU page.
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.commerceProduct.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: [{ sort: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          displayName: true,
+          coverImage: true,
+          status: true,
+          skus: {
+            where: imported,
+            orderBy: { id: "asc" },
+            select: {
+              id: true,
+              specification: true,
+              enabled: true,
+              salePriceCents: true,
+              erpSkuId: true,
+              stock: true,
+              image: true,
+              partnerPrices: { where: { levelId } },
+            },
+          },
+        },
+      }),
+      this.prisma.commerceProduct.count({ where }),
+    ]);
+    return {
+      items: rows.map(({ skus, ...product }) => {
+        const sourceName = product.displayName || product.name;
+        const names = new Set(
+          skus.map((sku) => sku.partnerPrices[0]?.productName ?? sourceName),
+        );
+        return {
+          ...product,
+          name: names.size === 1 ? [...names][0] : sourceName,
+          skus: skus.map(({ partnerPrices, ...sku }) => ({
+            ...sku,
+            sourceName,
+            sourceSpecification: sku.specification,
+            product: {
+              id: product.id,
+              name: partnerPrices[0]?.productName ?? sourceName,
+              status: product.status,
+            },
+            specification: partnerPrices[0]?.specification ?? sku.specification,
+            salePriceCents:
+              partnerPrices[0]?.retailPriceCents ?? sku.salePriceCents,
+            price: partnerPrices[0] ?? null,
+          })),
+        };
+      }),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
   async importOptions(levelId: string, search: string, pageInput: unknown) {
     if (!isUuid(levelId)) throw new BadRequestException("请选择合作等级");
     const { page, pageSize, skip } = partnerPage(pageInput);

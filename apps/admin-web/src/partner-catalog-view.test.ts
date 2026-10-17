@@ -47,7 +47,7 @@ function harness() {
     },
   ).outputText;
   const api = {
-    post: vi.fn(async () => ({data:{data:{imported:1,skipped:0}}})),
+    post: vi.fn(async () => ({ data: { data: { imported: 1, skipped: 0 } } })),
     patch: vi.fn(async () => ({})),
     get: vi.fn(async (url: string) => ({
       data: {
@@ -80,7 +80,7 @@ function harness() {
   };
   const state = new Function(
     ...Object.keys(deps),
-    `${code}\nreturn { open, save, form, levels, levelId, selectedPrices, importDialog, importLevel, importSelected, openImport, importProducts, deleteProducts, accountForm, dialog, saving, pendingFunds, partnerId, partners, funds, loadFinance };`,
+    `${code}\nreturn { open, save, form, levels, levelId, prices, togglePrices, isPriceSelected, allPricesSelected, selectedPrices, importDialog, importLevel, importSelected, openImport, importProducts, deleteProducts, accountForm, dialog, saving, pendingFunds, partnerId, partners, funds, loadFinance };`,
   )(...Object.values(deps));
   state.levels.value = levels;
   state.accountForm.value = {
@@ -93,32 +93,82 @@ function harness() {
   };
   state.open("account");
   Object.assign(state.form, validForm());
-  state.levelId.value = "level-1"; return { ...state, api, confirm: deps.ElMessageBox.confirm };
+  state.levelId.value = "level-1";
+  return { ...state, api, confirm: deps.ElMessageBox.confirm };
 }
 
 describe("partner catalog admin actions", () => {
+  it("selects whole products and individual siblings without duplicating deletion targets", async () => {
+    const h = harness();
+    const skus = ["a", "b"].map((id) => ({
+      id,
+      price: { updatedAt: "2026-10-17T00:00:00.000Z" },
+    }));
+    h.prices.value = [{ id: "product", skus }];
+    h.togglePrices(skus, true);
+    h.togglePrices([skus[0]], true);
+    expect(h.selectedPrices.value).toHaveLength(2);
+    expect(h.allPricesSelected.value).toBe(true);
+    h.togglePrices([skus[0]], false);
+    expect(h.allPricesSelected.value).toBe(false);
+    expect(h.isPriceSelected(skus[1])).toBe(true);
+    await h.deleteProducts();
+    expect(h.api.post).toHaveBeenCalledWith(
+      "/partner-prices/level-1/batch-delete",
+      { items: [{ skuId: "b", updatedAt: "2026-10-17T00:00:00.000Z" }] },
+    );
+  });
   it("saves independent names and prices under the level captured when editing, without ERP rebinding", async () => {
     const h = harness();
-    h.open("price", { id: "sku-1", erpSkuId: "fixed-erp", product: { name: "原名" }, specification: "原规格", salePriceCents: 9000, price: { priceCents: 6000, updatedAt: "2026-10-16T00:00:00.000Z" } });
-    Object.assign(h.form, { productName: "伙伴商品", specification: "礼盒", retailAmount: 99, amount: 50, enabled: true });
+    h.open("price", {
+      id: "sku-1",
+      erpSkuId: "fixed-erp",
+      product: { name: "原名" },
+      specification: "原规格",
+      salePriceCents: 9000,
+      price: { priceCents: 6000, updatedAt: "2026-10-16T00:00:00.000Z" },
+    });
+    Object.assign(h.form, {
+      productName: "伙伴商品",
+      specification: "礼盒",
+      retailAmount: 99,
+      amount: 50,
+      enabled: true,
+    });
     h.levelId.value = "other-level";
     await h.save();
-    expect(h.api.patch).toHaveBeenCalledWith("/partner-prices/level-1/sku-1", { productName: "伙伴商品", specification: "礼盒", retailPriceCents: 9900, priceCents: 5000, enabled: true, updatedAt: "2026-10-16T00:00:00.000Z" });
+    expect(h.api.patch).toHaveBeenCalledWith("/partner-prices/level-1/sku-1", {
+      productName: "伙伴商品",
+      specification: "礼盒",
+      retailPriceCents: 9900,
+      priceCents: 5000,
+      enabled: true,
+      updatedAt: "2026-10-16T00:00:00.000Z",
+    });
   });
   it("imports only explicitly selected source SKUs into the captured level", async () => {
-    const h = harness(); h.openImport();
+    const h = harness();
+    h.openImport();
     h.importSelected.value = [{ id: "source-sku" }];
     h.levelId.value = "other-level";
     await h.importProducts();
-    expect(h.api.post).toHaveBeenCalledWith("/partner-prices/level-1/import", { skuIds: ["source-sku"] });
+    expect(h.api.post).toHaveBeenCalledWith("/partner-prices/level-1/import", {
+      skuIds: ["source-sku"],
+    });
     expect(h.importDialog.value).toBe(false);
   });
   it("cancels batch deletion without a write and submits CAS versions after confirmation", async () => {
     const h = harness();
-    h.selectedPrices.value = [{ id: "sku-1", price: { updatedAt: "2026-10-16T00:00:00.000Z" } }];
-    h.confirm.mockRejectedValueOnce("cancel"); await h.deleteProducts();
+    h.selectedPrices.value = [
+      { id: "sku-1", price: { updatedAt: "2026-10-16T00:00:00.000Z" } },
+    ];
+    h.confirm.mockRejectedValueOnce("cancel");
+    await h.deleteProducts();
     expect(h.api.post).not.toHaveBeenCalled();
     await h.deleteProducts();
-    expect(h.api.post).toHaveBeenCalledWith("/partner-prices/level-1/batch-delete", { items: [{ skuId: "sku-1", updatedAt: "2026-10-16T00:00:00.000Z" }] });
+    expect(h.api.post).toHaveBeenCalledWith(
+      "/partner-prices/level-1/batch-delete",
+      { items: [{ skuId: "sku-1", updatedAt: "2026-10-16T00:00:00.000Z" }] },
+    );
   });
 });

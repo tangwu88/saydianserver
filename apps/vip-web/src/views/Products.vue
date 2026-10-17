@@ -238,6 +238,21 @@ onMounted(async () => {
 function available(product: any) {
   return product.skus.filter((sku: any) => sku.purchasable);
 }
+function productPrice(product: any) {
+  const values = available(product).map(
+    (sku: any) => sku.distributionPriceCents as number,
+  );
+  if (!values.length) return "暂无合作价";
+  const min = Math.min(...values),
+    max = Math.max(...values);
+  return min === max ? money(min) : `${money(min)} ~ ${money(max)}`;
+}
+function selectedCount(product: any) {
+  return product.skus.reduce(
+    (sum: number, sku: any) => sum + (quantities[sku.id] || 0),
+    0,
+  );
+}
 async function review() {
   if (
     reviewing.value ||
@@ -422,46 +437,64 @@ async function purchase() {
           /><el-icon v-else class="product-placeholder"><Picture /></el-icon>
           <div class="product-main">
             <h2>{{ product.name }}</h2>
-            <div
-              v-for="sku in available(product)"
-              :key="sku.id"
-              class="sku-row"
-            >
-              <div class="sku-description">
-                {{
-                  sku.name && sku.name !== product.name ? sku.name + " · " : ""
-                }}{{ sku.specification || "默认规格" }}
-                <small v-if="sku.retailPriceCents != null">零售价 {{ money(sku.retailPriceCents) }}</small>
-                <small v-if="sku.stock <= 0">可下单，需安排补货</small>
-              </div>
-              <b class="price">{{ money(sku.distributionPriceCents) }}</b
-              ><el-input-number
-                v-model="quantities[sku.id]"
-                :min="0"
-                :max="9999"
-                :precision="0"
-                :disabled="!!submittedRequest"
-                :aria-label="`${sku.name || product.name} ${sku.specification || '默认规格'} 数量`"
-              />
-            </div>
-            <details
-              v-if="product.skus.some((sku: any) => !sku.purchasable)"
-              class="quiet-details"
-            >
+            <details class="product-specs" :open="product.skus.length === 1">
               <summary>
-                {{ product.skus.length - available(product).length }}
-                个规格暂不可采购
+                <span
+                  >{{ available(product).length }} 个规格 ·
+                  {{ productPrice(product) }}</span
+                ><span
+                  >{{
+                    selectedCount(product)
+                      ? `已选 ${selectedCount(product)} 件 · `
+                      : ""
+                  }}选择规格与数量</span
+                >
               </summary>
-              <p
-                v-for="sku in product.skus.filter(
-                  (sku: any) => !sku.purchasable,
-                )"
+              <div
+                v-for="sku in available(product)"
                 :key="sku.id"
+                class="sku-row"
               >
-                {{ sku.specification || "默认规格" }} · 暂无合作价
-              </p>
+                <div class="sku-description">
+                  {{
+                    sku.name && sku.name !== product.name
+                      ? sku.name + " · "
+                      : ""
+                  }}{{ sku.specification || "默认规格" }}
+                  <small v-if="sku.retailPriceCents != null"
+                    >零售价 {{ money(sku.retailPriceCents) }}</small
+                  >
+                  <small v-if="sku.stock <= 0">可下单，需安排补货</small>
+                </div>
+                <b class="price">{{ money(sku.distributionPriceCents) }}</b
+                ><el-input-number
+                  v-model="quantities[sku.id]"
+                  :min="0"
+                  :max="9999"
+                  :precision="0"
+                  :disabled="!!submittedRequest"
+                  :aria-label="`${sku.name || product.name} ${sku.specification || '默认规格'} 数量`"
+                />
+              </div>
+              <details
+                v-if="product.skus.some((sku: any) => !sku.purchasable)"
+                class="quiet-details"
+              >
+                <summary>
+                  {{ product.skus.length - available(product).length }}
+                  个规格暂不可采购
+                </summary>
+                <p
+                  v-for="sku in product.skus.filter(
+                    (sku: any) => !sku.purchasable,
+                  )"
+                  :key="sku.id"
+                >
+                  {{ sku.specification || "默认规格" }} · 暂无合作价
+                </p>
+              </details>
+              <p v-if="!product.skus.length" class="muted">暂无可采购规格</p>
             </details>
-            <p v-if="!product.skus.length" class="muted">暂无可采购规格</p>
           </div>
         </article>
         <EmptyState
@@ -788,6 +821,18 @@ async function purchase() {
   </section>
 </template>
 <style scoped>
+.product-specs > summary {
+  cursor: pointer;
+  color: #355773;
+  padding: 12px 0;
+  line-height: 1.8;
+}
+.product-specs > summary span {
+  display: block;
+}
+.product-specs > summary span + span {
+  font-size: 13px;
+}
 .confirmation-recipient {
   display: flex;
   gap: 12px;

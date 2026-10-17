@@ -45,6 +45,28 @@ const selectedPrices = ref<any[]>([]),
   importBusy = ref(false),
   importLevel = ref(""),
   editPriceLevel = ref("");
+const allPricesSelected = computed(
+  () =>
+    prices.value.length > 0 &&
+    prices.value.every((product) => product.skus.every(isPriceSelected)),
+);
+function isPriceSelected(sku: any) {
+  return selectedPrices.value.some((row) => row.id === sku.id);
+}
+function togglePrices(skus: any[], checked: boolean) {
+  const ids = new Set(skus.map((sku) => sku.id));
+  const kept = selectedPrices.value.filter((sku) => !ids.has(sku.id));
+  selectedPrices.value = checked ? [...kept, ...skus] : kept;
+}
+function priceRange(skus: any[], cooperation: boolean) {
+  const values = skus
+    .map((sku) => (cooperation ? sku.price?.priceCents : sku.salePriceCents))
+    .filter((n: unknown): n is number => typeof n === "number");
+  if (!values.length) return "未设置";
+  const min = Math.min(...values),
+    max = Math.max(...values);
+  return min === max ? money(min) : `${money(min)} ~ ${money(max)}`;
+}
 let importRequest = 0;
 async function loadImport() {
   const request = ++importRequest;
@@ -103,6 +125,10 @@ async function importProducts() {
 }
 async function deleteProducts() {
   if (!canPrice.value || saving.value || !selectedPrices.value.length) return;
+  if (selectedPrices.value.length > 100) {
+    ElMessage.warning("每次最多删除100个规格，请减少选择");
+    return;
+  }
   const targetLevel = levelId.value,
     items = selectedPrices.value.map((row) => ({
       skuId: row.id,
@@ -276,6 +302,7 @@ async function load() {
               levelId: levelId.value,
               search: search.value,
               page: page.value,
+              groupBy: "product",
             },
           }),
         );
@@ -686,7 +713,7 @@ async function copyPromotion() {
       >
       <div v-if="resource === 'partner-prices'" style="margin: 12px 0">
         <p>
-          仅显示当前合作等级已导入的规格。名称、零售价与合作价独立维护，库存及
+          按商城商品汇总已导入规格，展开可编辑或单独选择规格。名称、零售价与合作价独立维护，库存及
           ERP 编码沿用商城原规格。
         </p>
         <el-button
@@ -708,43 +735,122 @@ async function copyPromotion() {
         v-if="resource === 'partner-prices'"
         :data="prices"
         row-key="id"
-        @selection-change="selectedPrices = $event"
         border
         stripe
-        ><el-table-column v-if="canPrice" type="selection" width="45" />
-        <el-table-column label="商品" min-width="200"
-          ><template #default="scope">{{
-            scope.row.product.name
-          }}</template></el-table-column
-        ><el-table-column
-          prop="specification"
-          label="规格"
-          min-width="140"
-        /><el-table-column label="零售价" width="140"
-          ><template #default="scope">{{
-            money(scope.row.salePriceCents)
-          }}</template></el-table-column
-        ><el-table-column
-          prop="erpSkuId"
-          label="原 ERP 规格编码"
-          min-width="150"
-        />
-        <el-table-column label="合作价" width="140"
-          ><template #default="scope">{{
-            money(scope.row.price?.priceCents)
-          }}</template></el-table-column
-        ><el-table-column label="采购状态" width="120"
-          ><template #default="scope">{{
-            scope.row.price?.enabled ? "价格已启用" : "暂不可采购"
-          }}</template></el-table-column
-        ><el-table-column v-if="canPrice" label="操作" width="120"
-          ><template #default="scope"
-            ><el-button @click="open('price', scope.row)"
-              >编辑商品</el-button
-            ></template
-          ></el-table-column
-        ></el-table
       >
+        <el-table-column v-if="canPrice" width="45">
+          <template #header
+            ><el-checkbox
+              :model-value="allPricesSelected"
+              :indeterminate="selectedPrices.length > 0 && !allPricesSelected"
+              :disabled="saving || !prices.length"
+              aria-label="选择本页全部规格"
+              @change="
+                togglePrices(
+                  prices.flatMap((p: any) => p.skus),
+                  !!$event,
+                )
+              "
+          /></template>
+          <template #default="scope"
+            ><el-checkbox
+              :model-value="scope.row.skus.every(isPriceSelected)"
+              :indeterminate="
+                scope.row.skus.some(isPriceSelected) &&
+                !scope.row.skus.every(isPriceSelected)
+              "
+              :disabled="saving"
+              aria-label="选择此商品全部规格"
+              @change="togglePrices(scope.row.skus, !!$event)"
+          /></template>
+        </el-table-column>
+        <el-table-column type="expand"
+          ><template #default="scope">
+            <el-table :data="scope.row.skus" row-key="id" border stripe
+              ><el-table-column v-if="canPrice" width="45"
+                ><template #default="cell"
+                  ><el-checkbox
+                    :model-value="isPriceSelected(cell.row)"
+                    :disabled="saving"
+                    aria-label="选择此规格"
+                    @change="togglePrices([cell.row], !!$event)" /></template
+              ></el-table-column>
+              <el-table-column label="商品" min-width="200"
+                ><template #default="cell">{{
+                  cell.row.product.name
+                }}</template></el-table-column
+              ><el-table-column
+                prop="specification"
+                label="规格"
+                min-width="140"
+              /><el-table-column label="零售价" width="140"
+                ><template #default="cell">{{
+                  money(cell.row.salePriceCents)
+                }}</template></el-table-column
+              ><el-table-column
+                prop="erpSkuId"
+                label="原 ERP 规格编码"
+                min-width="150"
+              />
+              <el-table-column label="合作价" width="140"
+                ><template #default="cell">{{
+                  money(cell.row.price?.priceCents)
+                }}</template></el-table-column
+              ><el-table-column label="采购状态" width="120"
+                ><template #default="cell">{{
+                  cell.row.price?.enabled ? "价格已启用" : "暂不可采购"
+                }}</template></el-table-column
+              ><el-table-column v-if="canPrice" label="操作" width="120"
+                ><template #default="cell"
+                  ><el-button @click="open('price', cell.row)"
+                    >编辑商品</el-button
+                  ></template
+                ></el-table-column
+              ></el-table
+            >
+          </template></el-table-column
+        >
+        <el-table-column label="商品" min-width="260"
+          ><template #default="scope"
+            ><div style="display: flex; gap: 12px; align-items: center">
+              <el-image
+                v-if="scope.row.coverImage"
+                :src="scope.row.coverImage"
+                fit="cover"
+                style="width: 56px; height: 56px; flex-shrink: 0"
+              /><span>{{ scope.row.name }}</span>
+            </div></template
+          ></el-table-column
+        >
+        <el-table-column label="规格" width="110"
+          ><template #default="scope"
+            >{{ scope.row.skus.length }} 个规格</template
+          ></el-table-column
+        >
+        <el-table-column label="零售价" min-width="160"
+          ><template #default="scope">{{
+            priceRange(scope.row.skus, false)
+          }}</template></el-table-column
+        >
+        <el-table-column label="合作价" min-width="160"
+          ><template #default="scope">{{
+            priceRange(scope.row.skus, true)
+          }}</template></el-table-column
+        >
+        <el-table-column label="采购状态" width="180"
+          ><template #default="scope"
+            >{{
+              scope.row.skus.filter(
+                (sku: any) =>
+                  sku.price?.enabled &&
+                  sku.enabled &&
+                  scope.row.status === "PUBLISHED",
+              ).length
+            }}
+            / {{ scope.row.skus.length }} 个规格可采购</template
+          ></el-table-column
+        >
+      </el-table>
       <template v-if="resource === 'partner-finance'"
         ><el-table v-if="!partnerId" :data="partners" border stripe>
           <el-table-column prop="name" label="伙伴名称" min-width="140" />

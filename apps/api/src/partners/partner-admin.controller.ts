@@ -97,8 +97,11 @@ export class PartnerAdminController {
     @Query("levelId") levelId: string,
     @Query("search") search = "",
     @Query("page") page?: string,
+    @Query("groupBy") groupBy?: string,
   ) {
-    return this.admin.prices(levelId, search, page);
+    return groupBy === "product"
+      ? this.admin.groupedPrices(levelId, search, page)
+      : this.admin.prices(levelId, search, page);
   }
   @Patch("partner-prices/:levelId/:skuId")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
