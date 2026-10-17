@@ -49,6 +49,7 @@ import {
   normalizedEmail,
 } from "../auth/global-identity";
 import { randomUUID } from "node:crypto";
+import { reconcileErpProduct } from "./erp-product-assignment";
 import {
   afterSaleTransitions,
   assertAfterSaleTransition,
@@ -2039,6 +2040,10 @@ export class AdminService {
 
   syncCommerceInventory() {
     return syncJushuitanInventory(this.prisma, this.integrationSecrets);
+  }
+
+  reconcileCommerceProduct(id: string, input: unknown, actorId: string, requestId?: string) {
+    return reconcileErpProduct(this.prisma, this.integrationSecrets, id, input, actorId, requestId);
   }
 
   async saveCommerceProduct(id: string | undefined, input: unknown) {

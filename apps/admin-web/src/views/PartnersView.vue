@@ -818,7 +818,14 @@ async function copyPromotion() {
                 :src="scope.row.coverImage"
                 fit="cover"
                 style="width: 56px; height: 56px; flex-shrink: 0"
-              /><span>{{ scope.row.name }}</span>
+              /><span
+                >{{ scope.row.name
+                }}<small
+                  v-if="scope.row.source === 'ERP'"
+                  style="display: block; color: #909399"
+                  >款式：{{ scope.row.erpItemId }}</small
+                ></span
+              >
             </div></template
           ></el-table-column
         >
