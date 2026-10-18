@@ -68,6 +68,29 @@ beforeEach(() => {
 afterEach(() => { expect(fetch).not.toHaveBeenCalled(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("international admin health-report availability", () => {
+  it("carries the stored App distance unit into the queued AI snapshot without rewriting raw records", async () => {
+    const h = harness(0);
+    const records = [1, 2, 3].map(day => ({
+      id: `synthetic-distance-${day}`, metric: "DISTANCE",
+      observedAt: new Date(Date.now() - day * 86_400_000), timezoneOffsetMinutes: 0,
+      values: { value: 1.5 }, unit: "km", quality: "VALID", ecgArtifact: null,
+    }));
+    h.db.healthRecord.findMany.mockResolvedValue(records);
+    await h.service.create(request, current);
+    expect(h.state.reports[0].metricSummary).toEqual([
+      expect.objectContaining({ metric: "distance", average: 1_500,
+        measurements: [expect.objectContaining({ unit: "m", average: 1_500 })],
+      }),
+    ]);
+    expect(records.map(record => ({ values: record.values, unit: record.unit }))).toEqual([
+      { values: { value: 1.5 }, unit: "km" },
+      { values: { value: 1.5 }, unit: "km" },
+      { values: { value: 1.5 }, unit: "km" },
+    ]);
+    expect(h.state.outbox).toHaveLength(1);
+    expect(h.state.credits).toBe(0);
+  });
+
   it.each(["QUEUED", "GENERATING", "FAILED"])("keeps a newer %s sleep report out of the wellness generation panel", async status => {
     const h = harness();
     const previousWellnessId = "33333333-3333-4333-8333-333333333333";

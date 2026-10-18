@@ -28,6 +28,7 @@ import PDFDocument from "pdfkit";
 import { globalError } from "../auth/global-identity";
 import { globalLegalReference } from "../auth/global-legal";
 import { readSleepAnalysisConsent } from "./sleep-analysis-consent";
+import { reportVisuals } from "./report-visuals";
 import {
   buildHealthEvidence,
   type EvidenceRecord,
@@ -421,6 +422,7 @@ export class HealthReportsService {
                   excludedRecordCount: evidence.invalidRecordIds.length,
                   distinctDays: evidence.distinctDays,
                   metricCount: evidence.metrics.length,
+                  distanceUnitsNormalized: true,
                 },
               },
               inputDigest,
@@ -527,6 +529,7 @@ export class HealthReportsService {
     return {
       ...serializeReport(report),
       content: report.fullContent,
+      visuals: reportVisuals(report),
       evidence: report.evidenceIndex,
       limitations: [
         "本报告仅基于所示时间范围内的可用数据",
@@ -639,6 +642,7 @@ export class HealthReportsService {
       observedAt: record.observedAt,
       timezoneOffsetMinutes: record.timezoneOffsetMinutes,
       values: record.values,
+      unit: record.unit,
       quality: record.quality,
       sourceModel: record.sourceModel,
       aggregationLocalDate: record.aggregationLocalDate,
@@ -1057,6 +1061,7 @@ function evidenceDigest(
     JSON.stringify({
       userId,
       template: REPORT_TEMPLATE_VERSION,
+      evidenceVersion: "distance-meters-v1",
       from: period.from.toISOString().slice(0, 10),
       to: period.to.toISOString().slice(0, 10),
       recordIds: [...evidence.validRecordIds].sort(),

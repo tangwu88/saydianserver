@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { adminSessionKey, api, readableError, responseData } from "../api";
 import { healthMetricLabel, healthTime } from "../health-display";
+import type { ReportVisuals } from "@saydian/app-contracts";
+import HealthReportVisuals from "./HealthReportVisuals.vue";
 
 type Trend = { metric: string; text: string };
 type Content = { overview: string; trends: Trend[]; suggestions: string[]; limitations: string[]; sleepScore?: { value: number | null; explanation: string; confidence: string } };
@@ -16,6 +18,8 @@ type Report = {
   generatedAt?: string | null;
   period?: { from: string; to: string };
   content?: Content;
+  visuals?: ReportVisuals;
+  dataCompleteness?: { distinctDays: number; validRecordCount: number };
   limitations?: string[];
   failureReason?: string | null;
   generationAttempts?: number;
@@ -153,7 +157,7 @@ onBeforeUnmount(() => { closed = true; reset(); });
     <div v-loading="loading" class="health-report-dialog">
       <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" show-icon />
       <template v-if="report">
-        <el-alert title="健康报告包含敏感健康信息，查看和修改均会写入审计记录；内容仅供日常健康管理参考。" type="warning" :closable="false" show-icon />
+        <el-alert title="AI 生成，仅供日常健康管理参考，不作为诊断或治疗依据。" type="warning" :closable="false" show-icon />
         <el-alert v-if="pausedPolling" title="自动刷新已暂停；请点击刷新状态查看最新结果。" type="info" :closable="false" />
         <div class="report-meta">
           <div><span>会员</span><strong>{{ report.member?.nickname || "未填写昵称" }} · {{ report.member?.memberNo ? `会员 ${report.member.memberNo}` : "会员编号未获取" }}</strong></div>
@@ -163,7 +167,7 @@ onBeforeUnmount(() => { closed = true; reset(); });
         </div>
 
         <template v-if="report.status === 'ready' && report.content">
-          <section v-if="report.content.sleepScore" class="document-section"><h3>AI 睡眠参考评分：{{ report.content.sleepScore.value ?? '证据不足，未评分' }}<template v-if="report.content.sleepScore.value != null"> / 100</template></h3><p>{{ report.content.sleepScore.explanation }}</p><p>不是设备评分或临床验证量表，仅基于本报告记录。</p></section>
+          <HealthReportVisuals :visuals="report.visuals" :score="report.content.sleepScore" :coverage="report.dataCompleteness" />
           <section class="document-section">
             <h3>健康概览</h3>
             <el-input v-if="editing" v-model="draft.overview" type="textarea" :rows="5" maxlength="2000" show-word-limit />
@@ -185,7 +189,7 @@ onBeforeUnmount(() => { closed = true; reset(); });
               <div v-for="(_, index) in draft.suggestions" :key="index" class="editable-row"><el-input v-model="draft.suggestions[index]" maxlength="500" /><el-button type="danger" plain @click="draft.suggestions.splice(index, 1)">删除</el-button></div>
               <el-empty v-if="!draft.suggestions.length" description="暂无建议，可按需添加" :image-size="56" />
             </template>
-            <ol v-else><li v-for="(item, index) in report.content.suggestions" :key="index">{{ item }}</li></ol>
+            <ol v-else class="advice-cards"><li v-for="(item, index) in report.content.suggestions" :key="index"><span>{{ String(index + 1).padStart(2, "0") }}</span><p>{{ item }}</p></li></ol>
           </section>
           <section class="document-section limitation-section">
             <div class="section-heading"><h3>数据与分析局限</h3><el-button v-if="editing" size="small" @click="addLimitation">添加局限</el-button></div>
@@ -221,6 +225,8 @@ onBeforeUnmount(() => { closed = true; reset(); });
 .trend-card h4 { margin: 0 0 8px; color: #346aa5; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .editable-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 8px; }
+.advice-cards { list-style: none; padding: 0 !important; display: grid; gap: 10px; }
+.advice-cards li { display: flex; gap: 12px; padding: 14px; border-radius: 12px; background: #f1f8f7; } .advice-cards li > span { color: #238580; font-size: 18px; font-weight: 700; flex: 0 0 26px; }
 .limitation-section { color: #657387; }
 @media (max-width: 700px) { .report-meta, .trend-grid { grid-template-columns: 1fr; } .report-meta .wide { grid-column: auto; } }
 </style>

@@ -3,8 +3,10 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { api, readableError, responseData } from "../api";
 import { healthMetricLabel, healthTime } from "../health-display";
+import type { ReportVisuals } from "@saydian/app-contracts";
+import HealthReportVisuals from "./HealthReportVisuals.vue";
 
-type Report = { id: string; status: string; memberId?: string; failureReason?: string | null; generatedAt?: string | null; period?: { from: string; to: string }; content?: { overview?: string; trends?: { metric: string; text: string }[]; suggestions?: string[]; limitations?: string[] }; limitations?: string[] };
+type Report = { visuals?: ReportVisuals; dataCompleteness?: { distinctDays: number; validRecordCount: number }; id: string; status: string; memberId?: string; failureReason?: string | null; generatedAt?: string | null; period?: { from: string; to: string }; content?: { overview?: string; trends?: { metric: string; text: string }[]; suggestions?: string[]; limitations?: string[] }; limitations?: string[] };
 type Availability = { canGenerate: boolean; reasons: { code: string; message: string }[]; period: { from: string; to: string }; validRecordCount: number; distinctDays: number; minimumDistinctDays: number; availableCredits: number; memberConsentBypass?: boolean; reportCreditBypass?: boolean; latestReport?: Report | null };
 const props = defineProps<{ memberId: string }>();
 const availability = ref<Availability | null>(null);
@@ -166,11 +168,12 @@ onBeforeUnmount(() => { generation++; clearPolling(); });
           <div v-if="previewReport.generatedAt"><span>生成时间</span><strong>{{ healthTime(previewReport.generatedAt, 0) }}</strong></div>
           <div v-if="previewReport.period" class="wide"><span>统计期间</span><strong>{{ healthTime(previewReport.period.from, 0) }} 至 {{ healthTime(previewReport.period.to, 0) }}</strong></div>
         </div>
+        <HealthReportVisuals :visuals="previewReport.visuals" :coverage="previewReport.dataCompleteness" />
         <section class="preview-section overview-section"><h3>健康概览</h3><p>{{ previewReport.content.overview || '本次报告暂无概览内容。' }}</p></section>
         <section v-if="previewReport.content.trends?.length" class="preview-section"><h3>健康趋势</h3>
           <div class="trend-grid"><article v-for="(trend, index) in previewReport.content.trends" :key="index" class="trend-card"><h4>{{ healthMetricLabel(trend.metric) }}</h4><p>{{ trend.text }}</p></article></div>
         </section>
-        <section v-if="previewReport.content.suggestions?.length" class="preview-section"><h3>日常健康建议</h3><ol><li v-for="(suggestion, index) in previewReport.content.suggestions" :key="index">{{ suggestion }}</li></ol></section>
+        <section v-if="previewReport.content.suggestions?.length" class="preview-section"><h3>日常健康建议</h3><ol class="advice-cards"><li v-for="(suggestion, index) in previewReport.content.suggestions" :key="index"><span>{{ String(index + 1).padStart(2, "0") }}</span><p>{{ suggestion }}</p></li></ol></section>
         <section v-if="previewLimitations.length" class="preview-section limitation-section"><h3>数据与分析局限</h3><ul><li v-for="(limitation, index) in previewLimitations" :key="index">{{ limitation }}</li></ul></section>
       </article>
       <template #footer><el-button @click="previewVisible = false">关闭</el-button></template>
@@ -195,6 +198,7 @@ header p, .coverage, .disclaimer { color: #657387; } .report-error { color: #b33
 .preview-section p, .preview-section ol, .preview-section ul { margin: 0; } .preview-section ol, .preview-section ul { padding-left: 24px; }
 .overview-section { padding-top: 4px; border-top: 0; } .trend-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .trend-card { padding: 14px; border: 1px solid #dbe7f4; border-radius: 8px; background: #f8fbff; } .trend-card h4 { margin-top: 0; color: #346aa5; }
+.advice-cards { list-style: none; padding: 0 !important; display: grid; gap: 10px; } .advice-cards li { display: flex; gap: 12px; padding: 14px; border-radius: 12px; background: #f1f8f7; } .advice-cards li > span { color: #238580; font-size: 18px; font-weight: 700; flex: 0 0 26px; }
 .limitation-section { color: #657387; }
 @media (max-width: 700px) {
   header { flex-direction: column; } header .el-button { width: 100%; } .report-panel { padding: 14px; }

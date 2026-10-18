@@ -2,6 +2,39 @@ import { describe, expect, it } from "vitest";
 import { buildHealthEvidence } from "./health-evidence";
 
 describe("health report evidence", () => {
+  it("normalizes mixed App distance units before ranges, summaries and daily trends", () => {
+    const records = [
+      { id: "km", values: { value: 1.5 }, unit: "km" },
+      { id: "m", values: { value: 1_500 }, unit: "m" },
+      { id: "mi", values: { value: 1 }, unit: "mi" },
+      { id: "canonical", values: { meters: 1_500 } },
+      { id: "missing-unit", values: { value: 1.5 } },
+      { id: "unsupported-unit", values: { value: 1.5 }, unit: "unknown" },
+      { id: "out-of-range", values: { value: 301 }, unit: "km" },
+    ].map((record, index) => ({
+      ...record, metric: "DISTANCE", observedAt: new Date(`2026-09-0${index + 1}T00:00:00Z`),
+      timezoneOffsetMinutes: 0, quality: "VALID",
+    }));
+    const original = structuredClone(records);
+    const evidence = buildHealthEvidence(records);
+    expect(evidence.validRecordIds).toEqual(["km", "m", "mi", "canonical"]);
+    expect(evidence.invalidRecordIds).toEqual(["missing-unit", "unsupported-unit", "out-of-range"]);
+    expect(evidence.metrics[0]).toMatchObject({
+      metric: "distance", recordCount: 4, distinctDays: 4,
+      latestValue: 1_500, minimum: 1_500, maximum: 1_609.34, average: 1_527.34,
+      measurements: [{ key: "meters", unit: "m", sampleCount: 4, latest: 1_500,
+        minimum: 1_500, maximum: 1_609.34, average: 1_527.34,
+        dailyAverages: [
+          { date: "2026-09-01", value: 1_500, sampleCount: 1 },
+          { date: "2026-09-02", value: 1_500, sampleCount: 1 },
+          { date: "2026-09-03", value: 1_609.34, sampleCount: 1 },
+          { date: "2026-09-04", value: 1_500, sampleCount: 1 },
+        ],
+      }],
+    });
+    expect(records).toEqual(original);
+  });
+
   it("excludes zero placeholders and invalid rows", () => {
     const evidence = buildHealthEvidence([
       {

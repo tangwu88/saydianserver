@@ -15,6 +15,7 @@ import { PrismaService } from "../common/prisma.service";
 import { safeObject, sha256 } from "../common/crypto";
 
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { reportVisuals } from "../reports/report-visuals";
 import {
   HealthReportsService,
   serializeReport,
@@ -273,6 +274,7 @@ export class AdminHealthReportsService {
         ...(ready
           ? {
               content: report.fullContent,
+              visuals: reportVisuals(report),
               limitations: [
                 "本报告仅基于所示时间范围内的可用数据",
                 "手表数据用于日常健康管理参考，不用于诊断或治疗",
