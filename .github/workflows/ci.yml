@@ -196,7 +196,7 @@ jobs:
       packages: read
   auto-deploy-us:
     needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AUTO_DEPLOY_US_ENABLED == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AUTO_DEPLOY_US_ENABLED == 'true' && !contains(github.event.head_commit.message, '[deploy cn only]')
     uses: ./.github/workflows/deploy-us.yml
     with:
       revision: ${{ github.sha }}

@@ -2,21 +2,22 @@
   <view class="store-footer">
     <view class="footer-inner">
       <view>
-        <text class="footer-brand">{{ isGlobalMall ? 'Saydian' : 'SAYDIAN 赛电' }}</text>
-        <text class="footer-copy">{{ isGlobalMall ? '© 2026 Saydian' : '© 2026 SAYDIAN 赛电商城 版权所有' }}</text>
+        <text class="footer-brand">SAYDIAN 赛电</text>
+        <text class="footer-copy">选购、使用与售后，都有明确入口</text>
       </view>
-      <view class="footer-links">
+      <view class="footer-links"><button @click="openOfficial(officialSupport.wecomUrl)">在线客服</button><button @click="callSupport">{{ officialSupport.phoneLabel }}</button><button @click="openOfficial(officialSupport.home)">赛电官网</button><button @click="openOfficial(officialSupport.authenticity)">正品核验</button>
         <text @click="open('/pages/help/index')">帮助中心</text>
-        <text v-if="!isGlobalMall" @click="open('/pages/help/index?section=service')">售后服务</text>
+        <text @click="open('/pages/help/index?section=service')">售后服务</text>
         <text @click="open('/pages/help/index?section=privacy')">隐私政策</text>
         <text @click="open('/pages/help/index?section=terms')">用户协议</text>
       </view>
-    </view>
+    </view><text class="service-hours">{{ officialSupport.hours }}</text>
   </view>
 </template>
 
 <script setup lang="ts">
-import { isGlobalMall } from "../realm";
+import { officialSupport, openOfficial } from "../official-support";
+function callSupport() { uni.makePhoneCall({phoneNumber:officialSupport.phone}); }
 function open(url: string) {
   uni.navigateTo({ url });
 }
@@ -79,3 +80,5 @@ function open(url: string) {
   }
 }
 </style>
+
+<style scoped>.store-footer{background:#f0f2e9}.footer-links button{font-size:13px;line-height:1.5;margin:0;padding:0;background:transparent;color:var(--green);min-height:30px}.footer-links button::after{border:0}.service-hours{display:block;max-width:1200px;margin:16px auto 0;color:var(--muted);font-size:12px}.footer-brand{color:var(--ink)}</style>

@@ -10,7 +10,7 @@
         <view class="card content">
           <view v-if="error" class="error-state" role="alert">{{ error }}<button class="text-button" @click="loadSupport">重试</button></view>
           <template v-if="active === 'service'">
-            <h2>客服与服务</h2>
+            <h2>客服与服务</h2><p>{{ officialSupport.hours }}</p>
             <p>{{ service.phone ? `客服电话：${service.phone}` : "客服电话暂未提供" }}</p>
             <view class="service-actions"><button v-if="service.phone" class="outline-btn" @click="callService">拨打客服</button><button v-if="service.wecomUrl" class="outline-btn" @click="openService">在线客服</button></view>
             <p v-if="!service.phone && !service.wecomUrl && !error">如需退换货，请在订单详情中申请售后。</p>
@@ -36,7 +36,7 @@
             </article>
           </template>
           <template v-else-if="active === 'afterSale'">
-            <h2>售后政策</h2><rich-text v-if="policies.afterSale" :nodes="policies.afterSale" /><p v-else>售后政策暂未提供，请联系客服确认。您可在订单详情中提交售后申请并查看进度。</p>
+            <h2>售后政策</h2><button class="outline-btn" @click="openOfficial(officialSupport.afterSale)">查看官网售后指引</button><rich-text v-if="policies.afterSale" :nodes="policies.afterSale" /><p v-else>您可在订单详情中提交售后申请并查看进度，也可联系官方客服确认商品的售后规则。</p>
           </template>
           <template v-else-if="active === 'privacy'">
             <h2>隐私政策</h2><rich-text v-if="policies.privacy" :nodes="policies.privacy" /><p v-else>隐私政策尚未在商城后台配置。</p>
@@ -56,11 +56,12 @@ import { reactive, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import GlobalHelp from "../../components/GlobalHelp.vue";
 import { api, requireLogin, toast } from "../../api";
+import { officialSupport, openOfficial } from "../../official-support";
 import { isGlobalMall } from "../../realm";
 
 const error = ref("");
 const active = ref("service");
-const service = reactive<any>({});
+const service = reactive<any>({phone:officialSupport.phone,wecomUrl:officialSupport.wecomUrl});
 const policies = reactive<any>({});
 const feedbackContent = ref("");
 const feedbackContact = ref("");

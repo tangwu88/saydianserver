@@ -1,5 +1,6 @@
 <template>
   <view class="page"><view class="container card form">
+    <view class="address-recognition"><text class="field-title">粘贴地址，快速填写</text><textarea v-model="pastedAddress" maxlength="1000" :disabled="busy" placeholder="粘贴收货人、手机号和完整地址"/><view class="recognition-actions"><button :disabled="busy || !pastedAddress.trim()" @click="fillPastedAddress">识别并填写</button><button v-if="beforeRecognition" :disabled="busy" @click="undoRecognition">撤销填写</button></view><text v-if="recognitionNote" role="status">{{ recognitionNote }}</text></view>
     <view class="form-intro"><b>填写收货信息</b><text>只需姓名、手机号、所在地区和门牌号</text></view>
     <view class="field-block"><text class="field-title">收货人</text><input
       v-model="form.name"
@@ -10,7 +11,7 @@
       placeholder="请输入姓名"
       @blur="touched.name = true"
     /></view><text v-if="fieldErrors.name" class="field-error">{{ fieldErrors.name }}</text>
-    <view class="field-block"><view class="phone-title"><text class="field-title">手机号</text><text v-if="isGlobalMall">区号用于收货联系，当前仅配送中国大陆</text></view><view class="phone-row"><CountryCallingCodePicker v-if="isGlobalMall" v-model="phoneCountry" compact /><input
+    <view class="field-block"><view class="phone-title"><text class="field-title">手机号</text><text v-if="isGlobalMall" class="phone-hint">仅配送中国大陆，区号用于收货联系</text></view><view class="phone-row"><CountryCallingCodePicker v-if="isGlobalMall" v-model="phoneCountry" compact /><input
       v-model="form.mobile"
       class="input"
       name="tel"
@@ -46,6 +47,7 @@
   </view></view>
 </template>
 <script setup lang="ts">
+import { recognizeAddress } from "../../address-recognition";
 import { mallStorage, isGlobalMall } from "../../realm";
 import { onLoad } from "@dcloudio/uni-app";
 import { computed, reactive, ref } from "vue";
@@ -64,6 +66,25 @@ import {
   mainlandRegionAt,
   mainlandRegionIndexes,
 } from "../../china-area";
+const pastedAddress=ref(''),recognitionNote=ref(''),beforeRecognition=ref<any>(null);
+function fillPastedAddress(){
+  const parsed=recognizeAddress(pastedAddress.value);
+  if(parsed.error || !parsed.recognized){recognitionNote.value=parsed.error || '未能识别，请补充姓名、手机号和完整地区';return;}
+  const f=parsed.fields,next:any={};let indexes: [number,number,number] | null=null;
+  if(f.recipientName)next.name=f.recipientName;
+  if(/^1[3-9]\d{9}$/.test(f.recipientMobile))next.mobile=f.recipientMobile;
+  if(f.province && f.city && f.district){
+    indexes=mainlandRegionIndexes(f);const region=mainlandRegionAt(indexes);
+    if(region.province.name!==f.province||region.city.name!==f.city||region.district.name!==f.district){recognitionNote.value='地区未能准确匹配，请手动选择省市区';return;}
+    Object.assign(next,{province:f.province,city:f.city,district:f.district,provinceCode:region.province.code,cityCode:region.city.code,districtCode:region.district.code});
+    if(f.addressDetail)next.detail=f.addressDetail;
+  } else if(f.addressDetail){recognitionNote.value='地址地区不完整，请补充省市区后识别';return;}
+  beforeRecognition.value={...form,phoneCountry:phoneCountry.value};
+  if(next.mobile)phoneCountry.value='CN';
+  if(indexes)regionIndexes.value=indexes;
+  Object.assign(form,next);recognitionNote.value='已填写，请核对收货信息'+(parsed.missing.length?'，还需补充：'+parsed.missing.join('、'):'');
+}
+function undoRecognition(){if(!beforeRecognition.value)return;phoneCountry.value=beforeRecognition.value.phoneCountry;const {phoneCountry:_,...previous}=beforeRecognition.value;Object.assign(form,previous);regionIndexes.value=mainlandRegionIndexes(form);beforeRecognition.value=null;recognitionNote.value='已撤销自动填写';}
 const busy=ref(false),owner=String(mallStorage.get('saidian-user')?.id || '');
 const phoneCountry = ref<PhoneCountryCode>('CN');
 const form = reactive<any>({
@@ -211,3 +232,7 @@ async function save() {
 }
 @media(max-width:520px){.form-intro{display:block}.form-intro text{display:block;text-align:left;margin-top:6px}}
 </style>
+
+<style scoped>.address-recognition{padding:16px;border-radius:14px;background:var(--mint);margin-bottom:10px}.address-recognition textarea{width:100%;min-height:90px;font-size:14px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;box-sizing:border-box}.recognition-actions{display:flex;gap:12px;margin-top:12px}.recognition-actions button{margin:0;padding:10px 16px;font-size:14px;line-height:1.5;border-radius:999px;background:#fff;color:var(--green)}.address-recognition>text:last-child{display:block;font-size:12px;line-height:1.6;color:var(--muted);margin-top:10px}</style>
+
+<style scoped>.phone-title{flex-wrap:wrap;gap:4px}.phone-hint{font-size:12px;color:var(--muted);line-height:1.5;max-width:100%}.form>.primary-btn{width:100%}</style>

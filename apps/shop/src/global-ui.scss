@@ -1,12 +1,12 @@
 .saydian-app-surface {
-  --green: #d20b27;
-  --deep: #980018;
-  --mint: #ffe8ec;
-  --ink: #171b2b;
+  --green: #245d47;
+  --deep: #163f2e;
+  --mint: #e9eee4;
+  --ink: #142722;
   --muted: #5f6675;
   --line: #dde3ec;
   min-height: 100dvh;
-  background: #f5f7fa;
+  background: #f7f8f4;
   color: var(--ink);
   font-size: 16px;
   padding: 24px 20px calc(96px + env(safe-area-inset-bottom));

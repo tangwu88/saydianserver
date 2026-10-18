@@ -26,29 +26,13 @@ onLaunch((options) => {
     new URLSearchParams(hashQuery).get("ref");
   captureReferral(h5Referral ?? undefined);
   if (isLoggedIn()) void bindReferral();
-  if (!/wxwork/i.test(navigator.userAgent)) return;
-  const currentRoute = promotionTarget(pageUrl.hash);
-  if (currentRoute.startsWith("/pages/employee/index")) return;
-  setTimeout(() => uni.reLaunch({ url: "/pages/employee/index" }), 0);
   /* #endif */
 });
 
-function promotionTarget(hash: string): string {
-  const route = hash.replace(/^#/, "") || "/pages/home/index";
-  if (!/^\/pages\/[a-z0-9-]+\/index(?:\?|$)/i.test(route)) {
-    return "/pages/home/index";
-  }
-  const [path, query = ""] = route.split("?", 2);
-  const params = new URLSearchParams(query);
-  params.delete("wechatAutoLogin");
-  params.delete("autoWechat");
-  const nextQuery = params.toString();
-  return `${path}${nextQuery ? `?${nextQuery}` : ""}`;
-}
 </script>
 <style lang="scss">
 page {
-  background: #f1f2f4;
+  background: #f7f8f4;
   color: #333333;
   font-size: 16px;
   font-family:
