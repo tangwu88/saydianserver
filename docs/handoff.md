@@ -49,6 +49,16 @@ Say Ring 两个公开法律页新增独立的 iOS 构建 1062 活动与睡眠版
 
 新增独立后台设置、5分钟只读租约及显式产品/平台健康历史过滤，详见[客户端/回滚契约](say-ring-ios-read-only-health.md)和[实施记录](implementation-log/2026-10-18-say-ring-ios-read-only-health.md)。保留原AI配置和其他App；不新增生理数据上传，不运行AI探针。线上状态须核对当次Actions、双地址revision和公开开关，不能由代码存在推断已启用。
 
+## Say Ring iOS 百科与商城开关（2026-10-18，生产已验收）
+
+生产版本 `dcc9d2aefeb42b3a0345868a5debc51e8625b213`，[CI39133944860第2次尝试](https://github.com/tangwu88/saydianserver/actions/runs/39133944860)成功；root/global readiness及三个实际容器均为该版本。复用原三镜像，未重新构建；不含SMTP或会员ID候选，不执行迁移/seed。
+
+在“客服与更新 → Say Ring iOS 百科与商城显示”分别编辑两项。15:52:43Z实际保存、重开表单和公开DTO回读均为false/false，审计前后均关闭；所有用户同配置，最多300秒刷新。只新增该设置行，其他AppSetting全行摘要与切换前一致；环境防漂移、生产私有备份/7秒隔离恢复、网关原文件SHA检查均通过。
+
+仅把已验收功能源码同步到main，防止下次主线发布覆盖功能；本次源码同步使用`[skip ci]`，不发布main里既有SMTP/报告等待发代码，不改变生产配置或普通main自动发布流程。**main源码SHA不等于当前生产SHA**；后续正常main提交仍走完整CI及自动部署，须另审当时全部待发差异。
+
+[契约](say-ring-ios-module-visibility.md)及[本轮记录](implementation-log/2026-10-18-say-ring-module-visibility.md)含完整镜像digest、恢复与审计回执。手机需本人解锁且WDA不可用，正向真机界面/R12新实测仍待验；本轮未开启正向开关，不以后台/HTTP成功替代真机验收。
+
 ## 历史交接基线（仅作追溯）
 
 以下独立国际发布、旧 SHA、容量、只读开关和迁移门禁描述均为历史记录，不是当前操作指令；不得据此恢复旧发布入口、覆盖原数据或重复执行首次切换。

@@ -1647,8 +1647,8 @@
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "保存客服、更新或独立 App 显示设置",
-      "request": "{value:非空JSON对象,public?:boolean}；更新配置通过DownloadManifest校验；cn_app_display仅hideAi；say_ring_app_display另允许sleepAiEnabled；say_ring_ios_health_display必须{value:{schemaVersion:1,metrics:固定五项严格布尔},expectedUpdatedAt:当前ISO时间或首次null}；显示设置必须公开",
-      "response": "设置对象；iOS只读配置事务内保存操作者/前后快照，冲突409；不改变AI、上传、其他App；可从独立rollback恢复上次配置",
+      "request": "{value:非空JSON对象,public?:boolean}；更新通过DownloadManifest校验；cn_app_display仅hideAi，say_ring_app_display另允许sleepAiEnabled；say_ring_ios_health_display使用schemaVersion:1/五项metrics；独立say_ring_ios_module_display使用schemaVersion:1/modules:{health_library,mall}；后两项均须expectedUpdatedAt=当前ISO或首次null、严格布尔且必须公开",
+      "response": "设置对象；独立key锁/版本冲突409/事务操作者及前后快照审计/各自rollback；不改变AI、指标、测量、上传、购买/支付或其他App",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -1685,6 +1685,41 @@
       "request": "{expectedUpdatedAt:当前设置updatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；固定设置项say_ring_ios_health_display",
       "response": "恢复上次保存前五项布尔并返回设置对象；版本冲突409，无历史404；事务内保留操作者和前后快照；不改变AI/上传/其他产品",
       "dependency": "现有AppSetting/AuditLog，无迁移；与保存共用数据库锁",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.rollbackSayRingIosModuleDisplay",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/settings/say_ring_ios_module_display/rollback",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "恢复上次Say Ring iOS百科和商城显示",
+      "request": "{expectedUpdatedAt:当前设置updatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；独立say_ring_ios_module_display",
+      "response": "恢复上次保存前{schemaVersion:1,modules:{health_library,mall}}；冲突409，无历史404；事务审计；不改变五项指标、手动测量、AI、购买/支付或其他产品",
+      "dependency": "既有AppSetting/AuditLog，无迁移，与保存共用独立key锁",
       "successStatus": 201,
       "contract": {
         "status": "unreviewed",
@@ -18109,13 +18144,26 @@
       "path": "/api/saydian-app/v2/commerce/markets",
       "auth": "public",
       "roles": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "v2",
       "source": "apps/api/src/commerce/commerce.controller.ts",
       "summary": "国际市场可用状态",
-      "request": "无请求体",
+      "request": "product/platform可选",
       "response": "{markets:[{countryCode,currency,currencyExponent,commerceEnabled,paymentChannels:[]}]}；未配置默认为CN/CNY且commerceEnabled=true；显式停用保留",
-      "dependency": "global.markets；仅CN收货/CNY整数分价目可结算；其他币种只读元数据；支付可用性另查capabilities",
+      "dependency": "global.markets；支付可用性另查capabilities；仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变",
       "successStatus": 200,
       "contract": {
         "status": "request-reviewed",
@@ -18180,13 +18228,26 @@
       "path": "/api/saydian-app/v2/commerce/home",
       "auth": "public",
       "roles": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "v2",
       "source": "apps/api/src/commerce/commerce.controller.ts",
       "summary": "商城首页",
-      "request": "无请求体",
+      "request": "product/platform可选",
       "response": "主库商城首页数据",
-      "dependency": "主库商城；支付操作还依赖已验收的支付渠道配置",
+      "dependency": "主库商城；支付操作还依赖已验收的支付渠道配置；仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -18216,9 +18277,9 @@
       "envelope": "v2",
       "source": "apps/api/src/commerce/commerce.controller.ts",
       "summary": "商城商品列表",
-      "request": "page、pageSize、keyword、categoryId、sort",
+      "request": "page、pageSize、keyword、categoryId、sort；product/platform可选",
       "response": "主库商品分页",
-      "dependency": "主库商城；支付操作还依赖已验收的支付渠道配置",
+      "dependency": "主库商城；支付操作还依赖已验收的支付渠道配置；仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -18243,14 +18304,26 @@
           "name": "id",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/commerce/commerce.controller.ts",
       "summary": "商城商品详情",
-      "request": "id=商品UUID",
+      "request": "id=商品UUID；product/platform可选",
       "response": "主库商品及SKU",
-      "dependency": "主库商城；支付操作还依赖已验收的支付渠道配置",
+      "dependency": "主库商城；支付操作还依赖已验收的支付渠道配置；仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -20498,14 +20571,20 @@
           "name": "product",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "文章分类",
-      "request": "parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en；product可选shared|saidian|saydian-global|say-ring并校验取值",
-      "response": "ArticleCategory[]；分类当前跨 App 共用；未翻译不返回其他语言替代",
-      "dependency": "核心服务",
+      "request": "parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en；product可选shared|saidian|saydian-global|say-ring；platform可选ios",
+      "response": "ArticleCategory[]；分类跨App共用，未翻译不回退其他语言",
+      "dependency": "仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -20560,14 +20639,20 @@
           "name": "product",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "已发布文章",
-      "request": "categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language；product可选shared|saidian|saydian-global|say-ring，默认saydian-global",
-      "response": "{items,total,page,pageSize}；只返回通用内容和指定 App 的已发布对应语言文章",
-      "dependency": "核心服务",
+      "request": "categoryId可选；page默认1/pageSize默认20最大50；locale/Accept-Language；product可选，默认saydian-global；platform可选ios",
+      "response": "{items,total,page,pageSize}；只返回指定App及通用已发布对应语言文章",
+      "dependency": "仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -20610,14 +20695,20 @@
           "name": "product",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "文章详情",
-      "request": "id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language；product可选shared|saidian|saydian-global|say-ring，默认saydian-global",
-      "response": "Article；非通用且不属于指定 App、未发布、未来发布或国际语言不匹配均404",
-      "dependency": "核心服务",
+      "request": "id=UUID或迁移旧ID；locale/Accept-Language；product可选，默认saydian-global；platform可选ios",
+      "response": "Article；不属于指定App、未发布、未来发布或语言不匹配均404",
+      "dependency": "仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -29564,8 +29655,8 @@
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "读取产品独立显示开关",
       "request": "query product=say-ring|saydian-app-cn；可选platform=ios；公开接口，禁止其他产品标识",
-      "response": "保留{product,hideAi,sleepAiEnabled?}；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}；五项严格布尔，未发布或无效全关；读取独立公开say_ring_ios_health_display；Cache-Control:no-store；客户端失败/租约到期关闭，不持久缓存",
-      "dependency": "显示设置不是可信产品身份；不授予上传/测量/医疗/AI权限，不调用供应商；其他产品/旧请求不变",
+      "response": "保留{product,hideAi,sleepAiEnabled?}；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}及同级moduleVisibility:{schemaVersion:1,validForSeconds:300,modules:{health_library,mall}}；独立公开设置/严格布尔，缺失无效或模块读取失败关闭；不向五项metrics加入新键；Cache-Control:no-store；客户端独立租约，失败/过期隐藏，不持久缓存",
+      "dependency": "普通产品/platform显示；所有用户同配置，不识别审核身份；不授予上传/测量/购买/支付/医疗/AI权限；其他产品/旧请求不变",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

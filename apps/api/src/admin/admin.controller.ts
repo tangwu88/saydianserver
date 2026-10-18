@@ -407,6 +407,12 @@ export class AdminController {
     return this.admin.rollbackSayRingIosHealthDisplay(current.id, input);
   }
 
+  @Post("settings/say_ring_ios_module_display/rollback")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  rollbackSayRingIosModuleDisplay(@CurrentAdmin() current: { id: string }, @Body() input: unknown) {
+    return this.admin.rollbackSayRingIosModuleDisplay(current.id, input);
+  }
+
   @Get("commerce-products")
   @AdminRoles(
     AdminRole.SUPER_ADMIN,

@@ -3,6 +3,7 @@ export type { HealthDisplayRow, HealthReading } from "./health-display";
 export type { PartnerLevelContract, PartnerWalletContract, PartnerIdentityContract, PartnerQuoteContract, PartnerCheckoutInput, PartnerRechargeChannel, PartnerRechargeInput, PartnerLedgerContract, PartnerPromotionContract } from "./partner";
 export { adminResourcePermissions, canAdminResource, type AdminAction } from "./admin-permissions";
 export { sayRingIosHealthSettingKey, sayRingReadOnlyMetricKeys, parseSayRingIosHealthDisplay, sayRingIosHealthDisplayOrClosed, type SayRingIosHealthDisplay, type SayRingReadOnlyMetric } from "./say-ring-ios-health";
+export { sayRingIosModuleSettingKey, sayRingModuleKeys, parseSayRingIosModuleDisplay, sayRingIosModuleDisplayOrClosed, type SayRingIosModuleDisplay, type SayRingModule } from "./say-ring-ios-modules";
 
 export const healthMetrics = [
   "sleep",
