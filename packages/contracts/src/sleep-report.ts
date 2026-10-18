@@ -1,5 +1,6 @@
 export const SLEEP_REPORT_TEMPLATE = "sleep-report-v1";
 export const SLEEP_ANALYSIS_NOTICE = "say_ring_sleep_analysis";
+export const SLEEP_QWEN_NOTICE_VERSION = "say-ring-sleep-qwen-2026-10-18-v1";
 
 /** Public progress is fixed text, never an upstream response or internal error. */
 export function sleepReportProgress(
@@ -26,21 +27,31 @@ export function sleepReportProgress(
   return "本次 AI 分析未完成，未生成评分；请稍后重试。";
 }
 
-/** The published sleep notice names this provider; a different recipient needs a new rollout. */
-export function sleepAiProviderMatchesNotice(baseUrl: unknown): boolean {
+/** Only the reviewed mainland service endpoints; no redirects or embedded credentials. */
+export function sleepAiProviderForEndpoint(baseUrl: unknown): "bigmodel" | "qwen" | null {
   try {
     const url = new URL(String(baseUrl ?? ""));
-    return (
+    if (url.username || url.password || url.search || url.hash) return null;
+    if (
       url.origin === "https://open.bigmodel.cn" &&
-      url.pathname.replace(/\/$/, "") === "/api/paas/v4" &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash
-    );
+      url.pathname.replace(/\/$/, "") === "/api/paas/v4"
+    ) return "bigmodel";
+    if (
+      url.origin === "https://maas.qianwenaiapi.com" &&
+      url.pathname.replace(/\/$/, "") === "/compatible-mode/v1"
+    ) return "qwen";
+    return null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** A provider change requires its own published notice and fresh member agreement. */
+export function sleepAiProviderMatchesNotice(baseUrl: unknown, noticeVersion?: unknown): boolean {
+  const provider = sleepAiProviderForEndpoint(baseUrl);
+  return noticeVersion === SLEEP_QWEN_NOTICE_VERSION
+    ? provider === "qwen"
+    : provider === "bigmodel";
 }
 
 export interface SleepReportInput {

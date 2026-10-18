@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminHealthReportsService } from "./admin-health-reports.service";
 import { AdminHealthReportsController } from "./admin-health-reports.controller";
 import { HealthReportsService } from "../reports/health-reports.service";
+import { SLEEP_REPORT_TEMPLATE } from "@saydian/app-contracts";
 
 const memberId = "11111111-1111-4111-8111-111111111111";
 const reportId = "22222222-2222-4222-8222-222222222222";
@@ -29,7 +30,7 @@ function harness(initialCredits = 1) {
     integrationConfig: { findUnique: vi.fn().mockResolvedValue({ state: "CONFIGURED", publicConfig: { provider: "synthetic-openai-compatible" } }) },
     integrationSecret: { findUnique: vi.fn().mockResolvedValue(null) },
     healthReport: {
-      findFirst: vi.fn(async ({ where }: any) => [...state.reports].reverse().find((r: any) => (!where.userId || r.userId === where.userId) && (!where.id || r.id === where.id) && (!where.inputDigest || r.inputDigest === where.inputDigest) && (!where.status || where.status.in.includes(r.status)))),
+      findFirst: vi.fn(async ({ where }: any) => [...state.reports].reverse().find((r: any) => (!where.userId || r.userId === where.userId) && (!where.id || r.id === where.id) && (!where.inputDigest || r.inputDigest === where.inputDigest) && (!where.templateVersion?.not || r.templateVersion !== where.templateVersion.not) && (!where.status || where.status.in.includes(r.status)))),
       findUnique: vi.fn(async ({ where }: any) => withMember(state.reports.find((r: any) => r.id === where.id))),
       findUniqueOrThrow: vi.fn(async ({ where }: any) => withMember(state.reports.find((r: any) => r.id === where.id))),
       create: vi.fn(async ({ data }: any) => { const now = new Date(); const r = { ...data, id: reportId, status: "AWAITING_PAYMENT", createdAt: now, updatedAt: now, generatedAt: null, aiGenerated: false }; state.reports.push(r); return r; }),
@@ -67,6 +68,23 @@ beforeEach(() => {
 afterEach(() => { expect(fetch).not.toHaveBeenCalled(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("international admin health-report availability", () => {
+  it.each(["QUEUED", "GENERATING", "FAILED"])("keeps a newer %s sleep report out of the wellness generation panel", async status => {
+    const h = harness();
+    const previousWellnessId = "33333333-3333-4333-8333-333333333333";
+    h.state.reports.push(
+      { id: previousWellnessId, userId: memberId, templateVersion: "wellness-report-v1", status: "READY", createdAt: new Date(Date.now() - 86_400_000) },
+      { id: reportId, userId: memberId, templateVersion: SLEEP_REPORT_TEMPLATE, status, failureReason: "睡眠 AI 服务尚未完成配置", createdAt: new Date() },
+    );
+    const result = await h.service.availability(memberId, current);
+    expect(result).toMatchObject({ canGenerate: true, reasons: [], latestReport: { id: previousWellnessId, status: "ready" } });
+    expect(JSON.stringify(result)).not.toContain("睡眠 AI 服务尚未完成配置");
+    expect(h.state.reports).toHaveLength(2);
+  });
+  it("does not adopt a sleep-only report as the latest wellness report", async () => {
+    const h = harness();
+    h.state.reports.push({ id: reportId, userId: memberId, templateVersion: SLEEP_REPORT_TEMPLATE, status: "GENERATING", createdAt: new Date() });
+    expect(await h.service.availability(memberId, current)).toMatchObject({ canGenerate: true, latestReport: null });
+  });
   it("returns public Chinese readiness without credentials or health record values", async () => {
     const h = harness(); const result = await h.service.availability(memberId, current);
     expect(result).toMatchObject({ canGenerate: true, reasons: [], validRecordCount: 3, distinctDays: 3, minimumDistinctDays: 3, consentRequired: false, memberConsentBypass: true, reportCreditBypass: true, availableCredits: 1, latestReport: null });

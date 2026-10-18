@@ -6,7 +6,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, ReportStatus } from "@prisma/client";
-import { cutoverFlag, healthReportWorkerEnabled } from "@saydian/app-contracts";
+import {
+  cutoverFlag,
+  healthReportWorkerEnabled,
+  SLEEP_REPORT_TEMPLATE,
+} from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
 import { safeObject, sha256 } from "../common/crypto";
 
@@ -47,7 +51,13 @@ export class AdminHealthReportsService {
       this.reports.eligibility(memberId, db),
       db.integrationConfig.findUnique({ where: { key: "ai" } }),
       db.healthReport.findFirst({
-        where: { userId: memberId },
+        // This panel generates multi-day wellness reports. A newer Say Ring
+        // sleep report has separate provider/consent rules and must not replace
+        // its result or block generation while the sleep job is in progress.
+        where: {
+          userId: memberId,
+          templateVersion: { not: SLEEP_REPORT_TEMPLATE },
+        },
         orderBy: { createdAt: "desc" },
         select: { id: true, status: true, createdAt: true },
       }),

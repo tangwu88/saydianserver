@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { canonicalSleepInput, normalizeSleepReportInput, sleepAiProviderMatchesNotice } from "./sleep-report";
+import { canonicalSleepInput, normalizeSleepReportInput, sleepAiProviderMatchesNotice, SLEEP_QWEN_NOTICE_VERSION } from "./sleep-report";
 import { createHash } from "node:crypto";
 
 // Synthetic input only. Not actual wearable evidence or a provider response.
 export const sleepFixture = () => ({ sdkDate: "2026-08-04", timezone: "+08:00", sourceKey: "a".repeat(64), totalSeconds: 25200, deepSeconds: 7200, lightSeconds: 14400, remSeconds: 3600, awakeSeconds: 1200, sessions: [{ kind: "night", startAt: "2026-08-03T16:00:00.000Z", endAt: "2026-08-04T00:00:00.000Z", asleepSeconds: 25200 }] });
 
 describe("sleep upload aggregate contract", () => {
+  it("binds Qwen to its separately published notice instead of adopting old BigModel agreement", () => {
+    const qwen = "https://maas.qianwenaiapi.com/compatible-mode/v1";
+    expect(sleepAiProviderMatchesNotice(qwen, SLEEP_QWEN_NOTICE_VERSION)).toBe(true);
+    expect(sleepAiProviderMatchesNotice(qwen + "/", SLEEP_QWEN_NOTICE_VERSION)).toBe(true);
+    for (const version of [undefined, "say-ring-sleep-ai-2026-10-03-v1", "health_ai_analysis", "unreviewed-qwen-v2"])
+      expect(sleepAiProviderMatchesNotice(qwen, version)).toBe(false);
+    for (const url of ["https://open.bigmodel.cn/api/paas/v4", "http://maas.qianwenaiapi.com/compatible-mode/v1", qwen + "?redirect=1", qwen + "#fragment", "https://maas.qianwenaiapi.com.evil.invalid/compatible-mode/v1", "https://secret@maas.qianwenaiapi.com/compatible-mode/v1", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "https://maas.qianwenaiapi.com/other"])
+      expect(sleepAiProviderMatchesNotice(url, SLEEP_QWEN_NOTICE_VERSION)).toBe(false);
+  });
   it("only sends sleep data to the recipient named in the published notice", () => {
     expect(sleepAiProviderMatchesNotice("https://open.bigmodel.cn/api/paas/v4/")).toBe(true);
     for (const url of [undefined, "http://open.bigmodel.cn/api/paas/v4", "https://open.bigmodel.cn.evil.invalid/api/paas/v4", "https://other.example.invalid/api/paas/v4", "https://secret@open.bigmodel.cn/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4?redirect=1", "https://open.bigmodel.cn/other"]) expect(sleepAiProviderMatchesNotice(url)).toBe(false);

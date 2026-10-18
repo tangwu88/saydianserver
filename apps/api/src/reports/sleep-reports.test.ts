@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SLEEP_ANALYSIS_NOTICE } from "@saydian/app-contracts";
+import { SLEEP_ANALYSIS_NOTICE, SLEEP_QWEN_NOTICE_VERSION } from "@saydian/app-contracts";
 import { SleepReportsService } from "./sleep-reports.service";
 
 const input = () => ({
@@ -24,6 +24,7 @@ function harness() {
   const state: any = {
     enabled: true,
     configured: true,
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
     consent: true,
     version: "reviewed-synthetic-v1",
     active: true,
@@ -44,7 +45,7 @@ function harness() {
     integrationConfig: {
       findUnique: vi.fn(async () => ({
         state: state.configured ? "CONFIGURED" : "UNCONFIGURED",
-          publicConfig: { provider: "synthetic", baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
+          publicConfig: { provider: "synthetic", baseUrl: state.baseUrl },
       })),
     },
     appSetting: {
@@ -107,6 +108,25 @@ function harness() {
 }
 beforeEach(() => vi.unstubAllEnvs());
 describe("sleep reports use product-scoped consent and the audited AI channel", () => {
+  it("enables Qwen only with its published notice and a fresh product-scoped member agreement", async () => {
+    const h = harness();
+    h.state.baseUrl = "https://maas.qianwenaiapi.com/compatible-mode/v1";
+    expect(await h.service.availability("owner")).toMatchObject({ available: false, checks: { providerReady: false } });
+    h.state.documents[0].version = SLEEP_QWEN_NOTICE_VERSION;
+    expect(await h.service.availability("owner")).toMatchObject({ available: true, analysisConsent: { granted: false, availableVersion: SLEEP_QWEN_NOTICE_VERSION } });
+    await expect(h.service.create("owner", input())).rejects.toThrow(/同意/);
+    expect(h.prisma.healthReport.create).not.toHaveBeenCalled();
+    await h.service.setAnalysisConsent("owner", { granted: true, version: SLEEP_QWEN_NOTICE_VERSION });
+    expect(await h.service.create("owner", input())).toMatchObject({ reportType: "sleep", status: "queued" });
+  });
+  it("does not send Qwen-authorized data back to the old recipient", async () => {
+    const h = harness();
+    h.state.documents[0].version = SLEEP_QWEN_NOTICE_VERSION;
+    h.state.version = SLEEP_QWEN_NOTICE_VERSION;
+    expect(await h.service.availability("owner")).toMatchObject({ available: false, checks: { providerReady: false }, analysisConsent: { granted: true } });
+    await expect(h.service.create("owner", input())).rejects.toThrow(/配置/);
+    expect(h.prisma.outboxEvent.upsert).not.toHaveBeenCalled();
+  });
   it("persists only aggregate evidence, queues once, and never consumes paid credits", async () => {
     const h = harness();
     expect(await h.service.create("synthetic-owner", input())).toMatchObject({
