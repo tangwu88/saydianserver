@@ -1,5 +1,6 @@
 // Hand-reviewed semantics. Route, method, auth and parameter locations come from TS decorators.
 const entry = (summary, request = "无请求体", response = "对象", dependency = "核心服务") => ({ summary, request, response, dependency });
+const ringModuleScope = "仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变";
 const formProfile = "Profile：nickname、head_portrait/avatarUrl、sex/gender、birthday、height/heightCm、weight/weightKg；仅提交需修改字段";
 const healthQuery = "date/day=YYYY-MM-DD 或时间戳；selectmember/selectMemberId=被关爱人的数字 ID（缺省自己）；page 从 1 开始；type 见调用手册";
 const composition = "JSON {data:{date?,...指标标量}}；建议提供采集时间和 Idempotency-Key；无二者不能保证重试去重";
@@ -86,7 +87,7 @@ export const notes = {
   "HealthReportsController.sleepAnalysisConsent": entry("单独同意或撤回 Say Ring 睡眠 AI 分析", "granted:boolean；同意时version须匹配当前已发布say_ring_sleep_analysis；本人登录", "返回当前analysisConsent；只修改本人的Say Ring睡眠ConsentRecord，不改Health App的HealthProfile授权；撤回后禁止新生成和生成中结果发布，不删除既有报告"),
   "HealthReportsController.sleepReport": entry("查询精确睡眠快照的AI报告", "sdkDate、sourceKey和sourceHash；后两者为64位SHA256", "{report:睡眠报告或null}；只返回本人同日期/设备来源/内容快照，READY且真实生成时才有AI sleepScore；不将设备评分替换为AI评分；兼容可选 generationAttempts 和 progressMessage，等待重试仍为 queued，失败为 failed；只读刷新不触发上传或重试"),
   "HealthReportsController.createSleepReport": entry("上传已同意的睡眠汇总并创建AI睡眠报告", "SleepReportInput：sdkDate、timezone、sourceKey、totalSeconds、可选阶段/清醒/未知/未佩戴秒数、deviceScore、wakeCount、sessions[{kind,startAt,endAt,asleepSeconds}]；严格字段白名单，不接收原始分段或联系方式", "reportType=sleep的报告，重复快照复用；本功能不扣普通健康报告次数，不创建付款；无数据/阶段合计不一致/未授权/未配置明确失败", "Say Ring睡眠AI当前单独同意；第三方收到去标识化汇总，AI评分非临床量表；生产验收独立记录"),
-  "SupportController.appDisplay": entry("读取产品独立显示开关", "query product=say-ring|saydian-app-cn；可选platform=ios；公开接口，禁止其他产品标识", "保留{product,hideAi,sleepAiEnabled?}；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}；五项严格布尔，未发布或无效全关；读取独立公开say_ring_ios_health_display；Cache-Control:no-store；客户端失败/租约到期关闭，不持久缓存", "显示设置不是可信产品身份；不授予上传/测量/医疗/AI权限，不调用供应商；其他产品/旧请求不变"),
+  "SupportController.appDisplay": entry("读取产品独立显示开关", "query product=say-ring|saydian-app-cn；可选platform=ios；公开接口，禁止其他产品标识", "保留{product,hideAi,sleepAiEnabled?}；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}及同级moduleVisibility:{schemaVersion:1,validForSeconds:300,modules:{health_library,mall}}；独立公开设置/严格布尔，缺失无效或模块读取失败关闭；不向五项metrics加入新键；Cache-Control:no-store；客户端独立租约，失败/过期隐藏，不持久缓存", "普通产品/platform显示；所有用户同配置，不识别审核身份；不授予上传/测量/购买/支付/医疗/AI权限；其他产品/旧请求不变"),
   "AdminHealthReportsController.availability": entry("检查会员AI健康报告生成条件", "memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR", "{canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,memberConsentBypass,availableCredits,latestReport}；SUPER_ADMIN后台生成不以会员App同意为前置，HEALTH_AUDITOR仍须当前同意；未知条件不伪装可用；不返回密钥，不探测外部服务", "有效数据、报告次数、已配置AI和未暂停Worker；审核员另需会员当前同意"),
   "AdminHealthReportsController.create": entry("后台申请生成或复用AI健康报告", "{memberId:UUID,idempotencyKey:8–160字符}；不创建付款；每次请求服务端复核条件", "{report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；SUPER_ADMIN可绕过会员App同意且审计memberConsentBypassed=true，HEALTH_AUDITOR不可绕过；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable", "已满足availability条件；第三方真实运行需独立验收"),
   "AdminHealthReportsController.detail": entry("后台查看健康报告进度和结果", "id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR", "报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文", "报告队列与读取审计；AI结果仅供健康管理参考"),
@@ -171,9 +172,9 @@ export const notes = {
   "NotificationsController.markRead": entry("标记消息已读", "id=消息 UUID/eventId", "{read:true}；仅本人消息"),
   "NotificationsController.register": entry("登记推送安装", push, "安装记录；登记不等于推送成功", "推送供应商（登记可独立使用）"),
   "NotificationsController.unregister": entry("撤销本人推送安装", "installationId=安装标识", "撤销结果"),
-  "ContentController.categories": entry("文章分类", "parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en；product可选shared|saidian|saydian-global|say-ring并校验取值", "ArticleCategory[]；分类当前跨 App 共用；未翻译不返回其他语言替代"),
-  "ContentController.articles": entry("已发布文章", "categoryId 可选 UUID；page 默认 1；pageSize 默认 20 最大 50；国际locale/Accept-Language；product可选shared|saidian|saydian-global|say-ring，默认saydian-global", "{items,total,page,pageSize}；只返回通用内容和指定 App 的已发布对应语言文章"),
-  "ContentController.article": entry("文章详情", "id=UUID 或迁移的旧文章 ID；国际locale/Accept-Language；product可选shared|saidian|saydian-global|say-ring，默认saydian-global", "Article；非通用且不属于指定 App、未发布、未来发布或国际语言不匹配均404"),
+  "ContentController.categories": entry("文章分类", "parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en；product可选shared|saidian|saydian-global|say-ring；platform可选ios", "ArticleCategory[]；分类跨App共用，未翻译不回退其他语言", ringModuleScope),
+  "ContentController.articles": entry("已发布文章", "categoryId可选；page默认1/pageSize默认20最大50；locale/Accept-Language；product可选，默认saydian-global；platform可选ios", "{items,total,page,pageSize}；只返回指定App及通用已发布对应语言文章", ringModuleScope),
+  "ContentController.article": entry("文章详情", "id=UUID或迁移旧ID；locale/Accept-Language；product可选，默认saydian-global；platform可选ios", "Article；不属于指定App、未发布、未来发布或语言不匹配均404", ringModuleScope),
   "ContentController.legal": entry("协议文档", "type=文档类型；version可选；国际locale必选当前capabilities法律文档locale", "国内LegalDocument；国际GlobalLegalDocument（reviewed+active+published）；未发布404"),
   "ContentController.sayRingLegalPage": entry("Say Ring 当前已发布法律 HTML 页面", "type=privacy|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖", "text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意", "GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口"),
   "AiController.history": entry("本人 AI 历史", "sessionId 可选客户端会话标识", "最近 20 个会话及消息"),
@@ -189,11 +190,11 @@ export const notes = {
   "FilesController.uploadSayRingAvatar": entry("Say Ring 上传头像", "会员令牌；multipart file，JPEG/PNG/WebP，最大 10 MiB；仅国际环境", "{id,url,sha256,byteSize}；URL 与现有头像接口一致", "Say Ring 专用服务器持久目录；开关关闭时沿用原头像存储"),
   "FilesController.uploadEcg": entry("上传 ECG 压缩文件", "multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用", "ECG 对象键和摘要；原始波形非公开", "私有对象存储"),
   "FilesController.download": entry("获取公开头像", "id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件", "原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载", "原有对象存储或 Say Ring 专用服务器持久目录"),
-  "CommerceController.home": entry("商城首页", undefined, "主库商城首页数据", mall),
+  "CommerceController.home": entry("商城首页", "product/platform可选", "主库商城首页数据", mall + "；" + ringModuleScope),
   "CommerceController.capabilitiesForApp": entry("App商城可用能力", "locale可选；国际App V2公开读取", "当前真实开放市场、币种小数位、维护状态及可用于android/ios的支付方式；能力缺失不推测可下单", "global.markets与已核验支付配置；不返回密钥"),
-  "CommerceController.markets": entry("国际市场可用状态", undefined, "{markets:[{countryCode,currency,currencyExponent,commerceEnabled,paymentChannels:[]}]}；未配置默认为CN/CNY且commerceEnabled=true；显式停用保留", "global.markets；仅CN收货/CNY整数分价目可结算；其他币种只读元数据；支付可用性另查capabilities"),
-  "CommerceController.products": entry("商城商品列表", "page、pageSize、keyword、categoryId、sort", "主库商品分页", mall),
-  "CommerceController.product": entry("商城商品详情", "id=商品UUID", "主库商品及SKU", mall),
+  "CommerceController.markets": entry("国际市场可用状态", "product/platform可选", "{markets:[{countryCode,currency,currencyExponent,commerceEnabled,paymentChannels:[]}]}；未配置默认为CN/CNY且commerceEnabled=true；显式停用保留", "global.markets；支付可用性另查capabilities；" + ringModuleScope),
+  "CommerceController.products": entry("商城商品列表", "page、pageSize、keyword、categoryId、sort；product/platform可选", "主库商品分页", mall + "；" + ringModuleScope),
+  "CommerceController.product": entry("商城商品详情", "id=商品UUID；product/platform可选", "主库商品及SKU", mall + "；" + ringModuleScope),
   "CommerceController.cart": entry("购物车", undefined, "本人主库购物车", mall),
   "CommerceController.putCart": entry("更新购物车项", "{skuId,quantity,selected?}", "本人主库购物车", mall),
   "CommerceController.deleteCart": entry("删除购物车项", "id=购物车项UUID", "删除结果", mall),
@@ -339,8 +340,9 @@ export const notes = {
   "AdminController.updateAdmin": entry("编辑后台账号", "{displayName?,role?,active?}；当前不支持修改密码", "无密码账号信息"),
   "AdminController.deletionRequests": entry("注销任务列表", undefined, "注销任务及遮蔽会员资料；非手动执行删除接口"),
   "AdminController.settings": entry("客服、更新与独立 App 显示设置", undefined, "按当前部署返回客服/更新设置，含独立say_ring_app_display/cn_app_display显示开关"),
-  "AdminController.updateSetting": entry("保存客服、更新或独立 App 显示设置", "{value:非空JSON对象,public?:boolean}；更新配置通过DownloadManifest校验；cn_app_display仅hideAi；say_ring_app_display另允许sleepAiEnabled；say_ring_ios_health_display必须{value:{schemaVersion:1,metrics:固定五项严格布尔},expectedUpdatedAt:当前ISO时间或首次null}；显示设置必须公开", "设置对象；iOS只读配置事务内保存操作者/前后快照，冲突409；不改变AI、上传、其他App；可从独立rollback恢复上次配置"),
+  "AdminController.updateSetting": entry("保存客服、更新或独立 App 显示设置", "{value:非空JSON对象,public?:boolean}；更新通过DownloadManifest校验；cn_app_display仅hideAi，say_ring_app_display另允许sleepAiEnabled；say_ring_ios_health_display使用schemaVersion:1/五项metrics；独立say_ring_ios_module_display使用schemaVersion:1/modules:{health_library,mall}；后两项均须expectedUpdatedAt=当前ISO或首次null、严格布尔且必须公开", "设置对象；独立key锁/版本冲突409/事务操作者及前后快照审计/各自rollback；不改变AI、指标、测量、上传、购买/支付或其他App"),
   "AdminController.rollbackSayRingIosHealthDisplay": entry("恢复上次Say Ring iOS只读指标配置", "{expectedUpdatedAt:当前设置updatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；固定设置项say_ring_ios_health_display", "恢复上次保存前五项布尔并返回设置对象；版本冲突409，无历史404；事务内保留操作者和前后快照；不改变AI/上传/其他产品", "现有AppSetting/AuditLog，无迁移；与保存共用数据库锁"),
+  "AdminController.rollbackSayRingIosModuleDisplay": entry("恢复上次Say Ring iOS百科和商城显示", "{expectedUpdatedAt:当前设置updatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；独立say_ring_ios_module_display", "恢复上次保存前{schemaVersion:1,modules:{health_library,mall}}；冲突409，无历史404；事务审计；不改变五项指标、手动测量、AI、购买/支付或其他产品", "既有AppSetting/AuditLog，无迁移，与保存共用独立key锁"),
   "AdminController.commerceProducts": entry("总后台商品列表", "search可查商品名或ERP编号；page默认1", "主库商品、SKU及ERP库存快照；不直接改权威库存", "主库商城/聚水潭"),
   "AdminController.createCommerceProduct": entry("拒绝手工新增ERP商品", "请先通过聚水潭商品同步建立商品和SKU", "HTTP 400；不会创建第二套库存", "聚水潭"),
   "AdminController.importCommerceProductBySku": entry("按SKU定位SPU并实时导入ERP商品", "{sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存", "聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误", "聚水潭商品查询与库存查询"),

@@ -31,27 +31,27 @@ export class CommerceController {
   }
 
   @Get("markets")
-  markets() {
-    return this.commerce.publicGet("/storefront/markets");
+  markets(@Query("product") product?: string, @Query("platform") platform?: string) {
+    return this.commerce.publicGet("/storefront/markets", { product, platform });
   }
 
   @Get("home")
-  home() {
-    return this.commerce.publicGet("/storefront/bootstrap");
+  home(@Query("product") product?: string, @Query("platform") platform?: string) {
+    return this.commerce.publicGet("/storefront/bootstrap", { product, platform });
   }
 
   @Get("products")
   products(@Query() query: Record<string, string>) {
     const params = new URLSearchParams(query).toString();
     return this.commerce.publicGet(
-      `/storefront/products${params ? `?${params}` : ""}`,
+      `/storefront/products${params ? `?${params}` : ""}`, { product: query.product, platform: query.platform },
     );
   }
 
   @Get("products/:id")
-  product(@Param("id") id: string) {
+  product(@Param("id") id: string, @Query("product") product?: string, @Query("platform") platform?: string) {
     return this.commerce.publicGet(
-      `/storefront/products/${encodeURIComponent(id)}`,
+      `/storefront/products/${encodeURIComponent(id)}`, { product, platform },
     );
   }
 

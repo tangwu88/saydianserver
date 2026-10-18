@@ -14,6 +14,7 @@ import "../deploy/scripts/offline-image-transfer.test.mjs";
 import "../deploy/scripts/ci-registry-login.test.mjs";
 import "../deploy/scripts/runtime-artifact.test.mjs";
 import "../deploy/scripts/component-cache.test.mjs";
+import "../deploy/scripts/module-release-scope.test.mjs";
 import { writeWindowsInstallDouble } from "./shell-test-fixture.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

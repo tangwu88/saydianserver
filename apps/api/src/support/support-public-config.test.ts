@@ -245,7 +245,7 @@ describe("Say Ring iOS public read-only lease", () => {
       { key: "say_ring_app_display", public: true, value: { hideAi: true, sleepAiEnabled: true, privateNote: "discard" } },
       { key: sayRingIosHealthSettingKey, public: true, value },
     ]);
-    expect(await h.service.appDisplayConfig("say-ring", "ios")).toEqual({ product: "say-ring", platform: "ios", hideAi: true, sleepAiEnabled: true, readOnlyHealth: { ...value, validForSeconds: 300 } });
+    expect(await h.service.appDisplayConfig("say-ring", "ios")).toEqual({ product: "say-ring", platform: "ios", hideAi: true, sleepAiEnabled: true, readOnlyHealth: { ...value, validForSeconds: 300 }, moduleVisibility: { schemaVersion: 1, validForSeconds: 300, modules: { health_library: false, mall: false } } });
     expect(h.findUnique).not.toHaveBeenCalled(); expect(h.secrets.resolve).not.toHaveBeenCalled();
   });
   it.each([undefined, null, { schemaVersion: 2 }, { ...sayRingIosHealthDisplayOrClosed(), metrics: { heart_rate: "true" } }])("closes absent or malformed config", async value => {
@@ -260,5 +260,42 @@ describe("Say Ring iOS public read-only lease", () => {
     const h = harness([]);
     expect(await h.service.appDisplayConfig(product, platform)).toEqual({ product, hideAi: false });
     expect(h.findFirst).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("independent Say Ring iOS module visibility", () => {
+  const closed = { schemaVersion: 1, modules: { health_library: false, mall: false }, validForSeconds: 300 };
+  it("adds a closed sibling without expanding the five physiological keys", async () => {
+    const h = harness([]);
+    const result = await h.service.appDisplayConfig("say-ring", "ios");
+    expect(result).toHaveProperty("moduleVisibility", closed);
+    expect(Object.keys(result.readOnlyHealth!.metrics)).toEqual(["heart_rate", "hrv", "blood_oxygen", "body_temperature", "stress"]);
+  });
+  it.each([true, false])("publishes the independent strict booleans %s", async enabled => {
+    const value = { schemaVersion: 1, modules: { health_library: enabled, mall: !enabled } };
+    const h = harness([{ key: "say_ring_ios_module_display", public: true, value }]);
+    expect(await h.service.appDisplayConfig("say-ring", "ios")).toHaveProperty("moduleVisibility", { ...value, validForSeconds: 300 });
+  });
+  it.each([null, { schemaVersion: 2 }, { schemaVersion: 1, modules: { health_library: "true", mall: true } }, { schemaVersion: 1, modules: { health_library: true, mall: true, payment: true } }])("closes malformed values without poisoning physiology", async value => {
+    const health = sayRingIosHealthDisplayOrClosed(); health.metrics.heart_rate = true;
+    const h = harness([{ key: sayRingIosHealthSettingKey, public: true, value: health }, { key: "say_ring_ios_module_display", public: true, value }]);
+    const result = await h.service.appDisplayConfig("say-ring", "ios");
+    expect(result).toHaveProperty("moduleVisibility", closed);
+    expect(result.readOnlyHealth!.metrics.heart_rate).toBe(true);
+  });
+  it("never reads private module content", async () => {
+    const h = harness([{ key: "say_ring_ios_module_display", public: false, get value() { throw new Error("private read"); } }]);
+    expect(await h.service.appDisplayConfig("say-ring", "ios")).toHaveProperty("moduleVisibility", closed);
+  });
+  it("contains module read failure without revoking the independent health lease", async () => {
+    const health = sayRingIosHealthDisplayOrClosed(); health.metrics.heart_rate = true;
+    const h = harness([]);
+    h.findFirst.mockImplementation(async ({ where }: any) => {
+      if (where.key === "say_ring_ios_module_display") throw new Error("module query failed");
+      return where.key === sayRingIosHealthSettingKey ? { value: health } : null;
+    });
+    const result = await h.service.appDisplayConfig("say-ring", "ios");
+    expect(result).toHaveProperty("moduleVisibility", closed);
+    expect(result.readOnlyHealth!.metrics.heart_rate).toBe(true);
   });
 });

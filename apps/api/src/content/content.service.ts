@@ -17,6 +17,7 @@ import { callChatProvider } from "./ai-chat-provider";
 import { globalLegalBundle } from "../auth/global-legal";
 import { renderSayRingLegalPage } from "./say-ring-legal-page";
 import { contentProduct, contentProductFilter } from "./content-product";
+import { assertSayRingModuleVisible } from "../common/say-ring-module-visibility";
 
 @Injectable()
 export class ContentService {
@@ -26,8 +27,9 @@ export class ContentService {
     private readonly integrationSecrets: IntegrationSecretsService,
   ) {}
 
-  async categories(parentId?: string, locale?: string, productInput?: string) {
+  async categories(parentId?: string, locale?: string, productInput?: string, platform?: string) {
     contentProduct(productInput);
+    await assertSayRingModuleVisible(this.prisma, "health_library", productInput, platform);
     return this.prisma.articleCategory.findMany({
       where: {
         enabled: true,
@@ -44,6 +46,7 @@ export class ContentService {
     pageSizeInput = 20,
     locale?: string,
     productInput?: string,
+    platform?: string,
   ) {
     const product = contentProduct(productInput);
     if (
@@ -59,6 +62,7 @@ export class ContentService {
     if (!Number.isSafeInteger((page - 1) * pageSize)) {
       throw new BadRequestException("分页参数超出范围");
     }
+    await assertSayRingModuleVisible(this.prisma, "health_library", productInput, platform);
     const where = {
       status: "PUBLISHED",
       publishedAt: { lte: new Date() },
@@ -88,8 +92,9 @@ export class ContentService {
     return { items, total, page, pageSize };
   }
 
-  async article(id: string, locale?: string, productInput?: string) {
+  async article(id: string, locale?: string, productInput?: string, platform?: string) {
     const product = contentProduct(productInput);
+    await assertSayRingModuleVisible(this.prisma, "health_library", productInput, platform);
     const article = await this.prisma.article.findFirst({
       where: {
         OR: [...(isUuid(id) ? [{ id }] : []), { legacyId: id }],

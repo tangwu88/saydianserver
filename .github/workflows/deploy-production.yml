@@ -9,6 +9,10 @@ on:
       build_run_id:
         required: true
         type: string
+      module_release:
+        description: One-shot module-only release requiring an exact root-owned host approval
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       revision:
@@ -43,16 +47,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ inputs.module_release && inputs.revision || 'main' }}
+          fetch-depth: 0
       - id: target
         env:
           REVISION: ${{ inputs.revision }}
           BUILD_RUN_ID: ${{ inputs.build_run_id }}
           GH_TOKEN: ${{ github.token }}
+          MODULE_RELEASE: ${{ inputs.module_release || false }}
         run: |
           set -Eeuo pipefail
           [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$REVISION"
+          if [[ "$MODULE_RELEASE" == true ]]; then
+            [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/codex/say-ring-module-visibility-20261018 ]]
+            node deploy/scripts/module-release-scope.mjs source "$REVISION" > /dev/null
+          fi
           if [ '${{ github.event_name }}' = workflow_dispatch ]; then
             BUILD_RUN_ID=
             while read -r run_id; do
@@ -77,6 +87,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.resolve.outputs.revision }}
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: release-${{ needs.resolve.outputs.revision }}
@@ -97,12 +108,19 @@ jobs:
           FIRST_CUTOVER: ${{ inputs.first_cutover }}
           OFFLINE_IMAGES: ${{ inputs.offline_images }}
           EVENT_NAME: ${{ github.event_name }}
+          MODULE_RELEASE: ${{ inputs.module_release || false }}
         run: |
           set -Eeuo pipefail
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
           [[ "$DEPLOY_HOST" = 49.232.231.131 ]]
           [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
-          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$REVISION"
+          if [[ "$MODULE_RELEASE" == true ]]; then
+            [[ "$FIRST_CUTOVER" != true && "$OFFLINE_IMAGES" != true ]]
+            test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/codex/say-ring-module-visibility-20261018" --jq .object.sha)" = "$REVISION"
+            node deploy/scripts/module-release-scope.mjs source "$REVISION" > verified-release/module-release-scope.json
+          else
+            test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$REVISION"
+          fi
           key_dir=$(mktemp -d)
           bundle_dir=$(mktemp -d)
           trap 'rm -rf -- "$key_dir" "$bundle_dir" deploy-bundle.tgz' EXIT
@@ -111,6 +129,10 @@ jobs:
           chmod 600 "$key_dir/key" "$key_dir/known_hosts"
           git archive --format=tar HEAD deploy | tar -x -C "$bundle_dir"
           cp verified-release/release-manifest.json "$bundle_dir/deploy/release-manifest.json"
+          if [[ "$MODULE_RELEASE" == true ]]; then
+            cp verified-release/module-release-scope.json "$bundle_dir/deploy/module-release-scope.json"
+            : > "$bundle_dir/deploy/.module-visibility-release"
+          fi
           if [[ "$OFFLINE_IMAGES" == true ]]; then
             [[ "$EVENT_NAME" == workflow_dispatch ]]
             : > "$bundle_dir/deploy/.offline-images"

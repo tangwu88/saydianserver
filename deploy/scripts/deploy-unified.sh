@@ -10,6 +10,12 @@ revision=${RELEASE_SHA:?}
 flock -n 9
 state_dir="$root_dir/deploy/unified"
 install -d -m 700 "$state_dir"
+scoped_modules=false
+if [[ -e "$source_dir/deploy/.module-visibility-release" ]]; then
+  [[ -f "$source_dir/deploy/.module-visibility-release" && ! -s "$source_dir/deploy/.module-visibility-release" ]]
+  [[ ! -e "$source_dir/deploy/.first-unified-cutover" && ! -e "$source_dir/deploy/.offline-images" ]]
+  scoped_modules=true
+fi
 first=false
 if [[ -e "$source_dir/deploy/.first-unified-cutover" ]]; then
   [[ -f "$source_dir/deploy/.first-unified-cutover" && ! -s "$source_dir/deploy/.first-unified-cutover" ]]
@@ -29,6 +35,15 @@ node_tool() {
     -v "$source_dir:/work" "$runtime" "$@"
 }
 sql() { docker exec -i "$1" sh -ec 'exec psql -X -qAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'; }
+module_approval() {
+  node_tool /release/scripts/module-release-scope.mjs approval "$revision" /state/module-release-approval.json /release/module-release-scope.json
+  for name in api worker admin; do
+    [[ $(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "saydian-global-global-$name-1") == aeb9afcb8bbd8b4168c38e489c827790c448bf7a ]]
+  done
+}
+settings_fingerprint() {
+  sql "$database" <<< 'SELECT md5(coalesce(string_agg(row_to_json(t)::text, E'\''\n'\'' ORDER BY key), '\'''\'')) FROM (SELECT * FROM "AppSetting") t;'
+}
 pin_images() {
   local prefix=$1 project=$2 result='{"services":{}}' name id previous_revision
   for name in api worker admin; do
@@ -89,6 +104,7 @@ public_checks() {
   [[ "$code" == 401 ]] || return 1
 }
 node_tool /release/scripts/release-manifest.mjs verify "$revision" /release/release-manifest.json
+if [[ "$scoped_modules" == true ]]; then module_approval; fi
 base_compose="$state_dir/compose.json"
 if [[ "$first" == true ]]; then
   for unit in saydian-global-auto-deploy.timer saydian-global-auto-deploy.service; do
@@ -119,6 +135,9 @@ else
 fi
 sql "$database" <<< 'SELECT coalesce(json_agg(t), '\''[]'\''::json) FROM (SELECT migration_name,checksum,finished_at,rolled_back_at FROM "_prisma_migrations") t;' > "$source_dir/history.json"
 node_tool /release/scripts/unified-preflight.mjs "$revision" /release/release-manifest.json /work/history.json /work/preflight.json /state "$([[ "$first" == true ]] && echo first-cutover || echo routine)" > "$source_dir/preflight-result.json"
+if [[ "$scoped_modules" == true ]]; then
+  jq -e '.pending | length == 0' "$source_dir/preflight-result.json" > /dev/null || { echo 'Scoped module release cannot contain pending migrations' >&2; exit 1; }
+fi
 cat "$source_dir/preflight-result.json"
 mode=compose
 [[ ! -f "$source_dir/deploy/.offline-images" ]] || mode=compose-offline
@@ -143,6 +162,14 @@ for name in api worker admin; do
   [[ $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$expected_id") == "$revision" ]]
   echo "Runtime image $name verified in $((SECONDS - started)) seconds."
 done
+if [[ "$scoped_modules" == true ]]; then
+  compose config --format json > "$source_dir/module-target-compose.json"
+  docker inspect saydian-global-global-api-1 saydian-global-global-worker-1 saydian-global-global-admin-1 > "$source_dir/module-live.json"
+  image_ids=()
+  while IFS= read -r image_id; do image_ids+=("$image_id"); done < <(jq -r '.images.api.imageId,.images.worker.imageId,.images.admin.imageId' "$manifest")
+  docker image inspect "${image_ids[@]}" > "$source_dir/module-image-config.json"
+  node_tool /release/scripts/module-release-scope.mjs environment /work/module-target-compose.json /work/module-live.json /work/module-image-config.json
+fi
 # Older installed receivers already store this same short-lived job token in their
 # private temporary Docker config. Reuse it in memory only; never print or persist it.
 if [[ -z "${GITHUB_TOKEN:-}" ]]; then
@@ -151,7 +178,12 @@ if [[ -z "${GITHUB_TOKEN:-}" ]]; then
 fi
 check_latest() {
   local latest
-  latest=$(curl --fail --silent --show-error --max-time 30 -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' https://api.github.com/repos/tangwu88/saydianserver/git/ref/heads/main | jq -er .object.sha)
+  if [[ "$scoped_modules" == true ]]; then
+    module_approval
+    latest=$(curl --fail --silent --show-error --max-time 30 -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' https://api.github.com/repos/tangwu88/saydianserver/git/ref/heads/codex/say-ring-module-visibility-20261018 | jq -er .object.sha)
+  else
+    latest=$(curl --fail --silent --show-error --max-time 30 -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' https://api.github.com/repos/tangwu88/saydianserver/git/ref/heads/main | jq -er .object.sha)
+  fi
   [[ "$latest" == "$revision" ]] || { echo 'Superseded release; existing services unchanged.' >&2; return 1; }
 }
 check_latest
@@ -161,6 +193,7 @@ install -d -m 700 "$backup"
 cp -p "$base_compose" "$backup/compose.json"
 pin_images global- saydian-global > "$backup/images.json"
 gateway=${GATEWAY_CONFIG_PATH:-/opt/saydian/config/gateway-nginx.conf}
+if [[ "$scoped_modules" == true ]]; then sha256sum "$gateway" > "$backup/gateway.sha256"; fi
 changed=false
 gateway_changed=false
 writes_opened=false
@@ -186,7 +219,7 @@ rollback() {
 }
 trap 'rollback "$?" "$LINENO"' ERR
 trap 'false' INT TERM
-if [[ "$first" != true ]]; then
+if [[ "$first" != true && "$scoped_modules" != true ]]; then
   # The shared gateway keeps its managed TLS block across routine releases.
   # Reconcile newly introduced public static routes before replacing services.
   cp -p "$gateway" "$backup/gateway.conf"
@@ -252,7 +285,7 @@ if [[ "$first" == true ]]; then
   node_tool /release/scripts/import-missing-settings.mjs /work/domestic-settings.json /work/target-settings.json /work/settings-import
   cp "$source_dir/settings-import.audit.json" "$backup/settings-import.audit.json"
 else
-  if jq -e '.pending | length > 0' "$source_dir/preflight-result.json" > /dev/null; then
+  if [[ "$scoped_modules" == true ]] || jq -e '.pending | length > 0' "$source_dir/preflight-result.json" > /dev/null; then
     # Reviewed schema changes require a current consistent backup whose isolated
     # restore preserves all rows. The source database and live switches stay intact.
     bash "$source_dir/deploy/scripts/backup-restore.sh" "$database" "$backup/migration-rehearsal"
@@ -266,10 +299,14 @@ else
 fi
 check_latest
 unset GITHUB_TOKEN
+if [[ "$scoped_modules" == true ]]; then
+  settings_fingerprint > "$backup/settings-before.digest"
+else
 # Owner credentials exist only in a root-readable private file; runtime stays global_app.
 docker inspect -f '{{json .Config.Env}}' "$database" | jq 'map(split("=") | {key:.[0],value:.[1:]|join("=")}) | from_entries | {services:{"global-api":{environment:{DATABASE_URL:("postgresql://" + (.POSTGRES_USER|@uri) + ":" + (.POSTGRES_PASSWORD|@uri) + "@global-postgres:5432/" + (.POSTGRES_DB|@uri) + "?schema=public")}}}}' > "$backup/migration-owner.json"
 docker compose -f "$base_compose" -f "$source_dir/images.json" -f "$backup/migration-owner.json" run --rm -T --no-deps global-api ./node_modules/.bin/prisma migrate deploy
 compose run --rm -T --no-deps global-api ./node_modules/.bin/prisma migrate status
+fi
 changed=true
 if [[ "$first" == true ]]; then
   sql "$database" < "$source_dir/settings-import.sql"
@@ -282,9 +319,15 @@ if [[ "$first" == true ]]; then
   gateway_changed=true
   cp "$source_dir/gateway-candidate-frozen.conf" "$gateway"
 fi
+if [[ "$scoped_modules" == true ]]; then sha256sum --check "$backup/gateway.sha256"; fi
 docker exec saydian-gateway-1 nginx -t
 docker exec saydian-gateway-1 nginx -s reload
 public_checks
+if [[ "$scoped_modules" == true ]]; then
+  settings_fingerprint > "$backup/settings-after.digest"
+  cmp -s "$backup/settings-before.digest" "$backup/settings-after.digest" || { echo 'Existing settings changed during module release' >&2; false; }
+  curl --fail --silent --show-error --max-time 15 'https://app.saydian.cn/api/saydian-app/v2/support/app-display?product=say-ring&platform=ios' | jq -e '.data.moduleVisibility.schemaVersion == 1 and .data.moduleVisibility.modules == {health_library:false,mall:false}' > /dev/null
+fi
 for name in api worker admin; do
   expected=$(jq -r --arg name "$name" '.images[$name].imageId' "$manifest")
   [[ $(docker inspect -f '{{.Image}}' "saydian-global-global-$name-1") == "$expected" ]]
@@ -313,6 +356,7 @@ else
   cp "$source_dir/images.json" "$state_dir/images.json"
 fi
 printf '%s\n' "$revision" > "$root_dir/deploy/.deployed-revision"
+if [[ "$scoped_modules" == true ]]; then mv "$state_dir/module-release-approval.json" "$backup/module-release-approval.used.json"; fi
 changed=false
 trap - ERR INT TERM
 echo "Unified release verified: $revision. Existing business switches preserved; backups: $backup"

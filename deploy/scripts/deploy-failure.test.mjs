@@ -17,13 +17,17 @@ function run(mode) {
     writeFileSync(join(source, "deploy/scripts/backup-restore.sh"), `#!/usr/bin/env bash
 set -Eeuo pipefail
 echo restore-rehearsal >> "$FIXTURE_LOG"
-if [[ "$FIXTURE_MODE" == restore-failed ]]; then exit 1; fi
+if [[ "$FIXTURE_MODE" == restore-failed || "$FIXTURE_MODE" == module-restore-failed ]]; then exit 1; fi
 mkdir -p "$2"
 printf 'synthetic restored archive' > "$2/database.dump"
 `);
     if (!["not-initialized", "legacy-active"].includes(mode)) writeFileSync(join(state, "accepted.json"), "{}");
     if (mode === "legacy-active") writeFileSync(join(source, "deploy/.first-unified-cutover"), "");
     writeFileSync(join(state, "compose.json"), '{"name":"saydian-global","services":{}}');
+    if (mode.startsWith("module-")) {
+      writeFileSync(join(source, "deploy/.module-visibility-release"), "");
+      writeFileSync(join(state, "module-release-approval.json"), "{}");
+    }
     writeFileSync(gateway, "# synthetic shared gateway\n");
     const manifest = { schemaVersion: 1, revision, migrations: [{ name: "20261001190000_say_ring_legal_product", sha256: "c".repeat(64), automatic: true }], images: Object.fromEntries(["api", "worker", "admin"].map(name => [name, { ref: `ghcr.io/tangwu88/saydianserver-${name}@sha256:${"d".repeat(64)}`, imageId, sizeBytes: 10 }])) };
     writeFileSync(join(source, "deploy/release-manifest.json"), JSON.stringify(manifest));
@@ -38,6 +42,7 @@ if(tool==='readlink') console.log(process.env.FIXTURE_SHELL_ROOT+'/deploy/.ci-re
 if(tool==='timeout') { const r=require('node:child_process').spawnSync(process.execPath,[path.join(process.env.FIXTURE_BIN,a[3]+'.cjs'),...a.slice(4)],{stdio:'inherit'});process.exit(r.status??1); }
 if(tool==='curl') {
  const url=a.at(-1);
+ if(url.includes('/support/app-display')) {console.log(JSON.stringify({data:{moduleVisibility:{schemaVersion:1,modules:{health_library:false,mall:false}}}}));process.exit(0);}
  if(url.includes('/vip/v1/public/promotion/')) {
   fs.writeFileSync(a[a.indexOf('--output')+1],JSON.stringify({message:'品牌伙伴推广链接已失效'}));
   console.log(mode==='vip-api-failed'?'500':'404');process.exit(0);
@@ -55,20 +60,21 @@ if(tool==='curl') {
 if(tool==='docker') {
  if(a[0]==='pull') { if(mode==='pull-failed') process.exit(1); fs.writeFileSync(process.env.FIXTURE_ROOT+'/pulled','1'); process.exit(0); }
  if(a[0]==='image') { if(a.includes('{{.Id}}') && mode!=='cached' && !fs.existsSync(process.env.FIXTURE_ROOT+'/pulled')) process.exit(1); console.log(a.includes('{{.Id}}')?imageId:revision); }
- else if(a[0]==='inspect') console.log(a.join(' ').includes('.Config.Env')?(a.at(-1).includes('postgres')?'["POSTGRES_USER=global_owner","POSTGRES_DB=saydian_global","POSTGRES_PASSWORD=synthetic-test-only"]':JSON.stringify(['APP_REVISION='+'f'.repeat(40)])):a.join(' ').includes('.Image')?(fs.existsSync(process.env.FIXTURE_ROOT+'/changed')?imageId:'sha256:'+'e'.repeat(64)):imageId);
+ else if(a[0]==='inspect') console.log(a.join(' ').includes('org.opencontainers.image.revision')?'aeb9afcb8bbd8b4168c38e489c827790c448bf7a':a.join(' ').includes('.Config.Env')?(a.at(-1).includes('postgres')?'["POSTGRES_USER=global_owner","POSTGRES_DB=saydian_global","POSTGRES_PASSWORD=synthetic-test-only"]':JSON.stringify(['APP_REVISION='+'f'.repeat(40)])):a.join(' ').includes('.Image')?(fs.existsSync(process.env.FIXTURE_ROOT+'/changed')?imageId:'sha256:'+'e'.repeat(64)):imageId);
  else if(a[0]==='run') {
   const helper=a.find(v=>v.startsWith('/release/scripts/'));
-  if(helper?.endsWith('unified-preflight.mjs')) console.log(JSON.stringify({pending:mode.startsWith('restore-')?['reviewed-migration']:[]}));
+  if(helper?.endsWith('unified-preflight.mjs')) console.log(JSON.stringify({pending:mode.startsWith('restore-')||mode==='module-pending'?['reviewed-migration']:[]}));
+  if(helper?.endsWith('module-release-scope.mjs') && (mode==='module-no-approval'&&a.includes('approval')||mode==='module-env-changed'&&a.includes('environment'))) process.exit(1);
   if(helper?.endsWith('unify-gateway.mjs')) fs.copyFileSync(process.env.RELEASE_SOURCE+'/gateway.conf',process.env.RELEASE_SOURCE+'/gateway-candidate.conf');
   if(helper?.endsWith('release-manifest.mjs') && a.includes('compose')) console.log(JSON.stringify({services:{'global-api':{image:imageId}}}));
  } else if(a[0]==='exec') {
   const input=fs.readFileSync(0,'utf8');
-  if(a.join(' ').includes('psql')) console.log('[]');
+  if(a.join(' ').includes('psql')) console.log(input.includes('AppSetting')?(mode==='module-settings-changed'&&fs.existsSync(process.env.FIXTURE_ROOT+'/changed')?'changed-settings-digest':'unchanged-settings-digest'):'[]');
   else if(a.join(' ').includes('pg_dump')) console.log('synthetic archive');
   else if(a.includes('wget')) { if(mode==='health-failed') process.exit(1);console.log(JSON.stringify({status:'ready',revision})); }
  } else if(a[0]==='compose') {
   if(a.includes('deploy') && mode==='migration-failed') process.exit(1);
-  if(a.includes('up')) { fs.writeFileSync(process.env.FIXTURE_ROOT+'/changed','1');if(mode==='start-failed'&&!a.some(v=>v.includes('/backups/')))process.exit(1); }
+  if(a.includes('up')) { fs.writeFileSync(process.env.FIXTURE_ROOT+'/changed','1');if((mode==='start-failed'||mode==='module-start-failed')&&!a.some(v=>v.includes('/backups/')))process.exit(1); }
  }
 }
 `;
@@ -142,4 +148,29 @@ test("public readiness tolerates a reloading gateway but rejects persistent old 
   assert.match(failed.output, /Public readiness failed: \/health\/ready/);
   assert.match(failed.output, /Release check failed at deploy-unified.sh:\d+ \(exit 1\)/);
   assert.match(failed.calls, /backups\/[^\n]+images.json up -d --no-build --pull never/);
+});
+
+test("scoped modules require root approval, zero pending migrations, unchanged env and a real restore gate", () => {
+  for (const mode of ["module-no-approval", "module-pending", "module-env-changed", "module-restore-failed"]) {
+    const result = run(mode); assert.notEqual(result.status, 0, mode + result.output);
+    assert(!result.calls.includes(" up "), mode + result.calls);
+    assert(!result.calls.includes("migrate deploy"));
+  }
+});
+test("scoped success preserves gateway configuration and settings without migrations", () => {
+  const result = run("module-success"); assert.equal(result.status, 0, result.output);
+  assert(result.calls.includes("restore-rehearsal"));
+  assert(result.calls.includes("module-release-scope.mjs approval"));
+  assert(result.calls.includes("module-release-scope.mjs environment"));
+  assert(result.calls.includes("git/ref/heads/codex/say-ring-module-visibility-20261018"));
+  assert(result.calls.includes("gateway.sha256"));
+  assert(result.calls.includes("nginx -s reload"));
+  assert(!/migrate deploy|migrate status|unify-gateway.mjs|UPDATE |INSERT INTO/.test(result.calls));
+});
+test("scoped startup or concurrent settings change rolls back pinned images, never the database", () => {
+  for (const mode of ["module-start-failed", "module-settings-changed"]) {
+    const result = run(mode); assert.notEqual(result.status, 0, result.output);
+    assert.match(result.calls, /backups\/[^\n]+images.json up -d --no-build --pull never/);
+    assert(!result.calls.includes("pg_restore --clean"));
+  }
 });
