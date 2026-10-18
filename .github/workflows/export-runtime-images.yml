@@ -40,6 +40,20 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restrict the one-time module cache recovery
+        if: github.ref_name == 'codex/say-ring-module-cache-recovery-20261018'
+        env:
+          REVISION: ${{ inputs.revision }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          ARTIFACT_ID: ${{ inputs.existing_artifact_id }}
+          ARTIFACT_ACTION: ${{ inputs.artifact_action }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$REVISION" == dcc9d2aefeb42b3a0345868a5debc51e8625b213 && "$BUILD_RUN_ID" == 39133944860 ]]
+          [[ "$ARTIFACT_ID" == 12140071512 && "$ARTIFACT_ACTION" == import ]]
+          node --test deploy/scripts/module-cache-recovery.test.mjs
       - uses: ./.github/actions/setup-runtime-docker
         if: inputs.existing_artifact_id == ''
       - uses: actions/download-artifact@v4
@@ -84,7 +98,7 @@ jobs:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: bash deploy/scripts/send-offline-images.sh "$REVISION" export
       - name: HTTPS original-artifact probe or explicit recovery without restarting apps
-        if: inputs.existing_artifact_id != ''
+        if: inputs.existing_artifact_id != '' && github.ref_name != 'codex/say-ring-module-cache-recovery-20261018'
         timeout-minutes: 60
         env:
           REVISION: ${{ inputs.revision }}
@@ -99,3 +113,20 @@ jobs:
         run: |
           gh run view "$BUILD_RUN_ID" --json headSha,event,jobs | jq -e --arg revision "$REVISION" '.headSha == $revision and .event == "push" and any(.jobs[]; .name == "verify" and .conclusion == "success")'
           bash deploy/scripts/send-runtime-artifact.sh "$REVISION" export "$ARTIFACT_ID" "$ARTIFACT_ACTION"
+      - name: Recover only the approved module release image cache
+        if: github.ref_name == 'codex/say-ring-module-cache-recovery-20261018'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          revision=dcc9d2aefeb42b3a0345868a5debc51e8625b213
+          gh run view 39133944860 --json headSha,event,jobs | jq -e --arg revision "$revision" '.headSha == $revision and .event == "push" and any(.jobs[]; .name == "verify" and .conclusion == "success")'
+          gh api repos/tangwu88/saydianserver/actions/artifacts/12140071512 | jq -e '.expired == false and .size_in_bytes == 368019130 and .digest == "sha256:eb32f72523215dfd6df79ee4aada0395cd62b26cdd81986ab0f52fdd137a7db1"'
+          gh run download 39136379385 --name "runtime-images-$revision" --dir module-cache
+          git worktree add --detach "$RUNNER_TEMP/module-source" "$revision"
+          (cd "$RUNNER_TEMP/module-source"; node deploy/scripts/module-release-scope.mjs source "$revision") > module-cache/module-release-scope.json
+          bash deploy/scripts/send-module-cache-recovery.sh module-cache
