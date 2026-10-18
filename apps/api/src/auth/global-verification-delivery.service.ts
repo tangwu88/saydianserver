@@ -11,6 +11,7 @@ import {
   type VerificationPurpose,
 } from "./global-identity";
 import { SmsAdapterService } from "./sms-adapter.service";
+import { deliverWecomEmail, emailAddress } from "./wecom-email";
 
 const integrationKeys = { email: "email_otp", sms: "sms_global" } as const;
 
@@ -59,6 +60,10 @@ export class GlobalVerificationDeliveryService {
     challengeId: string;
   }) {
     const config = await this.assertAvailable(input.channel, input.country);
+    if (config.provider === "wecom_smtp") {
+      await this.sendSmtp(config, { recipient: input.identifier, code: input.code, locale: input.locale });
+      return;
+    }
     if (config.provider === "aliyun") {
       if (input.country !== "CN" || !input.identifier.startsWith("+86")) {
         throw globalError(
@@ -105,7 +110,30 @@ export class GlobalVerificationDeliveryService {
     await markIntegrationVerified(this.prisma, integrationKeys[input.channel]);
   }
 
-  private async configuration(channel: VerificationChannel) {
+  async sendEmailTest(recipient: unknown) {
+    if (process.env.MAINTENANCE_READ_ONLY === "true" || process.env.WORKER_OUTBOUND_PAUSED === "true") {
+      throw globalError(503, "verification_unavailable", "系统处于维护或外发暂停状态，暂不发送测试邮件。");
+    }
+    const address = emailAddress(recipient);
+    const config = await this.configuration("email", true);
+    if (!config || config.provider !== "wecom_smtp") {
+      throw globalError(503, "verification_unavailable", "请先保存企业微信邮箱配置，服务状态选择启用；投递验收可暂时关闭。");
+    }
+    await this.sendSmtp(config, { recipient: address, test: true });
+    return { submitted: true, deliveryVerified: false };
+  }
+
+  private async sendSmtp(config: { fromAddress: string; smtpPassword: string }, input: Parameters<typeof deliverWecomEmail>[1]) {
+    try {
+      await deliverWecomEmail(config, input);
+    } catch {
+      // Provider errors can include credentials, recipient and raw SMTP responses.
+      throw globalError(503, "verification_delivery_failed", "邮件发送失败，请检查邮箱客户端授权码及 SMTP 服务，稍后重试。");
+    }
+    if (!input.test) await markIntegrationVerified(this.prisma, "email_otp");
+  }
+
+  private async configuration(channel: VerificationChannel, allowUnverifiedEmailTest = false) {
     const key = integrationKeys[channel];
     const integration = await this.prisma.integrationConfig.findUnique({
       where: { key },
@@ -118,6 +146,16 @@ export class GlobalVerificationDeliveryService {
         ] ??
         "disabled",
     ).toLowerCase();
+    if (channel === "email" && provider === "wecom_smtp") {
+      if (config.provider !== "wecom_smtp" || integration?.state !== IntegrationState.CONFIGURED ||
+        (!allowUnverifiedEmailTest && config.deliveryVerified !== true)) return null;
+      let fromAddress: string;
+      try { fromAddress = emailAddress(config.fromAddress); } catch { return null; }
+      const resolved = await this.secrets.resolve(key, { smtpPassword: "GLOBAL_EMAIL_SMTP_PASSWORD" })
+        .catch(() => ({}) as Record<string, string>);
+      if (!resolved.smtpPassword) return null;
+      return { provider: "wecom_smtp" as const, fromAddress, smtpPassword: resolved.smtpPassword, countries: [] as string[] };
+    }
     if (provider !== "webhook") {
       if (channel === "sms" && (await this.sms.aliyunReady())) {
         return {

@@ -23,10 +23,12 @@ export const integrationDefinitions: IntegrationDefinition[] = [
     url('webhookUrl', '短信发送地址', '由维护人员提供的 HTTPS 地址；不在地址中放入密钥。', { required: true, providers: ['webhook'] }),
     s('webhookToken', '访问令牌', '用于验证短信发送请求，由短信接口维护人员提供。', { providers: ['webhook'] }),
   ] },
-  { key: 'email_otp', title: '邮箱验证码', group: '登录与消息', short: '邮', purpose: '发送邮箱验证码，用于邮箱登录。', prepare: '准备一个可接收系统 JSON 请求的 HTTPS 邮件发送接口及访问令牌。', note: '邮件接口验收通过后再开启“已完成投递验收”；未配置时登录页仍默认使用手机号，邮箱方式会明确显示暂不可用。', fields: [
-    { ...provider('webhook', '邮件发送接口'), defaultValue: 'webhook' },
-    url('webhookUrl', '邮件发送地址', '由邮件服务维护人员提供的 HTTPS 地址；地址中不要包含账号或密钥。', { required: true }),
-    s('webhookToken', '访问令牌', '用于验证邮件发送请求，仅加密保存在服务端。'),
+  { key: 'email_otp', title: '邮箱验证码', group: '登录与消息', short: '邮', purpose: '发送邮箱验证码，用于邮箱登录。', prepare: '企业微信邮箱需开启 SMTP，并准备发件邮箱和该邮箱的客户端专用密码。', note: '先保存配置并发送测试邮件；确认收到后，再开启“已完成投递验收”并保存，邮箱登录才会开放。', fields: [
+    p('provider', '接入方式', '企业微信邮箱通过加密 SMTP 连接；已有邮件接口也可继续使用。', { required: true, defaultValue: 'webhook', options: [{ value: 'wecom_smtp', label: '企业微信邮箱' }, { value: 'webhook', label: '邮件发送接口' }] }),
+    p('fromAddress', '发件邮箱', '完整的企业邮箱地址，例如 support@saydian.com；使用腾讯企业邮 SMTP 加密连接。', { required: true, providers: ['wecom_smtp'] }),
+    s('smtpPassword', '客户端专用密码', '在该邮箱的设置中获取，由你本人填写；不要填企业微信管理员密码。', { providers: ['wecom_smtp'] }),
+    url('webhookUrl', '邮件发送地址', '由邮件服务维护人员提供的 HTTPS 地址；地址中不要包含账号或密钥。', { required: true, providers: ['webhook'] }),
+    s('webhookToken', '访问令牌', '用于验证邮件发送请求，仅加密保存在服务端。', { providers: ['webhook'] }),
     p('deliveryVerified', '已完成投递验收', '只有已用测试邮箱确认验证码可以真实送达后才能开启。', { kind: 'boolean', required: true, defaultValue: 'false' }),
   ] },
   { key: 'wechat_login', title: '原有 App 微信登录', group: '登录与消息', short: '微', purpose: '保留原有 App 的微信登录配置。', prepare: '使用原有 App 的微信开放平台移动应用 AppID 和 AppSecret。中文版请使用独立配置入口。', fields: appIdentity },
@@ -117,6 +119,7 @@ export function validateIntegrationDraft(row: IntegrationRow, definition: Integr
     if (f.key === 'apiV3Key' && new TextEncoder().encode(value).length !== 32) errors[f.key] = 'API v3 密钥必须为 32 字节。';
     if (f.key.startsWith('appId') && definition.key.startsWith('wechat_') && !/^wx[A-Za-z0-9]{8,64}$/.test(value)) errors[f.key] = '请核对以 wx 开头的微信 AppID。';
     if (f.key === 'agentId' && !/^\d+$/.test(value)) errors[f.key] = '应用 ID 应为数字。';
+    if (definition.key === 'email_otp' && f.key === 'fromAddress' && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value)) errors[f.key] = '请填写完整的企业邮箱地址。';
     if (f.key.startsWith('paths.') && (!/^\/(?!\/)/.test(value) || /[?#\s]/.test(value))) errors[f.key] = '请输入以单个 / 开头、不含域名或参数的接口路径。';
     if (f.kind === 'list' && value.split(/[\n,，]+/).filter(v => v.trim()).some(v => !/^(?:[a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+(?::\d+)?$/.test(v.trim()))) errors[f.key] = '每行填写一个域名，不带协议、路径或通配符。';
   }
