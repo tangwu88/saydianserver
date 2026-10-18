@@ -1558,48 +1558,47 @@ export class AdminService {
     }
     const publicConfig = safeObject(body.publicConfig) as Prisma.InputJsonValue;
     if (key === "wechat_mini") await validateWechatMiniSettings(this.prisma, this.integrationSecrets, body, state);
-    await this.prisma.integrationConfig.upsert({
-      where: { key },
-      create: {
-        key,
-        state: IntegrationState.UNCONFIGURED,
-        publicConfig,
-      },
-      update: {
-        publicConfig,
-      },
-    });
-    if (body.secrets !== undefined) {
-      await this.integrationSecrets.save(key, body.secrets);
-    }
-    if (body.clearSecrets === true) {
-      await this.integrationSecrets.remove(key);
-    }
-    const saved = await this.prisma.integrationConfig.update({
-      where: { key },
-      data: {
+    const encrypted = body.secrets === undefined
+      ? undefined
+      : this.integrationSecrets.prepare(key, body.secrets);
+    return this.prisma.$transaction(async (tx) => {
+      const data = {
         state,
         publicConfig,
         secretRef: null,
         lastCheckedAt: null,
         lastError: null,
-      },
-      select: { key: true, state: true, publicConfig: true, updatedAt: true },
+      };
+      const saved = await tx.integrationConfig.upsert({
+        where: { key },
+        create: { key, ...data },
+        update: data,
+        select: { key: true, state: true, publicConfig: true, updatedAt: true },
+      });
+      if (encrypted) {
+        await tx.integrationSecret.upsert({
+          where: { integrationKey: key },
+          create: { integrationKey: key, ...encrypted },
+          update: encrypted,
+        });
+      } else if (body.clearSecrets === true) {
+        await tx.integrationSecret.deleteMany({ where: { integrationKey: key } });
+      }
+      const secret = await tx.integrationSecret.findUnique({
+        where: { integrationKey: key },
+        select: { integrationKey: true },
+      });
+      return {
+        ...saved,
+        hasSecret: Boolean(secret),
+        verificationStatus:
+          state === IntegrationState.DISABLED
+            ? "DISABLED"
+            : state === IntegrationState.CONFIGURED
+              ? "PENDING"
+              : state,
+      };
     });
-    const secret = await this.prisma.integrationSecret.findUnique({
-      where: { integrationKey: key },
-      select: { integrationKey: true },
-    });
-    return {
-      ...saved,
-      hasSecret: Boolean(secret),
-      verificationStatus:
-        state === IntegrationState.DISABLED
-          ? "DISABLED"
-          : state === IntegrationState.CONFIGURED
-            ? "PENDING"
-            : state,
-    };
   }
 
   audits(pageInput = 1) {

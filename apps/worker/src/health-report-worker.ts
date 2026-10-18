@@ -567,7 +567,7 @@ export async function callAiProvider(
             role: "user",
             content: JSON.stringify({
               period,
-              memberContext: asObject(evidence.memberContext),
+              memberContext: providerMemberContext(evidence.memberContext),
               dataQuality: asObject(evidence.dataQuality),
               metrics: metricSummary,
             }),
@@ -622,6 +622,23 @@ export async function callAiProvider(
     console.warn("sleep_ai_content_rejected", category);
     throw new SleepProviderError("invalid_content");
   }
+}
+
+function providerMemberContext(value: unknown): Record<string, unknown> {
+  const context = asObject(value);
+  if (!Array.isArray(context.devices)) return context;
+  return {
+    ...context,
+    // Custom names may identify a member. Online timestamps are unnecessary
+    // for interpreting the recorded health statistics; keep both server-side.
+    devices: context.devices.slice(0, 10).map((value) => {
+      const device = asObject(value);
+      return {
+        vendor: plainText(device.vendor, 80),
+        model: plainText(device.model, 120),
+      };
+    }),
+  };
 }
 
 function sleepFailureReason(error: unknown): string {

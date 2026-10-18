@@ -66,10 +66,16 @@ describe('plain-language integration settings', () => {
     expect(errors.agentId).toBeTruthy(); expect(errors.secret).toBeTruthy();
     expect(() => integrationPayload(original, definition('wecom'), draft)).toThrow();
   });
-  it('blocks replacing credentials in a running service even if the same draft says pause', () => {
-    const original = row('sms', { state: 'CONFIGURED', hasSecret: true }); const draft = draftFor(original, definition('sms'));
-    draft.state = 'DISABLED'; draft.replaceSecrets = true; draft.values.webhookToken = 'synthetic-not-a-real-token';
-    expect(validateIntegrationDraft(original, definition('sms'), draft)._form).toContain('先暂停');
+  it('allows replacing complete credentials and keeping enablement in one save', () => {
+    const original = row('ai', { state: 'CONFIGURED', hasSecret: true, publicConfig: { provider: 'openai_compatible', baseUrl: 'https://example.invalid/v1', model: 'qwen3.8-flash' } });
+    const draft = draftFor(original, definition('ai')); draft.replaceSecrets = true; draft.values.apiKey = 'synthetic-not-a-real-token';
+    expect(validateIntegrationDraft(original, definition('ai'), draft)).toEqual({});
+    expect(integrationPayload(original, definition('ai'), draft)).toEqual({ state: 'CONFIGURED', publicConfig: original.publicConfig, secrets: { apiKey: 'synthetic-not-a-real-token' } });
+  });
+  it('preserves the separate running mini-app identity replacement guard', () => {
+    const original = row('wechat_mini', { state: 'CONFIGURED', hasSecret: true }); const draft = draftFor(original, definition('wechat_mini'));
+    draft.state = 'DISABLED'; draft.replaceSecrets = true;
+    expect(validateIntegrationDraft(original, definition('wechat_mini'), draft)._form).toContain('先暂停');
   });
   it('writes only intentionally supplied credential values and retains non-secret settings', () => {
     const original = row('sms', { publicConfig: { keep: true } }); const draft = draftFor(original, definition('sms'));
