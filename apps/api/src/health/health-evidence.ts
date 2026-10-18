@@ -6,6 +6,7 @@ export type EvidenceRecord = {
   observedAt: Date;
   timezoneOffsetMinutes: number;
   values: unknown;
+  unit?: string | null;
   quality: string;
   sourceModel?: string | null;
   aggregationLocalDate?: string | null;
@@ -144,7 +145,7 @@ export function buildHealthEvidence(records: EvidenceRecord[]): HealthEvidence {
       sourceModels: new Set<string>(),
     };
     group.records.push(record);
-    const value = representativeValue(metric, record.values);
+    const value = representativeValue(metric, record.values, record.unit);
     if (value !== null) group.values.push(value);
     if (record.sourceModel?.trim()) group.sourceModels.add(record.sourceModel.trim());
     grouped.set(metric, group);
@@ -154,7 +155,7 @@ export function buildHealthEvidence(records: EvidenceRecord[]): HealthEvidence {
     .map(([metric, group]): MetricEvidence => {
       group.records.sort((left, right) => right.observedAt.valueOf() - left.observedAt.valueOf());
       const latest = group.records[0]!;
-      const latestValue = representativeValue(metric, latest.values);
+      const latestValue = representativeValue(metric, latest.values, latest.unit);
       const total = group.values.reduce((sum, value) => sum + value, 0);
       const metricDays = new Set(group.records.map(recordDay));
       return {
@@ -185,7 +186,7 @@ export function buildHealthEvidence(records: EvidenceRecord[]): HealthEvidence {
 function buildMeasurements(metric: HealthMetric, records: EvidenceRecord[]): MeasurementEvidence[] {
   return (measurementDefinitions[metric] ?? []).flatMap((definition) => {
     const samples = records.flatMap(record => {
-      const value = measurementValue(definition, record.values);
+      const value = measurementValue(definition, record.values, record.unit);
       return value === null ? [] : [{ value, date: recordDay(record), observedAt: record.observedAt }];
     });
     if (!samples.length) return [];
@@ -213,7 +214,11 @@ function buildMeasurements(metric: HealthMetric, records: EvidenceRecord[]): Mea
   });
 }
 
-function measurementValue(definition: MeasurementDefinition, input: unknown): number | null {
+function measurementValue(definition: MeasurementDefinition, input: unknown, unit?: string | null): number | null {
+  if (definition.key === "meters") {
+    const value = distanceMeters(input, unit);
+    return inRange(value, definition.minimum, definition.maximum) ? value : null;
+  }
   const values = asObject(input);
   for (const alias of definition.aliases) {
     const value = firstNumber(values, [alias]);
@@ -233,7 +238,7 @@ export function isUsableRecord(record: EvidenceRecord, metric: HealthMetric): bo
     const diastolic = firstNumber(values, ["diastolic", "low", "bloodPressureLow"]);
     return inRange(systolic, 40, 260) && inRange(diastolic, 20, 180) && systolic! > diastolic!;
   }
-  const value = representativeValue(metric, values);
+  const value = representativeValue(metric, values, record.unit);
   if (value === null) return false;
   const ranges: Record<HealthMetric, [number, number]> = {
     sleep: [0.1, 1440],
@@ -253,7 +258,8 @@ export function isUsableRecord(record: EvidenceRecord, metric: HealthMetric): bo
   return inRange(value, ...ranges[metric]);
 }
 
-export function representativeValue(metric: HealthMetric, input: unknown): number | null {
+export function representativeValue(metric: HealthMetric, input: unknown, unit?: string | null): number | null {
+  if (metric === "distance") return distanceMeters(input, unit);
   const values = asObject(input);
   const value = firstNumber(values, candidates[metric]);
   if (value === null) return null;
@@ -263,6 +269,22 @@ export function representativeValue(metric: HealthMetric, input: unknown): numbe
     return value * 60;
   }
   return value;
+}
+
+function distanceMeters(input: unknown, unit?: string | null): number | null {
+  const values = asObject(input);
+  // The canonical field carries its own unit. Generic App values retain the
+  // separately stored unit; never infer kilometres from the number's size.
+  const meters = firstNumber(values, ["meters"]);
+  if (meters !== null) return meters;
+  const value = firstNumber(values, ["value"]);
+  if (value === null) return null;
+  const factors: Record<string, number> = {
+    m: 1, 米: 1, km: 1_000, 公里: 1_000, 千米: 1_000,
+    mi: 1_609.344, 英里: 1_609.344,
+  };
+  const factor = factors[String(unit ?? "").trim().toLowerCase()];
+  return factor === undefined ? null : value * factor;
 }
 
 function localDay(observedAt: Date, timezoneOffsetMinutes: number): string {
