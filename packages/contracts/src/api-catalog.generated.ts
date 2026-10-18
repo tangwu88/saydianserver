@@ -1613,10 +1613,45 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "保存客服、更新或独立 App 显示设置",
-      "request": "{value:非空JSON对象,public?:boolean}；更新配置必须通过 DownloadManifest v1 校验；cn_app_display仅接受{hideAi:boolean}；say_ring_app_display另允许sleepAiEnabled；显示设置必须公开，true隐藏AI相关内容",
-      "response": "设置对象；结构约定见调用手册",
+      "request": "{value:非空JSON对象,public?:boolean}；更新配置通过DownloadManifest校验；cn_app_display仅hideAi；say_ring_app_display另允许sleepAiEnabled；say_ring_ios_health_display必须{value:{schemaVersion:1,metrics:固定五项严格布尔},expectedUpdatedAt:当前ISO时间或首次null}；显示设置必须公开",
+      "response": "设置对象；iOS只读配置事务内保存操作者/前后快照，冲突409；不改变AI、上传、其他App；可从独立rollback恢复上次配置",
       "dependency": "核心服务",
       "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.rollbackSayRingIosHealthDisplay",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/settings/say_ring_ios_health_display/rollback",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "恢复上次Say Ring iOS只读指标配置",
+      "request": "{expectedUpdatedAt:当前设置updatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；固定设置项say_ring_ios_health_display",
+      "response": "恢复上次保存前五项布尔并返回设置对象；版本冲突409，无历史404；事务内保留操作者和前后快照；不改变AI/上传/其他产品",
+      "dependency": "现有AppSetting/AuditLog，无迁移；与保存共用数据库锁",
+      "successStatus": 201,
       "contract": {
         "status": "unreviewed",
         "requestSchema": null,
@@ -20949,14 +20984,26 @@ export const apiCatalog = {
           "name": "before",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/health/health.controller.ts",
       "summary": "本人健康历史",
-      "request": "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间",
-      "response": "{items,nextCursor}；逐条记录保持原样；同会员/指标/设备/本地日期的日汇总只返回最新版本并回显aggregation",
-      "dependency": "核心服务",
+      "request": "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间；可选product=say-ring&platform=ios",
+      "response": "{items,nextCursor}；逐条记录保持原样；日汇总只返回最新版本并回显aggregation；仅say-ring+ios按当前公开开关在SQL分页前限制为活动/睡眠及启用的heart_rate/hrv/blood_oxygen/temperature，body_temperature对应现有temperature；stress无云指标；其他请求不变",
+      "dependency": "仍按登录会员归属鉴权；product/platform是调用方声明，非可信App身份；不改变上传/预警/关爱接口",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -29471,14 +29518,20 @@ export const apiCatalog = {
           "name": "product",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/support/support.controller.ts",
-      "summary": "读取产品独立 AI 内容显示开关",
-      "request": "query product=say-ring|saydian-app-cn；公开接口，禁止其他产品标识",
-      "response": "{product:'say-ring'|'saydian-app-cn',hideAi:boolean}；true隐藏AI入口与内容；未配置默认false；按产品只读取已公开的say_ring_app_display或cn_app_display并返回白名单字段；Cache-Control:no-store",
-      "dependency": "当前部署独立AppSetting；不读取AI密钥，不调用AI供应商",
+      "summary": "读取产品独立显示开关",
+      "request": "query product=say-ring|saydian-app-cn；可选platform=ios；公开接口，禁止其他产品标识",
+      "response": "保留{product,hideAi,sleepAiEnabled?}；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}；五项严格布尔，未发布或无效全关；读取独立公开say_ring_ios_health_display；Cache-Control:no-store；客户端失败/租约到期关闭，不持久缓存",
+      "dependency": "显示设置不是可信产品身份；不授予上传/测量/医疗/AI权限，不调用供应商；其他产品/旧请求不变",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

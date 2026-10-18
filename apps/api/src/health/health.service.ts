@@ -133,6 +133,7 @@ export class HealthService {
     metricInput?: string,
     limitInput = 50,
     beforeInput?: string,
+    allowedMetrics?: readonly HealthMetric[],
   ) {
     const metric = metricInput ? metricMap[metricInput as HealthMetric] : undefined;
     if (metricInput && !metric) throw new BadRequestException("健康指标不正确");
@@ -145,7 +146,7 @@ export class HealthService {
       where: {
         userId,
         ...(metric ? { metric } : {}),
-        AND: [foldedHealthRecordWhere(), before],
+        AND: [foldedHealthRecordWhere(), before, ...(allowedMetrics ? [{ metric: { in: allowedMetrics.map(key => metricMap[key]) } }] : [])],
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
       take: limit,

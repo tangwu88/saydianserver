@@ -30,7 +30,8 @@ import {
   UserStatus,
 } from "@prisma/client";
 import { hash } from "bcryptjs";
-import { parseDownloadManifest } from "@saydian/app-contracts";
+import { parseDownloadManifest, sayRingIosHealthSettingKey } from "@saydian/app-contracts";
+import { writeSayRingIosHealthDisplay } from "./say-ring-ios-health-setting";
 import { PrismaService } from "../common/prisma.service";
 import {
   isUuid,
@@ -1856,6 +1857,7 @@ export class AdminService {
             "say_ring_app_update",
             "cn_app_update",
             "say_ring_app_display",
+            sayRingIosHealthSettingKey,
             "cn_app_display",
             "say_ring_map",
           ],
@@ -1865,7 +1867,13 @@ export class AdminService {
     });
   }
 
-  updateSetting(key: string, input: unknown) {
+  rollbackSayRingIosHealthDisplay(actorId: string, input: unknown) {
+    return writeSayRingIosHealthDisplay(this.prisma, actorId, input, true);
+  }
+
+  updateSetting(key: string, input: unknown, actorId?: string) {
+    if (key === sayRingIosHealthSettingKey)
+      return writeSayRingIosHealthDisplay(this.prisma, actorId, input);
     const allowedKeys = [
       "global_support",
       "app_update",

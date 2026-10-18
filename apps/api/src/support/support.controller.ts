@@ -37,8 +37,8 @@ export class SupportController {
 
   @Get("app-display")
   @Header("Cache-Control", "no-store")
-  appDisplay(@Query("product") product?: string) {
-    return this.support.appDisplayConfig(product);
+  appDisplay(@Query("product") product?: string, @Query("platform") platform?: string) {
+    return this.support.appDisplayConfig(product, platform);
   }
 
   @Get("app-update")

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SupportService } from "./support.service";
 import type { PrismaService } from "../common/prisma.service";
 import type { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { sayRingIosHealthDisplayOrClosed, sayRingIosHealthSettingKey } from "@saydian/app-contracts";
 
 const unavailable = {
   configured: false,
@@ -234,5 +235,30 @@ describe("CN display product isolation", () => {
       product: "saydian-app-cn",
       hideAi: false,
     });
+  });
+});
+
+describe("Say Ring iOS public read-only lease", () => {
+  it("preserves AI flags and exposes only the fixed iOS display contract", async () => {
+    const value = sayRingIosHealthDisplayOrClosed(); value.metrics.heart_rate = true;
+    const h = harness([
+      { key: "say_ring_app_display", public: true, value: { hideAi: true, sleepAiEnabled: true, privateNote: "discard" } },
+      { key: sayRingIosHealthSettingKey, public: true, value },
+    ]);
+    expect(await h.service.appDisplayConfig("say-ring", "ios")).toEqual({ product: "say-ring", platform: "ios", hideAi: true, sleepAiEnabled: true, readOnlyHealth: { ...value, validForSeconds: 300 } });
+    expect(h.findUnique).not.toHaveBeenCalled(); expect(h.secrets.resolve).not.toHaveBeenCalled();
+  });
+  it.each([undefined, null, { schemaVersion: 2 }, { ...sayRingIosHealthDisplayOrClosed(), metrics: { heart_rate: "true" } }])("closes absent or malformed config", async value => {
+    const h = harness(value === undefined ? [] : [{ key: sayRingIosHealthSettingKey, public: true, value }]);
+    expect((await h.service.appDisplayConfig("say-ring", "ios")).readOnlyHealth).toEqual({ ...sayRingIosHealthDisplayOrClosed(), validForSeconds: 300 });
+  });
+  it("never reads an unpublished health display value", async () => {
+    const h = harness([{ key: sayRingIosHealthSettingKey, public: false, get value() { throw new Error("private read"); } }]);
+    expect((await h.service.appDisplayConfig("say-ring", "ios")).readOnlyHealth?.metrics.heart_rate).toBe(false);
+  });
+  it.each([["say-ring", "android"], ["say-ring", undefined], ["saydian-app-cn", "ios"]])("keeps %s/%s responses unchanged", async (product, platform) => {
+    const h = harness([]);
+    expect(await h.service.appDisplayConfig(product, platform)).toEqual({ product, hideAi: false });
+    expect(h.findFirst).toHaveBeenCalledTimes(1);
   });
 });

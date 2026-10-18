@@ -12,6 +12,7 @@ import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
 import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
 import ContentImageField from "../components/ContentImageField.vue";
 import ProductGalleryField from "../components/ProductGalleryField.vue";
+import SayRingIosHealthSetting from "../components/SayRingIosHealthSetting.vue";
 import { createCnDownloadDraft, cnDownloadManifestToEditor, cnDownloadEditorToManifest, createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor, type DownloadManifestEditor } from "../global-download-setting";
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "../download-setting";
 import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "../legal-document-editor";
@@ -103,6 +104,7 @@ const settingProducts = (key: unknown): string[] => {
     cn_app_update: ["saydian-app-cn"],
     cn_app_display: ["saydian-app-cn"],
     say_ring_app_display: ["say-ring"],
+    say_ring_ios_health_display: ["say-ring"],
     say_ring_map: ["say-ring"],
   };
   return products[String(key ?? "")] ?? [];
@@ -401,6 +403,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
     { key: "say_ring_app_update", name: "Say Ring App 更新" },
     { key: "cn_app_update", name: "赛电健康（简体中文版）App 更新" },
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
+    { key: "say_ring_ios_health_display", name: "Say Ring iOS 只读健康指标" },
     { key: "cn_app_display", name: "Saydian赛电 显示设置" },
     { key: "say_ring_map", name: "Say Ring 运动地图" },
   ];
@@ -1992,8 +1995,9 @@ onBeforeUnmount(() => {
         <template v-else-if="resource === 'settings'">
           <el-alert v-if="form._unconfigured" :title="isAppDisplaySetting(form.key) ? '尚未保存显示设置，App 默认显示 AI 内容。调整开关并保存后生效。' : '此项尚未配置。当前内容仅为本次编辑草稿，尚未保存或公开；请填写真实配置后保存。'" type="info" :closable="false" show-icon />
           <el-form-item label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
-          <el-form-item v-if="!isAppDisplaySetting(form.key)" label="公开"><el-switch v-model="form.public" /></el-form-item>
-          <template v-if="isAppDisplaySetting(form.key)">
+          <el-form-item v-if="!isAppDisplaySetting(form.key) && form.key !== 'say_ring_ios_health_display'" label="公开"><el-switch v-model="form.public" /></el-form-item>
+          <SayRingIosHealthSetting v-if="form.key === 'say_ring_ios_health_display'" :key="String(form.updatedAt ?? 'new')" :setting="form" @saved="dialogVisible = false; load()" />
+          <template v-else-if="isAppDisplaySetting(form.key)">
             <el-form-item label="隐藏 AI 内容"><el-switch v-model="form.hideAi" active-text="隐藏" inactive-text="显示" /></el-form-item>
             <el-form-item v-if="form.key === 'say_ring_app_display'" label="AI 睡眠报告"><el-switch v-model="form.sleepAiEnabled" active-text="开启睡眠评分与报告" inactive-text="关闭" /></el-form-item>
             <el-alert v-if="form.key === 'say_ring_app_display'" title="睡眠 AI 由独立开关控制；开启后仍须会员在 App 主动确认上传及第三方分析。不会同时开启其他 AI 入口。" type="info" :closable="false" />
@@ -2107,7 +2111,7 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
       </el-form>
-      <template #footer><el-button :disabled="productImagesUploading > 0" @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit'" type="primary" :loading="saving" :disabled="productImagesUploading > 0 || (needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
+      <template #footer><el-button :disabled="productImagesUploading > 0" @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit' && form.key !== 'say_ring_ios_health_display'" type="primary" :loading="saving" :disabled="productImagesUploading > 0 || (needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
     </el-dialog>
   </section>
 </template>

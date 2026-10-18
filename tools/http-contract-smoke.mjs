@@ -55,6 +55,7 @@ try {
     check(html.includes('id="ios-activity-sleep-scope"'), true);
     check(html.includes('data-platform="ios" data-min-build="1062"'), true);
     check(html.includes('data-current-build="1101"'), true);
+    check(html.includes('id="ios-read-only-health-scope" data-product="say-ring" data-platform="ios" data-min-build="1110"'), true);
     check(html.includes('data-min-build="1062" data-max-build="1064"'), true);
     check(html.includes("不会删除原有本机或云端记录"), true);
     check(html.includes('id="sleep-analysis"'), type === "privacy");
@@ -168,6 +169,37 @@ try {
   const adminLogin = await request(admin + "/auth/login", { method: "POST", body: { username: process.env.ADMIN_BOOTSTRAP_USERNAME, password: process.env.ADMIN_BOOTSTRAP_PASSWORD } });
   check(adminLogin.json.code, 200);
   const adminToken = adminLogin.json.data.token;
+  // Fixed read-only switches: local CI fixtures only, never production data.
+  const iosSettingKey = "say_ring_ios_health_display";
+  const closedIos = { schemaVersion: 1, metrics: { heart_rate: false, hrv: false, blood_oxygen: false, body_temperature: false, stress: false } };
+  const iosScope = "?product=say-ring&platform=ios";
+  check((await request(v2 + "/support/app-display" + iosScope)).json.data.readOnlyHealth, { ...closedIos, validForSeconds: 300 });
+  check((await request(v2 + "/health/records" + iosScope)).status, 401);
+  check((await request(v2 + "/health/records" + iosScope + "&metric=heart_rate", { token: tokenB })).json.data.items, []);
+  const iosEnabled = { ...closedIos, metrics: { ...closedIos.metrics, heart_rate: true, hrv: true, blood_oxygen: true } };
+  const iosSettingPath = admin + "/settings/" + iosSettingKey;
+  const iosPayload = { value: iosEnabled, expectedUpdatedAt: null, public: true };
+  check((await request(iosSettingPath, { method: "PATCH", body: iosPayload })).status, 401);
+  check((await request(iosSettingPath, { method: "PATCH", token: tokenA, body: iosPayload })).status, 401);
+  const iosSaved = await request(iosSettingPath, { method: "PATCH", token: adminToken, body: iosPayload });
+  check(iosSaved.status, 200); check(iosSaved.json.data.value, iosEnabled);
+  check((await request(iosSettingPath, { method: "PATCH", token: adminToken, body: iosPayload })).status, 409);
+  check((await request(iosSettingPath, { method: "PATCH", token: adminToken, body: { ...iosPayload, expectedUpdatedAt: iosSaved.json.data.updatedAt, value: { ...iosEnabled, blood_pressure: true } } })).status, 400);
+  for (const prefix of ["", "/global"]) {
+    check((await request(prefix + v2 + "/support/app-display" + iosScope)).json.data.readOnlyHealth, { ...iosEnabled, validForSeconds: 300 });
+    check((await request(prefix + v2 + "/health/records" + iosScope + "&metric=heart_rate", { token: tokenB })).json.data.items.length, 1);
+    check((await request(prefix + v2 + "/health/records" + iosScope + "&metric=blood_pressure", { token: tokenB })).json.data.items, []);
+    check((await request(prefix + v2 + "/health/records" + iosScope + "&metric=heart_rate", { token: tokenA })).json.data.items, []);
+    check((await request(prefix + v2 + "/health/records?metric=blood_pressure", { token: tokenB })).json.data.items.length, 1);
+    check((await request(prefix + v2 + "/support/app-display?product=say-ring&platform=android")).json.data.readOnlyHealth, undefined);
+  }
+  const iosRestored = await request(iosSettingPath + "/rollback", { method: "POST", token: adminToken, body: { expectedUpdatedAt: iosSaved.json.data.updatedAt } });
+  check(iosRestored.status, 201); check(iosRestored.json.data.value, closedIos);
+  check((await request(v2 + "/health/records" + iosScope + "&metric=heart_rate", { token: tokenB })).json.data.items, []);
+  const iosAudits = await prisma.auditLog.findMany({ where: { entityType: "APP_SETTING", entityId: iosSettingKey }, orderBy: { createdAt: "asc" } });
+  check(iosAudits.map(row => row.action), ["SAY_RING_IOS_HEALTH_DISPLAY_UPDATED", "SAY_RING_IOS_HEALTH_DISPLAY_ROLLED_BACK"]);
+  check(iosAudits[0].beforeJson, closedIos); check(iosAudits[0].afterJson, iosEnabled);
+  check(iosAudits[1].beforeJson, iosEnabled); check(iosAudits[1].afterJson, closedIos);
   const partnerLevels = (await request(admin + "/partner-levels", { token: adminToken })).json.data;
   const partnerInput = { username: "fixture-partner-manual", name: "Synthetic manual funds", password, levelId: partnerLevels.find(level => level.active).id };
   for (const prefix of ["", "/global"]) {
@@ -187,6 +219,8 @@ try {
   const financeAccount = { username: "fixture-partner-finance", displayName: "Synthetic finance", password, roles: ["FINANCE"], active: true };
   check((await request(admin + "/admin-users", { method: "POST", token: adminToken, body: financeAccount })).json.code, 200);
   const financeToken = (await request(admin + "/auth/login", { method: "POST", body: { username: financeAccount.username, password } })).json.data.token;
+  check((await request(iosSettingPath, { method: "PATCH", token: financeToken, body: iosPayload })).status, 403);
+  check((await request(iosSettingPath + "/rollback", { method: "POST", token: financeToken, body: iosPayload })).status, 403);
   for (const path of ["/balance-recharge", "/deposit"]) check((await request(manualRoute + path, { method: "POST", token: financeToken, body: manualInput })).status, 403);
   check((await request(manualRoute + "/wallet", { token: adminToken })).json.data.balanceCents, 1234);
 

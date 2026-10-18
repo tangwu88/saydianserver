@@ -397,8 +397,14 @@ export class AdminController {
 
   @Patch("settings/:key")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
-  updateSetting(@Param("key") key: string, @Body() input: unknown) {
-    return this.admin.updateSetting(key, input);
+  updateSetting(@Param("key") key: string, @Body() input: unknown, @CurrentAdmin() current: { id: string }) {
+    return this.admin.updateSetting(key, input, current.id);
+  }
+
+  @Post("settings/say_ring_ios_health_display/rollback")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  rollbackSayRingIosHealthDisplay(@CurrentAdmin() current: { id: string }, @Body() input: unknown) {
+    return this.admin.rollbackSayRingIosHealthDisplay(current.id, input);
   }
 
   @Get("commerce-products")

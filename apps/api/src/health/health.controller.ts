@@ -5,6 +5,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   Post,
   Query,
@@ -13,6 +14,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
+import type { HealthMetric } from "@saydian/app-contracts";
 import { HealthService } from "./health.service";
 import { UserAuthGuard } from "../common/user-auth.guard";
 import { CurrentUser, type AuthenticatedUser } from "../common/request-context";
@@ -56,13 +58,27 @@ export class HealthController {
   }
 
   @Get("records")
-  list(
+  @Header("Cache-Control", "no-store")
+  async list(
     @CurrentUser() user: AuthenticatedUser,
     @Query("metric") metric?: string,
     @Query("limit") limit?: string,
     @Query("before") before?: string,
+    @Query("product") product?: string,
+    @Query("platform") platform?: string,
   ) {
-    return this.health.list(user.id, metric, Number(limit ?? 50), before);
+    if (product !== "say-ring" || platform !== "ios")
+      return this.health.list(user.id, metric, Number(limit ?? 50), before);
+    // Caller-declared scope, not trusted application identity. Ownership still
+    // comes from UserAuthGuard. Filter in SQL before pagination, never in memory.
+    const { metrics } = await this.support.sayRingIosReadOnlyHealth();
+    const allowed: HealthMetric[] = ["sleep", "steps", "distance", "calories"];
+    if (metrics.heart_rate) allowed.push("heart_rate");
+    if (metrics.hrv) allowed.push("hrv");
+    if (metrics.blood_oxygen) allowed.push("blood_oxygen");
+    if (metrics.body_temperature) allowed.push("temperature");
+    // Stress has no existing cloud metric; its local display flag adds no API.
+    return this.health.list(user.id, metric, Number(limit ?? 50), before, allowed);
   }
 
   @Get("warning-rules")

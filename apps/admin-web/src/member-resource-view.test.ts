@@ -874,7 +874,7 @@ describe("frontend app content classification", () => {
     h.appProductFilter.value = "saidian";
     expect(h.visibleRows.value.map((row: any) => row.key)).toEqual(["app_update"]);
     h.appProductFilter.value = "say-ring";
-    expect(h.visibleRows.value.map((row: any) => row.key)).toEqual(["global_support", "say_ring_app_update", "say_ring_app_display", "say_ring_map"]);
+    expect(h.visibleRows.value.map((row: any) => row.key)).toEqual(["global_support", "say_ring_app_update", "say_ring_app_display", "say_ring_ios_health_display", "say_ring_map"]);
   });
 });
 
@@ -884,7 +884,7 @@ describe("international settings first configuration", () => {
     h.route.params.resource = "settings";
     h.api.get.mockResolvedValueOnce({ data: { data: [] } });
     await h.load();
-    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "app_update", "global_app_update", "say_ring_app_update", "cn_app_update", "say_ring_app_display", "cn_app_display", "say_ring_map"]);
+    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "app_update", "global_app_update", "say_ring_app_update", "cn_app_update", "say_ring_app_display", "say_ring_ios_health_display", "cn_app_display", "say_ring_map"]);
     expect(h.rows.value.filter((row: any) => !["say_ring_app_display", "cn_app_display"].includes(row.key)).every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
     expect(h.columns.value).toEqual(["appScope", "name", "configuration", "public", "updatedAt"]);
     expect(h.api.patch).not.toHaveBeenCalled();
@@ -997,7 +997,7 @@ describe("Say Ring AI display setting", () => {
     expect(h.api.patch).not.toHaveBeenCalled();
     expect(h.api.post).not.toHaveBeenCalled();
     expect(h.sfc).toContain('label="隐藏 AI 内容"');
-    expect(h.sfc).toContain('v-if="!isAppDisplaySetting(form.key)" label="公开"');
+    expect(h.sfc).toContain('v-if="!isAppDisplaySetting(form.key) && form.key !== \'say_ring_ios_health_display\'" label="公开"');
   });
 
   it("preserves an independent enabled sleep report setting while hiding other AI", async () => {

@@ -111,6 +111,22 @@ describe("current Say Ring public legal pages", () => {
     expect(html).not.toContain("iOS 活动与睡眠版适用说明");
   });
 
+  it("adds an explicit 1110 read-only scope without rewriting published legal documents", () => {
+    const zh = renderSayRingLegalPage(privacy, sleep);
+    const en = renderSayRingLegalPage({ ...privacy, locale: "en" }, { ...sleep, locale: "en" });
+    for (const html of [zh, en]) {
+      expect(html).toContain('id="ios-read-only-health-scope" data-product="say-ring" data-platform="ios" data-min-build="1110"');
+      expect(html).toContain(privacy.contentHtml);
+      expect(html).toContain(privacy.version);
+    }
+    expect(zh).toContain("本轮不新增生理数据账号云上传");
+    expect(zh).toContain("心率、心率变异性（HRV）、血氧、皮肤温度及压力");
+    expect(zh).toContain("对所有用户采用同一规则");
+    expect(en).toContain("New physiological records stay on the device");
+    expect(en).toContain("not a claim of Apple review approval");
+    expect(en).toContain("do not enable manual physiological measurements");
+  });
+
   it("escapes metadata and strips executable markup, links and third-party resources", () => {
     const html = renderSayRingLegalPage({ ...privacy, title: '<script>alert("title")</script>', version: 'v" onload="bad', contentHtml:
       '<p onclick="bad()">Safe &amp; exact</p><script>alert(1)</script><img src="https://example.invalid/track"><iframe src="https://example.invalid"></iframe><a href="javascript:bad()">bad</a><a href="//example.invalid">relative</a><a href="https://example.invalid/privacy" target="_blank">policy</a><a href="mailto:kf@saydian.com">email</a><style>body{display:none}</style>' });

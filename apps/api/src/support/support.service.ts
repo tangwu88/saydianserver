@@ -12,7 +12,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { IntegrationState, Prisma } from "@prisma/client";
-import { parseDownloadManifest } from "@saydian/app-contracts";
+import { parseDownloadManifest, sayRingIosHealthDisplayOrClosed, sayRingIosHealthSettingKey } from "@saydian/app-contracts";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
@@ -123,7 +123,14 @@ export class SupportService implements OnModuleInit {
     return normalizePublishedGlobalSupport(setting?.value, unavailableMessage);
   }
 
-  async appDisplayConfig(productInput?: string) {
+  async sayRingIosReadOnlyHealth() {
+    const setting = await this.prisma.appSetting.findFirst({
+      where: { key: sayRingIosHealthSettingKey, public: true }, select: { value: true },
+    });
+    return { ...sayRingIosHealthDisplayOrClosed(setting?.value), validForSeconds: 300 };
+  }
+
+  async appDisplayConfig(productInput?: string, platformInput?: string) {
     if (productInput !== "say-ring" && productInput !== "saydian-app-cn") {
       throw new NotFoundException("应用显示设置不存在");
     }
@@ -137,8 +144,7 @@ export class SupportService implements OnModuleInit {
       },
       select: { value: true },
     });
-    if (!setting) return { product: productInput, hideAi: false };
-    const value = safeObject(setting.value);
+    const value = setting ? safeObject(setting.value) : { hideAi: false };
     if (typeof value.hideAi !== "boolean") {
       throw new ServiceUnavailableException("应用显示设置暂时无法读取");
     }
@@ -146,6 +152,9 @@ export class SupportService implements OnModuleInit {
     return {
       product: productInput,
       hideAi: value.hideAi,
+      ...(productInput === "say-ring" && platformInput === "ios"
+        ? { platform: "ios", readOnlyHealth: await this.sayRingIosReadOnlyHealth() }
+        : {}),
       ...(productInput === "say-ring" &&
       typeof value.sleepAiEnabled === "boolean"
         ? { sleepAiEnabled: value.sleepAiEnabled }
