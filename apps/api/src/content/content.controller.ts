@@ -11,8 +11,8 @@ export class ContentController {
   constructor(private readonly content: ContentService) {}
 
   @Get("categories")
-  categories(@Query("parentId") parentId?: string, @Query("locale") locale?: string, @Headers("accept-language") language?: string, @Query("product") product?: string) {
-    return this.content.categories(parentId, locale ?? language, product);
+  categories(@Query("parentId") parentId?: string, @Query("locale") locale?: string, @Headers("accept-language") language?: string, @Query("product") product?: string, @Query("platform") platform?: string) {
+    return this.content.categories(parentId, locale ?? language, product, platform);
   }
 
   @Get("articles")
@@ -23,13 +23,14 @@ export class ContentController {
     @Query("locale") locale?: string,
     @Headers("accept-language") language?: string,
     @Query("product") product?: string,
+    @Query("platform") platform?: string,
   ) {
-    return this.content.articles(categoryId, Number(page ?? 1), Number(pageSize ?? 20), locale ?? language, product);
+    return this.content.articles(categoryId, Number(page ?? 1), Number(pageSize ?? 20), locale ?? language, product, platform);
   }
 
   @Get("articles/:id")
-  article(@Param("id") id: string, @Query("locale") locale?: string, @Headers("accept-language") language?: string, @Query("product") product?: string) {
-    return this.content.article(id, locale ?? language, product);
+  article(@Param("id") id: string, @Query("locale") locale?: string, @Headers("accept-language") language?: string, @Query("product") product?: string, @Query("platform") platform?: string) {
+    return this.content.article(id, locale ?? language, product, platform);
   }
 
   @Get("legal/:type")

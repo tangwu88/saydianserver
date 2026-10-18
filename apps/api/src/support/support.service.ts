@@ -21,6 +21,7 @@ import { env, envBoolean } from "../common/environment";
 import { safeObject, sha256 } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
+import { sayRingIosModuleVisibility } from "../common/say-ring-module-visibility";
 
 import { parseGlobalDownloadManifest } from "./global-download-manifest";
 import { normalizePublishedGlobalSupport } from "./global-support-config";
@@ -153,7 +154,7 @@ export class SupportService implements OnModuleInit {
       product: productInput,
       hideAi: value.hideAi,
       ...(productInput === "say-ring" && platformInput === "ios"
-        ? { platform: "ios", readOnlyHealth: await this.sayRingIosReadOnlyHealth() }
+        ? { platform: "ios", readOnlyHealth: await this.sayRingIosReadOnlyHealth(), moduleVisibility: await sayRingIosModuleVisibility(this.prisma) }
         : {}),
       ...(productInput === "say-ring" &&
       typeof value.sleepAiEnabled === "boolean"

@@ -11,6 +11,7 @@ import { CommerceStoreService } from "./commerce-store.service";
 import { integerCents, pointFaceValueCents } from "./commerce-policy";
 import { optionalExpectedQuote } from "./commerce-quote";
 import { commerceOrderListFilter } from "./commerce-order-filter";
+import { assertSayRingModuleVisible } from "../common/say-ring-module-visibility";
 
 @Injectable()
 export class CommerceService {
@@ -20,7 +21,8 @@ export class CommerceService {
     private readonly billing: BillingService,
   ) {}
 
-  async publicGet(path: string) {
+  async publicGet(path: string, scope?: { product?: string | undefined; platform?: string | undefined }) {
+    await assertSayRingModuleVisible(this.prisma, "mall", scope?.product, scope?.platform);
     const url = parsePath(path);
     if (url.pathname === "/storefront/markets") return this.store.markets();
     if (url.pathname === "/storefront/bootstrap") {

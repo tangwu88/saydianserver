@@ -17,7 +17,7 @@ async function request(route, { method = "GET", body, token, headers = {} } = {}
   });
   const text = await response.text();
   assert.doesNotMatch(text, /PrismaClientKnownRequestError|node_modules|\bat .+\.ts:\d+/);
-  return { status: response.status, json: JSON.parse(text) };
+  return { status: response.status, json: JSON.parse(text), headers: response.headers };
 }
 const v1 = "/api/v1/member";
 const v2 = "/api/saydian-app/v2";
@@ -193,6 +193,48 @@ try {
     check((await request(prefix + v2 + "/health/records?metric=blood_pressure", { token: tokenB })).json.data.items.length, 1);
     check((await request(prefix + v2 + "/support/app-display?product=say-ring&platform=android")).json.data.readOnlyHealth, undefined);
   }
+  // Ordinary product/platform display, same configuration for every account.
+  const moduleKey = "say_ring_ios_module_display", modulePath = admin + "/settings/" + moduleKey;
+  const closedModules = { schemaVersion: 1, modules: { health_library: false, mall: false } };
+  const libraryOnly = { schemaVersion: 1, modules: { health_library: true, mall: false } };
+  const mallOnly = { schemaVersion: 1, modules: { health_library: false, mall: true } };
+  const modulePayload = { value: libraryOnly, expectedUpdatedAt: null, public: true };
+  for (const prefix of ["", "/global"]) {
+    const config = await request(prefix + v2 + "/support/app-display" + iosScope);
+    check(config.json.data.moduleVisibility, { ...closedModules, validForSeconds: 300 });
+    check(config.json.data.readOnlyHealth, { ...iosEnabled, validForSeconds: 300 });
+    check(config.headers.get("cache-control"), "no-store");
+    for (const path of ["/content/categories", "/content/articles", "/content/articles/81002", "/commerce/home", "/commerce/markets", "/commerce/products", "/commerce/products/unavailable"])
+      check((await request(prefix + v2 + path + iosScope)).status, 404);
+    check((await request(prefix + v2 + "/content/articles/81002?product=say-ring")).status, 200);
+    check((await request(prefix + v2 + "/content/articles/81002?product=saydian-global&platform=ios")).status, 200);
+    check((await request(prefix + v2 + "/commerce/markets?product=say-ring&platform=android")).status, 200);
+  }
+  check((await request(modulePath, { method: "PATCH", body: modulePayload })).status, 401);
+  check((await request(modulePath, { method: "PATCH", token: tokenA, body: modulePayload })).status, 401);
+  const moduleSaved = await request(modulePath, { method: "PATCH", token: adminToken, body: modulePayload });
+  check(moduleSaved.status, 200); check(moduleSaved.json.data.value, libraryOnly);
+  check((await request(modulePath, { method: "PATCH", token: adminToken, body: modulePayload })).status, 409);
+  check((await request(modulePath, { method: "PATCH", token: adminToken, body: { ...modulePayload, expectedUpdatedAt: moduleSaved.json.data.updatedAt, value: { ...libraryOnly, reviewer: true } } })).status, 400);
+  for (const prefix of ["", "/global"]) {
+    for (const token of [undefined, tokenA, tokenB])
+      check((await request(prefix + v2 + "/support/app-display" + iosScope, token ? { token } : {})).json.data.moduleVisibility, { ...libraryOnly, validForSeconds: 300 });
+    check((await request(prefix + v2 + "/content/articles/81002" + iosScope)).status, 200);
+    check((await request(prefix + v2 + "/commerce/markets" + iosScope)).status, 404);
+    check((await request(prefix + v2 + "/support/app-display?product=say-ring&platform=android")).json.data.moduleVisibility, undefined);
+  }
+  const moduleSecond = await request(modulePath, { method: "PATCH", token: adminToken, body: { ...modulePayload, value: mallOnly, expectedUpdatedAt: moduleSaved.json.data.updatedAt } });
+  check(moduleSecond.status, 200);
+  for (const prefix of ["", "/global"]) {
+    check((await request(prefix + v2 + "/content/articles/81002" + iosScope)).status, 404);
+    check((await request(prefix + v2 + "/commerce/markets" + iosScope)).status, 200);
+  }
+  const moduleRestored = await request(modulePath + "/rollback", { method: "POST", token: adminToken, body: { expectedUpdatedAt: moduleSecond.json.data.updatedAt } });
+  check(moduleRestored.status, 201); check(moduleRestored.json.data.value, libraryOnly);
+  const moduleAudits = await prisma.auditLog.findMany({ where: { entityType: "APP_SETTING", entityId: moduleKey }, orderBy: { createdAt: "asc" } });
+  check(moduleAudits.map(row => row.action), ["SAY_RING_IOS_MODULE_DISPLAY_UPDATED", "SAY_RING_IOS_MODULE_DISPLAY_UPDATED", "SAY_RING_IOS_MODULE_DISPLAY_ROLLED_BACK"]);
+  check(moduleAudits[0].beforeJson, closedModules); check(moduleAudits[2].afterJson, libraryOnly);
+  check((await request(modulePath, { method: "PATCH", token: adminToken, body: { ...modulePayload, value: closedModules, expectedUpdatedAt: moduleRestored.json.data.updatedAt } })).status, 200);
   const iosRestored = await request(iosSettingPath + "/rollback", { method: "POST", token: adminToken, body: { expectedUpdatedAt: iosSaved.json.data.updatedAt } });
   check(iosRestored.status, 201); check(iosRestored.json.data.value, closedIos);
   check((await request(v2 + "/health/records" + iosScope + "&metric=heart_rate", { token: tokenB })).json.data.items, []);
@@ -221,6 +263,8 @@ try {
   const financeToken = (await request(admin + "/auth/login", { method: "POST", body: { username: financeAccount.username, password } })).json.data.token;
   check((await request(iosSettingPath, { method: "PATCH", token: financeToken, body: iosPayload })).status, 403);
   check((await request(iosSettingPath + "/rollback", { method: "POST", token: financeToken, body: iosPayload })).status, 403);
+  check((await request(modulePath, { method: "PATCH", token: financeToken, body: modulePayload })).status, 403);
+  check((await request(modulePath + "/rollback", { method: "POST", token: financeToken, body: modulePayload })).status, 403);
   for (const path of ["/balance-recharge", "/deposit"]) check((await request(manualRoute + path, { method: "POST", token: financeToken, body: manualInput })).status, 403);
   check((await request(manualRoute + "/wallet", { token: adminToken })).json.data.balanceCents, 1234);
 
