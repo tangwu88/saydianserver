@@ -60,3 +60,4 @@
 - 2026-10-19主线组合验证：frozen-lockfile安装、Prisma generate成功；原生成器生成/校验454路由通过。串行tools:test、typecheck、test、build全部退出0，diff及staged diff无空白错误。默认本地实库测试跳过，实际生产版本的PG/HTTP/镜像证据来自上述dcc9 CI，不冒认新主线组合镜像已部署。
 - 仅保留必要公共事务助手以复用五项与两个模块设置协议，移除旧健康写入的重复实现；临时恢复代码不进入main。对照main基线，.github/deploy/锁文件/Prisma及SMTP实现无修改。已有SMTP代码原样保留在源码，当前生产仍不包含该批待发功能。
 - 按[GitHub官方跳过单次push工作流说明](https://docs.github.com/zh/actions/how-tos/manage-workflow-runs/skip-workflow-runs)使用提交消息，不改仓库/工作流全局开关；本仓库无pull_request_target或workflow_run发布链。源码推送和线上revision最后回读另记，不以本机通过冒称main已发布。
+- 源码提交`897b24f5570fcd594fafb6b718aa61c663ee6e09`已正常fast-forward推送main，GitHub ref独立回读一致；该提交Actions列表为空，未触发混合发布。生产独立回读仍dcc9/ready。本条回执为纯文档`[skip ci]`更新，不代表新的运行镜像或生产发布。
