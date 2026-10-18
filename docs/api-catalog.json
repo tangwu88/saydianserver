@@ -6941,7 +6941,7 @@
       "source": "apps/api/src/care/care.controller.ts",
       "summary": "关爱关系列表",
       "request": "无请求体",
-      "response": "CareRelationship[]，含 direction、双方昵称、授权指标",
+      "response": "CareRelationship[]，含 direction、双方昵称/可选memberNo、授权指标；id仍为UUID，不回传电话邮箱",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -6972,8 +6972,8 @@
       "envelope": "v2",
       "source": "apps/api/src/care/care.controller.ts",
       "summary": "邀请查看对方健康数据",
-      "request": "国内{mobile}；国际{identifier:email/E.164}；仅同部署账号域；不能自邀；已生效返回 409",
-      "response": "CareRelationship；UUID；逐指标授权不变",
+      "request": "{identifier:email/E.164}或旧{mobile}；兼容新增{memberNo:规范十进制字符串1..2147483647}且与联系方式互斥；编号指compatibilityId而非UUID；本人400；仅memberNo新增账号30秒/目标60秒冷却429；pending幂等不重发",
+      "response": "联系方式保留CareRelationship、active重复409及原频控，不新增编号冷却；非ACTIVE联系人404；仅memberNo为HTTP202/{invitationSubmitted:true}，不代表用户存在/通知送达，不区分不存在/非ACTIVE/已有关系；不自动授予健康权限",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {

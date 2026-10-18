@@ -202,8 +202,8 @@
 | `POST /api/saydian-app/v2/billing/payments/alipay/app/notify` | App 支付宝验签通知 | public | 支付宝form通知字段；仅接受绑定 alipay_app 的支付单 | 支付宝要求的success文本；事件幂等 | App 支付宝 |
 | `GET /api/saydian-app/v2/care/relationships/:id/summary` | 成员健康概览 | member | path:id；id=生效关爱关系UUID | {metrics,records}；仅有效授权指标的最新记录；关系或权限失效403；读取审计 | 核心服务 |
 | `GET /api/saydian-app/v2/care/relationships/:id/health/:recordId/ecg` | 读取授权成员私有心电波形 | member | path:id，path:recordId；id=生效关爱关系UUID；recordId=数据所属成员clientRecordId | gzip JSON数值数组；每次复核关系、ECG权限和记录归属；响应头x-content-sha256、x-ecg-sample-rate、x-ecg-sample-count；失权403 | 私有文件存储 |
-| `GET /api/saydian-app/v2/care/relationships` | 关爱关系列表 | member | 无请求体 | CareRelationship[]，含 direction、双方昵称、授权指标 | 核心服务 |
-| `POST /api/saydian-app/v2/care/invitations` | 邀请查看对方健康数据 | member | 国内{mobile}；国际{identifier:email/E.164}；仅同部署账号域；不能自邀；已生效返回 409 | CareRelationship；UUID；逐指标授权不变 | 核心服务 |
+| `GET /api/saydian-app/v2/care/relationships` | 关爱关系列表 | member | 无请求体 | CareRelationship[]，含 direction、双方昵称/可选memberNo、授权指标；id仍为UUID，不回传电话邮箱 | 核心服务 |
+| `POST /api/saydian-app/v2/care/invitations` | 邀请查看对方健康数据 | member | {identifier:email/E.164}或旧{mobile}；兼容新增{memberNo:规范十进制字符串1..2147483647}且与联系方式互斥；编号指compatibilityId而非UUID；本人400；仅memberNo新增账号30秒/目标60秒冷却429；pending幂等不重发 | 联系方式保留CareRelationship、active重复409及原频控，不新增编号冷却；非ACTIVE联系人404；仅memberNo为HTTP202/{invitationSubmitted:true}，不代表用户存在/通知送达，不区分不存在/非ACTIVE/已有关系；不自动授予健康权限 | 核心服务 |
 | `POST /api/saydian-app/v2/care/relationships/:id/respond` | 接受或拒绝邀请 | member | path:id；id=关系 UUID；{accepted:boolean}；仅收件人可操作 | CareRelationship；接受后仍需逐指标授权 | 核心服务 |
 | `POST /api/saydian-app/v2/care/relationships/:id/permissions` | 共享本人指标 | member | path:id；id=关系 UUID；{metrics:规范指标数组,expiresAt?:ISO8601}；仅数据所属人；[] 撤销全部指标 | CareRelationship | 核心服务 |
 | `DELETE /api/saydian-app/v2/care/relationships/:id` | 撤销关爱关系 | member | path:id；id=关系 UUID；任一参与方可撤销 | CareRelationship；撤销后不能查询 | 核心服务 |

@@ -152,6 +152,24 @@ try {
   check((await request(v2 + "/care/relationships/" + relation.id + "/health?metric=heart_rate", { token: tokenA })).json.code, 403);
   check((await request(v2 + "/care/relationships/" + relation.id + "/summary", { token: tokenA })).status, 403);
   check((await request(v2 + "/care/relationships/" + relation.id + "/health/missing-fixture-record/ecg", { token: tokenA })).status, 403);
+  // An existing reverse-direction request is not assumed. The fresh numbered
+  // request must not disclose the subject or bypass recipient authorization.
+  for (const prefix of [v2, "/global" + v2]) {
+    const numbered = await request(prefix + "/care/invitations", { method: "POST", token: tokenB, body: { memberNo: a.data.member.memberNo } });
+    check(numbered.status, 202); check(numbered.json.code, 200);
+    check(numbered.json.data, { invitationSubmitted: true });
+    check((await request(prefix + "/care/invitations", { method: "POST", body: { memberNo: a.data.member.memberNo } })).status, 401);
+    check((await request(prefix + "/care/invitations", { method: "POST", token: tokenB, body: { memberNo: a.data.member.memberNo, identifier: "fixture@example.invalid" } })).status, 400);
+  }
+  const reverseRelation = await prisma.careRelationship.findUniqueOrThrow({ where: { inviterId_recipientId: { inviterId: b.data.member.id, recipientId: a.data.member.id } } });
+  check(reverseRelation.status, "PENDING");
+  check((await request(v2 + `/care/relationships/${reverseRelation.id}/summary`, { token: tokenB })).status, 403);
+  const numberedRows = (await request(v2 + "/care/relationships", { token: tokenB })).json.data;
+  const numberedRow = numberedRows.find(row => row.id === reverseRelation.id);
+  check(numberedRow.recipient.memberNo, a.data.member.memberNo);
+  check(Object.hasOwn(numberedRow.recipient, "email"), false);
+  check(Object.hasOwn(numberedRow.recipient, "mobile"), false);
+  check((await request(v2 + "/care/invitations", { method: "POST", token: tokenB, body: { memberNo: "2147483647" } })).status, 429);
   const notice = await prisma.notification.create({ data: { userId: a.data.member.id, eventId: "fixture-message", type: "SYSTEM", title: "fixture", body: "fixture only" } });
   check((await request(v1 + "/notify/statistics", { token: tokenA })).json.data.announce_count, 1);
   check((await request(v1 + "/notify/" + notice.compatibilityId, { token: tokenB })).json.code, 404);

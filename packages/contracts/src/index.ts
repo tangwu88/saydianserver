@@ -294,6 +294,11 @@ export interface CareRelationshipContract {
   updatedAt: string;
 }
 
+// A privacy-preserving acknowledgement, not proof of an account or delivery.
+export interface CareInvitationSubmissionContract {
+  invitationSubmitted: true;
+}
+
 export interface PushInstallationContract {
   installationId: string;
   provider: "jpush" | "apns" | "disabled";
