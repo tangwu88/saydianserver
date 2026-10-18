@@ -44,7 +44,7 @@ export default defineConfig({
       }
       if (realm.realm === "global" && process.env.UNI_PLATFORM === "h5" && id.endsWith("pages-json-js")) {
         const pages = JSON.parse(code);
-        pages.tabBar.selectedColor = "#D20B27";
+        pages.tabBar.selectedColor = "#245d47";
         return { code: JSON.stringify(pages), map: null };
       }
       if (process.env.UNI_PLATFORM !== "h5" || !id.endsWith("manifest-json-js")) return;

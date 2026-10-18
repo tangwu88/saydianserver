@@ -276,6 +276,9 @@ test("one CI build supplies the deploy job and reviewed migration gate", () => {
   assert.equal(workflow.match(/docker\/build-push-action@v6/g)?.length, 3);
   assert.match(workflow, /needs: verify/);
   assert.match(workflow, /AUTO_DEPLOY_ENABLED == 'true'/);
+  const usDeploy = workflow.split('  auto-deploy-us:')[1];
+  assert.ok(usDeploy.includes("!contains(github.event.head_commit.message, '[deploy cn only]')"));
+  assert.ok(!workflow.split('  auto-deploy-us:')[0].includes('[deploy cn only]'));
   const production = fs.readFileSync(path.join(root, ".github/workflows/deploy-production.yml"), "utf8");
   assert.match(production, /cancel-in-progress: false/);
   assert.match(production, /actions\/download-artifact@v4/);

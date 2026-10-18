@@ -29,6 +29,9 @@ function evaluate(source, imports, globals = {}) {
   });
   return module.exports;
 }
+const presentation = evaluate(readFileSync(new URL('../src/catalog-presentation.ts', import.meta.url),'utf8'), {});
+const official = evaluate(readFileSync(new URL('../src/official-support.ts', import.meta.url),'utf8'), {}, {uni:{},location:{}});
+const recognition = evaluate(readFileSync(new URL('../src/address-recognition.ts',import.meta.url),'utf8'), {'@vant/area-data':require('@vant/area-data')});
 const chinaArea = evaluate(
   readFileSync(new URL("../src/china-area.ts", import.meta.url), "utf8"),
   { "@vant/area-data": require("@vant/area-data") },
@@ -50,7 +53,11 @@ async function page(realmName, value = product(), options = {}) {
   const { realm } = realmTestModules(uni, { env: realmName === "global" ? { VITE_APP_REALM: "global" } : {} });
   if (options.user) { realm.mallStorage.set("saidian-user", options.user); realm.mallStorage.set("saidian-token", "synthetic-token"); }
   if (options.draft) { realm.mallStorage.set("checkout-draft", structuredClone(options.draft)); realm.mallStorage.set("checkout-owner", options.owner ?? options.user?.id); }
+  if(options.selection)realm.mallStorage.set("product-selection:"+value.id,options.selection);
   const component = evaluate(script.content, {
+    "../../catalog-presentation": presentation,
+    "../../catalog-thumbnails": {productThumbnail:value=>value},
+    "../../official-support": official,
     "../../product-rich-text": evaluate(readFileSync(new URL('../src/product-rich-text.ts', import.meta.url), 'utf8'), {}),
     "../../mini-poster": { miniPosterEnvironment: () => false },
     "../../mini-share": { miniSharePath: () => '', miniShareAsset: async () => ({}), copyMiniShareLink: async () => {} },
@@ -215,10 +222,11 @@ test("checkout CTA starts payment directly and retains loading, recovery and mai
   s.capabilities.value = { payments: [{ channel: "wechat_jsapi", enabled: false }], maintenance: { readOnly: false } };
   s.address.value = { id: "synthetic-address", name: "测试收货人" }; s.quote.value = { subtotalCents: 1000, couponDiscountCents: 0, pointDiscountCents: 0, shippingCents: 0, payableCents: 1000, lines: [] };
   const cta = () => nodes(h.tree()).find(node => node.type === "button" && node.props.class === "primary-btn");
-  assert.equal(text(cta()), "立即付款"); assert.equal(cta().props.disabled, true);
+  assert.equal(text(cta()), "支付暂不可用"); assert.equal(cta().props.disabled, true);
   assert.ok(text(h.tree()).includes("支付暂不可用，请稍后再试"));
   const visibleMoneyLines = nodes(h.tree()).filter(node => node.props?.class === "money-line" || node.props?.class === "money-line total").map(text);
-  assert.equal(visibleMoneyLines.some(line => line.includes("优惠券") || line.includes("积分抵扣") || line.includes("运费")), false);
+  assert.equal(visibleMoneyLines.some(line => line.includes("优惠券") || line.includes("积分抵扣")), false);
+  assert.ok(visibleMoneyLines.some(line=>line.includes("运费")));
   assert.equal(text(h.tree()).includes("重新获取报价"), false);
   for (const field of ["submitting", "quoting"]) {
     s[field].value = true; assert.equal(cta().props.disabled, true); assert.equal(cta().props.loading, true); s[field].value = false;
@@ -232,7 +240,7 @@ test("checkout CTA starts payment directly and retains loading, recovery and mai
   assert.equal(text(cta()), "查询并继续付款"); assert.equal(cta().props.disabled, false);
   s.uncertain.value = false; s.quoteNeedsConfirmation.value = false; s.quote.value = quote; s.address.value = address;
   s.capabilities.value.payments[0].enabled = true;
-  assert.equal(text(cta()), "立即付款"); assert.equal(cta().props.disabled, false);
+  assert.equal(text(cta()), "微信支付 ¥10"); assert.equal(cta().props.disabled, false);
   assert.equal(nodes(h.tree()).some(node => node.type === "input" && node.props.placeholder?.includes("配送要求")), false);
   assert.equal(s.showBenefits.value, false);
   nodes(h.tree()).find(node => node.type === "button" && node.props.class === "benefits-toggle").props.onClick();
@@ -333,11 +341,11 @@ test("checkout only offers payment for the current browser and honors an explici
   const h = orderPage("checkout"), s = h.state;
   s.address.value = { id: "synthetic-address" }; s.quote.value = { payableCents: 100, lines: [] };
   s.capabilities.value = { checkout: { enabled: true }, payments: [{ channel: "wechat_h5", enabled: true }] };
-  assert.equal(button(h.tree(), "立即付款").props.disabled, true);
+  assert.equal(nodes(h.tree()).find(node=>node.type==="button" && node.props?.class==="primary-btn").props.disabled, true);
   s.capabilities.value.payments.push({ channel: "wechat_jsapi", enabled: true });
-  assert.equal(Boolean(button(h.tree(), "立即付款").props.disabled), false);
+  assert.equal(Boolean(nodes(h.tree()).find(node=>node.type==="button" && node.props?.class==="primary-btn").props.disabled), false);
   s.capabilities.value.checkout.enabled = false;
-  assert.equal(button(h.tree(), "立即付款").props.disabled, true);
+  assert.equal(nodes(h.tree()).find(node=>node.type==="button" && node.props?.class==="primary-btn").props.disabled, true);
   await s.submit(); assert.deepEqual(h.requests, []);
   s.uncertain.value = true; s.quote.value = null; s.address.value = null;
   assert.equal(Boolean(button(h.tree(), "查询并继续付款").props.disabled), false);
@@ -353,6 +361,7 @@ async function addressPage(realmName, existing) {
   realm.mallStorage.set("saidian-user", { id: "synthetic-member" });
   const component = evaluate(script.content, { vue, "../../realm": realm,
     "@dcloudio/uni-app": { onLoad: callback => hooks.load = callback },
+    "../../address-recognition": recognition,
     "../../china-area": chinaArea,
     "../../country-phone": countryPhone,
     "../../components/CountryCallingCodePicker.vue": { default: { render: () => null } },
@@ -402,3 +411,22 @@ test("editing an unsupported existing delivery country never silently rewrites i
   await h.state.save(); assert.equal(h.requests.length, 1); assert.equal(h.state.form.countryCode, "US");
   assert.match(h.notices[0], /仅支持中国大陆/);
 });
+
+test('product defaults to an available device SKU instead of a sold-out first option or sizing tool',async()=>{
+  const h=await page('global',product({skus:[{id:'empty',stock:0,salePriceCents:99800,specification:'银色 6号'},{id:'sizer',stock:5,salePriceCents:980,specification:'全尺寸指模'},{id:'device',stock:2,salePriceCents:99800,specification:'银色 7号'}]}));
+  assert.equal(h.state.selectedSku.value.id,'device');assert.equal(button(h.tree(),'立即购买').props.disabled,false);
+  h.state.chooseKind(true);assert.equal(h.state.selectedSku.value.id,'sizer');assert.match(text(h.tree()),/不是智能戒指/);
+  h.state.chooseKind(false);assert.equal(h.state.selectedSku.value.id,'device');
+});
+test('pasted address is recognized on device and can be reverted without making an API call',async()=>{
+  const h=await addressPage('global');h.state.pastedAddress.value='张三 13800138000 广东省深圳市南山区科技园路8号2栋1201';h.state.fillPastedAddress();
+  assert.equal(h.state.form.name,'张三');assert.equal(h.state.form.mobile,'13800138000');assert.equal(h.state.form.provinceCode,'440000');assert.equal(h.state.form.districtCode,'440305');assert.equal(h.requests.length,0);
+  h.state.undoRecognition();assert.equal(h.state.form.name,'');assert.equal(h.state.form.mobile,'');assert.equal(h.requests.length,0);
+});
+test('ambiguous recipient numbers do not overwrite an existing address',async()=>{
+  const h=await addressPage('global');Object.assign(h.state.form,delivery);const before=JSON.stringify(h.state.form);h.state.pastedAddress.value='张三 13800138000 13900139000 广东省深圳市南山区科技园路8号';h.state.fillPastedAddress();assert.equal(JSON.stringify(h.state.form),before);assert.match(h.state.recognitionNote.value,/多个联系电话/);
+});
+
+test('anonymous purchase intent preserves the selected SKU and quantity across login without placing an order',async()=>{const value=product({skus:[{id:'a',specification:'银色',stock:5,salePriceCents:1000},{id:'b',specification:'黑色',stock:5,salePriceCents:1200}]});const first=await page('global',value);first.state.selectSku(value.skus[1]);first.state.quantity.value=3;await first.state.addCart();const saved=first.storage.get('product-selection:'+value.id);assert.equal(saved.skuId,'b');assert.equal(saved.quantity,3);assert.equal(first.requests.length,1);const returned=await page('global',value,{user:{id:'member-a'},selection:saved});assert.equal(returned.state.selectedSku.value.id,'b');assert.equal(returned.state.quantity.value,3);assert.equal(returned.requests.some(r=>r.input?.method==='POST'),false);});
+
+test('a failed product reload preserves the post-login selection intent for retry',async()=>{const value=product(),selection={skuId:'synthetic-sku',quantity:2,savedAt:Date.now()};const h=await page('global',value,{selection,productError:true});assert.deepEqual(h.storage.get('product-selection:'+value.id),selection);});

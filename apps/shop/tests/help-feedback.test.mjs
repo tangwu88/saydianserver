@@ -32,6 +32,7 @@ async function harness() {
   }];
   const component = evaluate(script.content, {
     vue,
+    "../../official-support": evaluate(readFileSync(new URL("../src/official-support.ts",import.meta.url),"utf8"),{}, {uni:{},location:{}}),
     "@dcloudio/uni-app": { onLoad: callback => hooks.load = callback },
     "../../components/DesktopHeader.vue": { default: {} },
     "../../components/GlobalHelp.vue": { default: {} },

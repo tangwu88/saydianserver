@@ -1,11 +1,11 @@
 @mixin mall-theme {
-  --green: #005bad;
-  --deep: #005bad;
-  --mint: #eef6ff;
-  --orange: #087bea;
-  --ink: #333333;
-  --muted: #69717b;
-  --line: #e5e7eb;
+  --green: #245d47;
+  --deep: #163f2e;
+  --mint: #e9eee4;
+  --orange: #426c51;
+  --ink: #142722;
+  --muted: #697570;
+  --line: #dce3dc;
 }
 /* #ifdef H5 */
 :root { @include mall-theme; }
@@ -211,7 +211,7 @@ uni-tabbar .uni-tabbar__label { font-size: 13px !important; line-height: 20px; }
     height: 100% !important;
   }
   page {
-    background: #f1f2f4;
+    background: #f7f8f4;
   }
   .desktop-header {
     display: block;
@@ -320,3 +320,12 @@ uni-tabbar .uni-tabbar__label { font-size: 13px !important; line-height: 20px; }
     font-size: 15px;
   }
 }
+
+/* Official-site palette and readable touch controls, scoped to the storefront. */
+button:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.primary-btn[disabled],.outline-btn[disabled]{opacity:.55}
+.product-card{border-radius:18px;border-color:#dce3dc;box-shadow:none}.product-buy{border-radius:999px}
+.price{color:#245d47}.page{background:#f7f8f4}.error-state{font-size:14px;line-height:1.65}
+/* #ifdef H5 */
+html,body,uni-page-body{background:#f7f8f4}.desktop-header{background:#fafbf6}.brand image{filter:brightness(0)}
+/* #endif */

@@ -1,0 +1,76 @@
+{
+  "verifiedAt": "2026-10-18",
+  "purpose": "Public catalog thumbnails; exact original image URL mapping only",
+  "images": [
+    {
+      "id": "f9706dac-249e-4bdc-880e-f61f5bd79094",
+      "source": "https://app.saydian.cn/api/saydian-app/v2/files/6565a1e4-8f03-493b-9838-db60eda122a1",
+      "sourceSha256": "a0976abdafde993a521b092a37186356e10bdb83135a44a73c434de95872420e",
+      "originalBytes": 1237931,
+      "thumbnailBytes": 52482
+    },
+    {
+      "id": "c993159c-251b-4214-8a53-54edea993c3d",
+      "source": "https://app.saydian.cn/api/saydian-app/v2/files/460e256e-0c54-4d66-b2ac-16bb2c5e15fb",
+      "sourceSha256": "e6aa4457254b2b7f1d6b4bfb428e4cb18973034a456ec93a0028122cd0f5f539",
+      "originalBytes": 1336698,
+      "thumbnailBytes": 56454
+    },
+    {
+      "id": "9ec30007-1e6f-4947-a059-dac95af3c755",
+      "source": "https://app.saydian.cn/api/saydian-app/v2/files/1779b523-1995-414c-839b-766be4fddba9",
+      "sourceSha256": "1189ac9d6e5b63b208479a84836e92e97d32275335b0df70429a77f39e69f189",
+      "originalBytes": 1901241,
+      "thumbnailBytes": 64376
+    },
+    {
+      "id": "52042451-fa1a-4696-bd95-50eada971b2a",
+      "source": "https://app.saydian.cn/api/saydian-app/v2/files/f818474f-f841-44ce-8a85-c97e1fb4aa82",
+      "sourceSha256": "7aba4a167c4956e4622e85e5587ba3e5b0bb4c4d32a519b0bd2cd3ccac8c4b2a",
+      "originalBytes": 2161057,
+      "thumbnailBytes": 56678
+    },
+    {
+      "id": "17e342cb-b1da-4725-a046-8a7c7bb67b52",
+      "source": "https://app.saydian.cn/api/saydian-app/v2/files/22cb23e4-7c0c-418a-8005-961900b609b6",
+      "sourceSha256": "a91dd83d25c1f8260e7e3ba002900cfaab8c979671b69fde7492fcc033475ca2",
+      "originalBytes": 1422602,
+      "thumbnailBytes": 56224
+    },
+    {
+      "id": "d0a6ed00-c78c-4c69-acfb-c6c5392c6545",
+      "source": "https://app.saydian.cn/api/saydian-app/v2/files/1f5e734d-8c47-4b44-a4cd-fc8465e8c90a",
+      "sourceSha256": "78711f71ec5bcc80f2c8f0c33c62e5ee7d2fe8fe753f521ee559f8e2382185c8",
+      "originalBytes": 1181062,
+      "thumbnailBytes": 56856
+    },
+    {
+      "id": "6478cf28-1357-4a55-9237-cbedddb3a72c",
+      "source": "http://img10.360buyimg.com/n0/jfs/t1/471910/32/6968/144141/6a486ef6F860b9037/00834e64e6323e3c.jpg",
+      "sourceSha256": "30313ab9b63aeecb3483d7af624bbe7459a57507092554ffeb7f2bfe34bf4792",
+      "originalBytes": 127626,
+      "thumbnailBytes": 30842
+    },
+    {
+      "id": "add67df6-1762-47f5-be1b-4e9b84a2df84",
+      "source": "https://images.sursung.com/prod/item/14011274/20260731/025E520C314D422391F8DB1A48CA413B_s869434_h800_w800.png",
+      "sourceSha256": "d3d2fdc000a307380802c1ed2a6d9c735c1258dd7c078d72e09cfbd27d13bded",
+      "originalBytes": 869434,
+      "thumbnailBytes": 30892
+    },
+    {
+      "id": "ce057526-f984-4ce1-9d2e-a1d452a4ed30",
+      "source": "http://img10.360buyimg.com/n0/jfs/t1/408997/13/14854/87331/69c79105Fccd3cf1c/008332032091049d.png",
+      "sourceSha256": "eb336c58a243b368165477b13eef9408d447b416bf5ed17accf48dc7756bef2f",
+      "originalBytes": 214389,
+      "thumbnailBytes": 22974
+    },
+    {
+      "id": "b27b389f-bf3d-47f1-9944-bdc55ade27fd",
+      "source": "http://img10.360buyimg.com/n0/jfs/t1/432599/33/6327/160358/69fe9e9cF923d3ece/00833203202e37de.jpg",
+      "sourceSha256": "b71c9bcd658d77a559aa4f6448ab59e79df0b79c8fadb9cfd7120ab1c8751810",
+      "originalBytes": 199331,
+      "thumbnailBytes": 51452
+    }
+  ]
+}

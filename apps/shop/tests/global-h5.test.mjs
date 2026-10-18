@@ -535,7 +535,7 @@ test("login actions stay clickable so validation and provider errors remain reac
     global = readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8");
   assert.match(domestic, /class="outline-btn" :disabled="!!countdown \|\| busy" @click="sendCode"/);
   assert.match(domestic, /class="primary-btn" :loading="busy" :disabled="busy" @click="login"/);
-  assert.match(global, /class="text-button code-button" :disabled="busy \|\| loading \|\| countdown > 0" @click="sendCode"/);
+  assert.match(global, /class="text-button code-button" :disabled="busy \|\| loading \|\| !verificationEnabled \|\| countdown > 0" @click="sendCode"/);
   assert.doesNotMatch(global, /v-if="!bindTicket \|\| !temporaryPhoneCode"/);
   assert.match(global, /class="primary-btn submit" :disabled="busy \|\| loading" :loading="busy" @click="login"/);
   assert.doesNotMatch(global, /const primaryEnabled/);
@@ -1151,7 +1151,7 @@ test("login/account/help visible UI removes edition notices and uses App brand/t
   const loginSource = readFileSync(resolve(source, "components/GlobalLogin.vue"), "utf8");
   assert.equal(/注册会员|@click="startRegistration"|account-password/.test(loginSource), false);
   assert.match(loginSource, /contactMode = ref<"email" \| "sms">\("sms"\)/);
-  assert.match(readFileSync(resolve(source, "global-ui.scss"), "utf8"), /#d20b27/);
+  assert.match(readFileSync(resolve(source, "global-ui.scss"), "utf8"), /#245d47/);
   assert.match(readFileSync(resolve(source, "components/GlobalAccount.vue"), "utf8"), /phoneVerified === false[\s\S]*?待验证/);
 });
 
@@ -1204,7 +1204,7 @@ function renderedText(node) {
 }
 const renderedButton = (tree, label) => renderNodes(tree).find((node) => node.type === "button" && renderedText(node).replace(/›$/, "").trim() === label);
 
-test("global account removes the redundant order shortcuts but keeps member promotion and verification notices", () => {
+test("global account offers direct order-state shortcuts and keeps member promotion and verification notices", () => {
   const h = harness(),
     navigations = [];
   h.uni.navigateTo = (value) => navigations.push(value.url);
@@ -1237,8 +1237,9 @@ test("global account removes the redundant order shortcuts but keeps member prom
     button.props.onClick();
     assert.equal(navigations.at(-1), route);
   }
-  for (const label of ["全部订单", "待付款", "待收货", "售后"]) {
-    assert.equal(renderedButton(tree, label), undefined, label);
+  for (const [label, route] of Object.entries({'待付款':'/pages/orders/index?status=PENDING_PAYMENT','待发货':'/pages/orders/index?group=pending_shipment','待收货':'/pages/orders/index?status=SHIPPED','售后':'/pages/orders/index?group=after_sales'})) {
+    const shortcut = renderNodes(tree).find(node=>node.type==='button' && renderedText(node).startsWith(label));
+    assert.ok(shortcut,label);shortcut.props.onClick();assert.equal(navigations.at(-1),route);
   }
   assert.match(renderedText(tree), /待验证/);
   assert.match(renderedText(tree), /购买前需验证账号/);
@@ -1368,7 +1369,7 @@ test("global H5 manifest retains all four customer tabs and its independent rout
     pages.tabBar.list.map((tab) => tab.pagePath),
     ["pages/home/index", "pages/category/index", "pages/cart/index", "pages/profile/index"],
   );
-  assert.equal(pages.tabBar.selectedColor, "#D20B27");
+  assert.equal(pages.tabBar.selectedColor, "#245d47");
   assert.equal(config.base, "/saidian-mall/");
   const manifest = JSON.parse(transform('{"h5":{"router":{"mode":"hash"}}}', "uni:manifest-json-js").code);
   assert.equal(manifest.h5.router.base, "/saidian-mall/");

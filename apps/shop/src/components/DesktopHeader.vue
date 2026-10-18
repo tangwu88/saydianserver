@@ -10,4 +10,6 @@ import { isGlobalMall } from "../realm";
 import BrandIdentity from "./BrandIdentity.vue";
 function go(url: string) { if (/^\/pages\/(home|category|cart|profile)\/index$/.test(url)) uni.switchTab({ url }); else uni.navigateTo({ url }); }
 </script>
-<style scoped>.app-header{--green:#d20b27;color:#171b2b}.brand,.head-links button { background:transparent;margin:0;padding:0;color:inherit;line-height:44px;font-size:16px;border-radius:0; }.brand::after,.head-links button::after {border:0}.head-links button:hover {color:var(--green)}.desktop-search {margin:0;justify-content:flex-start;font-size:14px;}@media(max-width:1100px){.category-links {display:none}}</style>
+<style scoped>.app-header{--green:#245d47;color:#171b2b}.brand,.head-links button { background:transparent;margin:0;padding:0;color:inherit;line-height:44px;font-size:16px;border-radius:0; }.brand::after,.head-links button::after {border:0}.head-links button:hover {color:var(--green)}.desktop-search {margin:0;justify-content:flex-start;font-size:14px;}@media(max-width:1100px){.category-links {display:none}}</style>
+
+<style scoped>.desktop-search{border-radius:999px;background:#edf1e6;color:#5e6b61}.brand{filter:brightness(0)}.head-links button{font-size:14px}</style>

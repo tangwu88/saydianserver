@@ -1,182 +1,49 @@
 <template>
-  <DesktopHeader /><view class="page"
-    ><view class="container"
-      ><view class="category-layout"
-        ><view class="category-nav" role="tablist" aria-label="商品分类"
-          ><button
-            role="tab" :aria-selected="!selected"
-            :class="['category-item', !selected && 'active']"
-            @click="select('')"
-            >全部商品</button
-          ><button
-            v-for="item in categories"
-            :key="item.id"
-            role="tab" :aria-selected="selected === item.id"
-            :class="['category-item', selected === item.id && 'active']"
-            @click="select(item.id)"
-            >{{ item.name }}</button
-          ></view
-        ><view class="category-main"
-          ><view class="category-head"
-            ><text>{{ currentName }}</text
-            ><text class="small">{{ total }} 件商品</text></view
-          ><view v-if="error" class="error-state" role="alert"><text>{{ error }}</text><button class="outline-btn" :disabled="busy" @click="retry">重新加载</button></view
-          ><view v-if="products.length" class="product-grid"
-            ><ProductCard
-              v-for="product in products"
-              :key="product.id"
-              :product="product"
-              @open="openProduct"
-              @buy="buyNow" /></view
-          ><view v-else-if="!error" class="empty">{{ busy ? '正在加载…' : '当前分类暂无已上架商品' }}</view><button v-if="!error && products.length < total" class="outline-btn" :disabled="busy" @click="load(true)">加载更多</button></view
-        ></view
-      ></view
-    ></view
-  >
-  <StoreFooter />
+  <DesktopHeader/><view class="page"><view class="container">
+    <view class="catalog-heading"><view><text class="eyebrow">SAYDIAN COLLECTION</text><h1>选一款，适合自己的。</h1></view><button class="text-button" @click="search">搜索商品 <UniIcons type="search" size="20"/></button></view>
+    <view class="category-nav" role="tablist" aria-label="商品分类"><button v-for="item in categories" :key="item.id" role="tab" :aria-selected="selected===item.id" :class="['category-item',selected===item.id && 'active']" @click="select(item.id)">{{ item.name }} <text>{{ count(item.id) }}</text></button></view>
+    <view class="catalog-toolbar"><text>{{ total }} 件商品</text><picker :range="sortLabels" :value="sortIndex" @change="sortIndex=Number($event.detail.value)"><view class="sort-picker">{{ sortLabels[sortIndex] }} <UniIcons type="bottom" size="15"/></view></picker></view>
+    <view v-if="error" class="error-state" role="alert">{{ error }}<button class="text-button" :disabled="busy" @click="retry">重新加载</button></view>
+    <view v-if="busy && !rows.length" class="catalog-skeleton" aria-label="正在加载商品"><view v-for="n in 4" :key="n" class="skeleton-card"/></view>
+    <view v-else-if="products.length" class="product-grid"><ProductCard v-for="(product,index) in products" :key="product.id" :product="product" :priority="index<2" @open="openProduct"/></view>
+    <view v-else-if="!error" class="empty"><text>暂无相关商品</text><button class="outline-btn" @click="select('all')">查看全部商品</button></view>
+  </view></view><StoreFooter/>
 </template>
 <script setup lang="ts">
-import { mallStorage } from "../../realm";
-import { onShow } from "@dcloudio/uni-app";
-import { computed, ref } from "vue";
-import DesktopHeader from "../../components/DesktopHeader.vue";
-import ProductCard from "../../components/ProductCard.vue";
-import StoreFooter from "../../components/StoreFooter.vue";
-import { api } from "../../api";
-const busy=ref(false), error=ref('');let page=1,revision=0,failedMore=false,bootstrapFailed=false;
-const categories = ref<any[]>([]),
-  products = ref<any[]>([]),
-  selected = ref(""),
-  total = ref(0);
-const currentName = computed(
-  () =>
-    categories.value.find((x) => x.id === selected.value)?.name || "全部商品",
-);
+import { computed, ref } from 'vue';
+import { onShow } from '@dcloudio/uni-app';
+import UniIcons from '@dcloudio/uni-ui/lib/uni-icons/uni-icons.vue';
+import DesktopHeader from '../../components/DesktopHeader.vue';
+import ProductCard from '../../components/ProductCard.vue';
+import StoreFooter from '../../components/StoreFooter.vue';
+import { mallStorage } from '../../realm';
+import { loadCatalog } from '../../catalog-cache';
+import { catalogKinds, catalogKind, filterCatalog, type CatalogKind } from '../../catalog-presentation';
+const rows=ref<any[]>([]),selected=ref<CatalogKind>('all'),busy=ref(false),error=ref(''),sortIndex=ref(0);
+const sorts=['','price_asc','price_desc','sales'],sortLabels=['综合排序','价格从低到高','价格从高到低','销量优先'];
+const products=computed(()=>filterCatalog(rows.value,selected.value,'',sorts[sortIndex.value]));
+const total=computed(()=>products.value.length);
+const categories=computed(()=>catalogKinds.filter(item=>item.id==='all'||rows.value.some(row=>catalogKind(row)===item.id)));
+let revision=0;
 onShow(initialize);
-async function initialize() {
-  const request=++revision;
-  busy.value=true;error.value='';bootstrapFailed=false;
-  try {
-    const boot: any = await api("/storefront/bootstrap");
-    if(request!==revision)return;
-    categories.value = boot.categories;
-    const stored = String(mallStorage.get("saidian-category-selected") || "");
-    if (mallStorage.has("saidian-category-selected"))
-      selected.value = categories.value.some((item) => item.id === stored) ? stored : "";
-    else if (!categories.value.some((item) => item.id === selected.value)) selected.value = "";
-    mallStorage.remove("saidian-category-selected");
-    await load();
-  } catch (e) {
-    if(request!==revision)return;
-    products.value=[];total.value=0;bootstrapFailed=true;
-    error.value=e instanceof Error ? e.message : '分类暂时无法加载，请重试';
-    busy.value=false;
+function count(kind:string){return kind==='all'?rows.value.length:rows.value.filter(row=>catalogKind(row)===kind).length;}
+async function initialize(){
+  const kind=mallStorage.get('saidian-catalog-kind');
+  if(catalogKinds.some(item=>item.id===kind))selected.value=kind;
+  mallStorage.remove('saidian-catalog-kind');
+  await load();
+  const legacy=mallStorage.get('saidian-category-selected');
+  if(legacy!==undefined&&legacy!==null&&mallStorage.has('saidian-category-selected')){
+    const matched=rows.value.find(row=>row.categoryId===legacy);selected.value=legacy && matched?catalogKind(matched):'all';
+    mallStorage.remove('saidian-category-selected');
   }
 }
-async function load(more=false) {
-  const request=++revision, next=more?page+1:1;
-  busy.value=true;error.value='';failedMore=more;
-  if(!more){products.value=[];total.value=0;}
-  const categoryQuery = selected.value
-    ? `&categoryId=${encodeURIComponent(selected.value)}`
-    : "";
-  try{const data: any = await api(`/storefront/products?page=${next}&pageSize=24${categoryQuery}`);
-    if(request!==revision)return;
-    products.value = more ? [...products.value,...data.items] : data.items;
-    total.value = data.total;page=next;
-  }catch(e){if(request===revision)error.value=e instanceof Error ? e.message : '商品暂时无法加载，请重试';}finally{if(request===revision)busy.value=false;}
-}
-async function select(id: string) {
-  selected.value = id;
-  await load();
-}
-function retry(){return bootstrapFailed ? initialize() : load(failedMore);}
-function openProduct(id: string) {
-  uni.navigateTo({ url: `/pages/product/index?id=${id}` });
-}
-function buyNow(product: any) { uni.navigateTo({url:'/pages/product/index?id='+encodeURIComponent(product.id)}); }
+async function load(force=false){const request=++revision;busy.value=true;error.value='';try{const result=await loadCatalog(force);if(request===revision)rows.value=result;}catch(cause){if(request===revision)error.value=cause instanceof Error?cause.message:'商品暂时无法加载';}finally{if(request===revision)busy.value=false;}}
+function select(kind:CatalogKind){selected.value=kind;}
+function retry(){return load(true);}
+function search(){uni.navigateTo({url:'/pages/search/index'});}
+function openProduct(id:string){uni.navigateTo({url:'/pages/product/index?id='+encodeURIComponent(id)});}
 </script>
 <style scoped lang="scss">
-.category-layout {
-  display: grid;
-  grid-template-columns: 160px minmax(0,1fr);
-  min-height: 75vh;
-  background: #fff;
-  border-radius: 22rpx;
-  overflow: hidden;
-}
-.category-nav {
-  height: 75vh;
-  background: #f4f7fb;
-  overflow: auto;
-}
-.category-item {
-  display:block;
-  width:100%;
-  margin:0;
-  border:0;
-  border-radius:0;
-  background:transparent;
-  line-height:1.5;
-  min-height:44px;
-  padding: 16px 8px;
-  text-align: center;
-  color: #5f6d69;
-  font-size: 14px;
-  border-left: 3px solid transparent;
-}
-.category-item::after {border:0;}
-.category-item:focus-visible {outline:2px solid var(--green);outline-offset:-2px;}
-.category-item.active {
-  background: #fff;
-  color: var(--green);
-  font-weight: 800;
-  border-left-color: var(--green);
-}
-.category-main {
-  padding: 28rpx 20rpx;
-}
-.category-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24rpx;
-}
-.category-head text {
-  font-size: 18px;
-  font-weight: 850;
-}
-.category-head .small {
-  color: var(--muted);
-  font-size:14px;
-  font-weight:400;
-  white-space:nowrap;
-}
-@media (max-width: 599px) {
-  .category-layout {display:block;}
-  .category-nav {display:flex;height:auto;gap:4px;padding:4px;scrollbar-width:none;}
-  .category-nav::-webkit-scrollbar {display:none;}
-  .category-item {width:auto;flex:none;white-space:nowrap;padding:10px 14px;font-size:14px;border-left:0;border-bottom:3px solid transparent;}
-  .category-item.active {border-bottom-color:var(--green);}
-  .category-main {padding:16px 10px;}
-}
-@media (min-width: 900px) {
-  .category-layout {
-    grid-template-columns: 220px 1fr;
-    border-radius: 20px;
-  }
-  .category-nav {
-    height: 720px;
-  }
-  .category-item {
-    padding: 20px;
-    font-size: 15px;
-  }
-  .category-main {
-    padding: 32px;
-  }
-  .category-main .product-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
+.catalog-heading{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:20px 0 24px}.eyebrow{font-size:10px;letter-spacing:2px;color:var(--green);font-weight:700}h1{font-size:30px;line-height:1.3;margin:10px 0 0;letter-spacing:-1px}.catalog-heading .text-button{display:flex;align-items:center;gap:6px;background:none;font-size:13px;flex:none}.category-nav{display:flex;gap:8px;overflow:auto;padding-bottom:8px}.category-item{display:flex;align-items:center;gap:6px;margin:0;flex:none;padding:10px 16px;min-height:44px;line-height:1.5;border:1px solid var(--line);border-radius:999px;background:white;color:var(--ink);font-size:14px}.category-item text{font-size:11px;opacity:.7}.category-item.active{background:var(--green);color:white;border-color:var(--green)}.category-item::after{border:0}.catalog-toolbar{display:flex;align-items:center;justify-content:space-between;margin:20px 0;color:var(--muted);font-size:13px}.sort-picker{display:flex;align-items:center;gap:8px;min-height:44px}.catalog-skeleton{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.skeleton-card{height:260px;background:#e8ece2;border-radius:18px}@media(min-width:900px){.product-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}h1{font-size:40px}.catalog-skeleton{grid-template-columns:repeat(3,1fr)}}@media(max-width:380px){h1{font-size:24px}.catalog-heading .text-button{font-size:12px}}
 </style>

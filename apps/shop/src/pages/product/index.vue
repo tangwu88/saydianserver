@@ -11,7 +11,7 @@
     ><view class="container product-layout"
       ><view class="gallery"
         ><swiper v-if="images.length" class="product-carousel" :current="imageIndex" :autoplay="images.length > 1" :circular="images.length > 1" :indicator-dots="images.length > 1" :interval="5000" :duration="350" @change="onImageChange">
-          <swiper-item v-for="image in images" :key="image"><image class="main-image" :src="image" mode="aspectFit" @click="previewProductImages" /></swiper-item>
+          <swiper-item v-for="image in images" :key="image"><image class="main-image" :src="productThumbnail(image)" :lazy-load="true" mode="aspectFit" @click="previewProductImages" /></swiper-item>
         </swiper><view v-else class="main-image missing-image">暂无商品图片</view><scroll-view v-if="images.length > 1" scroll-x class="thumbs"
           ><image
             v-for="image in images"
@@ -22,25 +22,20 @@
             @click="currentImage = image" /></scroll-view></view
       ><view class="product-info card"
         ><view class="tags"
-          ><text v-for="tag in product.tags" :key="tag">{{ tag }}</text></view
-        ><text class="title">{{ product.displayName || product.name }}</text
+          ><text v-for="tag in publicTags(product.tags)" :key="tag">{{ tag }}</text></view
+        ><text class="title">{{ isSizingSku(selectedSku) ? "戒指尺码测量工具" : productTitle(product) }}</text
         ><text class="subtitle">{{
-          product.subtitle || ""
+          mixedKinds ? selectedSku?.specification || "" : product.subtitle || ""
         }}</text
         ><view class="price-box"
           ><text>{{ money(selectedSku?.salePriceCents) }}</text
           ><del v-if="selectedSku?.marketPriceCents">{{
             money(selectedSku.marketPriceCents)
           }}</del></view
-        ><view class="sku-title">选择规格</view
-        ><view class="skus"
-          ><view
-            v-for="sku in product.skus"
-            :key="sku.id"
-            :class="selectedSku?.id === sku.id && 'active'"
-            @click="selectSku(sku)"
-            >{{ sku.specification || "默认规格" }}</view
-          ></view
+        ><view class="sku-title">选择规格 <button v-if="catalogKind(product)==='ring'" class="size-guide" @click="openOfficial(officialSupport.ringSize)">如何选择尺码 <UniIcons type="help" size="16"/></button></view
+        ><view v-if="mixedKinds" class="purchase-kind"><button :class="!isSizingSku(selectedSku) && 'active'" @click="chooseKind(false)">智能戒指</button><button :class="isSizingSku(selectedSku) && 'active'" @click="chooseKind(true)">尺码测量工具</button></view
+        ><text v-if="isSizingSku(selectedSku)" class="sizing-notice">当前选择的是尺码测量工具，不是智能戒指。</text
+        ><view class="skus"><button v-for="sku in displayedSkus" :key="sku.id" :class="['sku-option',selectedSku?.id===sku.id && 'active']" :disabled="!availableSku(sku)" :aria-pressed="selectedSku?.id===sku.id" @click="selectSku(sku)">{{ sku.specification || '默认规格' }}<text v-if="sku.stock===0"> · 缺货</text></button></view
         ><view class="stock">库存 {{ selectedSku?.stock ?? '未获取' }} 件</view
         ><view class="quantity"
           ><text>数量</text
@@ -67,6 +62,7 @@
           ><text class="small">{{ review.content }}</text></view
         ></view
       ></view
+    ><view class="container product-service"><button @click="openOfficial(officialProductUrl(product))"><UniIcons type="info" size="20"/><view><b>型号资料与参数</b><text>查看官网对应产品信息</text></view><UniIcons type="right" size="16"/></button><button @click="openOfficial(officialSupport.wecomUrl)"><UniIcons type="headphones" size="20"/><view><b>选购与售后咨询</b><text>{{ officialSupport.hours }}</text></view><UniIcons type="right" size="16"/></button></view
     ><view class="fixed-buy-bar"><view class="actions"
       ><button class="outline-btn" :disabled="busy" @click="toggleFavorite"><UniIcons :type="product.favorite ? 'heart-filled' : 'heart'" color="currentColor" size="20" />{{ product.favorite ? "已收藏" : "收藏" }}</button
       ><button class="outline-btn" :disabled="busy || !canPurchase" @click="addCart"><UniIcons type="cart" color="currentColor" size="20" />加入购物车</button
@@ -79,6 +75,9 @@ import { mallStorage } from "../../realm";
 import { responsiveProductHtml } from "../../product-rich-text";
 defineOptions({ inheritAttrs: false });
 import { onLoad, onShow, onShareAppMessage } from "@dcloudio/uni-app";
+import { preferredSku, availableSku, isSizingSku, publicTags, productTitle, officialProductUrl, catalogKind } from "../../catalog-presentation";
+import { productThumbnail } from "../../catalog-thumbnails";
+import { officialSupport, openOfficial } from "../../official-support";
 import { computed, ref, getCurrentInstance } from "vue";
 import { buildMiniPoster, miniPosterEnvironment } from '../../mini-poster';
 import { miniSharePath, miniShareAsset, copyMiniShareLink } from '../../mini-share';
@@ -98,6 +97,9 @@ const product = ref<any>(),
   selectedSku = ref<any>(),
   quantity = ref(1),
   currentImage = ref("");
+const mixedKinds = computed(() => product.value?.skus?.some(isSizingSku) && product.value?.skus?.some((sku:any)=>!isSizingSku(sku)));
+const displayedSkus = computed(() => (product.value?.skus || []).filter((sku:any)=>!mixedKinds.value || isSizingSku(sku)===isSizingSku(selectedSku.value)));
+function chooseKind(sizing:boolean) { const group=(product.value?.skus || []).filter((sku:any)=>isSizingSku(sku)===sizing); const next=preferredSku(group); if(next)selectSku(next); }
 const canPurchase = computed(() => Number.isSafeInteger(selectedSku.value?.stock) && selectedSku.value.stock >= quantity.value && selectedSku.value.enabled !== false);
 const images = computed(() => [
   ...new Set(
@@ -175,14 +177,18 @@ async function load() {
   rememberRecovery();
   try {
     error.value = '';
-    const selectedId = selectedSku.value?.id;
+    const remembered=mallStorage.get('product-selection:'+id.value);
+    const intent=remembered && Date.now()-remembered.savedAt<15*60_000 ? remembered : null;
+    const selectedId = selectedSku.value?.id || intent?.skuId;
+    if(intent && Number.isSafeInteger(intent.quantity) && intent.quantity>0)quantity.value=intent.quantity;
     product.value = await api(`/storefront/products/${encodeURIComponent(id.value)}`);
-    uni.setNavigationBarTitle({ title: String(product.value.displayName || product.value.name || '商品详情') });
+    uni.setNavigationBarTitle({ title: productTitle(product.value) });
     posterUrl.value = '';
     posterError.value = '';
-    selectedSku.value = product.value.skus?.find((x:any)=>x.id === selectedId) || product.value.skus?.[0];
+    selectedSku.value = preferredSku(product.value.skus || [], selectedId);
     quantity.value = Math.max(1, Math.min(quantity.value, selectedSku.value?.stock || 1));
     currentImage.value = images.value[0] || "";
+    mallStorage.remove('product-selection:'+id.value);
     product.value.favorite = false;
     if (isLoggedIn() && !mallStorage.get('saidian-user')?.phoneTestMode) {
       try { const favorites:any = await api('/storefront/favorites', {auth:true}); product.value.favorite = favorites.some((x:any)=>(x.productId || x.product?.id || x.id) === id.value); }
@@ -213,6 +219,7 @@ function selectSku(sku: any) {
 }
 function ensure(checkStock = true) {
   if (!isLoggedIn()) {
+    if(selectedSku.value)mallStorage.set('product-selection:'+id.value,{skuId:selectedSku.value.id,quantity:quantity.value,savedAt:Date.now()});
     requireLogin('/pages/product/index?id=' + encodeURIComponent(id.value));
     return false;
   }
@@ -465,3 +472,8 @@ async function toggleFavorite() {
   .fixed-buy-bar{padding:12px 16px}
 }
 </style>
+
+<style scoped>.sku-title{display:flex;justify-content:space-between;align-items:center;gap:12px}.size-guide{display:flex;align-items:center;gap:5px;margin:0;padding:8px 0;background:transparent;font-size:12px;line-height:1.5;color:var(--green)}.size-guide::after{border:0}.purchase-kind{display:flex;gap:8px;margin:12px 0}.purchase-kind button{flex:1;margin:0;padding:12px 8px;min-height:44px;background:#fff;border:1px solid var(--line);border-radius:999px;color:var(--ink);font-size:14px;line-height:1.5}.purchase-kind button.active{background:var(--green);color:white;border-color:var(--green)}.sizing-notice{display:block;font-size:13px;line-height:1.6;color:#8a4b00;background:#fff4df;padding:12px;border-radius:10px;margin:12px 0}.product-service{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px 0 28px}.product-service button{display:flex;align-items:center;gap:12px;padding:16px;margin:0;background:#edf1e6;color:var(--green);border-radius:16px;font-size:14px;line-height:1.5;text-align:left}.product-service button::after{border:0}.product-service button view{flex:1}.product-service b,.product-service text{display:block}.product-service text{font-size:12px;color:var(--muted);margin-top:4px}.skus>view{min-height:44px;display:flex;align-items:center;line-height:1.5}.skus>view.active{border-color:var(--green);background:var(--mint);color:var(--green)}.price-box>text{color:var(--green)}@media(max-width:600px){.product-service{grid-template-columns:1fr;padding:10px 12px 24px}.product-info{border-radius:18px}.title{font-size:22px;line-height:1.5}.stock{font-size:13px}}
+</style>
+
+<style scoped>.sku-option{display:flex;align-items:center;text-align:left;gap:5px;margin:0;padding:10px 14px;min-height:44px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-size:14px;line-height:1.5}.sku-option.active{border-color:var(--green);background:var(--mint);color:var(--green)}.sku-option[disabled]{color:#92998f;background:#f3f4f0}.sku-option::after{border:0}</style>
