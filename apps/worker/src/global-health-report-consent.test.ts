@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HealthReportWorker, PermanentTaskError } from "./health-report-worker";
+import { SLEEP_QWEN_NOTICE_VERSION } from "@saydian/app-contracts";
 
 vi.mock("./integration-secrets", () => ({
   resolveWorkerSecrets: vi.fn(async () => ({
@@ -228,6 +229,40 @@ describe("global health report execution consent", () => {
     expect(
       h.prisma.globalLegalDocument.findMany.mock.calls[0][0].where.documentType,
     ).toBe("say_ring_sleep_analysis");
+  });
+
+  function qwenSleepHarness() {
+    const h = sleepHarness();
+    h.prisma.integrationConfig.findUnique.mockResolvedValue({ state: "CONFIGURED", publicConfig: { provider: "openai-compatible", baseUrl: "https://maas.qianwenaiapi.com/compatible-mode/v1", model: "qwen3.8-flash" } });
+    h.state.documents[0].version = SLEEP_QWEN_NOTICE_VERSION;
+    h.state.sleepConsent.version = SLEEP_QWEN_NOTICE_VERSION;
+    return h;
+  }
+
+  it("generates a Qwen sleep report only after matching the new notice and member agreement", async () => {
+    const h = qwenSleepHarness();
+    await h.worker.generate(h.state.report.id);
+    const [url, init] = h.fetch.mock.calls[0] as unknown as [string, { body: string }];
+    expect(url).toBe("https://maas.qianwenaiapi.com/compatible-mode/v1/chat/completions");
+    expect(JSON.parse(init.body)).toMatchObject({ model: "qwen3.8-flash", enable_thinking: false, max_tokens: 4096, response_format: { type: "json_object" } });
+    expect(init.body).not.toContain("synthetic-member");
+    expect(init.body).not.toContain("synthetic-private-source");
+    expect(h.state.report).toMatchObject({ status: "READY", fullContent: { sleepScore: { value: 78 } } });
+  });
+  it.each(["old agreement", "old published notice"])("never sends sleep data to Qwen using %s", async scenario => {
+    const h = qwenSleepHarness();
+    h.state.sleepConsent.version = "reviewed-v1";
+    if (scenario === "old published notice") h.state.documents[0].version = "reviewed-v1";
+    await expect(h.worker.generate(h.state.report.id)).rejects.toBeInstanceOf(PermanentTaskError);
+    expect(h.fetch).not.toHaveBeenCalled();
+    expect(h.prisma.notification.upsert).not.toHaveBeenCalled();
+  });
+  it("does not publish a Qwen result when its notice is replaced during generation", async () => {
+    const h = qwenSleepHarness();
+    h.beforeResponse.mockImplementation(() => { h.state.documents[0].version = "reviewed-v1"; h.state.sleepConsent.version = "reviewed-v1"; });
+    await expect(h.worker.generate(h.state.report.id)).rejects.toBeInstanceOf(PermanentTaskError);
+    expect(h.state.report.fullContent).toBeNull();
+    expect(h.prisma.notification.upsert).not.toHaveBeenCalled();
   });
 
   it("disabled sleep AI does not send queued data even when overall AI remains configured", async () => {

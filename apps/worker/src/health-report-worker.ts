@@ -17,6 +17,7 @@ import {
   SLEEP_ANALYSIS_NOTICE,
   SLEEP_REPORT_TEMPLATE,
   sleepAiProviderMatchesNotice,
+  sleepAiProviderForEndpoint,
 } from "@saydian/app-contracts";
 
 export class PermanentTaskError extends Error {}
@@ -176,20 +177,13 @@ export class HealthReportWorker {
     // the worker still rejects inactive members and any changed snapshot.
     const adminConsentBypass = report.adminConsentBypass === true;
     const sleepReport = report.templateVersion === SLEEP_REPORT_TEMPLATE;
-    if (
-      sleepReport &&
-      !sleepAiProviderMatchesNotice(providerSettings.baseUrl)
-    ) {
-      throw new PermanentTaskError(
-        "Sleep AI provider does not match the published analysis notice",
-      );
-    }
     if (sleepReport) await assertSleepReportEnabled(this.prisma);
     const consent = await assertGlobalAnalysisAllowed(
       this.prisma,
       report.userId,
       adminConsentBypass,
       sleepReport,
+      providerSettings.baseUrl,
     );
     const startData = {
       status: ReportStatus.GENERATING,
@@ -212,6 +206,7 @@ export class HealthReportWorker {
           report.userId,
           adminConsentBypass,
           sleepReport,
+          providerSettings.baseUrl,
         )) !== consent
       ) {
         throw new PermanentTaskError(
@@ -250,6 +245,7 @@ export class HealthReportWorker {
             report.userId,
             adminConsentBypass,
             sleepReport,
+            providerSettings.baseUrl,
           )) !== consent
         ) {
           throw new PermanentTaskError(
@@ -429,6 +425,7 @@ async function assertGlobalAnalysisAllowed(
   userId: string,
   adminConsentBypass = false,
   sleep = false,
+  sleepProviderBaseUrl?: string,
 ): Promise<string> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -501,6 +498,11 @@ async function assertGlobalAnalysisAllowed(
       "Health AI analysis consent is outdated or notice is unavailable",
     );
   }
+  if (sleep && !sleepAiProviderMatchesNotice(sleepProviderBaseUrl, current.version)) {
+    throw new PermanentTaskError(
+      "Sleep AI provider does not match the published analysis notice",
+    );
+  }
   return `${current.version}:${profile.analysisConsentedAt.toISOString()}`;
 }
 
@@ -553,6 +555,9 @@ export async function callAiProvider(
         model: settings.model,
         temperature: 0.2,
         response_format: { type: "json_object" },
+        ...(sleepAiProviderForEndpoint(settings.baseUrl) === "qwen" && /^qwen3(?:\.|-)/i.test(settings.model.trim())
+          ? { enable_thinking: false, max_tokens: 4096 }
+          : {}),
         ...(sleep && /^glm-5\.3(?:-flashx?)?$/i.test(settings.model.trim())
           ? { reasoning_effort: "low", max_tokens: 4096 }
           : {}),

@@ -41,6 +41,7 @@ export class SleepReportsService {
         provider !== "disabled" &&
         sleepAiProviderMatchesNotice(
           safeObject(integration?.publicConfig).baseUrl,
+          analysisConsent.document?.version,
         ),
       workerReady: healthReportWorkerEnabled(process.env),
       noticeReady: Boolean(analysisConsent.document),
