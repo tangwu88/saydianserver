@@ -40,6 +40,7 @@ import {
   sha256,
 } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { emailDeliverySettings } from "../auth/email-delivery-settings";
 import { validateWechatMiniSettings } from "./wechat-mini-settings";
 
 import {
@@ -1563,9 +1564,12 @@ export class AdminService {
       ? undefined
       : this.integrationSecrets.prepare(key, body.secrets);
     return this.prisma.$transaction(async (tx) => {
+      const effectivePublicConfig = key === "email_otp"
+        ? emailDeliverySettings((await tx.integrationConfig.findUnique({ where: { key } }))?.publicConfig, publicConfig, Boolean(encrypted) || body.clearSecrets === true) as Prisma.InputJsonValue
+        : publicConfig;
       const data = {
         state,
-        publicConfig,
+        publicConfig: effectivePublicConfig,
         secretRef: null,
         lastCheckedAt: null,
         lastError: null,

@@ -7,10 +7,12 @@ import { HealthReportsModule } from "../reports/health-reports.module";
 import { AdminHealthReportsController } from "./admin-health-reports.controller";
 import { AdminHealthReportsService } from "./admin-health-reports.service";
 import { SupportModule } from "../support/support.module";
+import { AuthModule } from "../auth/auth.module";
+import { AdminEmailDeliveryController } from "./admin-email-delivery.controller";
 
 @Module({
-  imports: [HealthReportsModule, SupportModule],
-  controllers: [AdminLoginController, AdminController, AdminHealthReportsController],
+  imports: [HealthReportsModule, SupportModule, AuthModule],
+  controllers: [AdminLoginController, AdminController, AdminHealthReportsController, AdminEmailDeliveryController],
   providers: [
     AdminAuthService,
     AdminAuthGuard,

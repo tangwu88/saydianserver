@@ -11,14 +11,43 @@ function harness(role = 'INTEGRATION_ADMIN') {
   const source = ts.createSourceFile('view.ts', sfc.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1]!, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const printer = ts.createPrinter();
   const code = ts.transpileModule(source.statements.filter(statement => !ts.isImportDeclaration(statement)).map(statement => printer.printNode(ts.EmitHint.Unspecified, statement, source)).join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-  const api = { get: vi.fn(async () => ({ data: { data: [] } })), patch: vi.fn(async () => ({ data: { data: {} } })) };
+  const api = { get: vi.fn(async () => ({ data: { data: [] } })), patch: vi.fn(async () => ({ data: { data: {} } })), post: vi.fn(async () => ({ data: { data: { submitted: true } } })) };
   const messages = { success: vi.fn(), error: vi.fn(), warning: vi.fn() };
   const confirm = vi.fn(async () => 'confirm');
   const deps = { computed, ref, onBeforeUnmount: vi.fn(), onMounted: vi.fn(), onBeforeRouteLeave: vi.fn(), ElMessage: messages, ElMessageBox: { confirm }, canAdminResource, api, getAdminRoles: () => [role], responseData: (response: any) => response.data.data, applicableIntegrationFields, draftFor, integrationDefinitions, integrationPayload, integrationStatus, validateIntegrationDraft };
-  const instance = new Function(...Object.keys(deps), code + '\nreturn { load, begin, save, close, clear, credentialsChanged, draft, selected, errors, saveUncertain, loading, loadError, saving, editable, open, applicableFields, fieldDisabled };')(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + '\nreturn { load, begin, save, close, clear, credentialsChanged, draft, selected, errors, saveUncertain, loading, loadError, saving, editable, open, applicableFields, fieldDisabled, testEmail, emailTestRecipient, emailTesting };')(...Object.values(deps));
   return { ...instance, api, messages, confirm, definition: integrationDefinitions.find(d => d.key === 'sms')! };
 }
 const fixture = { key: 'sms', state: 'UNCONFIGURED', hasSecret: true, publicConfig: { provider: 'webhook', retained: { keep: true } }, updatedAt: '2026-09-09T00:00:00Z' };
+describe('enterprise email test flow', () => {
+  const definition = integrationDefinitions.find(d => d.key === 'email_otp')!;
+  const row = { key: 'email_otp', state: 'CONFIGURED', hasSecret: true, publicConfig: { provider: 'wecom_smtp', fromAddress: 'sender@example.com', deliveryVerified: false } };
+  it('blocks readonly, unsaved settings, invalid recipient and unrelated provider', async () => {
+    const readonly = harness('READ_ONLY'); readonly.begin(row, definition); readonly.emailTestRecipient.value = 'receiver@example.net'; await readonly.testEmail();
+    expect(readonly.api.post).not.toHaveBeenCalled();
+    const h = harness(); h.begin(row, definition); h.emailTestRecipient.value = 'invalid'; await h.testEmail();
+    expect(h.api.post).not.toHaveBeenCalled();
+    h.emailTestRecipient.value = 'receiver@example.net'; h.draft.value.values.fromAddress = 'new@example.com'; await h.testEmail();
+    expect(h.api.post).not.toHaveBeenCalled();
+    h.begin(fixture, h.definition); h.emailTestRecipient.value = 'receiver@example.net'; await h.testEmail(); expect(h.api.post).not.toHaveBeenCalled();
+  });
+  it('sends only the recipient, does not mark receipt or login acceptance automatically', async () => {
+    const h = harness(); h.begin(row, definition); h.emailTestRecipient.value = 'receiver@example.net'; await h.testEmail();
+    expect(h.api.post).toHaveBeenCalledExactlyOnceWith('/integrations/email_otp/test', { recipient: 'receiver@example.net' });
+    expect(h.draft.value.values.deliveryVerified).toBe('false');
+    expect(h.api.patch).not.toHaveBeenCalled();
+    expect(h.messages.success).toHaveBeenCalled();
+  });
+  it('prevents duplicate tests and config saves while the test request is in flight', async () => {
+    const h = harness(); h.begin(row, definition); h.emailTestRecipient.value = 'receiver@example.net';
+    let finish!: (value: unknown) => void;
+    h.api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const pending = h.testEmail(); await h.testEmail(); await h.save();
+    expect(h.api.post).toHaveBeenCalledTimes(1); expect(h.api.patch).not.toHaveBeenCalled();
+    finish({ data: { data: { submitted: true } } }); await pending;
+    expect(h.emailTesting.value).toBe(false);
+  });
+});
 describe('integration setup interaction boundaries', () => {
   it('keeps readonly accounts out of save even when called outside the template', async () => {
     const h = harness('READ_ONLY'); h.begin(fixture, h.definition); await h.save();
