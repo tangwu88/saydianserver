@@ -3,6 +3,10 @@ set -eu
 
 root_dir=${DEPLOY_ROOT:-/opt/saydianapp-server}
 cd "$root_dir"
+if [ "$(readlink "/proc/$$/fd/9" 2>/dev/null || true)" != "$root_dir/deploy/.ci-release.lock" ]; then
+  exec 9>"$root_dir/deploy/.ci-release.lock"
+fi
+flock -n 9
 export DEPLOY_ROOT="$root_dir"
 export IMAGE_TAG=${IMAGE_TAG:?IMAGE_TAG is required}
 
@@ -10,6 +14,13 @@ deploy/scripts/preflight.sh
 if [ "${DRY_RUN:-true}" = "true" ]; then
   echo "dry run complete; no services changed"
   exit 0
+fi
+bash "$(dirname "$0")/care-privacy-gate.sh" legacy
+# New-schema releases use only the reviewed, locked unified publisher. Do not
+# migrate a legacy database past the privacy boundary through this old path.
+if [ -f "$root_dir/apps/api/prisma/migrations/20261018070000_care_identity_disclosure/migration.sql" ]; then
+  echo "care privacy migration requires the unified publisher" >&2
+  exit 1
 fi
 
 env_file="$root_dir/deploy/.env.production"

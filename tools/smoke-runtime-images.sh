@@ -3,6 +3,7 @@ set -Eeuo pipefail
 revision=${1:?Full revision required}
 [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
 prefix=ghcr.io/tangwu88/saydianserver
+node tools/smoke-care-privacy-images.mjs "$revision"
 api_container=saydian-ci-api-$revision
 worker_container=saydian-ci-worker-$revision
 admin_container=saydian-ci-admin-$revision
@@ -29,6 +30,7 @@ for _attempt in {1..45}; do
   sleep 1
 done
 [[ "$ready" == true ]] || { docker logs "$api_container"; exit 1; }
+node tools/care-privacy-http-smoke.mjs http://127.0.0.1:18080
 for path in /health/ready /global/health/ready; do
   curl -fsS "http://127.0.0.1:18080$path" | jq -e --arg revision "$revision" '.revision == $revision' >/dev/null
 done

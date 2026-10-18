@@ -29,6 +29,7 @@ node_tool() {
     -v "$source_dir:/work" "$runtime" "$@"
 }
 sql() { docker exec -i "$1" sh -ec 'exec psql -X -qAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'; }
+source "$source_dir/deploy/scripts/care-privacy-gate.sh"
 pin_images() {
   local prefix=$1 project=$2 result='{"services":{}}' name id previous_revision
   for name in api worker admin; do
@@ -171,21 +172,32 @@ rollback() {
   if [[ "$first" == true && "$writes_opened" == true ]]; then
     echo 'Writes may have resumed: no legacy-route or database rollback. Forward repair required.' >&2
   elif [[ "$changed" == true ]]; then
-    if [[ "$first" == true ]]; then
-      docker compose -f "$backup/global-live.json" -f "$backup/images.json" up -d --no-build --pull never --no-deps global-api global-worker global-admin || true
-      docker compose -f "$backup/domestic-live.json" -f "$backup/domestic-images.json" up -d --no-build --pull never --no-deps api worker admin || true
+    if ! care_allow_rollback; then
+      if [[ "$care_active" == true ]]; then compose stop -t 180 global-api global-worker || true; fi
+      echo 'Care privacy rollback blocked; no backup services or old routes were restored. Forward repair required.' >&2
     else
-      docker compose -f "$backup/compose.json" -f "$backup/images.json" up -d --no-build --pull never --no-deps global-api global-worker global-admin || true
+      if [[ "$first" == true ]]; then
+        docker compose -f "$backup/global-live.json" -f "$backup/images.json" up -d --no-build --pull never --no-deps global-api global-worker global-admin || true
+        docker compose -f "$backup/domestic-live.json" -f "$backup/domestic-images.json" up -d --no-build --pull never --no-deps api worker admin || true
+      else
+        docker compose -f "$backup/compose.json" -f "$backup/images.json" up -d --no-build --pull never --no-deps global-api global-worker global-admin || true
+        if [[ "$care_active" == true ]] && ! care_verify_running "$backup/compose.json" "$backup/images.json"; then
+          docker compose -f "$backup/compose.json" -f "$backup/images.json" stop -t 180 global-api global-worker || true
+          echo 'Care privacy rollback verification failed; managed runtimes stopped.' >&2
+          exit "$status"
+        fi
+      fi
+      if [[ "$gateway_changed" == true ]]; then cp -p "$backup/gateway.conf" "$gateway"; fi
+      docker exec saydian-gateway-1 nginx -t && docker exec saydian-gateway-1 nginx -s reload || true
+      echo 'Image rollback attempted; readiness requires verification.' >&2
     fi
-    if [[ "$gateway_changed" == true ]]; then cp -p "$backup/gateway.conf" "$gateway"; fi
-    docker exec saydian-gateway-1 nginx -t && docker exec saydian-gateway-1 nginx -s reload || true
-    echo 'Image rollback attempted; readiness requires verification.' >&2
   fi
   echo "Release failed. Private evidence retained: $backup. No database restore was attempted." >&2
   exit "$status"
 }
 trap 'rollback "$?" "$LINENO"' ERR
 trap 'false' INT TERM
+care_prepare
 if [[ "$first" != true ]]; then
   # The shared gateway keeps its managed TLS block across routine releases.
   # Reconcile newly introduced public static routes before replacing services.
@@ -266,10 +278,12 @@ else
 fi
 check_latest
 unset GITHUB_TOKEN
+care_before_migration
 # Owner credentials exist only in a root-readable private file; runtime stays global_app.
 docker inspect -f '{{json .Config.Env}}' "$database" | jq 'map(split("=") | {key:.[0],value:.[1:]|join("=")}) | from_entries | {services:{"global-api":{environment:{DATABASE_URL:("postgresql://" + (.POSTGRES_USER|@uri) + ":" + (.POSTGRES_PASSWORD|@uri) + "@global-postgres:5432/" + (.POSTGRES_DB|@uri) + "?schema=public")}}}}' > "$backup/migration-owner.json"
 docker compose -f "$base_compose" -f "$source_dir/images.json" -f "$backup/migration-owner.json" run --rm -T --no-deps global-api ./node_modules/.bin/prisma migrate deploy
 compose run --rm -T --no-deps global-api ./node_modules/.bin/prisma migrate status
+care_before_start
 changed=true
 if [[ "$first" == true ]]; then
   sql "$database" < "$source_dir/settings-import.sql"
@@ -277,6 +291,7 @@ if [[ "$first" == true ]]; then
 else
   compose up -d --no-build --pull never --no-deps global-api global-worker global-admin
 fi
+care_after_start
 wait_ready "$revision"
 if [[ "$first" == true ]]; then
   gateway_changed=true
