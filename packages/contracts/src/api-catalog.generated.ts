@@ -3,6 +3,41 @@ export const apiCatalog = {
   "schemaVersion": 3,
   "routes": [
     {
+      "key": "AdminEmailDeliveryController.test",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/integrations/email_otp/test",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "INTEGRATION_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-email-delivery.controller.ts",
+      "summary": "测试企业微信邮箱投递",
+      "request": "{recipient:单个有效邮箱}；仅超级管理员/集成管理员；每IP每分钟3次",
+      "response": "{submitted:true,deliveryVerified:false}只表示SMTP受理，不代表收件箱已收到；不生成登录验证码、不自动开放登录",
+      "dependency": "已保存启用的email_otp/wecom_smtp配置；发件账号及客户端密码；保留投递验收关闭时可测试",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-email-delivery.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminHealthReportsController.availability",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/health-reports/availability",
@@ -4736,7 +4771,7 @@ export const apiCatalog = {
       "summary": "国际邮箱/手机号验证码",
       "request": "{channel:email|sms,identifier,purpose:register|reset_password,locale?,product?}；Say Ring必须product=say-ring；sms必须E.164",
       "response": "{challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}；不返回验证码",
-      "dependency": "独立email_otp/sms_global webhook与对应产品已审协议",
+      "dependency": "email_otp已验收的企业微信邮箱或webhook、sms_global渠道与对应产品已审协议",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",

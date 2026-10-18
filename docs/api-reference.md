@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **452 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **453 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -173,7 +173,7 @@
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
 | `GET /api/saydian-app/v2/auth/capabilities` | 国际账号可用能力 | public | query:locale?，query:product?，query:appProduct?；Say Ring明确product=say-ring，省略时为saydian-global；中文版另传appProduct=saydian-app-cn，仅选择cn_wechat_login，不改变账号/协议product；仅APP_REALM=global | {realm,product,defaultLocale,supportedLocales,registration:{email,sms,verificationRequired},login:{email,sms,wechatApp:{enabled,appId,phoneBindingAvailable}},recovery:{email,sms},smsCountries,verification,consentVersion,legal}；Say Ring只返回say_ring_*文档；微信仅返回公开AppID，中文版未配置不回退原有微信配置 | 国际独立数据库、对应产品已审协议、验证码渠道及独立微信移动应用配置 |
-| `POST /api/saydian-app/v2/auth/verification-code` | 国际邮箱/手机号验证码 | public | {channel:email\|sms,identifier,purpose:register\|reset_password,locale?,product?}；Say Ring必须product=say-ring；sms必须E.164 | {challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}；不返回验证码 | 独立email_otp/sms_global webhook与对应产品已审协议 |
+| `POST /api/saydian-app/v2/auth/verification-code` | 国际邮箱/手机号验证码 | public | {channel:email\|sms,identifier,purpose:register\|reset_password,locale?,product?}；Say Ring必须product=say-ring；sms必须E.164 | {challengeId,expiresIn:300,retryAfter:60,maskedIdentifier}；不返回验证码 | email_otp已验收的企业微信邮箱或webhook、sms_global渠道与对应产品已审协议 |
 | `POST /api/saydian-app/v2/auth/register-with-code` | 国际已验证账号注册 | public | {challengeId,code,password,nickname?,consentVersion,locale?,product?,ageConfirmed?}；Say Ring必须product=say-ring且ageConfirmed=true，不收集出生日期；consentVersion必须来自同产品当前已审协议 | Session；国际UUID账号，与国内账号不互通；缺少年龄确认返回400 minimum_age_confirmation_required | 已送达未消费的国际验证码与对应产品已发布协议 |
 | `POST /api/saydian-app/v2/auth/register` | 账号注册 | public | 国内环境仍阻止裸密码注册；国际环境仅在GLOBAL_UNVERIFIED_REGISTRATION_ENABLED=true时接受{channel,identifier,password,nickname?,consentVersion,locale?,product?,ageConfirmed?}；Say Ring必须product=say-ring且ageConfirmed=true，不收集出生日期 | 国际环境签发Session，但联系方式保持未验证；缺少年龄确认返回400 minimum_age_confirmation_required；关闭临时开关后未验证会话不可续期 | 国际独立数据库、对应产品已审协议与显式临时开关；需验证联系方式的商城能力仍阻断 |
 | `POST /api/saydian-app/v2/auth/login` | 密码登录 | public | 国内{mobile/username,password}保持不变；国际主App{channel:email\|sms,identifier,password}。Say Ring必须{channel,identifier,password,product:say-ring,locale,consentVersion,consentAccepted:true}；只对已有账号认证后写入say_ring_*同意，不建号、不改验证状态、不记录年龄确认 | Session；Say Ring缺少明确同意400 consent_required、专属已审协议不可用503 legal_unavailable、版本过期409 consent_outdated；凭据/账号状态仍为不枚举401 | Say Ring两份同版本已审协议；邮箱验证码另需login.email=true |
@@ -299,10 +299,11 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（141）
+## 管理后台接口（142）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
+| `POST /api/saydian-app/admin/v1/integrations/email_otp/test` | 测试企业微信邮箱投递 | admin: SUPER_ADMIN, INTEGRATION_ADMIN | {recipient:单个有效邮箱}；仅超级管理员/集成管理员；每IP每分钟3次 | {submitted:true,deliveryVerified:false}只表示SMTP受理，不代表收件箱已收到；不生成登录验证码、不自动开放登录 | 已保存启用的email_otp/wecom_smtp配置；发件账号及客户端密码；保留投递验收关闭时可测试 |
 | `GET /api/saydian-app/admin/v1/health-reports/availability` | 检查会员AI健康报告生成条件 | admin: SUPER_ADMIN, HEALTH_AUDITOR | query:memberId；memberId=国际会员UUID；限SUPER_ADMIN/HEALTH_AUDITOR | {canGenerate,reasons:[{code,message}],period,validRecordCount,distinctDays,minimumDistinctDays,consentRequired,memberConsentBypass,availableCredits,latestReport}；SUPER_ADMIN后台生成不以会员App同意为前置，HEALTH_AUDITOR仍须当前同意；未知条件不伪装可用；不返回密钥，不探测外部服务 | 有效数据、报告次数、已配置AI和未暂停Worker；审核员另需会员当前同意 |
 | `POST /api/saydian-app/admin/v1/health-reports` | 后台申请生成或复用AI健康报告 | admin: SUPER_ADMIN, HEALTH_AUDITOR | {memberId:UUID,idempotencyKey:8–160字符}；不创建付款；每次请求服务端复核条件 | {report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；SUPER_ADMIN可绕过会员App同意且审计memberConsentBypassed=true，HEALTH_AUDITOR不可绕过；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable | 已满足availability条件；第三方真实运行需独立验收 |
 | `GET /api/saydian-app/admin/v1/health-reports/:id` | 后台查看健康报告进度和结果 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id；id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR | 报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文 | 报告队列与读取审计；AI结果仅供健康管理参考 |

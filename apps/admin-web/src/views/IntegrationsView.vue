@@ -19,6 +19,18 @@ const open = ref(false);
 const errors = ref<Record<string, string>>({});
 const saving = ref(false);
 const saveUncertain = ref(false);
+const emailTestRecipient = ref(''), emailTesting = ref(false);
+async function testEmail(): Promise<void> {
+  if (!editable.value || dirty.value || saving.value || emailTesting.value || saveUncertain.value || selected.value?.row.key !== 'email_otp' || selected.value.row.state !== 'CONFIGURED' || selected.value.row.publicConfig?.provider !== 'wecom_smtp') return;
+  if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(emailTestRecipient.value.trim())) { ElMessage.error('请填写测试收件邮箱'); return; }
+  emailTesting.value = true;
+  try {
+    const result = responseData<{ submitted?: boolean }>(await api.post('/integrations/email_otp/test', { recipient: emailTestRecipient.value.trim() }));
+    if (result?.submitted !== true) throw new Error('邮件提交结果未确认');
+    ElMessage.success('测试邮件已提交，请检查收件箱和垃圾邮件。确认收到后，开启投递验收并保存。');
+  } catch { ElMessage.error('邮件未确认发送成功。请核对邮箱配置，稍后再试；不要连续点击。'); }
+  finally { emailTesting.value = false; }
+}
 const miniIdOpen = ref(false), miniPaymentAppId = ref(''), miniIdSaving = ref(false), miniIdError = ref('');
 function beginMiniId() { miniPaymentAppId.value = ''; miniIdError.value = ''; miniIdOpen.value = true; }
 async function saveMiniId() {
@@ -60,13 +72,14 @@ async function load(): Promise<void> {
   finally { if (id === loadId) loading.value = false; }
 }
 function begin(row: IntegrationRow, definition: IntegrationDefinition): void {
+  emailTestRecipient.value = '';
   selected.value = { row: JSON.parse(JSON.stringify(row)) as IntegrationRow, definition };
   draft.value = draftFor(row, definition); initialDraft.value = JSON.stringify(draft.value);
   errors.value = {}; saveUncertain.value = false; open.value = true;
 }
 function clear(): void { open.value = false; selected.value = null; draft.value = { state: 'UNCONFIGURED', replaceSecrets: false, values: {} }; initialDraft.value = ''; errors.value = {}; }
 async function allowClose(): Promise<boolean> {
-  if (saving.value) return false;
+  if (saving.value || emailTesting.value) return false;
   if (!dirty.value || !editable.value) return true;
   try { await ElMessageBox.confirm('未保存的填写内容将丢弃，凭证不会保留在本机。', '退出配置？', { confirmButtonText: '退出，不保存', cancelButtonText: '继续填写', type: 'warning' }); return true; } catch { return false; }
 }
@@ -85,12 +98,12 @@ function validate(): boolean {
 }
 function displayDate(value?: string | null): string { if (!value) return '尚无记录'; const date = new Date(value); return Number.isNaN(date.valueOf()) ? '时间未获取' : date.toLocaleString('zh-CN', { hour12: false }); }
 async function save(): Promise<void> {
-  if (saving.value || saveUncertain.value || !editable.value || !selected.value || !validate()) return;
+  if (saving.value || emailTesting.value || saveUncertain.value || !editable.value || !selected.value || !validate()) return;
   saving.value = true;
   try {
     const payload = integrationPayload(selected.value.row, selected.value.definition, draft.value);
     await api.patch(`/integrations/${encodeURIComponent(selected.value.row.key)}`, payload);
-    ElMessage.success(payload.state === 'CONFIGURED' ? '配置已保存并启用，仍需真实调用验证。' : '配置已保存；没有发起第三方调用。');
+    ElMessage.success(selected.value.row.key === 'email_otp' ? '邮箱配置已保存。修改发件邮箱或凭证后需重新完成投递验收。' : payload.state === 'CONFIGURED' ? '配置已保存并启用，仍需真实调用验证。' : '配置已保存；没有发起第三方调用。');
     clear(); await load();
   } catch {
     saveUncertain.value = true;
@@ -131,7 +144,7 @@ onMounted(load);
       <template v-if="selected">
         <div class="dialog-status"><el-tag :type="integrationStatus(selected.row).tone">{{ integrationStatus(selected.row).label }}</el-tag><span>最近保存：{{ displayDate(selected.row.updatedAt) }}</span></div>
         <section v-if="selected.definition.readOnly" class="preparation"><p>{{ selected.definition.purpose }}</p><p>{{ selected.definition.prepare }}</p></section>
-        <el-form v-else label-position="top" class="config-form" :disabled="!editable || saving || saveUncertain" @submit.prevent="save">
+        <el-form v-else label-position="top" class="config-form" :disabled="!editable || saving || saveUncertain || emailTesting" @submit.prevent="save">
           <el-form-item label="服务状态" for="integration-state" class="state-field">
             <el-select id="integration-state" v-model="draft.state" @change="errors = {}">
               <el-option label="启用" value="CONFIGURED" /><el-option label="暂停" value="DISABLED" /><el-option label="暂不启用" value="UNCONFIGURED" /><el-option v-if="selected.row.state === 'ERROR'" label="保持当前异常状态" value="ERROR" />
@@ -151,6 +164,11 @@ onMounted(load);
               <el-input v-else v-model="draft.values[field.key]" :id="`integration-${field.key}`" :type="['pem', 'list'].includes(field.kind || '') ? 'textarea' : field.secret ? 'password' : 'text'" :rows="field.kind === 'pem' ? 5 : 3" :show-password="field.secret && field.kind !== 'pem'" :disabled="fieldDisabled(field)" :aria-describedby="`hint-${field.key}`" autocomplete="off" :maxlength="field.kind === 'pem' ? 16000 : 4000" :placeholder="fieldPlaceholder(field)" />
               <p :id="`hint-${field.key}`" class="field-hint">{{ field.hint }}</p>
             </el-form-item>
+          </div>
+          <div v-if="selected.row.key === 'email_otp' && draft.values.provider === 'wecom_smtp'" class="credential-choice">
+            <el-form-item label="测试收件邮箱"><el-input v-model="emailTestRecipient" type="email" autocomplete="off" placeholder="填写用于接收测试邮件的邮箱" :disabled="emailTesting" /></el-form-item>
+            <el-button :loading="emailTesting" :disabled="dirty || saving || selected.row.state !== 'CONFIGURED' || selected.row.publicConfig?.provider !== 'wecom_smtp'" @click="testEmail">发送测试邮件</el-button>
+            <p class="field-hint">先保存，再重新打开本页发送测试。测试不创建登录验证码，不会自动开放邮箱登录。</p>
           </div>
           <p v-if="selected.definition.note" class="service-note">{{ selected.definition.note }}</p>
         </el-form>
