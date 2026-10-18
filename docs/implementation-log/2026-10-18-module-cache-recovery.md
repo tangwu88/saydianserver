@@ -2,7 +2,7 @@
 
 - 仅恢复已完整通过CI39133944860的dcc9d2a三镜像缓存；应用源码仍825，生产仍aeb。不是新功能发布，不合入SMTP/会员ID，不改普通main发布流程。
 - GHCR拉取被受控结束；Chrome文件权限不足未开启，原artifact的服务器HTTPS样本哈希正确但批量出现连接重置，未导入或切换。改用已配置的Actions受限SSH接收器传送原artifact12140071512，不新增凭据或权限。
-- 普通send-offline/send-runtime的main校验、原缓存导入器和生产部署器逐字节不变。单独恢复分支/输入/原CI verify/原ZIP及内部归档hash/原manifest/hash/原目标分支最新SHA均固定；接收器每段在同FD9锁内复验root0600两小时精确批准及三个现有aeb容器。
+- 普通send-offline/send-runtime的main校验、原缓存导入器和生产部署器逐字节不变。单独恢复分支/输入/原CI verify/原ZIP及内部归档hash/原manifest/hash/原目标分支最新SHA均固定；恢复行动开始前在同FD9锁内复验root0600两小时精确批准及三个现有aeb容器。后续应用部署仍须重新验证批准与基线，缓存完成不等于批准服务切换。
 - 只导入固定三imageID的缓存，绝不compose/restart/迁移/seed/业务配置写入。完成后只重试原失败deploy job117697287831，不重跑verify或镜像构建；最终上线由原管线再次完整门禁。
 - 修改前干净、remote仍tangwu88/saydianserver，fetch成功；以固定dcc9建立独立工作树，保留候选分支未提交日志。普通main为0aeb，本次不合并它。验证命令与实际Actions回执待下方补记。
 - 服务器HTTPS仅停止本次owner1627409的7个精确curl孙进程（FD9、config及output路径、旧aeb均核验），日志证实nothing imported or restarted；锁idle，三容器仍aeb。不删除旧镜像、卷、库或备份。
@@ -13,3 +13,10 @@
 - c161b97已推送，恢复39139300782实际进入受限接收器；首段bundle在15:12:44Z为1,241,088字节，15:14:55Z仅2,551,808字节，约10KB/s，仍未生成缓存目录。受控取消该恢复，不等待数小时；旧服务未切换。
 - 删除本轮新增的逐段SSH镜像传输代码，改用相同受限SSH只发送小控制包，继续复用逐字节未改的runtime-artifact/receive-runtime-artifact（8并发、1MiB小段、可重试、临时job token不转发存储地址）和原安全解包/导入器。恢复分支仅增固定原artifact metadata及root批准门禁，不放宽普通main守卫；传输方式调整后的验证及真实结果待补记。
 - 调整后再次串行执行api:docs:check、tools:test、typecheck、test、build，全部退出0；额外范围/HTTPS恢复13项、actionlint、Shell语法也通过。普通传输/下载器/导入器/部署器原文件均与dcc9逐字节一致；本次删去新加的逐段SSH传输冗余代码。39139300782最终completed/cancelled；取消后先检查接收器锁，不假设Actions结束就表示服务器进程结束。
+- e04139c推送成功，实际恢复[39139924409](https://github.com/tangwu88/saydianserver/actions/runs/39139924409)、job117712059086，只发送小控制包。取消旧接收器后真实锁idle、三个aeb，未发额外进程信号。15:19:39Z服务器新下载目录出现并持锁，15:21:01Z完整小段23,068,672字节；15:24日志69,206,016/368,019,130字节，range39一次网络失败进入单段重试。这里只通过HTTP Range/长度检查，整包SHA及导入/部署尚未通过，原失败部署job还未重试。
+- 最终恢复SUCCESS：15:46:24Z原ZIP/清单逐字节/内部archive hash通过；15:47:09Z三个原镜像导入并逐个ID、revision通过，明确No applications restarted。15:48直接检查缓存API06d02116/Workera6471733/Admin3f9b660e及标签dcc9均正确，三个运行容器仍aeb、锁idle；root0600精确批准有效至15:59:06Z。
+- GitHub实时日志会分页/虚拟化，切换标签后AX可能读回较早日志，不能把旧行误判为下载回退；改由服务器完成段数及最后完整job日志确认。验证脚本最初误以为无产品/Health显示地址都返回200，实读为既有404，已改为保存真实状态/业务数据并在切换后保持相同行为，不把404冒称正常200。
+- 已清除本机3份过期临时只读下载授权文件，原ZIP/归档/用户素材均保留。Chrome新后台标签的会话隔离，使用已有自动填充正常登录成功，密码未读取或更改。15:49仅POST原失败job117697287831的rerun，未重启构建；真正部署与公开回归仍待回执。
+- 原CI第2次尝试已SUCCESS：deploy117718719073，三镜像都already verified locally/skipping registry pull；原verify时间仍13:59–14:11Z，无重新构建。生产新私有备份/隔离恢复7秒成功，实际三容器/双readiness均dcc9；环境防漂移通过，网关原文件SHA通过。新私有证据`backups/20261018T154943Z-dcc9d2aefeb4-13287/migration-rehearsal`，一次性批准已移为used，锁idle。
+- 切换前后全部AppSetting摘要同`973caa5f8393a1e882778b924e767f4b`。15:52:43.582Z后台仅保存新模块key公开falsefalse，重新打开表单/公开DTO/数据库均一致；排除新key的其他全行摘要仍同上，审计UPDATED且前后均关闭。最新外部sleepAi=false、指标仅温度=true保留不回滚。正向手机UI因本人解锁/WDA不可用未验，全程不打开正向旗标。
+- 生产验收后仅功能源码从最新main0aeb隔离同步，组合全量门禁通过；主线commit897b24f用`[skip ci]`正常推送并独立回读。临时恢复/批准/发布例外代码未带入main，main其他待发功能未发布，生产仍dcc9。本分支只保留恢复审计，不作为普通生产入口。
