@@ -126,7 +126,8 @@ jobs:
           revision=dcc9d2aefeb42b3a0345868a5debc51e8625b213
           gh run view 39133944860 --json headSha,event,jobs | jq -e --arg revision "$revision" '.headSha == $revision and .event == "push" and any(.jobs[]; .name == "verify" and .conclusion == "success")'
           gh api repos/tangwu88/saydianserver/actions/artifacts/12140071512 | jq -e '.expired == false and .size_in_bytes == 368019130 and .digest == "sha256:eb32f72523215dfd6df79ee4aada0395cd62b26cdd81986ab0f52fdd137a7db1"'
-          gh run download 39136379385 --name "runtime-images-$revision" --dir module-cache
+          mkdir module-cache
+          cp export/release-manifest.json module-cache/
           git worktree add --detach "$RUNNER_TEMP/module-source" "$revision"
           (cd "$RUNNER_TEMP/module-source"; node deploy/scripts/module-release-scope.mjs source "$revision") > module-cache/module-release-scope.json
           bash deploy/scripts/send-module-cache-recovery.sh module-cache

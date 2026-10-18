@@ -10,3 +10,6 @@
 - 全量pnpm test通过；其中API124文件/1,241测试通过，35项真实数据库用例按默认本地环境跳过，实际PG/HTTP/镜像证据仍来自原dcc9完整CI。未把本机跳过测试冒称通过。actionlint、Shell语法和git diff --check通过；全量构建和实际恢复工作流结果继续补记。
 - 全量pnpm build成功（现有Sass弃用及前端chunk大小警告未扩展修复）；apps/packages/锁文件与dcc9无任何差异，运行源码仍825，不产生或发布第四份镜像。恢复分支不触发普通CI镜像构建，手动export只下载已存在的原artifact并复验哈希。实际执行结果待回执。
 - Publish-Change.ps1固定只允许main并推送main，不适用于本次用户要求的隔离范围；不改弱该工具，改为完成同一套全量门禁、重新fetch后仅显式暂存本记录与恢复脚本/工作流，在独立恢复分支提交推送。
+- c161b97已推送，恢复39139300782实际进入受限接收器；首段bundle在15:12:44Z为1,241,088字节，15:14:55Z仅2,551,808字节，约10KB/s，仍未生成缓存目录。受控取消该恢复，不等待数小时；旧服务未切换。
+- 删除本轮新增的逐段SSH镜像传输代码，改用相同受限SSH只发送小控制包，继续复用逐字节未改的runtime-artifact/receive-runtime-artifact（8并发、1MiB小段、可重试、临时job token不转发存储地址）和原安全解包/导入器。恢复分支仅增固定原artifact metadata及root批准门禁，不放宽普通main守卫；传输方式调整后的验证及真实结果待补记。
+- 调整后再次串行执行api:docs:check、tools:test、typecheck、test、build，全部退出0；额外范围/HTTPS恢复13项、actionlint、Shell语法也通过。普通传输/下载器/导入器/部署器原文件均与dcc9逐字节一致；本次删去新加的逐段SSH传输冗余代码。39139300782最终completed/cancelled；取消后先检查接收器锁，不假设Actions结束就表示服务器进程结束。
