@@ -50,7 +50,12 @@ Say Ring 两个公开法律页新增独立的 iOS 构建 1062 活动与睡眠版
 新增独立后台设置、5分钟只读租约及显式产品/平台健康历史过滤，详见[客户端/回滚契约](say-ring-ios-read-only-health.md)和[实施记录](implementation-log/2026-10-18-say-ring-ios-read-only-health.md)。保留原AI配置和其他App；不新增生理数据上传，不运行AI探针。线上状态须核对当次Actions、双地址revision和公开开关，不能由代码存在推断已启用。
 
 本轮独立候选：Say Ring iOS健康百科/商城后台显示开关，见[契约](say-ring-ios-module-visibility.md)和[实施记录](implementation-log/2026-10-18-say-ring-module-visibility.md)。
-复用原页面，两项默认隐藏，独立moduleVisibility短租约，不改变五项生理/三项手动/支付/法律；从生产aeb9afc分支，不包含会员ID披露迁移。尚未部署，完整CI与客户端/生产门槛需分别核实。
+复用原页面，两项默认隐藏，独立moduleVisibility短租约，不改变五项生理/三项手动/支付/法律；从生产aeb9afc分支，不包含会员ID披露迁移。尚未部署；完整CI回执如下，客户端与生产门槛仍待独立验收。
+
+源码 `825cc514cf26d67d1e47bb0fb5a59e6a1bec91db` 的[CI39127806608](https://github.com/tangwu88/saydianserver/actions/runs/39127806608)已SUCCESS：全量门禁、PG35、HTTP292、CI隔离恢复及三个实际镜像通过；发布与CN/US部署跳过。
+[PR41](https://github.com/tangwu88/saydianserver/pull/41)仍为生产基线分支的draft，不指向main；后续纯回执文档`[skip ci]`不代表该文档SHA重跑CI。生产20:47回查仍aeb9afc且无moduleVisibility，默认隐藏；主机/恢复和客户端门槛待验。
+
+20:47公开五项只读指标均true（温度/压力与19:01不同），不是本轮写入；不擅自回滚。独立三项手动上限、购买/支付及正式法律不随这些显示配置扩大，线上值须现场回查。
 
 ## 历史交接基线（仅作追溯）
 

@@ -33,3 +33,13 @@
 - 不包含会员ID披露态schema/SQL/候选逻辑，不修改生产迁移白名单、部署触发或现有生产配置。care分支仍独立候选，不发真实邀请。
 - 生产受控终端/容量/实例/DB/schema/私有备份恢复仍缺证，不迁移、停写或部署；CI合成恢复不代表生产恢复。原R12三项真实测量和连续稳定性由客户端独立验收。
 - 本分支先基于原生产版本验证；推广主线前必须重新同步并审阅最新main、验证组合，不以原生产基线测试冒认未来合并版本通过。
+
+## 精确CI回执与只读线上快照
+
+- 运行源码 `825cc514cf26d67d1e47bb0fb5a59e6a1bec91db` 正常推送，两个远端ref独立回读一致；[草稿PR41](https://github.com/tangwu88/saydianserver/pull/41)目标为固定生产基线分支，open/draft、无autoMerge，不指向main。
+- [CI39127806608](https://github.com/tangwu88/saydianserver/actions/runs/39127806608) completed/SUCCESS，verify成功。全量类型/测试/构建通过：API1241通过/35实库默认跳过、Worker127、后台228、contracts58；独立实库门禁实际35项通过，不把跳过算通过。
+- HTTP292断言实际通过，含本功能默认隐藏/独立两项/匿名与双账号同配置/canonical及global/旧scope/权限/非法内容/版本/审计回滚。CI合成库备份隔离恢复、三个镜像构建、实际镜像新旧登录/会员/设备/健康/订单一致性、原镜像离线流程演练通过；后者仅在CI临时环境且未启动业务应用，不是生产镜像传输部署。
+- 镜像发布、auto-deploy、auto-deploy-us均SKIPPED。无真实服务器备份/恢复、迁移、停写、部署、开关保存或真实邀请。care分支仍8d7a8ce且未修改；生产恢复/主机门槛未补足。
+- 2026-10-18T12:47:29Z（北京时间20:47）仅公开GET：readiness200/ready/revision仍aeb9afcb8bbd8b4168c38e489c827790c448bf7a；app-display200且**没有moduleVisibility字段**，新候选尚未上线，新客户端应缺失即隐藏。
+- 同次公开配置五项readOnlyHealth现均true，hideAi=true、sleepAiEnabled=true；温度/压力与19:01的false快照不同。本轮未写入这些配置，当前无受控主机通道，不能确定变更来源或替他人回滚；已同步客户端保持独立三项手动上限，不扩大授权。历史快照不是永久当前值。
+- 收尾只改本记录与handoff，以`[skip ci]`提交精确回执；非文档运行树与已通过CI的825cc51一致。该文档SHA不代表重新跑过CI，PR继续保持草稿。
