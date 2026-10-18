@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
+  CareIdentityDisclosure,
   CareStatus,
   HealthMetric as PrismaHealthMetric,
   NotificationType,
@@ -28,6 +29,7 @@ import {
   carePairKey,
   reserveCareInvitation,
 } from "./care-invitation";
+import { careIdentityVisible, visibleCareRelationships } from "./care-visibility";
 import {
   foldedHealthRecordPeriodWhere,
   healthAggregationContract,
@@ -76,6 +78,13 @@ export class CareService {
     const result = await this.prisma.$transaction(
       async (tx): Promise<Outcome> => {
         await careLock(tx, `care-invitation-account:${inviterId}`);
+        // Apply the same reservation BEFORE target lookup or idempotent returns:
+        // otherwise repeated202 vs429 would disclose an existing pending row.
+        if (
+          "memberNo" in target &&
+          !(await reserveCareInvitation(tx, inviterId, target))
+        )
+          return { kind: "limited" };
         let recipient = await tx.user.findUnique({
           where:
             "memberNo" in target
@@ -100,18 +109,27 @@ export class CareService {
             },
           });
           if (existing?.status === CareStatus.ACTIVE) return { kind: "active" };
-          if (existing?.status === CareStatus.PENDING)
-            return { kind: "created", relationship: existing };
+          if (existing?.status === CareStatus.PENDING) {
+            const relationship =
+              !("memberNo" in target) &&
+              existing.identityDisclosure === CareIdentityDisclosure.MEMBER_NO_PENDING
+                ? await tx.careRelationship.update({
+                    where: { id: existing.id },
+                    data: { identityDisclosure: CareIdentityDisclosure.CONTACT },
+                  })
+                : existing;
+            return { kind: "created", relationship };
+          }
         }
-        if ("memberNo" in target &&
-            !(await reserveCareInvitation(tx, inviterId, target, recipient?.id)))
-          return { kind: "limited" };
         // Returning this outcome commits the attempt's reservation even though no
         // invitation is created. Throwing here would undo anti-enumeration limits.
         if (!recipient || recipient.status !== UserStatus.ACTIVE)
           return { kind: "unavailable" };
         const invitationId = `care_${randomUUID()}`;
         const eventId = `care-invitation-${invitationId}`;
+        const identityDisclosure = "memberNo" in target
+          ? CareIdentityDisclosure.MEMBER_NO_PENDING
+          : CareIdentityDisclosure.CONTACT;
         const relation = await tx.careRelationship.upsert({
           where: {
             inviterId_recipientId: { inviterId, recipientId: recipient.id },
@@ -121,10 +139,12 @@ export class CareService {
             inviterId,
             recipientId: recipient.id,
             status: CareStatus.PENDING,
+            identityDisclosure,
           },
           update: {
             invitationId,
             status: CareStatus.PENDING,
+            identityDisclosure,
             respondedAt: null,
             revokedAt: null,
             expiresAt: null,
@@ -183,7 +203,7 @@ export class CareService {
 
   async relationships(userId: string) {
     const relationships = await this.prisma.careRelationship.findMany({
-      where: { OR: [{ inviterId: userId }, { recipientId: userId }] },
+      where: visibleCareRelationships(userId),
       include: { permissions: true, inviter: true, recipient: true },
       orderBy: { updatedAt: "desc" },
     });
@@ -231,6 +251,9 @@ export class CareService {
         where: { id },
         data: {
           status: accepted ? CareStatus.ACTIVE : CareStatus.REJECTED,
+          ...(accepted &&
+            relationship.identityDisclosure === CareIdentityDisclosure.MEMBER_NO_PENDING
+            ? { identityDisclosure: CareIdentityDisclosure.MEMBER_NO_ACCEPTED } : {}),
           respondedAt: new Date(),
         },
       });
@@ -289,11 +312,7 @@ export class CareService {
   async revoke(userId: string, id: string) {
     return this.prisma.$transaction(async (tx) => {
       const relationship = await this.lockedRelationship(tx, id);
-      if (
-        !relationship ||
-        (relationship.inviterId !== userId &&
-          relationship.recipientId !== userId)
-      ) {
+      if (!relationship || !careIdentityVisible(userId, relationship)) {
         throw new NotFoundException("未找到关爱关系");
       }
       await tx.carePermission.deleteMany({ where: { relationshipId: id } });

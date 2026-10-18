@@ -115,7 +115,7 @@ ECG：multipart 上传 gzip + 压缩文件 sha256，取得 uploadObjectKey，再
 
 流程：A 发出邀请 → B 接受 → B 单独选择共享指标 → A 按指标查询。接受不等于全量授权。撤销后读取返回 403，不借用别人的 Token。
 
-兼容候选 `POST /care/invitations {memberNo:"29"}` 仅接受规范编号字符串，与联系方式互斥；编号模式统一 HTTP202 / `data:{invitationSubmitted:true}`，不证明用户存在或通知送达。仅编号新增账号30秒/目标60秒冷却；原邮箱/手机号不新增这轮冷却。非ACTIVE目标拒绝，接受仍不等于授权。当前实现与未部署边界见[会员编号邀请契约](care-member-number.md)。
+兼容候选 `POST /care/invitations {memberNo:"29"}` 仅接受规范编号字符串，与联系方式互斥；编号模式通过频控后 HTTP202 / `data:{invitationSubmitted:true}`，不证明用户存在或通知送达。仅编号新增账号30秒/目标60秒冷却，包括重复pending/active；原邮箱/手机号不新增这轮冷却。编号邀请在对方接受前对发送方隐藏，V1/V2查询不能旁路，接受仍不等于健康授权。新增披露态SQL只作隔离CI候选，未准生产、不能回退至忽略隐私状态的旧镜像；详见[契约和回退下限](care-member-number.md)。
 
 关系状态：pending/active/rejected/revoked/expired。到期权限由查询时即时校验；完整到期任务及竞态验收见缺陷清单。
 

@@ -2,8 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { careInvitationTarget } from "./care-invitation";
 import { CareService } from "./care.service";
 import { CareController } from "./care.controller";
+import { LegacyService } from "../legacy/legacy.service";
 
 const now = new Date("2026-10-18T08:00:00Z");
+function matches(row: any, where: any): boolean {
+  return Object.entries(where).every(([key, value]: [string, any]) =>
+    key === "OR"
+      ? value.some((part: any) => matches(row, part))
+      : key === "AND"
+        ? value.every((part: any) => matches(row, part))
+        : value && typeof value === "object" && "not" in value
+          ? row[key] !== value.not
+          : row[key] === value,
+  );
+}
 function harness() {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(now);
@@ -29,7 +41,16 @@ function harness() {
       mobile: "+8613800000029",
       status: "ACTIVE",
     },
-  ];
+  ].map((user) => ({
+    legacyMemberId: null,
+    nickname: "Synthetic",
+    avatarUrl: null,
+    gender: "UNSPECIFIED",
+    birthday: null,
+    heightCm: null,
+    weightKg: null,
+    ...user,
+  }));
   const relationships: any[] = [],
     reservations = new Map<string, Date>();
   const tx: any = {
@@ -38,6 +59,10 @@ function harness() {
       users.filter((user) => user.id === id).map(({ status }) => ({ status })),
     ),
     user: {
+      findFirst: vi.fn(
+        async ({ where }: any) =>
+          users.find((row) => matches(row, where)) ?? null,
+      ),
       findUnique: vi.fn(
         async ({ where }: any) =>
           users.find((row) =>
@@ -68,9 +93,15 @@ function harness() {
           relationships.find((row) =>
             where.id
               ? row.id === where.id
-              : row.inviterId === where.inviterId_recipientId.inviterId &&
-                row.recipientId === where.inviterId_recipientId.recipientId,
+              : where.compatibilityId
+                ? row.compatibilityId === where.compatibilityId
+                : row.inviterId === where.inviterId_recipientId.inviterId &&
+                  row.recipientId === where.inviterId_recipientId.recipientId,
           ) ?? null,
+      ),
+      findFirst: vi.fn(
+        async ({ where }: any) =>
+          relationships.find((row) => matches(row, where)) ?? null,
       ),
       upsert: vi.fn(async ({ where, create, update }: any) => {
         let row = relationships.find(
@@ -82,6 +113,8 @@ function harness() {
         else {
           row = {
             id: `relation-${relationships.length}`,
+            compatibilityId: relationships.length + 1,
+            identityDisclosure: "CONTACT",
             expiresAt: null,
             createdAt: now,
             updatedAt: now,
@@ -101,13 +134,15 @@ function harness() {
         ...relationships.find((row) => row.id === where.id),
         permissions: [],
       })),
-      findMany: vi.fn(async () =>
-        relationships.map((row) => ({
-          ...row,
-          permissions: [],
-          inviter: users.find((u) => u.id === row.inviterId),
-          recipient: users.find((u) => u.id === row.recipientId),
-        })),
+      findMany: vi.fn(async ({ where }: any) =>
+        relationships
+          .filter((row) => matches(row, where))
+          .map((row) => ({
+            ...row,
+            permissions: [],
+            inviter: users.find((u) => u.id === row.inviterId),
+            recipient: users.find((u) => u.id === row.recipientId),
+          })),
       ),
     },
     carePermission: {
@@ -116,6 +151,10 @@ function harness() {
     },
     notification: { upsert: vi.fn(async () => ({ id: "notification" })) },
     outboxEvent: { upsert: vi.fn(async () => ({})) },
+    legacyIdMap: {
+      findUnique: vi.fn(async () => null),
+      findMany: vi.fn(async () => []),
+    },
   };
   let queue = Promise.resolve();
   const prisma: any = {
@@ -135,6 +174,7 @@ function harness() {
     reservations,
     tx,
     service: new CareService(prisma),
+    legacy: new LegacyService(prisma),
   };
 }
 afterEach(() => vi.useRealTimers());
@@ -232,6 +272,7 @@ describe("private numbered invitations and concurrency", () => {
     await expect(
       h.service.invite("viewer", { memberNo: "27" }),
     ).rejects.toMatchObject({ status: 400 });
+    vi.setSystemTime(new Date(now.valueOf() + 60_001));
     const controller = new CareController(h.service, {} as any),
       response = { status: vi.fn() };
     await expect(
@@ -243,17 +284,30 @@ describe("private numbered invitations and concurrency", () => {
     ).resolves.toEqual({ invitationSubmitted: true });
     expect(response.status).toHaveBeenCalledWith(202);
   });
-  it("serializes repeated invitations without duplicate notification or permissions", async () => {
+  it("applies the same cooldown to repeated known and unknown numbered invitations", async () => {
     const h = harness();
-    const responses = await Promise.all(
+    const responses = await Promise.allSettled(
       Array.from({ length: 3 }, () =>
         h.service.invite("viewer", { memberNo: "28" }),
       ),
     );
-    expect(responses).toEqual(Array(3).fill({ invitationSubmitted: true }));
+    expect(responses.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(
+      responses
+        .filter((r) => r.status === "rejected")
+        .map((r) => (r as PromiseRejectedResult).reason.status),
+    ).toEqual([429, 429]);
     expect(h.relationships).toHaveLength(1);
     expect(h.tx.notification.upsert).toHaveBeenCalledOnce();
     expect(h.tx.$executeRaw).toHaveBeenCalled();
+    await expect(
+      h.service.invite("viewer", { memberNo: "2147483647" }),
+    ).rejects.toMatchObject({ status: 429 });
+    vi.setSystemTime(new Date(now.valueOf() + 60_001));
+    await expect(
+      h.service.invite("viewer", { memberNo: "28" }),
+    ).resolves.toEqual({ invitationSubmitted: true });
+    expect(h.tx.notification.upsert).toHaveBeenCalledOnce();
   });
   it("retains account cooldown after a missing target and does not reveal a later target", async () => {
     const h = harness();
@@ -290,7 +344,7 @@ describe("private numbered invitations and concurrency", () => {
     expect(await h.service.invite("viewer", { memberNo: "28" })).toEqual({
       invitationSubmitted: true,
     });
-    expect(h.reservations.size).toBe(0);
+    expect(h.reservations.size).toBe(2);
   });
   it("does not impose numbered account/target cooldowns on old contact invitations", async () => {
     const h = harness();
@@ -323,13 +377,73 @@ describe("private numbered invitations and concurrency", () => {
       expect(h.reservations.size).toBe(0);
     },
   );
-  it("lists only the additive numbers without contacts", async () => {
+  it("hides numbered pending identities in V2 and V1 until acceptance, without sharing contact or body data", async () => {
     const h = harness();
     await h.service.invite("viewer", { memberNo: "28" });
+    expect(await h.service.relationships("viewer")).toEqual([]);
+    expect(await h.legacy.careRows("viewer", false)).toEqual([]);
+    expect(await h.service.relationships("subject")).toHaveLength(1);
+    const incoming = await h.legacy.careRows("subject", false);
+    expect(incoming).toHaveLength(1);
+    expect(incoming[0]?.member).not.toHaveProperty("mobile");
+    expect(incoming[0]?.to_member).not.toHaveProperty("birthday");
+    await expect(
+      h.legacy.relationshipByCompatibilityId(1, "viewer"),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      h.service.revoke("viewer", "relation-0"),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      h.legacy.relationshipByCompatibilityId(1, "other"),
+    ).rejects.toMatchObject({ status: 404 });
+    await h.service.respond("subject", "relation-0", true);
     const rows = await h.service.relationships("viewer");
     expect(rows[0]?.inviter).toMatchObject({ id: "viewer", memberNo: "27" });
     expect(rows[0]?.recipient).toMatchObject({ id: "subject", memberNo: "28" });
     expect(JSON.stringify(rows)).not.toMatch(/example.invalid|138000000/);
+    expect(h.relationships[0].identityDisclosure).toBe("MEMBER_NO_ACCEPTED");
+    expect(await h.legacy.careRows("viewer", false)).toHaveLength(1);
+    await expect(
+      h.legacy.relationshipByCompatibilityId(1, "viewer"),
+    ).resolves.toHaveProperty("id", "relation-0");
+    expect(h.tx.carePermission.createMany).not.toHaveBeenCalled();
+  });
+  it.each(["rejected", "revoked"])(
+    "keeps an unaccepted numbered identity hidden after %s",
+    async (status) => {
+      const h = harness();
+      await h.service.invite("viewer", { memberNo: "28" });
+      if (status === "rejected")
+        await h.service.respond("subject", "relation-0", false);
+      else await h.service.revoke("subject", "relation-0");
+      expect(await h.service.relationships("viewer")).toEqual([]);
+      expect(await h.legacy.careRows("viewer", false)).toEqual([]);
+    },
+  );
+  it("preserves contact pending visibility and can explicitly change a numbered pending invite to contact mode", async () => {
+    const h = harness();
+    await h.service.invite("viewer", { memberNo: "28" });
+    await h.service.invite("viewer", "b@example.invalid");
+    expect(h.relationships[0].identityDisclosure).toBe("CONTACT");
+    expect(await h.service.relationships("viewer")).toHaveLength(1);
+    expect(
+      (await h.legacy.careRows("viewer", false))[0]?.member,
+    ).toHaveProperty("mobile", "+8613800000028");
+    expect(h.tx.notification.upsert).toHaveBeenCalledOnce();
+  });
+  it("does not reveal account existence through different V1 health/settings errors", async () => {
+    const h = harness();
+    for (const memberNo of ["28", "2147483647"]) {
+      await expect(
+        h.legacy.viewerRelationship("viewer", memberNo),
+      ).rejects.toMatchObject({
+        status: 404,
+        message: "未找到可查看的关爱关系",
+      });
+      await expect(
+        h.legacy.relationshipForSettings("viewer", memberNo),
+      ).rejects.toMatchObject({ status: 404, message: "未找到关爱关系" });
+    }
   });
   it("never acknowledges storage failures as accepted requests", async () => {
     const h = harness();

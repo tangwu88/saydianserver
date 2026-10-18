@@ -51,6 +51,12 @@ enum CareStatus {
   EXPIRED
 }
 
+enum CareIdentityDisclosure {
+  CONTACT
+  MEMBER_NO_PENDING
+  MEMBER_NO_ACCEPTED
+}
+
 enum NotificationType {
   CARE_INVITATION
   HEALTH_WARNING
@@ -769,21 +775,22 @@ model HealthWarningEvent {
 }
 
 model CareRelationship {
-  id              String            @id @default(uuid()) @db.Uuid
-  compatibilityId Int               @unique @default(autoincrement())
-  invitationId    String            @unique
-  inviterId       String            @db.Uuid
-  recipientId     String            @db.Uuid
-  status          CareStatus        @default(PENDING)
-  expiresAt       DateTime?
-  respondedAt     DateTime?
-  revokedAt       DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  inviter         User              @relation("CareInviter", fields: [inviterId], references: [id], onDelete: Cascade)
-  recipient       User              @relation("CareRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
-  permissions     CarePermission[]
-  accessAudits    CareAccessAudit[]
+  id                 String                 @id @default(uuid()) @db.Uuid
+  compatibilityId    Int                    @unique @default(autoincrement())
+  invitationId       String                 @unique
+  inviterId          String                 @db.Uuid
+  recipientId        String                 @db.Uuid
+  status             CareStatus             @default(PENDING)
+  identityDisclosure CareIdentityDisclosure @default(CONTACT)
+  expiresAt          DateTime?
+  respondedAt        DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  inviter            User                   @relation("CareInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  recipient          User                   @relation("CareRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  permissions        CarePermission[]
+  accessAudits       CareAccessAudit[]
 
   @@unique([inviterId, recipientId])
   @@index([recipientId, status])

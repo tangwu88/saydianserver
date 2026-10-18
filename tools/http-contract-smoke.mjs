@@ -1,5 +1,6 @@
 // Only an isolated CI/test database. Never run against production or original backend.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 const base = process.env.API_SMOKE_BASE ?? "http://127.0.0.1:8080";
 const dbUrl = new URL(process.env.DATABASE_URL ?? "http://invalid");
@@ -152,24 +153,70 @@ try {
   check((await request(v2 + "/care/relationships/" + relation.id + "/health?metric=heart_rate", { token: tokenA })).json.code, 403);
   check((await request(v2 + "/care/relationships/" + relation.id + "/summary", { token: tokenA })).status, 403);
   check((await request(v2 + "/care/relationships/" + relation.id + "/health/missing-fixture-record/ecg", { token: tokenA })).status, 403);
-  // An existing reverse-direction request is not assumed. The fresh numbered
-  // request must not disclose the subject or bypass recipient authorization.
+  // Own numbered fixtures only. Advance their exact reservations between alias
+  // scenarios; runtime code never bypasses cooldowns or touches production.
+  const numberedKeys = [`care-invite:account:${createHash("sha256").update(b.data.member.id).digest("hex")}`,
+    `care-invite:target:${createHash("sha256").update(`memberNo:${a.data.member.memberNo}`).digest("hex")}`];
+  let reverseRelation;
   for (const prefix of [v2, "/global" + v2]) {
+    await prisma.globalVerificationThrottle.updateMany({ where: { key: { in: numberedKeys } }, data: { reservedAt: new Date(Date.now() - 120_000) } });
     const numbered = await request(prefix + "/care/invitations", { method: "POST", token: tokenB, body: { memberNo: a.data.member.memberNo } });
     check(numbered.status, 202); check(numbered.json.code, 200);
     check(numbered.json.data, { invitationSubmitted: true });
     check((await request(prefix + "/care/invitations", { method: "POST", body: { memberNo: a.data.member.memberNo } })).status, 401);
     check((await request(prefix + "/care/invitations", { method: "POST", token: tokenB, body: { memberNo: a.data.member.memberNo, identifier: "fixture@example.invalid" } })).status, 400);
+    for (const memberNo of [a.data.member.memberNo, "2147483647"])
+      check((await request(prefix + "/care/invitations", { method: "POST", token: tokenB, body: { memberNo } })).status, 429);
+    reverseRelation = await prisma.careRelationship.findUniqueOrThrow({ where: { inviterId_recipientId: { inviterId: b.data.member.id, recipientId: a.data.member.id } } });
+    check(reverseRelation.status, "PENDING"); check(reverseRelation.identityDisclosure, "MEMBER_NO_PENDING");
+    for (const alias of ["", "/global"]) {
+      check((await request(alias + v2 + "/care/relationships", { token: tokenB })).json.data.some(row => row.id === reverseRelation.id), false);
+      const received = (await request(alias + v2 + "/care/relationships", { token: tokenA })).json.data.find(row => row.id === reverseRelation.id);
+      check(received.inviter.memberNo, b.data.member.memberNo);
+      check(Object.hasOwn(received.inviter, "mobile"), false);
+      check((await request(alias + v1 + "/care", { token: tokenB })).json.data.some(row => row.id === reverseRelation.compatibilityId), false);
+      const legacyReceived = (await request(alias + v1 + "/care", { token: tokenA })).json.data.find(row => row.id === reverseRelation.compatibilityId);
+      check(Object.hasOwn(legacyReceived.member, "mobile"), false); check(Object.hasOwn(legacyReceived.to_member, "birthday"), false);
+      for (const id of [reverseRelation.compatibilityId, 2147483647]) {
+        const preview = await request(`${alias}${v1}/care/preview?id=${id}`, { token: tokenB });
+        check(preview.json.code, 404); check(preview.json.message, "The request could not be completed. Please check and try again.");
+        const respond = await request(alias + v1 + "/care/save", { method: "POST", token: tokenB, body: { id, examine_status: 1 } });
+        check(respond.json.code, 404); check(respond.json.message, "The request could not be completed. Please check and try again.");
+      }
+      for (const memberNo of [a.data.member.memberNo, "2147483647"]) {
+        const settings = await request(`${alias}${v1}/care-setting/preview?to_member_id=${memberNo}`, { token: tokenB });
+        check(settings.json.code, 404); check(settings.json.message, "The request could not be completed. Please check and try again.");
+        const history = await request(`${alias}${v1}/daily-date/preview?type=heartReat&selectmember=${memberNo}`, { token: tokenB });
+        check(history.json.code, 404); check(history.json.message, "The request could not be completed. Please check and try again.");
+      }
+      check((await request(alias + v2 + `/care/relationships/${reverseRelation.id}`, { method: "DELETE", token: tokenB })).status, 404);
+      check((await request(alias + v2 + `/care/relationships/${reverseRelation.id}/summary`, { token: tokenB })).status, 403);
+    }
+    // Reject once to prove a failed confirmation remains private on re-invite.
+    if (prefix === v2) {
+      check((await request(prefix + `/care/relationships/${reverseRelation.id}/respond`, { method: "POST", token: tokenA, body: { accepted: false } })).status, 201);
+      check((await request(prefix + "/care/relationships", { token: tokenB })).json.data.some(row => row.id === reverseRelation.id), false);
+    }
   }
-  const reverseRelation = await prisma.careRelationship.findUniqueOrThrow({ where: { inviterId_recipientId: { inviterId: b.data.member.id, recipientId: a.data.member.id } } });
-  check(reverseRelation.status, "PENDING");
-  check((await request(v2 + `/care/relationships/${reverseRelation.id}/summary`, { token: tokenB })).status, 403);
+  check((await request(v1 + "/care/save", { method: "POST", token: tokenA, body: { id: reverseRelation.compatibilityId, examine_status: 1 } })).json.code, 200);
   const numberedRows = (await request(v2 + "/care/relationships", { token: tokenB })).json.data;
   const numberedRow = numberedRows.find(row => row.id === reverseRelation.id);
   check(numberedRow.recipient.memberNo, a.data.member.memberNo);
   check(Object.hasOwn(numberedRow.recipient, "email"), false);
   check(Object.hasOwn(numberedRow.recipient, "mobile"), false);
+  check((await request(v2 + `/care/relationships/${reverseRelation.id}/health?metric=heart_rate`, { token: tokenB })).status, 403);
+  check((await request(v2 + `/care/relationships/${reverseRelation.id}/permissions`, { method: "POST", token: tokenA, body: { metrics: ["heart_rate"] } })).json.code, 200);
+  check((await request(v2 + `/care/relationships/${reverseRelation.id}/health?metric=heart_rate`, { token: tokenB })).status, 200);
+  check((await request(v2 + `/care/relationships/${reverseRelation.id}/health?metric=blood_oxygen`, { token: tokenB })).status, 403);
+  const acceptedLegacy = (await request(v1 + "/care", { token: tokenB })).json.data.find(row => row.id === reverseRelation.compatibilityId);
+  check(Object.hasOwn(acceptedLegacy.to_member, "mobile"), false);
+  check(Object.hasOwn(acceptedLegacy.to_member, "height"), false);
   check((await request(v2 + "/care/invitations", { method: "POST", token: tokenB, body: { memberNo: "2147483647" } })).status, 429);
+  // Do not contaminate the older notification-count fixture with new invitations.
+  const numberedNotices = await prisma.notification.findMany({ where: { userId: a.data.member.id, type: "CARE_INVITATION", metadata: { path: ["relationshipId"], equals: reverseRelation.id } } });
+  check(numberedNotices.length, 2);
+  for (const notice of numberedNotices)
+    check((await request(v2 + "/notifications/" + notice.id + "/read", { method: "POST", token: tokenA })).json.data.read, true);
   const notice = await prisma.notification.create({ data: { userId: a.data.member.id, eventId: "fixture-message", type: "SYSTEM", title: "fixture", body: "fixture only" } });
   check((await request(v1 + "/notify/statistics", { token: tokenA })).json.data.announce_count, 1);
   check((await request(v1 + "/notify/" + notice.compatibilityId, { token: tokenB })).json.code, 404);

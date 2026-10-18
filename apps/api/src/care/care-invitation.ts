@@ -49,12 +49,11 @@ export async function reserveCareInvitation(
   tx: Prisma.TransactionClient,
   inviterId: string,
   target: Extract<CareInvitationTarget, { memberNo: number }>,
-  recipientId?: string,
 ) {
   const now = new Date();
   for (const [scope, identity, milliseconds] of [
     ["account", inviterId, 30_000],
-    ["target", recipientId ? `member:${recipientId}` : target.key, 60_000],
+    ["target", target.key, 60_000],
   ] as const) {
     const key = `care-invite:${scope}:${sha256(identity)}`;
     await careLock(tx, key);

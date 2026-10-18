@@ -6942,7 +6942,7 @@ export const apiCatalog = {
       "source": "apps/api/src/care/care.controller.ts",
       "summary": "关爱关系列表",
       "request": "无请求体",
-      "response": "CareRelationship[]，含 direction、双方昵称/可选memberNo、授权指标；id仍为UUID，不回传电话邮箱",
+      "response": "CareRelationship[]，含direction、双方昵称/可选memberNo、授权指标；id仍为UUID，不回传电话邮箱；编号邀请在对方接受前对发送方隐藏，包括拒绝/撤销后",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -6973,8 +6973,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/care/care.controller.ts",
       "summary": "邀请查看对方健康数据",
-      "request": "{identifier:email/E.164}或旧{mobile}；兼容新增{memberNo:规范十进制字符串1..2147483647}且与联系方式互斥；编号指compatibilityId而非UUID；本人400；仅memberNo新增账号30秒/目标60秒冷却429；pending幂等不重发",
-      "response": "联系方式保留CareRelationship、active重复409及原频控，不新增编号冷却；非ACTIVE联系人404；仅memberNo为HTTP202/{invitationSubmitted:true}，不代表用户存在/通知送达，不区分不存在/非ACTIVE/已有关系；不自动授予健康权限",
+      "request": "{identifier:email/E.164}或旧{mobile}；兼容新增{memberNo:规范十进制字符串1..2147483647}且与联系方式互斥；编号指compatibilityId而非UUID；仅memberNo先行账号30秒/编号60秒冷却429，重复pending/active同样计入；通过频控后本人400",
+      "response": "联系方式保留CareRelationship、active重复409及原频控，不新增编号冷却；非ACTIVE联系人404；memberNo通过频控后HTTP202/{invitationSubmitted:true}，不区分不存在/非ACTIVE/已有关系、不证明存在或送达；确认前对发送方隐藏，不自动授予健康权限",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
@@ -23056,7 +23056,7 @@ export const apiCatalog = {
       "source": "apps/api/src/legacy/legacy-member.controller.ts",
       "summary": "旧版关爱关系",
       "request": "无请求体",
-      "response": "LegacyCare[]：数字关系及成员 ID、examine_status、setting",
+      "response": "LegacyCare[]：数字关系及成员ID、examine_status、setting；编号邀请确认前对发送方隐藏，编号关系仅最小成员资料；旧CONTACT字段不变",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
