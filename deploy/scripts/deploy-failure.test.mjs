@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -14,6 +14,8 @@ function run(mode) {
   try {
     const source = join(root, "releases/ci-fixture"), state = join(root, "deploy/unified"), bin = join(root, "bin"), gateway = join(root, "gateway-nginx.conf");
     for (const directory of [join(source, "deploy/scripts"), state, bin]) mkdirSync(directory, { recursive: true });
+    for (const name of ["care-privacy-gate.sh", "care-privacy-schema.sql", "care-privacy-topology.mjs", "care-privacy-proof.cjs"])
+      if (existsSync(new URL(name, import.meta.url))) copyFileSync(new URL(name, import.meta.url), join(source, "deploy/scripts", name));
     writeFileSync(join(source, "deploy/scripts/backup-restore.sh"), `#!/usr/bin/env bash
 set -Eeuo pipefail
 echo restore-rehearsal >> "$FIXTURE_LOG"
@@ -26,6 +28,7 @@ printf 'synthetic restored archive' > "$2/database.dump"
     writeFileSync(join(state, "compose.json"), '{"name":"saydian-global","services":{}}');
     writeFileSync(gateway, "# synthetic shared gateway\n");
     const manifest = { schemaVersion: 1, revision, migrations: [{ name: "20261001190000_say_ring_legal_product", sha256: "c".repeat(64), automatic: true }], images: Object.fromEntries(["api", "worker", "admin"].map(name => [name, { ref: `ghcr.io/tangwu88/saydianserver-${name}@sha256:${"d".repeat(64)}`, imageId, sizeBytes: 10 }])) };
+    if (mode.startsWith("care-transition")) manifest.migrations.push({ name: "20261018070000_care_identity_disclosure", sha256: "e089194340cb328121788dfd9b308ca72dbd87c96c5d0c82dfd9a299cfb0c2ab", automatic: true });
     writeFileSync(join(source, "deploy/release-manifest.json"), JSON.stringify(manifest));
     const publisher = readFileSync(new URL("./deploy-unified.sh", import.meta.url), "utf8").replaceAll("/opt/saydianapp-server", shellPath(root));
     const script = join(root, "publisher.sh"); writeFileSync(script, publisher);
@@ -35,6 +38,7 @@ const tool=path.basename(process.argv[1]), a=process.argv.slice(2), mode=process
 fs.appendFileSync(process.env.FIXTURE_LOG, tool+' '+a.join(' ')+'\\n');
 const revision='${revision}', imageId='${imageId}';
 if(tool==='readlink') console.log(process.env.FIXTURE_SHELL_ROOT+'/deploy/.ci-release.lock');
+if(tool==='systemctl'&&a[0]==='show')console.log('LoadState=loaded\\nActiveState='+(mode==='care-legacy-publisher'?'active':'inactive')+'\\nUnitFileState=disabled');
 if(tool==='timeout') { const r=require('node:child_process').spawnSync(process.execPath,[path.join(process.env.FIXTURE_BIN,a[3]+'.cjs'),...a.slice(4)],{stdio:'inherit'});process.exit(r.status??1); }
 if(tool==='curl') {
  const url=a.at(-1);
@@ -55,21 +59,34 @@ if(tool==='curl') {
 if(tool==='docker') {
  if(a[0]==='pull') { if(mode==='pull-failed') process.exit(1); fs.writeFileSync(process.env.FIXTURE_ROOT+'/pulled','1'); process.exit(0); }
  if(a[0]==='image') { if(a.includes('{{.Id}}') && mode!=='cached' && !fs.existsSync(process.env.FIXTURE_ROOT+'/pulled')) process.exit(1); console.log(a.includes('{{.Id}}')?imageId:revision); }
- else if(a[0]==='inspect') console.log(a.join(' ').includes('.Config.Env')?(a.at(-1).includes('postgres')?'["POSTGRES_USER=global_owner","POSTGRES_DB=saydian_global","POSTGRES_PASSWORD=synthetic-test-only"]':JSON.stringify(['APP_REVISION='+'f'.repeat(40)])):a.join(' ').includes('.Image')?(fs.existsSync(process.env.FIXTURE_ROOT+'/changed')?imageId:'sha256:'+'e'.repeat(64)):imageId);
+ else if(a[0]==='inspect') console.log(a.includes('{{.State.Running}}')?'false':a.join(' ').includes('.Config.Env')?(a.at(-1).includes('postgres')?'["POSTGRES_USER=global_owner","POSTGRES_DB=saydian_global","POSTGRES_PASSWORD=synthetic-test-only"]':JSON.stringify(['APP_REVISION='+'f'.repeat(40)])):a.join(' ').includes('.Image')?(fs.existsSync(process.env.FIXTURE_ROOT+'/rollback-started')?'sha256:'+'e'.repeat(64):fs.existsSync(process.env.FIXTURE_ROOT+'/changed')?imageId:'sha256:'+'e'.repeat(64)):imageId);
  else if(a[0]==='run') {
   const helper=a.find(v=>v.startsWith('/release/scripts/'));
   if(helper?.endsWith('unified-preflight.mjs')) console.log(JSON.stringify({pending:mode.startsWith('restore-')?['reviewed-migration']:[]}));
   if(helper?.endsWith('unify-gateway.mjs')) fs.copyFileSync(process.env.RELEASE_SOURCE+'/gateway.conf',process.env.RELEASE_SOURCE+'/gateway-candidate.conf');
-  if(helper?.endsWith('release-manifest.mjs') && a.includes('compose')) console.log(JSON.stringify({services:{'global-api':{image:imageId}}}));
+  if(helper?.endsWith('release-manifest.mjs') && a.includes('compose')) console.log(JSON.stringify({services:Object.fromEntries(['api','worker','admin'].map(role=>['global-'+role,{image:imageId}]))}));
+  if(helper?.endsWith('care-privacy-proof.cjs')) {
+   if(mode==='care-legacy-target'&&a.includes(imageId)||mode==='care-worker-legacy'&&a.at(-1)==='worker'||mode.includes('legacy-backup')&&a.includes('sha256:'+'e'.repeat(64)))process.exit(1);
+   console.log('care-privacy-proof:'+a.at(-1));
+  }
+  if(helper?.endsWith('care-privacy-topology.mjs')) {
+   if(['care-multi-api','care-code-mount','care-unknown-client'].includes(mode))process.exit(1);
+   console.log('care-topology-ok');
+  }
  } else if(a[0]==='exec') {
   const input=fs.readFileSync(0,'utf8');
-  if(a.join(' ').includes('psql')) console.log('[]');
+  if(input.includes('care-privacy-schema')) {
+   if(mode==='care-query-failed'||mode==='care-failed-after-change'&&fs.existsSync(process.env.FIXTURE_ROOT+'/changed'))process.exit(1);
+   console.log(mode==='care-missing-column'?'unknown':mode.startsWith('care-')&&(!mode.startsWith('care-transition')||fs.existsSync(process.env.FIXTURE_ROOT+'/migrated'))?'protected':'legacy');
+  } else if(input.includes('pg_stat_activity')) {fs.appendFileSync(process.env.FIXTURE_LOG,'drain-pg_stat_activity\\n');console.log(mode==='care-inflight'?'1':'0');}
+  else if(a.join(' ').includes('psql')) console.log('[]');
   else if(a.join(' ').includes('pg_dump')) console.log('synthetic archive');
   else if(a.includes('wget')) { if(mode==='health-failed') process.exit(1);console.log(JSON.stringify({status:'ready',revision})); }
  } else if(a[0]==='compose') {
+  if(a.includes('deploy'))fs.writeFileSync(process.env.FIXTURE_ROOT+'/migrated','1');
   if(a.includes('deploy') && mode==='migration-failed') process.exit(1);
-  if(a.includes('up')) { fs.writeFileSync(process.env.FIXTURE_ROOT+'/changed','1');if(mode==='start-failed'&&!a.some(v=>v.includes('/backups/')))process.exit(1); }
- }
+  if(a.includes('up')) { fs.writeFileSync(process.env.FIXTURE_ROOT+'/changed','1');if(a.some(v=>v.includes('/backups/')))fs.writeFileSync(process.env.FIXTURE_ROOT+'/rollback-started','1');if((mode==='start-failed'||mode.includes('legacy-backup')||mode==='care-compatible-rollback'||mode==='care-failed-after-change')&&!a.some(v=>v.includes('/backups/')))process.exit(1); }
+ } else if(a[0]==='ps') console.log('c'.repeat(64));
 }
 `;
     for (const name of ["docker", "curl", "timeout", "sleep", "readlink", "flock", "sha256sum", "systemctl"]) writeNodeDouble(bin, name, double);
@@ -142,4 +159,45 @@ test("public readiness tolerates a reloading gateway but rejects persistent old 
   assert.match(failed.output, /Public readiness failed: \/health\/ready/);
   assert.match(failed.output, /Release check failed at deploy-unified.sh:\d+ \(exit 1\)/);
   assert.match(failed.calls, /backups\/[^\n]+images.json up -d --no-build --pull never/);
+});
+
+test("care privacy: protected schemas require behavioral image proof and stop/drain before starting", () => {
+  const result = run("care-success");
+  assert.equal(result.status, 0, result.output + result.calls);
+  assert.match(result.calls, /care-privacy-proof.cjs api/);
+  assert.match(result.calls, /care-privacy-proof.cjs worker/);
+  assert.match(result.calls, /stop -t 180 global-api global-worker/);
+  assert.match(result.calls,/drain-pg_stat_activity/);
+  assert(result.calls.indexOf("drain-pg_stat_activity") < result.calls.indexOf("migrate deploy"));
+});
+test("care privacy: unknown schema, legacy target, old worker and unprovable topology never start services", () => {
+  for (const mode of ["care-query-failed", "care-missing-column", "care-legacy-target", "care-worker-legacy", "care-multi-api", "care-code-mount", "care-unknown-client", "care-legacy-publisher"]) {
+    const result = run(mode);
+    assert.notEqual(result.status, 0, mode + result.output);
+    assert(!result.calls.includes(" up "), mode + result.calls);
+    assert(!result.calls.includes("migrate deploy"), mode + result.calls);
+  }
+});
+test("care privacy: migration presence forbids old backup regardless of rows and newly arriving writes", () => {
+  for (const mode of ["care-start-legacy-backup", "care-transition-legacy-backup"]) {
+    const result = run(mode);
+    assert.notEqual(result.status, 0, result.output);
+    assert.doesNotMatch(result.calls, /backups\/[^\n]+images.json up/);
+    assert.match(result.output, /[Cc]are privacy/);
+    assert.doesNotMatch(result.calls, /pg_restore --clean|DROP COLUMN|identityDisclosure.*=.*CONTACT/);
+  }
+});
+test("care privacy: only independently compatible rollback images may restart after a second drain", () => {
+  const result = run("care-compatible-rollback");
+  assert.notEqual(result.status, 0, result.output);
+  assert.match(result.calls, /backups\/[^\n]+images.json up/);
+  assert((result.calls.match(/care-privacy-proof.cjs api/g) ?? []).length >= 2);
+  assert((result.calls.match(/stop -t 180 global-api global-worker/g) ?? []).length >= 2);
+});
+test("care privacy: in-flight sessions or late query failure cannot resume a backup", () => {
+  for (const mode of ["care-inflight", "care-failed-after-change"]) {
+    const result = run(mode);
+    assert.notEqual(result.status, 0, result.output);
+    assert.doesNotMatch(result.calls, /backups\/[^\n]+images.json up/);
+  }
 });

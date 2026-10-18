@@ -6,16 +6,30 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
+  CareIdentityDisclosure,
   CareStatus,
   HealthMetric as PrismaHealthMetric,
   NotificationType,
+  UserStatus,
+  type CareRelationship,
+  type Prisma,
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
-import type { HealthMetric } from "@saydian/app-contracts";
+import type {
+  CareInvitationSubmissionContract,
+  CareRelationshipContract,
+  HealthMetric,
+} from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
-import { normalizedMobile, safeObject } from "../common/crypto";
-
-import { normalizedEmail } from "../auth/global-identity";
+import { safeObject } from "../common/crypto";
+import {
+  careInvitationLimited,
+  careInvitationTarget,
+  careLock,
+  carePairKey,
+  reserveCareInvitation,
+} from "./care-invitation";
+import { careIdentityVisible, visibleCareRelationships } from "./care-visibility";
 import {
   foldedHealthRecordPeriodWhere,
   healthAggregationContract,
@@ -45,92 +59,151 @@ const metricReverse = Object.fromEntries(
 export class CareService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async invite(inviterId: string, mobileInput: string) {
-    const mobile = normalizedMobile(mobileInput);
-    const email = normalizedEmail(mobileInput);
-    if (!mobile && !email) throw new BadRequestException("手机号格式不正确");
-    const recipient = await this.prisma.user.findUnique({
-      where: email ? { email } : { mobile },
-    });
-    if (!recipient) throw new NotFoundException("未找到该用户");
-    if (recipient.id === inviterId)
-      throw new BadRequestException("不能关爱自己");
-    const invitationId = `care_${randomUUID()}`;
-    const eventId = `care-invitation-${invitationId}`;
-    const relationship = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.careRelationship.findUnique({
-        where: {
-          inviterId_recipientId: { inviterId, recipientId: recipient.id },
-        },
-      });
-      if (existing?.status === CareStatus.ACTIVE) {
-        throw new ConflictException("已建立关爱关系，无需重复邀请");
-      }
-      if (existing?.status === CareStatus.PENDING) return existing;
-      const relation = await tx.careRelationship.upsert({
-        where: {
-          inviterId_recipientId: { inviterId, recipientId: recipient.id },
-        },
-        create: {
-          invitationId,
-          inviterId,
-          recipientId: recipient.id,
-          status: CareStatus.PENDING,
-        },
-        update: {
-          invitationId,
-          status: CareStatus.PENDING,
-          respondedAt: null,
-          revokedAt: null,
-          expiresAt: null,
-        },
-      });
-      await tx.carePermission.deleteMany({
-        where: { relationshipId: relation.id },
-      });
-      const notification = await tx.notification.upsert({
-        where: { userId_eventId: { userId: recipient.id, eventId } },
-        create: {
-          userId: recipient.id,
-          eventId,
-          type: NotificationType.CARE_INVITATION,
-          title: "新的关爱邀请",
-          body: "有人希望查看你授权共享的健康数据",
-          deepLink: `/care/invitations/${relation.id}`,
-          metadata: { relationshipId: relation.id },
-        },
-        update: { readAt: null, createdAt: new Date() },
-      });
-      await tx.outboxEvent.upsert({
-        where: { eventId },
-        create: {
-          eventId,
-          eventType: "care_invitation",
-          aggregateType: "care_relationship",
-          aggregateId: relation.id,
-          payload: {
-            notificationId: notification.id,
+  async invite(
+    inviterId: string,
+    input: string,
+  ): Promise<CareRelationshipContract>;
+  async invite(
+    inviterId: string,
+    input: unknown,
+  ): Promise<CareRelationshipContract | CareInvitationSubmissionContract>;
+  async invite(inviterId: string, input: unknown) {
+    const target = careInvitationTarget(input);
+    type Outcome =
+      | { kind: "created"; relationship: CareRelationship }
+      | { kind: "self" }
+      | { kind: "active" }
+      | { kind: "unavailable" }
+      | { kind: "limited" };
+    const result = await this.prisma.$transaction(
+      async (tx): Promise<Outcome> => {
+        await careLock(tx, `care-invitation-account:${inviterId}`);
+        // Apply the same reservation BEFORE target lookup or idempotent returns:
+        // otherwise repeated202 vs429 would disclose an existing pending row.
+        if (
+          "memberNo" in target &&
+          !(await reserveCareInvitation(tx, inviterId, target))
+        )
+          return { kind: "limited" };
+        let recipient = await tx.user.findUnique({
+          where:
+            "memberNo" in target
+              ? { compatibilityId: target.memberNo }
+              : "email" in target
+                ? { email: target.email }
+                : { mobile: target.mobile },
+          select: { id: true, status: true },
+        });
+        if (recipient?.id === inviterId) return { kind: "self" };
+        if (recipient?.status === UserStatus.ACTIVE) {
+          // Account deactivation must not race a newly created invitation.
+          const rows = await tx.$queryRaw<Array<{ status: UserStatus }>>`
+          SELECT "status" FROM "User" WHERE "id" = ${recipient.id}::uuid FOR SHARE`;
+          if (rows[0]?.status !== UserStatus.ACTIVE) recipient = null;
+        }
+        if (recipient?.status === UserStatus.ACTIVE) {
+          await careLock(tx, carePairKey(inviterId, recipient.id));
+          const existing = await tx.careRelationship.findUnique({
+            where: {
+              inviterId_recipientId: { inviterId, recipientId: recipient.id },
+            },
+          });
+          if (existing?.status === CareStatus.ACTIVE) return { kind: "active" };
+          if (existing?.status === CareStatus.PENDING) {
+            const relationship =
+              !("memberNo" in target) &&
+              existing.identityDisclosure === CareIdentityDisclosure.MEMBER_NO_PENDING
+                ? await tx.careRelationship.update({
+                    where: { id: existing.id },
+                    data: { identityDisclosure: CareIdentityDisclosure.CONTACT },
+                  })
+                : existing;
+            return { kind: "created", relationship };
+          }
+        }
+        // Returning this outcome commits the attempt's reservation even though no
+        // invitation is created. Throwing here would undo anti-enumeration limits.
+        if (!recipient || recipient.status !== UserStatus.ACTIVE)
+          return { kind: "unavailable" };
+        const invitationId = `care_${randomUUID()}`;
+        const eventId = `care-invitation-${invitationId}`;
+        const identityDisclosure = "memberNo" in target
+          ? CareIdentityDisclosure.MEMBER_NO_PENDING
+          : CareIdentityDisclosure.CONTACT;
+        const relation = await tx.careRelationship.upsert({
+          where: {
+            inviterId_recipientId: { inviterId, recipientId: recipient.id },
+          },
+          create: {
+            invitationId,
+            inviterId,
+            recipientId: recipient.id,
+            status: CareStatus.PENDING,
+            identityDisclosure,
+          },
+          update: {
+            invitationId,
+            status: CareStatus.PENDING,
+            identityDisclosure,
+            respondedAt: null,
+            revokedAt: null,
+            expiresAt: null,
+          },
+        });
+        await tx.carePermission.deleteMany({
+          where: { relationshipId: relation.id },
+        });
+        const notification = await tx.notification.upsert({
+          where: { userId_eventId: { userId: recipient.id, eventId } },
+          create: {
             userId: recipient.id,
             eventId,
-            type: "care_invitation",
+            type: NotificationType.CARE_INVITATION,
+            title: "新的关爱邀请",
+            body: "有人希望查看你授权共享的健康数据",
             deepLink: `/care/invitations/${relation.id}`,
+            metadata: { relationshipId: relation.id },
           },
-        },
-        update: {
-          status: "PENDING",
-          attempts: 0,
-          nextAttemptAt: new Date(),
-          lastError: null,
-        },
-      });
-      return relation;
-    });
-    return this.contract(relationship, []);
+          update: { readAt: null, createdAt: new Date() },
+        });
+        await tx.outboxEvent.upsert({
+          where: { eventId },
+          create: {
+            eventId,
+            eventType: "care_invitation",
+            aggregateType: "care_relationship",
+            aggregateId: relation.id,
+            payload: {
+              notificationId: notification.id,
+              userId: recipient.id,
+              eventId,
+              type: "care_invitation",
+              deepLink: `/care/invitations/${relation.id}`,
+            },
+          },
+          update: {
+            status: "PENDING",
+            attempts: 0,
+            nextAttemptAt: new Date(),
+            lastError: null,
+          },
+        });
+        return { kind: "created", relationship: relation };
+      },
+    );
+    if (result.kind === "limited") throw careInvitationLimited();
+    if (result.kind === "self") throw new BadRequestException("不能关爱自己");
+    if ("memberNo" in target) return { invitationSubmitted: true as const };
+    if (result.kind === "unavailable")
+      throw new NotFoundException("未找到该用户");
+    if (result.kind === "active")
+      throw new ConflictException("已建立关爱关系，无需重复邀请");
+    return this.contract(result.relationship, []);
   }
 
   async relationships(userId: string) {
     const relationships = await this.prisma.careRelationship.findMany({
-      where: { OR: [{ inviterId: userId }, { recipientId: userId }] },
+      where: visibleCareRelationships(userId),
       include: { permissions: true, inviter: true, recipient: true },
       orderBy: { updatedAt: "desc" },
     });
@@ -139,63 +212,81 @@ export class CareService {
       direction: relationship.inviterId === userId ? "sent" : "received",
       inviter: {
         id: relationship.inviter.id,
+        ...(Number.isInteger(relationship.inviter.compatibilityId)
+          ? { memberNo: String(relationship.inviter.compatibilityId) }
+          : {}),
         nickname: relationship.inviter.nickname,
         avatarUrl: relationship.inviter.avatarUrl,
       },
       recipient: {
         id: relationship.recipient.id,
+        ...(Number.isInteger(relationship.recipient.compatibilityId)
+          ? { memberNo: String(relationship.recipient.compatibilityId) }
+          : {}),
         nickname: relationship.recipient.nickname,
         avatarUrl: relationship.recipient.avatarUrl,
       },
     }));
   }
 
+  private async lockedRelationship(tx: Prisma.TransactionClient, id: string) {
+    const row = await tx.careRelationship.findUnique({ where: { id } });
+    if (!row) return null;
+    await careLock(tx, carePairKey(row.inviterId, row.recipientId));
+    return tx.careRelationship.findUnique({ where: { id } });
+  }
+
   async respond(userId: string, id: string, accepted: boolean) {
-    const relationship = await this.prisma.careRelationship.findUnique({
-      where: { id },
+    return this.prisma.$transaction(async (tx) => {
+      const relationship = await this.lockedRelationship(tx, id);
+      if (!relationship || relationship.recipientId !== userId) {
+        throw new NotFoundException("未找到待处理的关爱邀请");
+      }
+      if (relationship.status !== CareStatus.PENDING) {
+        throw new BadRequestException("该邀请已经处理");
+      }
+      // Acceptance is not metric consent, including legacy/raced pending rows.
+      await tx.carePermission.deleteMany({ where: { relationshipId: id } });
+      const updated = await tx.careRelationship.update({
+        where: { id },
+        data: {
+          status: accepted ? CareStatus.ACTIVE : CareStatus.REJECTED,
+          ...(accepted &&
+            relationship.identityDisclosure === CareIdentityDisclosure.MEMBER_NO_PENDING
+            ? { identityDisclosure: CareIdentityDisclosure.MEMBER_NO_ACCEPTED } : {}),
+          respondedAt: new Date(),
+        },
+      });
+      return this.contract(updated, []);
     });
-    if (!relationship || relationship.recipientId !== userId) {
-      throw new NotFoundException("未找到待处理的关爱邀请");
-    }
-    if (relationship.status !== CareStatus.PENDING) {
-      throw new BadRequestException("该邀请已经处理");
-    }
-    const updated = await this.prisma.careRelationship.update({
-      where: { id },
-      data: {
-        status: accepted ? CareStatus.ACTIVE : CareStatus.REJECTED,
-        respondedAt: new Date(),
-      },
-    });
-    return this.contract(updated, []);
   }
 
   async savePermissions(userId: string, id: string, input: unknown) {
-    const relationship = await this.prisma.careRelationship.findUnique({
-      where: { id },
-    });
-    if (!relationship || relationship.recipientId !== userId) {
-      throw new ForbiddenException("只能管理自己共享的健康数据");
-    }
-    if (relationship.status !== CareStatus.ACTIVE) {
-      throw new BadRequestException("关爱关系尚未生效");
-    }
-    const body = safeObject(input);
-    const rawMetrics = Array.isArray(body.metrics) ? body.metrics : [];
-    const metrics = [...new Set(rawMetrics.map(String))].map(
-      (value) => metricMap[value as HealthMetric],
-    );
-    if (metrics.some((metric) => !metric)) {
-      throw new BadRequestException("共享指标不正确");
-    }
-    const expiresAt = body.expiresAt ? new Date(String(body.expiresAt)) : null;
-    if (
-      expiresAt &&
-      (Number.isNaN(expiresAt.valueOf()) || expiresAt <= new Date())
-    ) {
-      throw new BadRequestException("共享到期时间不正确");
-    }
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
+      const relationship = await this.lockedRelationship(tx, id);
+      if (!relationship || relationship.recipientId !== userId) {
+        throw new ForbiddenException("只能管理自己共享的健康数据");
+      }
+      if (relationship.status !== CareStatus.ACTIVE) {
+        throw new BadRequestException("关爱关系尚未生效");
+      }
+      const body = safeObject(input);
+      const rawMetrics = Array.isArray(body.metrics) ? body.metrics : [];
+      const metrics = [...new Set(rawMetrics.map(String))].map(
+        (value) => metricMap[value as HealthMetric],
+      );
+      if (metrics.some((metric) => !metric)) {
+        throw new BadRequestException("共享指标不正确");
+      }
+      const expiresAt = body.expiresAt
+        ? new Date(String(body.expiresAt))
+        : null;
+      if (
+        expiresAt &&
+        (Number.isNaN(expiresAt.valueOf()) || expiresAt <= new Date())
+      ) {
+        throw new BadRequestException("共享到期时间不正确");
+      }
       await tx.carePermission.deleteMany({ where: { relationshipId: id } });
       if (metrics.length) {
         await tx.carePermission.createMany({
@@ -210,32 +301,27 @@ export class CareService {
         where: { id },
         data: { expiresAt },
       });
+      const updated = await tx.careRelationship.findUniqueOrThrow({
+        where: { id },
+        include: { permissions: true },
+      });
+      return this.contract(updated, updated.permissions);
     });
-    const updated = await this.prisma.careRelationship.findUniqueOrThrow({
-      where: { id },
-      include: { permissions: true },
-    });
-    return this.contract(updated, updated.permissions);
   }
 
   async revoke(userId: string, id: string) {
-    const relationship = await this.prisma.careRelationship.findUnique({
-      where: { id },
-    });
-    if (
-      !relationship ||
-      (relationship.inviterId !== userId && relationship.recipientId !== userId)
-    ) {
-      throw new NotFoundException("未找到关爱关系");
-    }
-    const updated = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
+      const relationship = await this.lockedRelationship(tx, id);
+      if (!relationship || !careIdentityVisible(userId, relationship)) {
+        throw new NotFoundException("未找到关爱关系");
+      }
       await tx.carePermission.deleteMany({ where: { relationshipId: id } });
-      return tx.careRelationship.update({
+      const updated = await tx.careRelationship.update({
         where: { id },
         data: { status: CareStatus.REVOKED, revokedAt: new Date() },
       });
+      return this.contract(updated, []);
     });
-    return this.contract(updated, []);
   }
 
   async authorizedSubject(
@@ -372,13 +458,14 @@ export class CareService {
       enabled: boolean;
       expiresAt: Date | null;
     }>,
-  ) {
+  ): CareRelationshipContract {
     return {
       id: relationship.id,
       invitationId: relationship.invitationId,
       inviterMemberId: relationship.inviterId,
       recipientMemberId: relationship.recipientId,
-      status: relationship.status.toLowerCase(),
+      status:
+        relationship.status.toLowerCase() as CareRelationshipContract["status"],
       metrics: permissions
         .filter((item) => item.enabled)
         .map((item) => metricReverse[item.metric]),

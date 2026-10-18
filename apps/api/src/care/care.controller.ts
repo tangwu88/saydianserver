@@ -59,9 +59,14 @@ export class CareController {
   }
 
   @Post("invitations")
-  invite(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
-    const body = safeObject(input);
-    return this.care.invite(user.id, String(body.identifier ?? body.mobile ?? ""));
+  async invite(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: unknown,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.care.invite(user.id, safeObject(input));
+    if ("invitationSubmitted" in result) response.status(202);
+    return result;
   }
 
   @Post("relationships/:id/respond")

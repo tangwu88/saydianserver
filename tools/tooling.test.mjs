@@ -14,6 +14,10 @@ import "../deploy/scripts/offline-image-transfer.test.mjs";
 import "../deploy/scripts/ci-registry-login.test.mjs";
 import "../deploy/scripts/runtime-artifact.test.mjs";
 import "../deploy/scripts/component-cache.test.mjs";
+import "../deploy/scripts/care-privacy-topology.test.mjs";
+import "../deploy/scripts/care-privacy-legacy.test.mjs";
+import "../deploy/scripts/care-privacy-proof.test.mjs";
+import "../deploy/scripts/care-privacy-lock.test.mjs";
 import { writeWindowsInstallDouble } from "./shell-test-fixture.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

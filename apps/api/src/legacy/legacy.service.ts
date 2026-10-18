@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
-import { CareStatus, HealthMetric, Prisma } from "@prisma/client";
+import { CareIdentityDisclosure, CareStatus, HealthMetric, Prisma } from "@prisma/client";
+import { careIdentityVisible, visibleCareRelationships } from "../care/care-visibility";
 import { businessWritesPaused } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
 import { legacyCareNames } from "./legacy-care-mapper";
@@ -53,8 +54,8 @@ export class LegacyService {
   async careRows(userId: string, observedOnly: boolean) {
     const relationships = await this.prisma.careRelationship.findMany({
       where: observedOnly
-        ? { inviterId: userId, status: CareStatus.ACTIVE }
-        : { OR: [{ inviterId: userId }, { recipientId: userId }] },
+        ? { AND: [visibleCareRelationships(userId), { inviterId: userId, status: CareStatus.ACTIVE }] }
+        : visibleCareRelationships(userId),
       include: {
         inviter: true,
         recipient: true,
@@ -65,6 +66,10 @@ export class LegacyService {
     return Promise.all(relationships.map(async (relationship) => {
       await this.assertMemberIdAvailable(relationship.inviter);
       await this.assertMemberIdAvailable(relationship.recipient);
+      const member = (user: typeof relationship.inviter) =>
+        relationship.identityDisclosure === CareIdentityDisclosure.CONTACT
+          ? this.memberContract(user)
+          : { id: legacyMemberPublicId(user), uuid: user.id, nickname: user.nickname, username: user.nickname, head_portrait: user.avatarUrl };
       return {
         id: await this.relationshipPublicId(relationship),
         member_id: legacyMemberPublicId(relationship.inviter),
@@ -72,13 +77,13 @@ export class LegacyService {
         examine_status: legacyStatus[relationship.status],
         status: relationship.status.toLowerCase(),
         created_at: Math.floor(relationship.createdAt.valueOf() / 1000),
-        member: this.memberContract(
+        member: member(
           observedOnly || relationship.inviterId === userId
             ? relationship.recipient
             : relationship.inviter,
         ),
-        inviter: this.memberContract(relationship.inviter),
-        to_member: this.memberContract(relationship.recipient),
+        inviter: member(relationship.inviter),
+        to_member: member(relationship.recipient),
         setting: legacyCareNames(relationship.permissions
           .filter((permission) => permission.enabled)
           .map((permission) => legacyMetricName[permission.metric])),
@@ -86,7 +91,7 @@ export class LegacyService {
     }));
   }
 
-  async relationshipByCompatibilityId(idInput: unknown) {
+  async relationshipByCompatibilityId(idInput: unknown, userId: string) {
     const compatibilityId = Number(idInput);
     if (!Number.isInteger(compatibilityId) || compatibilityId <= 0) {
       throw new NotFoundException("未找到关爱关系");
@@ -98,7 +103,7 @@ export class LegacyService {
       where: imported ? { id: imported.targetId } : { compatibilityId },
       include: { inviter: true, recipient: true, permissions: true },
     });
-    if (!relationship) throw new NotFoundException("未找到关爱关系");
+    if (!relationship || !careIdentityVisible(userId, relationship)) throw new NotFoundException("未找到关爱关系");
     if (await this.relationshipPublicId(relationship) !== compatibilityId) throw new NotFoundException("未找到关爱关系");
     return relationship;
   }
@@ -108,8 +113,7 @@ export class LegacyService {
     if (!Number.isInteger(memberCompatibilityId) || memberCompatibilityId <= 0) {
       throw new NotFoundException("未找到关爱关系");
     }
-    const member = await this.userByCompatibilityId(memberCompatibilityId);
-    if (!member) throw new NotFoundException("未找到关爱关系");
+    const member = await this.userByCompatibilityId(memberCompatibilityId, "未找到关爱关系");
     const relationship = await this.prisma.careRelationship.findFirst({
       where: {
         status: CareStatus.ACTIVE,
@@ -125,7 +129,7 @@ export class LegacyService {
   }
 
   async viewerRelationship(userId: string, memberIdInput: unknown) {
-    const subject = await this.userByCompatibilityId(memberIdInput);
+    const subject = await this.userByCompatibilityId(memberIdInput, "未找到可查看的关爱关系");
     const relationship = await this.prisma.careRelationship.findFirst({
       where: {
         inviterId: userId,
@@ -138,14 +142,14 @@ export class LegacyService {
     return { relationship, subject };
   }
 
-  async userByCompatibilityId(idInput: unknown) {
+  async userByCompatibilityId(idInput: unknown, missingMessage = "未找到成员") {
     const compatibilityId = Number(idInput);
     if (!Number.isInteger(compatibilityId) || compatibilityId <= 0) {
-      throw new NotFoundException("未找到成员");
+      throw new NotFoundException(missingMessage);
     }
     const oldUser = await this.prisma.user.findUnique({ where: { legacyMemberId: String(compatibilityId) } });
     const user = oldUser ?? await this.prisma.user.findFirst({ where: { compatibilityId, legacyMemberId: null } });
-    if (!user) throw new NotFoundException("未找到成员");
+    if (!user) throw new NotFoundException(missingMessage);
     return user;
   }
 

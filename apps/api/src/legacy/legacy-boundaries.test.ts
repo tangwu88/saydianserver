@@ -55,12 +55,15 @@ describe("care reinvitation", () => {
   const relation = { id: "relation", invitationId: "invitation", inviterId: "viewer", recipientId: "subject", status: "PENDING", expiresAt: null, createdAt: new Date(), updatedAt: new Date() };
   function fixture(status: string) {
     const tx = {
+      $executeRaw: vi.fn(async () => 1),
+      $queryRaw: vi.fn(async () => [{ status: "ACTIVE" }]),
+      user: { findUnique: vi.fn().mockResolvedValue({ id: "subject", status: "ACTIVE" }) },
       careRelationship: { findUnique: vi.fn().mockResolvedValue({ ...relation, status }), upsert: vi.fn().mockResolvedValue(relation) },
       carePermission: { deleteMany: vi.fn() },
       notification: { upsert: vi.fn().mockResolvedValue({ id: "notice" }) },
       outboxEvent: { upsert: vi.fn() },
     };
-    const service = new CareService({ user: { findUnique: vi.fn().mockResolvedValue({ id: "subject" }) }, $transaction: (run: (db: unknown) => unknown) => run(tx) } as unknown as PrismaService);
+    const service = new CareService({ $transaction: (run: (db: unknown) => unknown) => run(tx) } as unknown as PrismaService);
     return { service, tx };
   }
   it("does not reset active permissions when an inviter clicks again", async () => {

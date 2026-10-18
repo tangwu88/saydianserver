@@ -351,7 +351,7 @@ export class LegacyMemberController {
     @Body() input: unknown,
   ) {
     const body = safeObject(input);
-    const relationship = await this.legacy.relationshipByCompatibilityId(body.id);
+    const relationship = await this.legacy.relationshipByCompatibilityId(body.id, user.id);
     const accepted = Number(body.examine_status) === 1;
     const updated = await this.care.respond(user.id, relationship.id, accepted);
     return legacySuccess(updated, accepted ? "已接受邀请" : "已拒绝邀请");
@@ -391,7 +391,7 @@ export class LegacyMemberController {
     @Query() query: Record<string, string | undefined>,
     @Req() request: RequestWithContext,
   ) {
-    const relationship = await this.legacy.relationshipByCompatibilityId(query.id);
+    const relationship = await this.legacy.relationshipByCompatibilityId(query.id, user.id);
     const rows = await this.healthRows(
       user.id,
       { ...query, selectmember: String(this.legacy.memberContract(relationship.recipient).id) },

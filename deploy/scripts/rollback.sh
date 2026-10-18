@@ -2,6 +2,11 @@
 set -eu
 
 root_dir=${DEPLOY_ROOT:-/opt/saydianapp-server}
+if [ "$(readlink "/proc/$$/fd/9" 2>/dev/null || true)" != "$root_dir/deploy/.ci-release.lock" ]; then
+  exec 9>"$root_dir/deploy/.ci-release.lock"
+fi
+flock -n 9
+bash "$(dirname "$0")/care-privacy-gate.sh" legacy
 env_file="$root_dir/deploy/.env.production"
 compose_file="$root_dir/deploy/compose.production.yaml"
 compose() {

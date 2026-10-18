@@ -10,6 +10,15 @@ source_dir=${RELEASE_SOURCE:?Receiver staging directory required}
 state="$root_dir/private/accepted-state.json"
 env_file="$root_dir/private/runtime.env"
 [[ -f "$state" && -f "$env_file" ]]
+# This independent topology has no privacy-aware stop/drain/rollback protocol
+# yet. Refuse this schema boundary, rather than fall back to a legacy US image.
+python3 - "$source_dir/deploy/release-manifest.json" <<'PY'
+import json,sys
+m=json.load(open(sys.argv[1]))
+assert not any(x['name']=='20261018070000_care_identity_disclosure' for x in m['migrations']), 'Care privacy requires an independently verified US cutover; services unchanged'
+PY
+privacy_state=$(docker exec -i saydian-us-us-postgres-1 psql -X -qAt -v ON_ERROR_STOP=1 -U us_owner -d saydian_us < "$source_dir/deploy/scripts/care-privacy-schema.sql")
+[[ "$privacy_state" == legacy ]] || { echo 'Care privacy schema blocks legacy US deployment; services unchanged.' >&2; exit 1; }
 python3 "$source_dir/deploy/us/capacity.py" "$revision" "$source_dir/deploy/release-manifest.json" "$state" "$root_dir"
 python3 - "$state" <<'PY'
 import json,sys
