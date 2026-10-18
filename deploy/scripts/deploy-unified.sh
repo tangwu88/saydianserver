@@ -193,6 +193,7 @@ install -d -m 700 "$backup"
 cp -p "$base_compose" "$backup/compose.json"
 pin_images global- saydian-global > "$backup/images.json"
 gateway=${GATEWAY_CONFIG_PATH:-/opt/saydian/config/gateway-nginx.conf}
+if [[ "$scoped_modules" == true ]]; then sha256sum "$gateway" > "$backup/gateway.sha256"; fi
 changed=false
 gateway_changed=false
 writes_opened=false
@@ -318,10 +319,9 @@ if [[ "$first" == true ]]; then
   gateway_changed=true
   cp "$source_dir/gateway-candidate-frozen.conf" "$gateway"
 fi
-if [[ "$scoped_modules" != true ]]; then
-  docker exec saydian-gateway-1 nginx -t
-  docker exec saydian-gateway-1 nginx -s reload
-fi
+if [[ "$scoped_modules" == true ]]; then sha256sum --check "$backup/gateway.sha256"; fi
+docker exec saydian-gateway-1 nginx -t
+docker exec saydian-gateway-1 nginx -s reload
 public_checks
 if [[ "$scoped_modules" == true ]]; then
   settings_fingerprint > "$backup/settings-after.digest"

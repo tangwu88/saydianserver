@@ -157,13 +157,15 @@ test("scoped modules require root approval, zero pending migrations, unchanged e
     assert(!result.calls.includes("migrate deploy"));
   }
 });
-test("scoped success pulls exact images without migration, gateway reload or business setting writes", () => {
+test("scoped success preserves gateway configuration and settings without migrations", () => {
   const result = run("module-success"); assert.equal(result.status, 0, result.output);
   assert(result.calls.includes("restore-rehearsal"));
   assert(result.calls.includes("module-release-scope.mjs approval"));
   assert(result.calls.includes("module-release-scope.mjs environment"));
   assert(result.calls.includes("git/ref/heads/codex/say-ring-module-visibility-20261018"));
-  assert(!/migrate deploy|migrate status|nginx -s reload|unify-gateway.mjs|UPDATE |INSERT INTO/.test(result.calls));
+  assert(result.calls.includes("gateway.sha256"));
+  assert(result.calls.includes("nginx -s reload"));
+  assert(!/migrate deploy|migrate status|unify-gateway.mjs|UPDATE |INSERT INTO/.test(result.calls));
 });
 test("scoped startup or concurrent settings change rolls back pinned images, never the database", () => {
   for (const mode of ["module-start-failed", "module-settings-changed"]) {

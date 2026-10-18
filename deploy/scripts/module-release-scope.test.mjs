@@ -25,7 +25,8 @@ test("one-shot release preserves ordinary main guard and forbids schema/gateway 
   assert(script.includes("Scoped module release cannot contain pending migrations"));
   assert(script.includes("Existing settings changed during module release"));
   assert(script.includes("git/ref/heads/main"));
-  assert(script.includes('if [[ "$scoped_modules" != true ]]; then'));
+  assert(script.includes('if [[ "$first" != true && "$scoped_modules" != true ]]; then'));
+  assert(script.includes('sha256sum --check "$backup/gateway.sha256"'));
 });
 
 test("deployment rejects changed SMTP, signing or other environment values before switching", () => {
