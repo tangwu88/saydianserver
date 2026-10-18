@@ -47,7 +47,8 @@ export class IntegrationSecretsService {
     }
   }
 
-  async save(integrationKey: string, value: unknown): Promise<void> {
+  /** Validate and encrypt before a caller starts its configuration transaction. */
+  prepare(integrationKey: string, value: unknown): EncryptedSecret {
     const secrets = safeObject(value);
     if (!Object.keys(secrets).length) {
       throw new BadRequestException("请填写至少一项密钥配置");
@@ -56,11 +57,15 @@ export class IntegrationSecretsService {
     if (Buffer.byteLength(serialized) > 64 * 1024) {
       throw new BadRequestException("密钥配置内容过大");
     }
-    const encrypted = encryptIntegrationSecrets(
+    return encryptIntegrationSecrets(
       integrationKey,
       secrets,
       integrationMasterKey(),
     );
+  }
+
+  async save(integrationKey: string, value: unknown): Promise<void> {
+    const encrypted = this.prepare(integrationKey, value);
     await this.prisma.integrationSecret.upsert({
       where: { integrationKey },
       create: { integrationKey, ...encrypted },
