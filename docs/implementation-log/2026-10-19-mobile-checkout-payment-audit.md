@@ -26,3 +26,12 @@
 - 合并 b55898a 后串行门禁全部退出0：pnpm api:docs:check（0.3秒）；pnpm tools:test（63.3秒）；pnpm typecheck（7.0秒）；pnpm test（16.1秒）；pnpm build（7.8秒）；pnpm --filter @saydian/app-shop build:mp-weixin（3.3秒）；git diff --check（0.0秒）。商城181项、API1258项通过；真实PostgreSQL与镜像验收交由CI，不冒认本地35项跳过的数据库测试通过。
 - 真实公开接口确认中国站登录/支付能力；未同意协议的授权URL请求按预期返回400 consent_required，未代会员勾选或提交同意、未发送真实短信、未调用微信用户授权或创建生产订单。
 - 通过明确文件与实施日志提交，正式发布限中国站，合并消息保留[deploy cn only]。本机浏览器操作入口不可用，因此上线证据以流水线、双readiness及实际资源为准，微信/支付宝客户端唤起和真实扣款到账仍须用户真机确认。
+
+## 正式发布回执
+
+- PR #46 已合并为 f1d964b2606665159f5a0199a575b578be0180f5。其 verify 成功，但部署 resolve 因主线已前进拒绝旧 revision，未用旧版本覆盖。后续包含本轮改动的主线 94252e996ef3a8d28d34ec72d7550c54206f6864，CI 39228899111 的 verify、resolve、China deploy 全部成功，US job skipped。未修改美国站、商户凭证或生产写入设置。
+- 线上 /health/ready 和 /global/health/ready 均 HTTP200、database=ok、revision=94252e996ef3a8d28d34ec72d7550c54206f6864。商城/admin/vip HTML 均200并no-store；商城当前入口 index-DP081Uv5.js 确认引用本轮登录、结算和订单新块。
+- 实际下载登录 DrEH-WW6、结算 Czj0Y6Xk、订单 B91hl7om、支付 BWD9M-EE 四个JS，解压后SHA256逐一与本地构建相同，均gzip及max-age=31536000。双公开商城能力接口均200，微信内JSAPI、浏览器支付宝WAP/PAGE及短信/微信公众号登录启用，readonly=false保持；这是配置验证，不是供应商扣款成功证据。
+- 线上验收结果保存在忽略目录 artifacts/mobile-checkout-20261019/production-acceptance.json。微信真机授权、实际支付及到账回调仍待用户本人操作，不把本地181项商城测试、CI或readiness冒认为真实交易验收。小程序仅构建，未上传发布。
+- 发布后安全fetch发现其他任务主线1e9476f（ERP无库存规格导入），已仅快进本地主线；不覆盖、不回退、不把该任务的后续发布算成本轮已验收。回执采用纯文档skip-ci提交，运行版本与文档主线SHA分别记录。
+- 初次追加回执的shell Python输入被非UTF8编码拒绝，未写入文件；改用apply_patch追加并重查差异。
