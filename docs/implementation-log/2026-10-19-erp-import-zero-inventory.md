@@ -26,3 +26,11 @@
 - 首次补丁包含空hunk被apply_patch拒绝，未写文件，修正hunk后成功。未绕过校验。
 - 提交前重新fetch；HEAD与origin/main仍为94252e996ef3a8d28d34ec72d7550c54206f6864。使用单次http.sslBackend=openssl保证本机Git连通，不改全局配置。
 - 后续PR CI需通过真实PostgreSQL验收；仅CI成功后合并main。推送与生产发布状态分别核对，需验证中国站两处readiness修订及实际后台资源包含零库存提示。生产业务未试写，需用户刷新后主动重试导入。
+## 发布验收与版本刷新
+
+- PR #47 / CI 39242147904通过，合并1e9476fba504163686ea20a296b84b5745b04b63。CI真实PG四个文件36项全通过，commerce-database五项包含本轮空库存导入验收。
+- 主分支CI 39243447940的verify成功；中国站普通部署job 118033524721从11:26:48 UTC持续下载api镜像，12:26:48超时取消，旧版服务保持ready/database ok。原镜像导出39244701500成功，artifact 12182448434；未进行生产业务试写。
+- 同期主分支新增d370ac011ddd4fdd4a068d4c4920caf358aeb8ca（仅mobile-checkout实施日志，[skip ci]），最新主分支保护中止旧修订发布，未绕过版本校验。
+- 重新串行typecheck/test/api:docs:check/tools:test/build全部通过，git diff --check通过。Git fetch多次连接重置/无法连接，未声称本地已同步；改用GitHub Git Data API读取最新分支及compare：仅上述docs文件变化，原合并提交tree与本地HEAD tree均a12af8ea97d912a83ffa451e9d1d647a21d8f473。
+- 本次追加日志作为最新main的单文件文档提交，基于最新tree并保留全部既有变更，更新ref force=false且写入前重新检查SHA。功能源码不变，触发最新main完整CI，保持[deploy cn only]。
+- 后续发布在verify成功且任何SSH接收步骤尚未开始时停止普通下载任务，再使用当前修订的已验证原始镜像导出、HTTPS导入和offline_images部署；不取消正在运行的接收器、不改仓库自动部署变量、不改维护/只读/写入开关。每一步核对最新main及相同修订/清单/镜像摘要；线上版本和资源核对后才确认完成。
