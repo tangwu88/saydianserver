@@ -244,16 +244,12 @@ async function performJushuitanProductImport(
     const missingInventory = mappedProducts.filter(
       (item) => !inventoryBySku.has(item.erpSkuId.toLowerCase()),
     );
-    if (missingInventory.length) {
-      throw new JushuitanUnavailableException(
-        `聚水潭已返回商品资料，但有 ${missingInventory.length} 个同款 SKU 未返回库存；本次没有导入，请稍后重试`,
-      );
-    }
     const stockBySku = new Map(
-      mappedProducts.map((item) => [
-        item.erpSkuId,
-        inventoryStock(inventoryBySku.get(item.erpSkuId.toLowerCase())!),
-      ]),
+      mappedProducts.map((item) => {
+        const inventory = inventoryBySku.get(item.erpSkuId.toLowerCase());
+        // Import-only policy: a successful complete query may omit zero-stock SKUs.
+        return [item.erpSkuId, inventory ? inventoryStock(inventory) : 0] as const;
+      }),
     );
     await markIntegrationVerified(prisma, "jushuitan");
 
@@ -363,10 +359,11 @@ async function performJushuitanProductImport(
         requestedSku,
         erpItemId: requestedProduct.erpItemId,
         skuCount: mappedProducts.length,
+        zeroStockSkuIds: missingInventory.map((item) => item.erpSkuId),
         fetchedAt: new Date().toISOString(),
         product: selectedFields(productRow, PRODUCT_FIELDS),
         inventory: selectedFields(
-          inventoryBySku.get(requestedProduct.erpSkuId.toLowerCase())!,
+          inventoryBySku.get(requestedProduct.erpSkuId.toLowerCase()) ?? {},
           INVENTORY_FIELDS,
         ),
         products: familyRows.map((row) => selectedFields(row, PRODUCT_FIELDS)),
@@ -607,7 +604,13 @@ async function queryJushuitanInventoryRows(
         },
         Math.min(20000, remaining),
       );
+      if (![response.datas, response.inventorys, safeObject(response.data).datas, response.data].some(Array.isArray)) {
+        throw new JushuitanUnavailableException("聚水潭库存响应缺少有效数据列表；本次未更新");
+      }
       const pageRows = jushuitanRows(response);
+      if (pageRows.some((row) => !normalizedSku(row))) {
+        throw new JushuitanUnavailableException("聚水潭库存响应缺少规格编码；本次未更新");
+      }
       rows.push(...pageRows);
       if (!hasNextPage(response)) break;
       if (pageRows.length === 0 || page === 100) {

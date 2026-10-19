@@ -1418,6 +1418,21 @@ describe("administrator commerce and service editor improvements", () => {
     expect(h.api.post).toHaveBeenCalledTimes(1);
   });
 
+  it("allows zero-stock ERP import to proceed to editing and shows the fallback count", async () => {
+    const h = harness();
+    h.route.params.resource = "commerce-products";
+    h.api.get.mockResolvedValue({ data: { data: [] } });
+    await h.openCreate();
+    h.form.value._erpLookupSku = "ERP-ZERO";
+    h.api.post.mockResolvedValueOnce({ data: { data: { id: "zero-product", source: "ERP", name: "Zero", skus: [{ id: "zero-sku", stock: 0 }], erpLookup: { zeroStockSkuIds: ["ERP-ZERO"] } } } });
+    await h.loadCommerceProductBySku();
+    expect(h.form.value).toMatchObject({ id: "zero-product", _erpLookupPending: false, _zeroStockSkuCount: 1, skus: [{ stock: 0 }] });
+    expect(h.erpLookupError.value).toBe("");
+    expect(h.sfc).toContain("商城库存已记为 0");
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledWith("/commerce-products/zero-product", expect.any(Object));
+  });
+
   it("keeps ERP lookup failures visible inside the product dialog", async () => {
     const h = harness(["SUPER_ADMIN"], "聚水潭未找到 SKU：sd-watch-w8");
     h.route.params.resource = "commerce-products";

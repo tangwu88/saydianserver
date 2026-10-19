@@ -1909,7 +1909,7 @@ export const apiCatalog = {
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "按SKU定位SPU并实时导入ERP商品",
       "request": "{sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存",
-      "response": "聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误",
+      "response": "商品及库存接口调用成功后导入全部同款规格；库存完整查询中未返回记录的SKU库存记0，erpLookup.zeroStockSkuIds列出这些编码，未伪造原始库存响应；已返回数量按原规则保存。未配置、无权限、商品未找到、接口错误、无效库存响应或分页不完整均不导入；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误",
       "dependency": "聚水潭商品查询与库存查询",
       "successStatus": 201,
       "contract": {

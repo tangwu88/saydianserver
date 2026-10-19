@@ -367,8 +367,8 @@ describe("administrator direct Jushuitan product import", () => {
     expect(h.prisma.$transaction).toHaveBeenCalledOnce();
   });
 
-  it("does not write when the ERP inventory response is missing", async () => {
-    const h = fixture();
+  it.each(["legacy", "v2"])("imports zero stock after a successful empty inventory query (%s)", async (mode) => {
+    const h = fixture(mode === "v2" ? { paths: { sku: "/open/sku/query" } } : {});
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -382,12 +382,53 @@ describe("administrator direct Jushuitan product import", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(
-      importJushuitanProductBySku(h.prisma as any, h.secrets as any, {
-        sku: "ERP-SKU-001",
-      }),
-    ).rejects.toThrow("本次没有导入");
+    const result = await importJushuitanProductBySku(h.prisma as any, h.secrets as any, { sku: "ERP-SKU-001" });
+    expect(h.tx.commerceSku.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { erpSkuId: "ERP-SKU-001" },
+      create: expect.objectContaining({ stock: 0, enabled: true }),
+      update: expect.objectContaining({ stock: 0 }),
+    }));
+    expect(result.erpLookup).toMatchObject({ zeroStockSkuIds: ["ERP-SKU-001"], inventory: {}, inventories: [] });
+    expect(h.prisma.$transaction).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])("keeps every sibling SKU and only defaults absent inventory to zero (requested missing: %s)", async (requestedMissing) => {
+    const h = fixture();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(providerResponse({ code: 0, datas: [product] }))
+      .mockResolvedValueOnce(providerResponse({ code: 0, datas: [product, productVariant] }))
+      .mockResolvedValueOnce(providerResponse({ code: 0, inventorys: [requestedMissing ? inventoryVariant : inventory] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await importJushuitanProductBySku(h.prisma as any, h.secrets as any, { sku: "ERP-SKU-001" });
+    const writes = h.tx.commerceSku.upsert.mock.calls as unknown as [{create: Record<string, unknown>}][];
+    expect(writes.map(([call]) => [call.create.erpSkuId, call.create.stock])).toEqual([
+      ["ERP-SKU-001", requestedMissing ? 0 : 7],
+      ["ERP-SKU-002", requestedMissing ? 4 : 0],
+    ]);
+    expect(result.erpLookup).toMatchObject({ skuCount: 2, zeroStockSkuIds: [requestedMissing ? "ERP-SKU-001" : "ERP-SKU-002"] });
+    expect(result.erpLookup.inventory).toEqual(requestedMissing ? {} : expect.objectContaining({ qty: 7 }));
+  });
+
+  it.each(["authorization", "http", "network", "malformed", "missing-list", "missing-id", "invalid-quantity", "incomplete-page"])("does not treat inventory %s failure as zero stock or write any product", async (failure) => {
+    const h = fixture();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(providerResponse({ code: 0, datas: [product] }))
+      .mockResolvedValueOnce(providerResponse({ code: 0, datas: [product, productVariant] }));
+    if (failure === "network") fetchMock.mockRejectedValueOnce(new Error("synthetic timeout"));
+    else if (failure === "malformed") fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => "not json" });
+    else fetchMock.mockResolvedValueOnce(providerResponse(
+      failure === "authorization" ? { code: 100, msg: "synthetic private diagnostic" } :
+      failure === "http" ? { code: 0, datas: [] } :
+      failure === "missing-list" ? { code: 0, data: {} } :
+      failure === "missing-id" ? { code: 0, inventorys: [{}] } :
+      failure === "invalid-quantity" ? { code: 0, inventorys: [{ ...inventory, qty: "invalid" }] } :
+      { code: 0, inventorys: [], has_next: true },
+      failure === "http" ? 503 : 200,
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(importJushuitanProductBySku(h.prisma as any, h.secrets as any, { sku: "ERP-SKU-001" })).rejects.toThrow();
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    expect(h.tx.commerceSku.upsert).not.toHaveBeenCalled();
   });
 
   it("keeps unconfigured or unauthorized ERP access explicit", async () => {

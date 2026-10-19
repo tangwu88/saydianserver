@@ -889,6 +889,7 @@ async function loadCommerceProductBySku(): Promise<void> {
       _erpLookupSku: sku,
       _erpLookupPending: false,
       _erpSnapshotText: product.erpLookup ? JSON.stringify(product.erpLookup, null, 2) : "",
+      _zeroStockSkuCount: Array.isArray(product.erpLookup?.zeroStockSkuIds) ? product.erpLookup.zeroStockSkuIds.length : 0,
       skus: product.skus.map((entry: Row) => ({ ...entry, _originalImage: String(entry.image ?? ""), _originalSpecification: String(entry.specification ?? "") })),
       galleryText: Array.isArray(product.gallery) ? product.gallery.join("\n") : "",
       tagsText: Array.isArray(product.tags) ? product.tags.join("，") : "",
@@ -1812,7 +1813,7 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="resource === 'commerce-products'">
           <template v-if="form._erpLookupPending">
-            <el-alert title="填写 ERP SKU 后，系统会实时调用聚水潭商品与库存接口；两项都成功才会按草稿导入，不依赖同步任务。" type="info" :closable="false" show-icon />
+            <el-alert title="填写 ERP SKU 后，系统会实时查询同款商品和库存并按草稿导入；库存查询成功但未返回记录的规格，商城库存记为 0。" type="info" :closable="false" show-icon />
             <el-alert v-if="erpLookupError" :title="erpLookupError" type="error" :closable="false" show-icon style="margin-top: 12px" />
             <el-form-item label="ERP SKU（必填）">
               <div style="display: flex; width: 100%; gap: 12px">
@@ -1823,6 +1824,7 @@ onBeforeUnmount(() => {
           </template>
           <template v-else>
             <el-alert v-if="form.source === 'ERP'" title="ERP 名称、编码、SKU、售价和库存已从聚水潭实时刷新；此处保存商城展示资料，后续同步仍会更新 ERP 权威字段。" type="success" :closable="false" show-icon />
+            <el-alert v-if="form._zeroStockSkuCount" :title="`已导入全部同款规格，其中 ${form._zeroStockSkuCount} 个规格未返回库存记录，商城库存已记为 0。`" type="info" :closable="false" show-icon />
             <el-form-item label="商品来源"
               ><el-tag>{{ form.source === "LOCAL" ? "本地商品" : "ERP同步商品" }}</el-tag></el-form-item
             >
