@@ -14,6 +14,8 @@ import ContentImageField from "../components/ContentImageField.vue";
 import ProductGalleryField from "../components/ProductGalleryField.vue";
 import SayRingIosHealthSetting from "../components/SayRingIosHealthSetting.vue";
 import SayRingIosModuleSetting from "../components/SayRingIosModuleSetting.vue";
+import SayRingSettingsPanel from "../components/SayRingSettingsPanel.vue";
+import { groupSayRingDisplaySettings } from "../say-ring-settings";
 import { createCnDownloadDraft, cnDownloadManifestToEditor, cnDownloadEditorToManifest, createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor, type DownloadManifestEditor } from "../global-download-setting";
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "../download-setting";
 import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "../legal-document-editor";
@@ -327,7 +329,10 @@ function rowProducts(row: Row): string[] {
   return [];
 }
 
-const visibleRows = computed(() => appProductFilter.value ? rows.value.filter((row) => rowProducts(row).includes(appProductFilter.value)) : rows.value);
+const visibleRows = computed(() => {
+  const listed = resource.value === "settings" ? groupSayRingDisplaySettings(rows.value) : rows.value;
+  return appProductFilter.value ? listed.filter((row) => rowProducts(row).includes(appProductFilter.value)) : listed;
+});
 
 let loadRequestId = 0;
 let healthRequestId = 0;
@@ -756,7 +761,7 @@ async function openEdit(row: Row): Promise<void> {
   if (requestId !== editorRequestId || requestedResource !== resource.value) return;
   originalArticleCategoryId.value = String(row[requestedResource === "articles" ? "categoryId" : "parentId"] ?? "") || null;
   dialogMode.value = "edit";
-  dialogTitle.value = `编辑${title.value}`;
+  dialogTitle.value = row._sayRingGroup ? "Say Ring 功能设置" : `编辑${title.value}`;
   const nextForm: Row = {
     ...row,
     roles: Array.isArray(row.roles) && row.roles.length ? [...row.roles] : [row.role ?? "READ_ONLY"],
@@ -921,6 +926,7 @@ async function deleteCommerceProduct(row: Row): Promise<void> {
 
 async function save(): Promise<void> {
   if (saving.value) return;
+  if (resource.value === "settings" && form.value._sayRingGroup) return;
   if (needsArticleCategories.value && (!articleCategoriesReady.value || articleCategoryEditorResource.value !== resource.value)) {
     ElMessage.error("请重新打开编辑窗口，等待分类加载成功后保存");
     return;
@@ -2005,9 +2011,10 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="resource === 'settings'">
           <el-alert v-if="form._unconfigured" :title="isAppDisplaySetting(form.key) ? '尚未保存显示设置，App 默认显示 AI 内容。调整开关并保存后生效。' : '此项尚未配置。当前内容仅为本次编辑草稿，尚未保存或公开；请填写真实配置后保存。'" type="info" :closable="false" show-icon />
-          <el-form-item label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
+          <el-form-item v-if="!form._sayRingGroup" label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
           <el-form-item v-if="!isAppDisplaySetting(form.key) && !['say_ring_ios_health_display', 'say_ring_ios_module_display'].includes(form.key)" label="公开"><el-switch v-model="form.public" /></el-form-item>
-          <SayRingIosHealthSetting v-if="form.key === 'say_ring_ios_health_display'" :key="String(form.updatedAt ?? 'new')" :setting="form" @saved="dialogVisible = false; load()" />
+          <SayRingSettingsPanel v-if="form._sayRingGroup" :settings="form._sayRingSettings" @saved="load" />
+          <SayRingIosHealthSetting v-else-if="form.key === 'say_ring_ios_health_display'" :key="String(form.updatedAt ?? 'new')" :setting="form" @saved="dialogVisible = false; load()" />
           <SayRingIosModuleSetting v-else-if="form.key === 'say_ring_ios_module_display'" :key="String(form.updatedAt ?? 'new')" :setting="form" @saved="dialogVisible = false; load()" />
           <template v-else-if="isAppDisplaySetting(form.key)">
             <el-form-item label="隐藏 AI 内容"><el-switch v-model="form.hideAi" active-text="隐藏" inactive-text="显示" /></el-form-item>
@@ -2123,7 +2130,7 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
       </el-form>
-      <template #footer><el-button :disabled="productImagesUploading > 0" @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit' && !['say_ring_ios_health_display', 'say_ring_ios_module_display'].includes(form.key)" type="primary" :loading="saving" :disabled="productImagesUploading > 0 || (needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
+      <template #footer><el-button :disabled="productImagesUploading > 0" @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit' && !form._sayRingGroup && !['say_ring_ios_health_display', 'say_ring_ios_module_display'].includes(form.key)" type="primary" :loading="saving" :disabled="productImagesUploading > 0 || (needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
     </el-dialog>
   </section>
 </template>

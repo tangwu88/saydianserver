@@ -7,6 +7,7 @@ import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEd
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "./download-setting";
 import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "./legal-document-editor";
 import { healthDeviceSource, healthMetricLabel, healthRawJson, healthTime } from "./health-display";
+import { groupSayRingDisplaySettings } from "./say-ring-settings";
 
 const envelope = (items: Record<string, unknown>[] = [], total = items.length) => ({ data: { data: { items, total, page: 1, pageSize: 30 } } });
 const member = {
@@ -57,6 +58,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
   const onBeforeUnmount = vi.fn();
   const deps = {
     computed,
+    groupSayRingDisplaySettings,
     ref,
     watch,
     onBeforeUnmount,
@@ -874,7 +876,14 @@ describe("frontend app content classification", () => {
     h.appProductFilter.value = "saidian";
     expect(h.visibleRows.value.map((row: any) => row.key)).toEqual(["app_update"]);
     h.appProductFilter.value = "say-ring";
-    expect(h.visibleRows.value.map((row: any) => row.key)).toEqual(["global_support", "say_ring_app_update", "say_ring_app_display", "say_ring_ios_health_display", "say_ring_ios_module_display", "say_ring_map"]);
+    expect(h.visibleRows.value.map((row: any) => row.key)).toEqual(["global_support", "say_ring_app_update", "say_ring_app_display", "say_ring_map"]);
+    const group = h.visibleRows.value.find((row: any) => row._sayRingGroup);
+    expect(group.name).toBe("Say Ring 功能设置");
+    expect(group._sayRingSettings).toHaveLength(3);
+    await h.openEdit(group);
+    expect(h.dialogTitle.value).toBe("Say Ring 功能设置");
+    await h.save();
+    expect(h.api.patch).not.toHaveBeenCalled();
   });
 });
 
