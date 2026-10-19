@@ -18,16 +18,16 @@ function nodes(node){return !node||typeof node!=='object'?[]:[node,...(Array.isA
 function text(node){return typeof node?.children==='string'?node.children:Array.isArray(node?.children)?node.children.map(text).join(''):'';}
 const button=(tree,label)=>nodes(tree).find(node=>node.type==='button'&&text(node)===label);
 const copy=value=>JSON.parse(JSON.stringify(value));
-function page(name,handler,options={}){const hooks={},requests=[],navigations=[],notices=[],store=options.store||new Map();let session='member-a-session';
-  const uni={getStorageSync:key=>store.get(key),setStorageSync:(key,value)=>store.set(key,value),removeStorageSync:key=>store.delete(key),getStorageInfoSync:()=>({keys:[...store.keys()]}),getSystemInfoSync:()=>({windowWidth:390}),redirectTo:value=>navigations.push(value.url),navigateTo:value=>navigations.push(value.url),showModal:options.modal||(()=>Promise.resolve({confirm:true}))};
+function page(name,handler,options={}){const hooks={},requests=[],navigations=[],notices=[],copied=[],store=options.store||new Map();let session='member-a-session';
+  const uni={getStorageSync:key=>store.get(key),setStorageSync:(key,value)=>store.set(key,value),removeStorageSync:key=>store.delete(key),getStorageInfoSync:()=>({keys:[...store.keys()]}),getSystemInfoSync:()=>({windowWidth:390}),setClipboardData:value=>{copied.push(value.data);value.success?.();},reLaunch:value=>navigations.push(value.url),redirectTo:value=>navigations.push(value.url),navigateTo:value=>navigations.push(value.url),showModal:options.modal||(()=>Promise.resolve({confirm:true}))};
   const {realm}=realmTestModules(uni,{env:{VITE_APP_REALM:'global'}});realm.mallStorage.set('saidian-user',{id:options.userId||'member-a'});realm.mallStorage.set('saidian-token','synthetic-token');
   const value=compiled[name];const component=evaluate(value.script,{vue,'../../realm':realm,'../../components/DesktopHeader.vue':{default:{render:()=>null}},'@dcloudio/uni-app':Object.fromEntries(['Load','Show','Hide','Unload'].map(event=>['on'+event,callback=>hooks[event.toLowerCase()]=callback])),
     '../../components/ImageEvidencePicker.vue':{default:{render:()=>null}},'../../after-sale-images':{validEvidenceIds:ids=>Array.isArray(ids)&&ids.length<=9&&ids.every(id=>/^[0-9a-f-]{36}$/.test(id))},
     '../../commerce-model':model,'../../api':{api:async(path,input={})=>{requests.push({path,input});return handler(path,input,requests.length);},money:value=>value==null?'未获取':`¥${(value/100).toFixed(2)}`,toast:value=>notices.push(String(value)),requireLogin:()=>true,mallSessionStamp:()=>session,clearCheckoutState(){for(const key of ['checkout-items','checkout-draft','checkout-owner','checkout-pending','checkout-address','checkout-cart-ids'])realm.mallStorage.remove(key);}},
-    '../../payments':{confirmPayment:options.confirmPayment||(()=>Promise.resolve({paid:false})),createOrderPayment:options.createOrderPayment||(()=>{throw Error('Unexpected payment creation');}),invokePayment:options.invokePayment||(()=>Promise.resolve({})),paymentEnvironment:()=> 'wechat',paymentLabels:{wechat_jsapi:'微信支付'}},
-  },{uni,setInterval:()=>123,clearInterval(){}}).default;
+    '../../payments':{confirmPayment:options.confirmPayment||(()=>Promise.resolve({paid:false})),createOrderPayment:options.createOrderPayment||(()=>{throw Error('Unexpected payment creation');}),invokePayment:options.invokePayment||(()=>Promise.resolve({})),paymentEnvironment:()=>options.environment||'wechat',paymentLabels:{wechat_jsapi:'微信支付'}},
+  },{uni,URL,location:{origin:'https://app.saydian.cn'},setInterval:()=>123,clearInterval(){}}).default;
   const state=component.setup({},{expose(){}}),ui=vue.proxyRefs(state);hooks.load(name==='after-sale'?{orderId:'order-a'}:{id:'order-a'});
-  return {state,hooks,requests,navigations,notices,store,storage:realm.mallStorage,setSession:value=>{session=value;},tree:()=>value.render({},[],{},ui,{},{}),async show(){hooks.show();await tick();}};
+  return {state,hooks,requests,navigations,notices,copied,store,storage:realm.mallStorage,setSession:value=>{session=value;},tree:()=>value.render({},[],{},ui,{},{}),async show(){hooks.show();await tick();}};
 }
 const item=(id='item-a')=>({id,nameSnapshot:'测试商品 '+id,specificationSnapshot:'白色',quantity:3,unitPriceCents:1000});
 const order=(changes={})=>({id:'order-a',orderNo:'TEST-A',status:'RECEIVED',readOnly:false,items:[item()],allowedActions:['APPLY_AFTER_SALE'],afterSaleEligibleItems:[{orderItemId:'item-a',quantityRemaining:2,cashRemainingCents:1600,pointRemainingCents:400}],afterSales:[],shipments:[],...changes});
@@ -131,3 +131,45 @@ test('return logistics requires exact eligible type and owner, sends current ver
   const sale={id:'sale-a',version:3,executionOwner:'NEW_SYSTEM',type:'RETURN_REFUND',status:'WAITING_RETURN'};const h=page('order-detail',(path,input)=>path==='/storefront/capabilities'?{payments:[]}:input.method==='POST'?sale:order({afterSales:[sale]}));await h.show();assert.equal(h.state.returnable({...sale,type:'REFUND_ONLY'}),false);assert.equal(h.state.returnable({...sale,executionOwner:'LEGACY'}),false);h.state.editReturn(sale);h.state.returnCompany.value='测试快递';h.state.returnTracking.value='TEST0001';await h.state.saveReturn();const request=h.requests.find(row=>row.path.endsWith('/return-logistics'));assert.equal(request.input.data.version,3);assert.equal(request.input.data.trackingNo,'TEST0001');assert.equal(h.state.order.value.afterSales[0].status,'WAITING_RETURN');
 });
 test('submitted sale exposes only canonical private IDs, never external evidence URLs',async()=>{const id='12345678-1234-4234-8234-123456789012',h=page('order-detail',()=>order({afterSales:[{id:'sale-a',status:'REQUESTED',evidenceImages:['file:'+id,'https://foreign.example/image',id,'file:'+id]}]}));await h.show();assert.deepEqual(copy(h.state.saleEvidenceIds(h.state.order.value.afterSales[0].evidenceImages)),[id]);const viewer=nodes(h.tree()).find(node=>node.props?.['model-value']);assert.deepEqual(copy(viewer.props['model-value']),[id]);assert.equal(viewer.props.readonly,'');assert.equal(text(h.tree()).includes('foreign.example'),false);});
+
+test('order status reload preserves the chosen payment method',async()=>{
+  const caps={payments:[{channel:'wechat_h5',enabled:true},{channel:'alipay_wap',enabled:true}]};
+  const h=page('order-detail',path=>path==='/storefront/capabilities'?caps:order({status:'PENDING_PAYMENT',allowedActions:['PAY']}),{environment:'browser'});
+  await h.show();h.state.channel.value='alipay_wap';await h.state.load();
+  assert.equal(h.state.channel.value,'alipay_wap');
+});
+test('order handoff copies only the owned order link and keeps the desired payment across login',async()=>{
+  for(const [environment,target] of [['wechat','alipay'],['browser','wechat']]){
+    const caps={payments:[{channel:'wechat_jsapi',enabled:true},{channel:'alipay_wap',enabled:true}]};
+    const h=page('order-detail',path=>path==='/storefront/capabilities'?caps:order({status:'PENDING_PAYMENT',allowedActions:['PAY']}),{environment});
+    await h.show();h.state.copyPaymentOrder(target);
+    assert.equal(h.copied.length,1);const url=new URL(h.copied[0]);
+    assert.equal(url.origin,'https://app.saydian.cn');assert.equal(url.search,'');assert.equal(url.hash,`#/pages/order-detail/index?id=order-a&payment=${target}`);
+    assert.equal(url.href.includes('token'),false);h.setSession('another-account');h.state.copyPaymentOrder(target);assert.equal(h.copied.length,1);
+  }
+});
+test('a browser order link selects Alipay when both providers are available',async()=>{
+  const caps={payments:[{channel:'wechat_h5',enabled:true},{channel:'alipay_wap',enabled:true}]};
+  const h=page('order-detail',path=>path==='/storefront/capabilities'?caps:order({status:'PENDING_PAYMENT',allowedActions:['PAY']}),{environment:'browser'});
+  h.hooks.load({id:'order-a',payment:'alipay'});await h.show();assert.equal(h.state.channel.value,'alipay_wap');
+});
+
+test('an existing provider payment locks incompatible channel changes and preserves safe continuation',async()=>{
+  const caps={payments:[{channel:'wechat_jsapi',enabled:true},{channel:'alipay_wap',enabled:true},{channel:'alipay_page',enabled:true}]};
+  const active=order({status:'PENDING_PAYMENT',allowedActions:['PAY'],paymentIntents:[{id:'payment-a',status:'PENDING',channel:'WECHAT_JSAPI'}]});
+  const h=page('order-detail',path=>path==='/storefront/capabilities'?caps:active);
+  await h.show();assert.deepEqual(copy(h.state.channels.value).map(x=>x.channel),['wechat_jsapi']);
+  h.state.copyPaymentOrder('alipay');assert.equal(h.copied.length,0);
+  assert.match(text(h.tree()),/关闭原支付/);
+  const browser=page('order-detail',path=>path==='/storefront/capabilities'?caps:order({...active,paymentIntents:[{id:'payment-b',status:'PENDING',channel:'ALIPAY_PAGE'}]}),{environment:'browser'});
+  await browser.show();assert.equal(browser.state.channel.value,'alipay_page');
+  assert.equal(browser.state.wechatPaymentEnabled.value,false);
+});
+
+test('missing official-account identity offers explicit authorization and returns to the same order',async()=>{
+  for(const [message,required] of [['请先在当前公众号中授权并验证手机号或邮箱',true],['已取消支付，可从订单继续',false]]){
+    const h=page('order-detail',path=>path==='/storefront/capabilities'?{payments:[{channel:'wechat_jsapi',enabled:true}]}:order({status:'PENDING_PAYMENT',allowedActions:['PAY']}),{createOrderPayment:()=>{throw Error(message);}});
+    await h.show();await h.state.pay();assert.equal(h.state.wechatAuthRequired.value,required);
+    if(required){h.state.reauthorize();assert.equal(h.storage.get('saidian-post-login-route'),'/pages/order-detail/index?id=order-a');assert.deepEqual(h.navigations,['/pages/login/index']);}
+  }
+});

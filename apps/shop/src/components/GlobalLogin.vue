@@ -15,6 +15,7 @@
         <view v-if="error" class="error-state" role="alert">{{ error }}</view>
         <text v-if="loading" class="muted">正在加载…</text>
         <button v-if="!loading && (!capabilities || !legalReady)" class="text-button retry" :disabled="busy" @click="initialize(false)">重新加载</button>
+        <view v-if="!bindTicket && isWechat && capabilities?.login?.wechatH5?.enabled" class="wechat-section"><text class="separator">微信内推荐</text><button class="outline-btn wechat" :disabled="busy || loading || !legalReady" @click="officialLogin">微信登录</button><text class="muted">首次使用需验证手机号，便于后续微信付款。</text></view>
         <view v-if="!bindTicket" class="contact-tabs"><button :class="{ active: contactMode === 'sms' }" :disabled="busy" @click="changeContact('sms')">手机号</button><button :class="{ active: contactMode === 'email' }" :disabled="busy || capabilities?.login?.email?.enabled===false" @click="changeContact('email')">邮箱</button></view>
         <label class="field-label" :for="bindTicket ? 'bind-phone' : 'login-contact'">{{ bindTicket || contactMode === "sms" ? "手机号" : "邮箱" }}</label>
         <view :class="{ 'phone-fields': phoneMode }"><CountryCallingCodePicker v-if="phoneMode" v-model="phoneCountry" :disabled="busy" compact @update:model-value="resetChallenge" /><input :id="bindTicket ? 'bind-phone' : 'login-contact'" v-model="identifier" :disabled="busy" class="input" :maxlength="phoneMode ? 32 : 254" :placeholder="phoneMode ? '请输入手机号' : '请输入邮箱'" @input="resetChallenge" /></view>
@@ -37,8 +38,8 @@
           {{ bindTicket ? "确认并继续" : "登录" }}
         </button>
         <template v-if="!bindTicket">
-          <view v-if="isWechat && capabilities?.login?.wechatH5?.enabled" class="wechat-section"><text class="separator">其他登录方式</text><button class="outline-btn wechat" :disabled="busy || loading || !legalReady" @click="officialLogin">微信登录</button></view>
-          <text v-else-if="!isWechat && !isWecom && capabilities?.login?.wechatH5?.enabled" class="muted wechat-hint">在微信中打开，可使用微信登录。</text>
+
+          <text v-if="!isWechat && !isWecom && capabilities?.login?.wechatH5?.enabled" class="muted wechat-hint">在微信中打开，可使用微信登录。</text>
         </template>
         <button v-if="bindTicket" class="text-button back-login" :disabled="busy" @click="cancelBinding">返回登录</button>
         <button v-else class="text-button back-login" :disabled="busy" @click="browse">先逛逛</button>
