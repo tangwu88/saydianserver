@@ -1,3 +1,4 @@
+import { cnDisplaySections } from "./cn-display";
 import {
   BadRequestException,
   ForbiddenException,
@@ -124,6 +125,10 @@ export class SupportService implements OnModuleInit {
     return normalizePublishedGlobalSupport(setting?.value, unavailableMessage);
   }
 
+  async cnReadOnlyHealth() {
+    return (await cnDisplaySections(this.prisma)).readOnlyHealth;
+  }
+
   async sayRingIosReadOnlyHealth() {
     const setting = await this.prisma.appSetting.findFirst({
       where: { key: sayRingIosHealthSettingKey, public: true }, select: { value: true },
@@ -153,6 +158,7 @@ export class SupportService implements OnModuleInit {
     return {
       product: productInput,
       hideAi: value.hideAi,
+      ...(productInput === "saydian-app-cn" ? { ...(await cnDisplaySections(this.prisma)), sleepAiEnabled: value.sleepAiEnabled === true } : {}),
       ...(productInput === "say-ring" && platformInput === "ios"
         ? { platform: "ios", readOnlyHealth: await this.sayRingIosReadOnlyHealth(), moduleVisibility: await sayRingIosModuleVisibility(this.prisma) }
         : {}),

@@ -7,6 +7,7 @@ import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEd
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "./download-setting";
 import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "./legal-document-editor";
 import { healthDeviceSource, healthMetricLabel, healthRawJson, healthTime } from "./health-display";
+import { groupCnDisplaySettings } from "./cn-settings";
 import { groupSayRingDisplaySettings } from "./say-ring-settings";
 
 const envelope = (items: Record<string, unknown>[] = [], total = items.length) => ({ data: { data: { items, total, page: 1, pageSize: 30 } } });
@@ -59,6 +60,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
   const deps = {
     computed,
     groupSayRingDisplaySettings,
+    groupCnDisplaySettings,
     ref,
     watch,
     onBeforeUnmount,
@@ -893,7 +895,7 @@ describe("international settings first configuration", () => {
     h.route.params.resource = "settings";
     h.api.get.mockResolvedValueOnce({ data: { data: [] } });
     await h.load();
-    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "app_update", "global_app_update", "say_ring_app_update", "cn_app_update", "say_ring_app_display", "say_ring_ios_health_display", "say_ring_ios_module_display", "cn_app_display", "say_ring_map"]);
+    expect(h.rows.value.map((row: any) => row.key)).toEqual(["global_support", "app_update", "global_app_update", "say_ring_app_update", "cn_app_update", "say_ring_app_display", "say_ring_ios_health_display", "say_ring_ios_module_display", "cn_app_display", "cn_health_display", "cn_module_display", "say_ring_map"]);
     expect(h.rows.value.filter((row: any) => !["say_ring_app_display", "cn_app_display"].includes(row.key)).every((row: any) => row.configuration === "未配置" && row.public === false && row.updatedAt === null)).toBe(true);
     expect(h.columns.value).toEqual(["appScope", "name", "configuration", "public", "updatedAt"]);
     expect(h.api.patch).not.toHaveBeenCalled();
@@ -1536,7 +1538,7 @@ describe("CN AI visibility editor", () => {
     h.route.params.resource = "settings";
     const rows = await h.withDownloadSetting([]);
     const row = rows.find((item: any) => item.key === "cn_app_display");
-    expect(row.name).toBe("Saydian赛电 显示设置");
+    expect(row.name).toBe("赛电健康 AI 显示设置");
     await h.openEdit(row);
     h.form.value.hideAi = true;
     await h.save();

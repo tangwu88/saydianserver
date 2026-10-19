@@ -1733,6 +1733,76 @@
       }
     },
     {
+      "key": "AdminController.rollbackCnHealth",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/settings/cn_health_display/rollback",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "恢复赛电健康上次只读指标配置",
+      "request": "{expectedUpdatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；独立cn_health_display",
+      "response": "恢复五项布尔；版本冲突409，无历史404；原子审计；不修改Ring/上传/测量",
+      "dependency": "既有AppSetting/AuditLog，无迁移",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.rollbackCnModules",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/settings/cn_module_display/rollback",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "恢复赛电健康上次百科商城配置",
+      "request": "{expectedUpdatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；独立cn_module_display",
+      "response": "恢复{schemaVersion:1,modules:{health_library,mall}}；版本冲突409，无历史404；不更改其他App",
+      "dependency": "既有AppSetting/AuditLog，无迁移",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.commerceProducts",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/commerce-products",
@@ -21126,8 +21196,8 @@
       "envelope": "v2",
       "source": "apps/api/src/health/health.controller.ts",
       "summary": "本人健康历史",
-      "request": "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间；可选product=say-ring&platform=ios",
-      "response": "{items,nextCursor}；逐条记录保持原样；日汇总只返回最新版本并回显aggregation；仅say-ring+ios按当前公开开关在SQL分页前限制为活动/睡眠及启用的heart_rate/hrv/blood_oxygen/temperature，body_temperature对应现有temperature；stress无云指标；其他请求不变",
+      "request": "metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间；可选product=say-ring&platform=ios或product=saydian-app-cn（三平台）",
+      "response": "{items,nextCursor}；逐条记录保持原样；日汇总只返回最新版本并回显aggregation；saydian-app-cn按独立CN公开开关、say-ring+ios按Ring公开开关在SQL分页前限制为活动/睡眠及启用的heart_rate/hrv/blood_oxygen/temperature，body_temperature对应现有temperature；stress无云指标；其他请求不变",
       "dependency": "仍按登录会员归属鉴权；product/platform是调用方声明，非可信App身份；不改变上传/预警/关爱接口",
       "successStatus": 200,
       "contract": {
@@ -29655,7 +29725,7 @@
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "读取产品独立显示开关",
       "request": "query product=say-ring|saydian-app-cn；可选platform=ios；公开接口，禁止其他产品标识",
-      "response": "保留{product,hideAi,sleepAiEnabled?}；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}及同级moduleVisibility:{schemaVersion:1,validForSeconds:300,modules:{health_library,mall}}；独立公开设置/严格布尔，缺失无效或模块读取失败关闭；不向五项metrics加入新键；Cache-Control:no-store；客户端独立租约，失败/过期隐藏，不持久缓存",
+      "response": "保留{product,hideAi,sleepAiEnabled?}；saydian-app-cn所有平台返回独立cn_health_display/cn_module_display对应readOnlyHealth/moduleVisibility和sleepAiEnabled；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}及同级moduleVisibility:{schemaVersion:1,validForSeconds:300,modules:{health_library,mall}}；独立公开设置/严格布尔，缺失无效或模块读取失败关闭；不向五项metrics加入新键；Cache-Control:no-store；客户端独立租约，失败/过期隐藏，不持久缓存",
       "dependency": "普通产品/platform显示；所有用户同配置，不识别审核身份；不授予上传/测量/购买/支付/医疗/AI权限；其他产品/旧请求不变",
       "successStatus": 200,
       "contract": {

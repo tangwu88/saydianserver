@@ -16,7 +16,7 @@ describe("opt-in Say Ring iOS read scope", () => {
     await new HealthController({ list } as any, { sayRingIosReadOnlyHealth: async () => config } as any).list({ id: "owner" } as any, undefined, "25", "cursor", "say-ring", "ios");
     expect(list).toHaveBeenCalledExactlyOnceWith("owner", undefined, 25, "cursor", ["sleep", "steps", "distance", "calories", "heart_rate", "hrv", "blood_oxygen", "temperature"]);
   });
-  it.each([[undefined, undefined], ["say-ring", "android"], ["say-ring", undefined], ["saydian-global", "ios"], ["saydian-app-cn", "ios"]])("does not alter other products or legacy calls (%s/%s)", async (product, platform) => {
+  it.each([[undefined, undefined], ["say-ring", "android"], ["say-ring", undefined], ["saydian-global", "ios"]])("does not alter other products or legacy calls (%s/%s)", async (product, platform) => {
     const list = vi.fn(); const read = vi.fn();
     await new HealthController({ list } as any, { sayRingIosReadOnlyHealth: read } as any).list({ id: "owner" } as any, "heart_rate", "50", undefined, product, platform);
     expect(list).toHaveBeenCalledExactlyOnceWith("owner", "heart_rate", 50, undefined); expect(read).not.toHaveBeenCalled();

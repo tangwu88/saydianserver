@@ -106,6 +106,8 @@ describe("global admin support and download configuration", () => {
             "say_ring_ios_health_display",
             "say_ring_ios_module_display",
             "cn_app_display",
+            "cn_health_display",
+            "cn_module_display",
             "say_ring_map",
           ],
         },
@@ -286,6 +288,8 @@ describe("global admin support and download configuration", () => {
             "say_ring_ios_health_display",
             "say_ring_ios_module_display",
             "cn_app_display",
+            "cn_health_display",
+            "cn_module_display",
             "say_ring_map",
           ],
         },
@@ -454,7 +458,7 @@ describe("CN display settings administration", () => {
     const result = await h.service.updateSetting("cn_app_display", {
       value: { hideAi, sleepAiEnabled: true, privateNote: "discard" },
     });
-    expect(result.value).toEqual({ hideAi });
+    expect(result.value).toEqual({ hideAi, sleepAiEnabled: true });
     expect(h.appSetting.upsert.mock.calls[0]?.[0].where).toEqual({
       key: "cn_app_display",
     });

@@ -413,6 +413,18 @@ export class AdminController {
     return this.admin.rollbackSayRingIosModuleDisplay(current.id, input);
   }
 
+  @Post("settings/cn_health_display/rollback")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  rollbackCnHealth(@CurrentAdmin() current: { id: string }, @Body() input: unknown) {
+    return this.admin.rollbackCnDisplay(current.id, "cn_health_display", input);
+  }
+
+  @Post("settings/cn_module_display/rollback")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  rollbackCnModules(@CurrentAdmin() current: { id: string }, @Body() input: unknown) {
+    return this.admin.rollbackCnDisplay(current.id, "cn_module_display", input);
+  }
+
   @Get("commerce-products")
   @AdminRoles(
     AdminRole.SUPER_ADMIN,
