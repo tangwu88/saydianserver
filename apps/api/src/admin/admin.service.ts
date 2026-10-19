@@ -2126,13 +2126,16 @@ export class AdminService {
           ? (existing?.localArchived ?? false)
           : body.localArchived === true,
     };
-    const skuImageAdjustments = !local && body.skuImages !== undefined
+    if (!local && body.skuDetails !== undefined && body.skuImages !== undefined)
+      throw new BadRequestException("SKU资料与旧图片修改不能同时提交");
+    const skuDetailInput = body.skuDetails !== undefined ? body.skuDetails : body.skuImages;
+    const skuDetailAdjustments = !local && skuDetailInput !== undefined
       ? (() => {
-          if (!Array.isArray(body.skuImages) || body.skuImages.length > 100)
-            throw new BadRequestException("SKU 图片修改格式不正确");
+          if (!Array.isArray(skuDetailInput) || skuDetailInput.length > 100)
+            throw new BadRequestException("SKU资料修改格式不正确");
           const productSkuIds = new Set(existing!.skus.map((sku) => sku.id));
           const requestedIds = new Set<string>();
-          return body.skuImages.map((raw) => {
+          return skuDetailInput.map((raw) => {
             const sku = safeObject(raw);
             const skuId = String(sku.id ?? "").trim();
             if (!skuId || !productSkuIds.has(skuId))
@@ -2143,7 +2146,23 @@ export class AdminService {
             const expectedUpdatedAt = new Date(String(sku.updatedAt ?? ""));
             if (Number.isNaN(expectedUpdatedAt.valueOf()))
               throw new BadRequestException("SKU版本无效，请刷新后重试");
-            return { id: skuId, expectedUpdatedAt, image: nullableText(sku.image) };
+            const details: { image?: string | null; specification?: string | null } = {};
+            if (body.skuDetails !== undefined) {
+              if (Object.keys(sku).some((key) => !["id", "updatedAt", "image", "specification"].includes(key)))
+                throw new BadRequestException("SKU资料仅支持修改规格名称和图片");
+              if (sku.specification !== undefined) {
+                if (sku.specification !== null && typeof sku.specification !== "string")
+                  throw new BadRequestException("规格名称必须是文本");
+                details.specification = nullableText(sku.specification);
+              }
+              if (sku.image !== undefined) details.image = nullableText(sku.image);
+              if (!Object.keys(details).length)
+                throw new BadRequestException("请填写要修改的规格名称或图片");
+            } else {
+              // Preserve the existing image-only request contract for cached clients.
+              details.image = nullableText(sku.image);
+            }
+            return { id: skuId, expectedUpdatedAt, details };
           });
         })()
       : [];
@@ -2200,13 +2219,13 @@ export class AdminService {
           data: { enabled: false },
         });
       }
-      for (const adjustment of skuImageAdjustments) {
+      for (const adjustment of skuDetailAdjustments) {
         const result = await tx.commerceSku.updateMany({
           where: { id: adjustment.id, productId: saved.id, updatedAt: adjustment.expectedUpdatedAt },
-          data: { image: adjustment.image },
+          data: adjustment.details,
         });
         if (result.count !== 1)
-          throw new ConflictException("SKU 图片已被更新，请刷新后重新修改");
+          throw new ConflictException("SKU资料已被更新，请刷新后重新修改");
       }
       if (saved.localArchived)
         await tx.commerceSku.updateMany({

@@ -760,7 +760,7 @@ async function openEdit(row: Row): Promise<void> {
   const nextForm: Row = {
     ...row,
     roles: Array.isArray(row.roles) && row.roles.length ? [...row.roles] : [row.role ?? "READ_ONLY"],
-    skus: Array.isArray(row.skus) ? row.skus.map((sku: Row) => ({ ...sku, _originalStock: Number(sku.stock ?? 0), _originalImage: String(sku.image ?? "") })) : [],
+    skus: Array.isArray(row.skus) ? row.skus.map((sku: Row) => ({ ...sku, _originalStock: Number(sku.stock ?? 0), _originalImage: String(sku.image ?? ""), _originalSpecification: String(sku.specification ?? "") })) : [],
     _isNew: false,
     publicConfigText: row.publicConfig ? JSON.stringify(row.publicConfig, null, 2) : "{}",
     secretsText: "",
@@ -878,7 +878,7 @@ async function loadCommerceProductBySku(): Promise<void> {
       _erpLookupSku: sku,
       _erpLookupPending: false,
       _erpSnapshotText: product.erpLookup ? JSON.stringify(product.erpLookup, null, 2) : "",
-      skus: product.skus.map((entry: Row) => ({ ...entry, _originalImage: String(entry.image ?? "") })),
+      skus: product.skus.map((entry: Row) => ({ ...entry, _originalImage: String(entry.image ?? ""), _originalSpecification: String(entry.specification ?? "") })),
       galleryText: Array.isArray(product.gallery) ? product.gallery.join("\n") : "",
       tagsText: Array.isArray(product.tags) ? product.tags.join("，") : "",
     };
@@ -1157,10 +1157,17 @@ function payloadForResource(current: string, source: Row): Row {
     };
   }
   if (current === "commerce-products") {
-    const skuImages = source.source === "ERP" && Array.isArray(source.skus)
+    const skuDetails = source.source === "ERP" && Array.isArray(source.skus)
       ? source.skus
-          .filter((sku: Row) => String(sku.image ?? "").trim() !== String(sku._originalImage ?? "").trim())
-          .map((sku: Row) => ({ id: sku.id, updatedAt: sku.updatedAt, image: String(sku.image ?? "").trim() || null }))
+          .map((sku: Row) => ({
+            id: sku.id,
+            updatedAt: sku.updatedAt,
+            ...(String(sku.image ?? "").trim() !== String(sku._originalImage ?? "").trim()
+              ? { image: String(sku.image ?? "").trim() || null } : {}),
+            ...(String(sku.specification ?? "").trim() !== String(sku._originalSpecification ?? "").trim()
+              ? { specification: String(sku.specification ?? "").trim() || null } : {}),
+          }))
+          .filter((sku: Row) => "image" in sku || "specification" in sku)
       : [];
     return {
       ...pick(source, fields["commerce-products"]!),
@@ -1172,7 +1179,7 @@ function payloadForResource(current: string, source: Row): Row {
             skus: source.skus,
           }
         : {}),
-      ...(skuImages.length ? { skuImages } : {}),
+      ...(skuDetails.length ? { skuDetails } : {}),
       gallery: String(source.galleryText ?? "")
         .split(/\r?\n/)
         .map((value) => value.trim())
@@ -1834,8 +1841,8 @@ onBeforeUnmount(() => {
             <el-form-item label="商品规格">
               <div style="width: 100%">
                 <el-table :data="form.skus" border>
-                  <el-table-column label="规格"
-                    ><template #default="scope"><el-input v-if="form.source === 'LOCAL'" v-model="scope.row.specification" /><span v-else>{{ scope.row.specification || '—' }}</span></template
+                  <el-table-column label="规格" min-width="200"
+                    ><template #default="scope"><el-input v-model="scope.row.specification" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="填写规格名称" /></template
                   ></el-table-column>
                   <el-table-column label="SKU编码"
                     ><template #default="scope"><el-input v-if="form.source === 'LOCAL'" v-model="scope.row.erpSkuId" placeholder="自动生成" /><span v-else>{{ scope.row.erpSkuId }}</span></template
@@ -1851,6 +1858,7 @@ onBeforeUnmount(() => {
                     ><template #default="scope"><el-switch v-model="scope.row.enabled" /></template
                   ></el-table-column>
                 </el-table>
+                <p v-if="form.source === 'ERP'" class="muted">规格名称可修改，保存后用于商城展示；后续 ERP 商品资料同步可能覆盖手工修改。</p>
                 <el-button
                   v-if="form.source === 'LOCAL'"
                   style="margin-top: 8px"
