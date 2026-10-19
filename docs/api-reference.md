@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **454 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **456 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -257,7 +257,7 @@
 | `GET /api/saydian-app/v2/health/records/:recordId/ecg` | 读取本人私有心电波形 | member | path:recordId；recordId=本人clientRecordId | gzip JSON数值数组；响应头x-content-sha256、x-ecg-sample-rate、x-ecg-sample-count；无公开存储地址；不存在404 | 私有文件存储 |
 | `GET /api/saydian-app/v2/health/capabilities` | 健康同步能力 | member | 无请求体 | {dailySummaryVersions:true,dailySummaryVersion:1}；只表示服务端支持日汇总版本折叠，与普通设备能力无关 | 核心服务 |
 | `POST /api/saydian-app/v2/health/records/batch` | 健康批量同步 | member | header:idempotency-key；HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
-| `GET /api/saydian-app/v2/health/records` | 本人健康历史 | member | query:metric?，query:limit?，query:before?，query:product?，query:platform?；metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间；可选product=say-ring&platform=ios | {items,nextCursor}；逐条记录保持原样；日汇总只返回最新版本并回显aggregation；仅say-ring+ios按当前公开开关在SQL分页前限制为活动/睡眠及启用的heart_rate/hrv/blood_oxygen/temperature，body_temperature对应现有temperature；stress无云指标；其他请求不变 | 仍按登录会员归属鉴权；product/platform是调用方声明，非可信App身份；不改变上传/预警/关爱接口 |
+| `GET /api/saydian-app/v2/health/records` | 本人健康历史 | member | query:metric?，query:limit?，query:before?，query:product?，query:platform?；metric=规范指标；limit 正整数默认50最大200；before=上页nextCursor（不透明复合游标）；继续接受旧ISO时间；可选product=say-ring&platform=ios或product=saydian-app-cn（三平台） | {items,nextCursor}；逐条记录保持原样；日汇总只返回最新版本并回显aggregation；saydian-app-cn按独立CN公开开关、say-ring+ios按Ring公开开关在SQL分页前限制为活动/睡眠及启用的heart_rate/hrv/blood_oxygen/temperature，body_temperature对应现有temperature；stress无云指标；其他请求不变 | 仍按登录会员归属鉴权；product/platform是调用方声明，非可信App身份；不改变上传/预警/关爱接口 |
 | `GET /api/saydian-app/v2/health/warning-rules` | 读取阈值提醒 | member | 无请求体 | 规则数组；未获取阈值为 null | 核心服务 |
 | `GET /api/saydian-app/v2/health/warnings` | 读取提醒事件 | member | query:limit?；limit 默认 50 | 提醒数组；仅阈值提醒，不是诊断 | 核心服务 |
 | `POST /api/saydian-app/v2/health/warning-rules` | 保存阈值提醒 | member | {rules:[{metric,enabled,lowThreshold?,highThreshold?,secondaryHighThreshold?,shareWithCare?}]}；目前仅本人的提醒闭环 | 保存后的规则数组 | 核心服务 |
@@ -288,7 +288,7 @@
 | `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本 | 重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还 | AI供应商 |
 | `GET /api/saydian-app/v2/support/weather` | 手机当前位置天气预报 | public | query:lat?，query:lon?；公开 GET；query lat=-90..90、lon=-180..180；服务端按两位小数网格取预报，不接收会员标识 | {source,sourceUrl,licenseUrl,updatedAt,timeseries}；MET Norway 预报及来源/CC BY 4.0 标注；无有效数据返回503，不生成虚构天气 | 固定 MET Norway Locationforecast HTTPS；按 Expires 缓存并以 Last-Modified 条件刷新 |
 | `GET /api/saydian-app/v2/support/config` | 客服配置 | public | 无请求体 | 客服配置或未配置状态 | 核心服务 |
-| `GET /api/saydian-app/v2/support/app-display` | 读取产品独立显示开关 | public | query:product?，query:platform?；query product=say-ring\|saydian-app-cn；可选platform=ios；公开接口，禁止其他产品标识 | 保留{product,hideAi,sleepAiEnabled?}；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}及同级moduleVisibility:{schemaVersion:1,validForSeconds:300,modules:{health_library,mall}}；独立公开设置/严格布尔，缺失无效或模块读取失败关闭；不向五项metrics加入新键；Cache-Control:no-store；客户端独立租约，失败/过期隐藏，不持久缓存 | 普通产品/platform显示；所有用户同配置，不识别审核身份；不授予上传/测量/购买/支付/医疗/AI权限；其他产品/旧请求不变 |
+| `GET /api/saydian-app/v2/support/app-display` | 读取产品独立显示开关 | public | query:product?，query:platform?；query product=say-ring\|saydian-app-cn；可选platform=ios；公开接口，禁止其他产品标识 | 保留{product,hideAi,sleepAiEnabled?}；saydian-app-cn所有平台返回独立cn_health_display/cn_module_display对应readOnlyHealth/moduleVisibility和sleepAiEnabled；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}及同级moduleVisibility:{schemaVersion:1,validForSeconds:300,modules:{health_library,mall}}；独立公开设置/严格布尔，缺失无效或模块读取失败关闭；不向五项metrics加入新键；Cache-Control:no-store；客户端独立租约，失败/过期隐藏，不持久缓存 | 普通产品/platform显示；所有用户同配置，不识别审核身份；不授予上传/测量/购买/支付/医疗/AI权限；其他产品/旧请求不变 |
 | `GET /api/saydian-app/v2/support/app-update` | App 下载与更新配置 | public | query:product?；统一接口：不传product读取原赛电app_update；product=saydian-global读取Health的global_app_update；product=say-ring读取say_ring_app_update | DownloadManifest v1；Android/iPhone/HarmonyOS各一项，coming_soon无destination；iPhone可附pendingReason=review表示等待审核，不提供安装链接；Health与Say Ring强制realm=global及逐项独立packageId；Android/HarmonyOS支持同源直包或HTTPS应用市场链接；无公开配置404 | 核心服务 |
 | `GET /api/saydian-app/v2/support/sport-map-config` | Say Ring 运动地图状态 | public | 无请求体；不返回高德密钥 | {provider:'amap',configured:boolean}；仅国际 Say Ring 地图已公开、启用且密钥存在时为 true | 核心服务 |
 | `POST /api/saydian-app/v2/support/sport-route-map` | Say Ring 高德运动轨迹图 | member | 会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点 | 高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图 | 高德 Web 服务坐标转换与静态地图 API |
@@ -299,7 +299,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（143）
+## 管理后台接口（145）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -353,6 +353,8 @@
 | `PATCH /api/saydian-app/admin/v1/settings/:key` | 保存客服、更新或独立 App 显示设置 | admin: SUPER_ADMIN, APP_OPERATIONS | path:key；{value:非空JSON对象,public?:boolean}；更新通过DownloadManifest校验；cn_app_display仅hideAi，say_ring_app_display另允许sleepAiEnabled；say_ring_ios_health_display使用schemaVersion:1/五项metrics；独立say_ring_ios_module_display使用schemaVersion:1/modules:{health_library,mall}；后两项均须expectedUpdatedAt=当前ISO或首次null、严格布尔且必须公开 | 设置对象；独立key锁/版本冲突409/事务操作者及前后快照审计/各自rollback；不改变AI、指标、测量、上传、购买/支付或其他App | 核心服务 |
 | `POST /api/saydian-app/admin/v1/settings/say_ring_ios_health_display/rollback` | 恢复上次Say Ring iOS只读指标配置 | admin: SUPER_ADMIN, APP_OPERATIONS | {expectedUpdatedAt:当前设置updatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；固定设置项say_ring_ios_health_display | 恢复上次保存前五项布尔并返回设置对象；版本冲突409，无历史404；事务内保留操作者和前后快照；不改变AI/上传/其他产品 | 现有AppSetting/AuditLog，无迁移；与保存共用数据库锁 |
 | `POST /api/saydian-app/admin/v1/settings/say_ring_ios_module_display/rollback` | 恢复上次Say Ring iOS百科和商城显示 | admin: SUPER_ADMIN, APP_OPERATIONS | {expectedUpdatedAt:当前设置updatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；独立say_ring_ios_module_display | 恢复上次保存前{schemaVersion:1,modules:{health_library,mall}}；冲突409，无历史404；事务审计；不改变五项指标、手动测量、AI、购买/支付或其他产品 | 既有AppSetting/AuditLog，无迁移，与保存共用独立key锁 |
+| `POST /api/saydian-app/admin/v1/settings/cn_health_display/rollback` | 恢复赛电健康上次只读指标配置 | admin: SUPER_ADMIN, APP_OPERATIONS | {expectedUpdatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；独立cn_health_display | 恢复五项布尔；版本冲突409，无历史404；原子审计；不修改Ring/上传/测量 | 既有AppSetting/AuditLog，无迁移 |
+| `POST /api/saydian-app/admin/v1/settings/cn_module_display/rollback` | 恢复赛电健康上次百科商城配置 | admin: SUPER_ADMIN, APP_OPERATIONS | {expectedUpdatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；独立cn_module_display | 恢复{schemaVersion:1,modules:{health_library,mall}}；版本冲突409，无历史404；不更改其他App | 既有AppSetting/AuditLog，无迁移 |
 | `GET /api/saydian-app/admin/v1/commerce-products` | 总后台商品列表 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:search?，query:page?，query:status?；search可查商品名或ERP编号；page默认1 | 主库商品、SKU及ERP库存快照；不直接改权威库存 | 主库商城/聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products` | 拒绝手工新增ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 请先通过聚水潭商品同步建立商品和SKU | HTTP 400；不会创建第二套库存 | 聚水潭 |
 | `POST /api/saydian-app/admin/v1/commerce-products/erp-import` | 按SKU定位SPU并实时导入ERP商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | {sku:单个ERP SKU，最多100字符}；先定位款式编码，再查询同款全部SKU及库存 | 聚水潭同一SPU的全部商品与库存均成功后新增或刷新草稿商品；未配置、无权限、未找到或任一SKU库存缺失时不导入；503返回errorKey=jushuitan_unavailable及受控中文诊断，不回显供应商原文或密钥，并记录集成最近错误 | 聚水潭商品查询与库存查询 |

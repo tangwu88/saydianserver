@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import CnSettingsPanel from "../components/CnSettingsPanel.vue";
+import { groupCnDisplaySettings } from "../cn-settings";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -106,6 +108,8 @@ const settingProducts = (key: unknown): string[] => {
     say_ring_app_update: ["say-ring"],
     cn_app_update: ["saydian-app-cn"],
     cn_app_display: ["saydian-app-cn"],
+    cn_health_display: ["saydian-app-cn"],
+    cn_module_display: ["saydian-app-cn"],
     say_ring_app_display: ["say-ring"],
     say_ring_ios_health_display: ["say-ring"],
     say_ring_ios_module_display: ["say-ring"],
@@ -330,7 +334,7 @@ function rowProducts(row: Row): string[] {
 }
 
 const visibleRows = computed(() => {
-  const listed = resource.value === "settings" ? groupSayRingDisplaySettings(rows.value) : rows.value;
+  const listed = resource.value === "settings" ? groupCnDisplaySettings(groupSayRingDisplaySettings(rows.value)) : rows.value;
   return appProductFilter.value ? listed.filter((row) => rowProducts(row).includes(appProductFilter.value)) : listed;
 });
 
@@ -412,7 +416,9 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
     { key: "say_ring_ios_health_display", name: "Say Ring iOS 只读健康指标" },
     { key: "say_ring_ios_module_display", name: "Say Ring iOS 百科与商城显示" },
-    { key: "cn_app_display", name: "Saydian赛电 显示设置" },
+    { key: "cn_app_display", name: "赛电健康 AI 显示设置" },
+    { key: "cn_health_display", name: "赛电健康只读健康指标" },
+    { key: "cn_module_display", name: "赛电健康百科与商城" },
     { key: "say_ring_map", name: "Say Ring 运动地图" },
   ];
   return definitions.map((definition) => {
@@ -761,7 +767,7 @@ async function openEdit(row: Row): Promise<void> {
   if (requestId !== editorRequestId || requestedResource !== resource.value) return;
   originalArticleCategoryId.value = String(row[requestedResource === "articles" ? "categoryId" : "parentId"] ?? "") || null;
   dialogMode.value = "edit";
-  dialogTitle.value = row._sayRingGroup ? "Say Ring 功能设置" : `编辑${title.value}`;
+  dialogTitle.value = row._cnGroup ? "赛电健康 功能设置" : row._sayRingGroup ? "Say Ring 功能设置" : `编辑${title.value}`;
   const nextForm: Row = {
     ...row,
     roles: Array.isArray(row.roles) && row.roles.length ? [...row.roles] : [row.role ?? "READ_ONLY"],
@@ -926,7 +932,7 @@ async function deleteCommerceProduct(row: Row): Promise<void> {
 
 async function save(): Promise<void> {
   if (saving.value) return;
-  if (resource.value === "settings" && form.value._sayRingGroup) return;
+  if (resource.value === "settings" && (form.value._sayRingGroup || form.value._cnGroup)) return;
   if (needsArticleCategories.value && (!articleCategoriesReady.value || articleCategoryEditorResource.value !== resource.value)) {
     ElMessage.error("请重新打开编辑窗口，等待分类加载成功后保存");
     return;
@@ -2011,9 +2017,10 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="resource === 'settings'">
           <el-alert v-if="form._unconfigured" :title="isAppDisplaySetting(form.key) ? '尚未保存显示设置，App 默认显示 AI 内容。调整开关并保存后生效。' : '此项尚未配置。当前内容仅为本次编辑草稿，尚未保存或公开；请填写真实配置后保存。'" type="info" :closable="false" show-icon />
-          <el-form-item v-if="!form._sayRingGroup" label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
+          <el-form-item v-if="!form._sayRingGroup && !form._cnGroup" label="设置项"><el-input v-model="form.key" disabled /></el-form-item>
           <el-form-item v-if="!isAppDisplaySetting(form.key) && !['say_ring_ios_health_display', 'say_ring_ios_module_display'].includes(form.key)" label="公开"><el-switch v-model="form.public" /></el-form-item>
-          <SayRingSettingsPanel v-if="form._sayRingGroup" :settings="form._sayRingSettings" @saved="load" />
+          <CnSettingsPanel v-if="form._cnGroup" :settings="form._cnSettings" @saved="load" />
+          <SayRingSettingsPanel v-else-if="form._sayRingGroup" :settings="form._sayRingSettings" @saved="load" />
           <SayRingIosHealthSetting v-else-if="form.key === 'say_ring_ios_health_display'" :key="String(form.updatedAt ?? 'new')" :setting="form" @saved="dialogVisible = false; load()" />
           <SayRingIosModuleSetting v-else-if="form.key === 'say_ring_ios_module_display'" :key="String(form.updatedAt ?? 'new')" :setting="form" @saved="dialogVisible = false; load()" />
           <template v-else-if="isAppDisplaySetting(form.key)">
@@ -2130,7 +2137,7 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
       </el-form>
-      <template #footer><el-button :disabled="productImagesUploading > 0" @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit' && !form._sayRingGroup && !['say_ring_ios_health_display', 'say_ring_ios_module_display'].includes(form.key)" type="primary" :loading="saving" :disabled="productImagesUploading > 0 || (needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
+      <template #footer><el-button :disabled="productImagesUploading > 0" @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit' && !form._sayRingGroup && !form._cnGroup && !['say_ring_ios_health_display', 'say_ring_ios_module_display'].includes(form.key)" type="primary" :loading="saving" :disabled="productImagesUploading > 0 || (needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
     </el-dialog>
   </section>
 </template>

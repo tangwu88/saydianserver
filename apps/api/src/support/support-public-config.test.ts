@@ -213,7 +213,7 @@ describe("CN display product isolation", () => {
           value: { hideAi: !hideAi },
         },
       ]);
-      expect(await h.service.appDisplayConfig("saydian-app-cn")).toEqual({
+      expect(await h.service.appDisplayConfig("saydian-app-cn")).toMatchObject({
         product: "saydian-app-cn",
         hideAi,
       });
@@ -221,7 +221,7 @@ describe("CN display product isolation", () => {
         where: { key: "cn_app_display", public: true },
         select: { value: true },
       });
-      expect(await h.service.appDisplayConfig("say-ring")).toEqual({
+      expect(await h.service.appDisplayConfig("say-ring")).toMatchObject({
         product: "say-ring",
         hideAi: !hideAi,
       });
@@ -231,7 +231,7 @@ describe("CN display product isolation", () => {
     const h = harness([
       { key: "say_ring_app_display", public: true, value: { hideAi: true } },
     ]);
-    expect(await h.service.appDisplayConfig("saydian-app-cn")).toEqual({
+    expect(await h.service.appDisplayConfig("saydian-app-cn")).toMatchObject({
       product: "saydian-app-cn",
       hideAi: false,
     });
@@ -256,7 +256,7 @@ describe("Say Ring iOS public read-only lease", () => {
     const h = harness([{ key: sayRingIosHealthSettingKey, public: false, get value() { throw new Error("private read"); } }]);
     expect((await h.service.appDisplayConfig("say-ring", "ios")).readOnlyHealth?.metrics.heart_rate).toBe(false);
   });
-  it.each([["say-ring", "android"], ["say-ring", undefined], ["saydian-app-cn", "ios"]])("keeps %s/%s responses unchanged", async (product, platform) => {
+  it.each([["say-ring", "android"], ["say-ring", undefined]])("keeps %s/%s responses unchanged", async (product, platform) => {
     const h = harness([]);
     expect(await h.service.appDisplayConfig(product, platform)).toEqual({ product, hideAi: false });
     expect(h.findFirst).toHaveBeenCalledTimes(1);
@@ -298,4 +298,27 @@ describe("independent Say Ring iOS module visibility", () => {
     expect(result).toHaveProperty("moduleVisibility", closed);
     expect(result.readOnlyHealth!.metrics.heart_rate).toBe(true);
   });
+});
+
+
+describe("CN three-platform feature sections", () => {
+ it.each(["android","ios","harmony"])("reads only CN sections for %s", async platform => {
+  const metrics={heart_rate:true,hrv:false,blood_oxygen:true,body_temperature:false,stress:true};
+  const modules={health_library:true,mall:false};
+  const h=harness([
+   {key:"cn_app_display",public:true,value:{hideAi:true,sleepAiEnabled:false}},
+   {key:"cn_health_display",public:true,value:{schemaVersion:1,metrics}},
+   {key:"cn_module_display",public:true,value:{schemaVersion:1,modules}},
+   {key:"say_ring_ios_health_display",public:true,value:{schemaVersion:1,metrics:{...metrics,hrv:true}}},
+   {key:"say_ring_ios_module_display",public:true,value:{schemaVersion:1,modules:{health_library:false,mall:true}}},
+  ]);
+  expect(await h.service.appDisplayConfig("saydian-app-cn",platform)).toEqual({product:"saydian-app-cn",hideAi:true,sleepAiEnabled:false,readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics},moduleVisibility:{schemaVersion:1,validForSeconds:300,modules}});
+  expect(h.findFirst.mock.calls.map(([input])=>input.where.key).sort()).toEqual(["cn_app_display","cn_health_display","cn_module_display"]);
+ });
+ it("private or malformed sections close independently without Ring fallback", async()=>{
+  const h=harness([{key:"cn_health_display",public:false,get value(){throw new Error("private");}},{key:"cn_module_display",public:true,value:{schemaVersion:1,modules:{health_library:true,mall:true}}}]);
+  const result=await h.service.appDisplayConfig("saydian-app-cn");
+  expect(result.readOnlyHealth?.metrics).toEqual(sayRingIosHealthDisplayOrClosed().metrics);
+  expect(result.moduleVisibility?.modules).toEqual({health_library:true,mall:true});
+ });
 });

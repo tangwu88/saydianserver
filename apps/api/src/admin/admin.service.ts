@@ -1,3 +1,4 @@
+import { writeCnDisplaySetting } from "./cn-display-setting";
 import { usCandidateInventory } from "./us-candidate-inventory";
 import { adminDeviceIdentifier, legacyNativeDeviceKey } from "../common/device-identity";
 import { deductCommercePaymentStock } from "../commerce/commerce-payment-stock";
@@ -1865,6 +1866,8 @@ export class AdminService {
             sayRingIosHealthSettingKey,
             sayRingIosModuleSettingKey,
             "cn_app_display",
+            "cn_health_display",
+            "cn_module_display",
             "say_ring_map",
           ],
         },
@@ -1881,7 +1884,12 @@ export class AdminService {
     return writeSayRingIosModuleDisplay(this.prisma, actorId, input, true);
   }
 
+  rollbackCnDisplay(actorId: string, key: "cn_health_display" | "cn_module_display", input: unknown) {
+    return writeCnDisplaySetting(this.prisma, actorId, key, input, true);
+  }
+
   updateSetting(key: string, input: unknown, actorId?: string) {
+    if (key === "cn_health_display" || key === "cn_module_display") return writeCnDisplaySetting(this.prisma, actorId, key, input);
     if (key === sayRingIosModuleSettingKey)
       return writeSayRingIosModuleDisplay(this.prisma, actorId, input);
     if (key === sayRingIosHealthSettingKey)
@@ -1918,7 +1926,7 @@ export class AdminService {
         throw new BadRequestException("睡眠 AI 分析必须为开启或关闭");
       value = {
         hideAi: value.hideAi,
-        ...(key === "say_ring_app_display" &&
+        ...((key === "say_ring_app_display" || key === "cn_app_display") &&
         typeof value.sleepAiEnabled === "boolean"
           ? { sleepAiEnabled: value.sleepAiEnabled }
           : {}),

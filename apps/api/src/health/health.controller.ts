@@ -67,11 +67,11 @@ export class HealthController {
     @Query("product") product?: string,
     @Query("platform") platform?: string,
   ) {
-    if (product !== "say-ring" || platform !== "ios")
+    if (product !== "saydian-app-cn" && (product !== "say-ring" || platform !== "ios"))
       return this.health.list(user.id, metric, Number(limit ?? 50), before);
     // Caller-declared scope, not trusted application identity. Ownership still
     // comes from UserAuthGuard. Filter in SQL before pagination, never in memory.
-    const { metrics } = await this.support.sayRingIosReadOnlyHealth();
+    const { metrics } = product === "saydian-app-cn" ? await this.support.cnReadOnlyHealth() : await this.support.sayRingIosReadOnlyHealth();
     const allowed: HealthMetric[] = ["sleep", "steps", "distance", "calories"];
     if (metrics.heart_rate) allowed.push("heart_rate");
     if (metrics.hrv) allowed.push("hrv");
