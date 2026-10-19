@@ -5,6 +5,7 @@ import { BusinessType, PaymentChannel, PaymentStatus, PrismaClient, ProductStatu
 import { CommerceStoreService } from "./commerce-store.service";
 import { BillingService } from "../billing/billing.service";
 import type { PrismaService } from "../common/prisma.service";
+import { importJushuitanProductBySku } from "../admin/jushuitan-product-import";
 
 // Opt-in only; never run destructive fixture cleanup against any non-loopback DB.
 const enabled = process.env.RUN_LOCAL_DATABASE_TESTS === "1";
@@ -44,6 +45,46 @@ describe.runIf(enabled)("local PostgreSQL transaction acceptance", () => {
     await prisma.commerceProduct.deleteMany({ where: { id: productId } });
     await prisma.user.deleteMany({ where: { id: { in: members } } });
     await prisma.$disconnect();
+  });
+
+  it("persists all imported ERP variants when inventory is empty or partial and keeps them intact on provider failure", async () => {
+    const itemId = `ERP-ZERO-${suffix}`;
+    const skuCodes = [`${itemId}-A`, `${itemId}-B`];
+    let phase = "empty";
+    const providerProducts = () => skuCodes.map((sku_id) => ({ sku_id, i_id: itemId, name: phase === "error" ? "must not overwrite" : "合成零库存导入", sale_price: 10, enabled: 1 }));
+    const db = {
+      integrationConfig: { findUnique: vi.fn().mockResolvedValue({ state: "CONFIGURED", publicConfig: {} }), updateMany: vi.fn() },
+      $transaction: prisma.$transaction.bind(prisma),
+    };
+    const secrets = { resolve: vi.fn().mockResolvedValue({ appKey: "synthetic", appSecret: "synthetic", accessToken: "synthetic" }) };
+    vi.stubGlobal("fetch", vi.fn(async (url: unknown) => {
+      const inventory = new URL(String(url)).searchParams.get("method") === "inventory.query";
+      const payload = !inventory ? { code: 0, datas: providerProducts() } : phase === "error" ? { code: 100 } : { code: 0, inventorys: phase === "partial" ? [{ sku_id: skuCodes[0], qty: 5 }] : [] };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+    try {
+      const run = () => importJushuitanProductBySku(db as unknown as PrismaService, secrets as any, { sku: skuCodes[0] });
+      const empty = await run();
+      expect(empty.status).toBe("DRAFT");
+      expect(empty.skus).toHaveLength(2);
+      expect(empty.skus.every((sku) => sku.stock === 0 && sku.enabled)).toBe(true);
+      expect(empty.erpLookup.zeroStockSkuIds.sort()).toEqual([...skuCodes].sort());
+      const ids = empty.skus.map((sku) => sku.id).sort();
+      const second = empty.skus.find((sku) => sku.erpSkuId === skuCodes[1])!;
+      await prisma.commerceSku.update({ where: { id: second.id }, data: { stock: 9 } });
+      phase = "partial";
+      const partial = await run();
+      expect(partial.skus.map((sku) => sku.id).sort()).toEqual(ids);
+      expect(partial.skus.find((sku) => sku.erpSkuId === skuCodes[0])!.stock).toBe(5);
+      expect(partial.skus.find((sku) => sku.erpSkuId === skuCodes[1])!.stock).toBe(0);
+      const before = await prisma.commerceProduct.findUniqueOrThrow({ where: { erpItemId: itemId }, include: { skus: { orderBy: { id: "asc" } } } });
+      phase = "error";
+      await expect(run()).rejects.toThrow("错误码 100");
+      expect(await prisma.commerceProduct.findUniqueOrThrow({ where: { erpItemId: itemId }, include: { skus: { orderBy: { id: "asc" } } } })).toEqual(before);
+    } finally {
+      vi.unstubAllGlobals();
+      await prisma.commerceProduct.deleteMany({ where: { erpItemId: itemId } });
+    }
   });
 
   it("unpaid orders do not hold the last unit; verified payments deduct once and permit backorders", async () => {
