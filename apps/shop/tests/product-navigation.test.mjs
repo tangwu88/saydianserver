@@ -430,3 +430,24 @@ test('ambiguous recipient numbers do not overwrite an existing address',async()=
 test('anonymous purchase intent preserves the selected SKU and quantity across login without placing an order',async()=>{const value=product({skus:[{id:'a',specification:'银色',stock:5,salePriceCents:1000},{id:'b',specification:'黑色',stock:5,salePriceCents:1200}]});const first=await page('global',value);first.state.selectSku(value.skus[1]);first.state.quantity.value=3;await first.state.addCart();const saved=first.storage.get('product-selection:'+value.id);assert.equal(saved.skuId,'b');assert.equal(saved.quantity,3);assert.equal(first.requests.length,1);const returned=await page('global',value,{user:{id:'member-a'},selection:saved});assert.equal(returned.state.selectedSku.value.id,'b');assert.equal(returned.state.quantity.value,3);assert.equal(returned.requests.some(r=>r.input?.method==='POST'),false);});
 
 test('a failed product reload preserves the post-login selection intent for retry',async()=>{const value=product(),selection={skuId:'synthetic-sku',quantity:2,savedAt:Date.now()};const h=await page('global',value,{selection,productError:true});assert.deepEqual(h.storage.get('product-selection:'+value.id),selection);});
+
+test('external-browser payment choices freeze one order without invoking an unsupported provider', async () => {
+  for (const [environment, selected, provider] of [['wechat','alipay_browser','alipay'],['browser','wechat_open','wechat']]) {
+    const quote={fingerprint:'q1:'+'e'.repeat(64),pricingVersion:1,lines:[],subtotalCents:1000,couponDiscountCents:0,pointDiscountCents:0,shippingCents:0,payableCents:1000};
+    let providerCalls=0;
+    const h=orderPage('checkout',async path=>path.endsWith('/preview')?{quote}:{id:'handoff-order'}, {
+      paymentEnvironment:()=>environment,paymentLabels:{wechat_jsapi:'微信支付',alipay_wap:'支付宝',alipay_browser:'支付宝（浏览器付款）',wechat_open:'微信（微信内付款）'},
+      createOrderPayment:()=>{providerCalls++;throw Error('Cross-environment provider request');},
+    }),s=h.state;
+    h.storage.set('saidian-user',{id:'member-1'});h.storage.set('checkout-owner','member-1');
+    s.items.value=[{skuId:'sku-1',quantity:1}];s.address.value={id:'address-1'};s.quote.value=quote;
+    s.capabilities.value={payments:[{channel:'wechat_jsapi',enabled:true},{channel:'alipay_wap',enabled:true}]};
+    const label=selected==='alipay_browser'?'支付宝（浏览器付款）':'微信（微信内付款）';
+    button(h.tree(),label).props.onClick();assert.equal(s.paymentChannel.value,selected);
+    await s.submit();await s.submit();
+    assert.equal(s.error.value,'');assert.equal(providerCalls,0);
+    assert.equal(h.requests.filter(row=>row[0]==='/storefront/orders').length,1);
+    assert.equal(h.storage.get('checkout-pending').orderId,'handoff-order');
+    assert.deepEqual(h.navigations,[`/pages/order-detail/index?id=handoff-order&payment=${provider}`,`/pages/order-detail/index?id=handoff-order&payment=${provider}`]);
+  }
+});

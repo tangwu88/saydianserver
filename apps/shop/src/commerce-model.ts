@@ -28,6 +28,20 @@ export function channelsForEnvironment(capabilities: any[], environment: "wechat
 }
 export function isPaidStatus(value: unknown) { return ["succeeded","partial_refunded","refunded"].includes(String(value).toLowerCase()); }
 
+/** UI-only handoffs are never sent as server payment channels. */
+export function checkoutPaymentOptions(capabilities: any[], environment: "wechat"|"browser"|"mini", desktop: boolean) {
+  const seen = new Set<string>();
+  const options = channelsForEnvironment(capabilities, environment, desktop).filter((option: any) => {
+    if (!option.enabled) return false;
+    const provider = option.channel.startsWith('alipay_') ? 'alipay' : 'wechat';
+    if (seen.has(provider)) return false;
+    seen.add(provider); return true;
+  });
+  if (environment === 'wechat' && capabilities.some(option => option.channel === 'alipay_wap' && option.enabled)) options.push({ channel: 'alipay_browser', enabled: true });
+  if (environment === 'browser' && !seen.has('wechat') && capabilities.some(option => option.channel === 'wechat_jsapi' && option.enabled)) options.push({ channel: 'wechat_open', enabled: true });
+  return options;
+}
+
 // Legacy read-only projections may omit items entirely. Missing/invalid item
 // detail is unknown, not an empty purchase or a verified zero quantity.
 export function orderItemSummary(order: { items?: unknown } | null | undefined): { items: any[]; quantity: number | null } {
