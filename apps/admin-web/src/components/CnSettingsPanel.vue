@@ -101,7 +101,7 @@ async function saveAi() {
           />
         </el-form-item>
         <el-alert
-          title="睡眠 AI 由独立开关控制；开启后仍须会员在 App 主动确认上传及第三方分析。"
+          title="睡眠 AI 独立开关仅对支持该功能的版本生效；当前赛电健康版本不提供睡眠 AI，不会自动上传或分析。"
           type="info"
           :closable="false"
         />
