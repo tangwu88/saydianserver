@@ -57,6 +57,25 @@ describe("commerce administration", () => {
     });
     expect(result).toBe(saved);
   });
+  it("saves ERP specification names with SKU ownership/version checks and preserves omitted images", async () => {
+    const updatedAt = new Date("2026-10-19T00:00:00.000Z");
+    const existing = { id: "p", source: "ERP", name: "Watch", erpItemId: "sd-watch-w9p", skus: [{ id: "s", updatedAt }] };
+    const tx = {
+      commerceProduct: { update: vi.fn().mockResolvedValue(existing), findUniqueOrThrow: vi.fn().mockResolvedValue(existing) },
+      commerceSku: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const prisma = { commerceProduct: { findUnique: vi.fn().mockResolvedValue(existing) }, $transaction: vi.fn().mockImplementation(async (fn) => fn(tx)) };
+    const service = new AdminService(prisma as any, {} as any);
+    const edit = { id: "s", updatedAt: updatedAt.toISOString(), specification: " 黑色真皮表带；4G插卡版 " };
+    await service.saveCommerceProduct("p", { skuDetails: [edit] });
+    expect(tx.commerceSku.updateMany).toHaveBeenCalledWith({ where: { id: "s", productId: "p", updatedAt }, data: { specification: "黑色真皮表带；4G插卡版" } });
+    for (const invalid of [null, [{ ...edit, id: "foreign" }], [edit, edit], [{ ...edit, updatedAt: "bad-date" }], [{ ...edit, specification: {} }], [{ ...edit, erpSkuId: "new-binding" }], [{ ...edit, stock: 99 }]]) {
+      await expect(service.saveCommerceProduct("p", { skuDetails: invalid })).rejects.toThrow();
+    }
+    await expect(service.saveCommerceProduct("p", { skuDetails: [edit], skuImages: [] })).rejects.toThrow("不能同时");
+    tx.commerceSku.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(service.saveCommerceProduct("p", { skuDetails: [edit] })).rejects.toThrow("已被更新");
+  });
   it("quick-updates selected SKU prices and stock with stale-write protection", async () => {
     const updatedAt = new Date("2026-09-11T08:00:00.000Z");
     const product = { id: "p", source: "ERP", skus: [{ id: "s", updatedAt }] };

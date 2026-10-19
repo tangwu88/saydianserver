@@ -138,6 +138,8 @@ PushInstallation 必填 installationId、registrationId、platform(android/ios)�
 
 商品、购物车、地址、订单、物流、售后、评价、优惠券和员工推广进入主系统。商品分为 ERP 与 LOCAL：ERP 的权威字段不得从后台覆盖；自建商品可管理 SKU、价格和本地库存。ERP 权威值与本地预占独立核算的完整验收仍见 [当前实施表](unification/implementation-status.md)。
 
+- 后台商品编辑支持修改规格名称和规格图片。ERP 商品通过 `skuDetails:[{id,updatedAt,specification?,image?}]` 仅提交有变化的字段；省略字段保持原值，空字符串或 null 可清空。服务端核对 SKU 归属和更新时间，冲突整单回滚；ERP 编码和原 SKU 绑定不变，后续 ERP 商品资料同步可能覆盖手工规格名称。旧 `skuImages` 请求继续兼容，与 `skuDetails` 互斥。
+
 - App V1、原 H5/小程序 `/api/saidian-mall/v1/*` 和 V2 商城入口都落到同一主库会员、商品和订单，不再通过第二套商城服务创建订单。旧数字 ID 由兼容映射处理，新接口使用 UUID。
 - 创建订单一次提交完整 `items` 数组，只生成一个主库订单。每次新购买使用新幂等键，同一次网络重试才复用；服务端重新计算 SKU 价格、优惠、运费和应付金额。
 - `PaymentIntent` 同时支持 `commerce_order`、`health_report`、`health_membership`。客户端只提交业务 ID、方案、渠道、平台和幂等键，不能提交可信金额。

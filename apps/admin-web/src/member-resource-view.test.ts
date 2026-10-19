@@ -1315,12 +1315,31 @@ describe("administrator commerce and service editor improvements", () => {
       tagsText: "",
       skus: [{ id: "sku-1", updatedAt: "2026-10-06T04:00:00.000Z", image: "https://cdn.example.invalid/new.png", _originalImage: "" }],
     });
-    expect(payload.skuImages).toEqual([{ id: "sku-1", updatedAt: "2026-10-06T04:00:00.000Z", image: "https://cdn.example.invalid/new.png" }]);
+    expect(payload.skuDetails).toEqual([{ id: "sku-1", updatedAt: "2026-10-06T04:00:00.000Z", image: "https://cdn.example.invalid/new.png" }]);
     expect(h.sfc).toContain('v-model="form.coverImage" upload-url="/commerce-images"');
     expect(h.sfc).toContain('v-model="scope.row.image" upload-url="/commerce-images" compact');
     h.form.value.galleryText = "https://cdn.example.invalid/one.png";
     h.appendProductGalleryImage("https://cdn.example.invalid/two.png");
     expect(h.form.value.galleryText).toContain("two.png");
+  });
+
+  it("edits ERP specification names from the product form without resubmitting price, stock or unchanged images", async () => {
+    const h = harness();
+    h.route.params.resource = "commerce-products";
+    h.api.get.mockResolvedValue({ data: { data: [] } });
+    await h.openEdit({
+      id: "product-1", source: "ERP",
+      skus: [
+        { id: "sku-1", erpSkuId: "sd-watch-w9p-black", specification: "圆形；黑色", image: "https://cdn.example.invalid/black.png", updatedAt: "2026-10-19T00:00:00.000Z", salePriceCents: 189800, stock: 5 },
+        { id: "sku-2", specification: "棕色", updatedAt: "2026-10-19T00:00:00.000Z" },
+      ],
+    });
+    expect(h.payloadForResource("commerce-products", h.form.value)).not.toHaveProperty("skuDetails");
+    h.form.value.skus[0].specification = " 黑色真皮表带；4G插卡版 ";
+    const payload = h.payloadForResource("commerce-products", h.form.value);
+    expect(payload.skuDetails).toEqual([{ id: "sku-1", updatedAt: "2026-10-19T00:00:00.000Z", specification: "黑色真皮表带；4G插卡版" }]);
+    expect(payload).not.toHaveProperty("skus");
+    expect(h.form.value.skus[0].erpSkuId).toBe("sd-watch-w9p-black");
   });
 
   it("requires an ERP SKU, imports live ERP product data and edits the imported draft", async () => {

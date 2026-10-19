@@ -2166,8 +2166,8 @@
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "编辑商品展示资料",
-      "request": "id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?}",
-      "response": "展示资料；ERP编号、内部名称、SKU和库存不会被覆盖",
+      "request": "id=商品UUID；{displayName?,subtitle?,brand?,categoryId?,coverImage?,gallery?,detailHtml?,tags?,status?,featured?,sort?,localArchived?,skuDetails?:[{id,updatedAt,specification?,image?}]}；ERP规格资料最多100条，仅提交变更字段；兼容旧skuImages图片请求，二者不能同时提交",
+      "response": "原子保存展示资料及ERP规格名称/图片；SKU归属与更新时间须匹配，冲突409整单回滚；不修改ERP编码、SKU绑定、售价和库存；后续ERP商品资料同步可能覆盖手工规格名称",
       "dependency": "主库商城/聚水潭",
       "successStatus": 200,
       "contract": {
