@@ -30124,6 +30124,50 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "FilesController.image",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/files/:id/image",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "width",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "header",
+          "name": "if-none-match",
+          "type": "string | undefined",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "公开商品图片轻量版本",
+      "request": "id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选",
+      "response": "WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404",
+      "dependency": "只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "FilesController.download",
       "method": "GET",
       "path": "/api/saydian-app/v2/files/:id",

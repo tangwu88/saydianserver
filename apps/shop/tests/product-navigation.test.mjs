@@ -56,6 +56,8 @@ async function page(realmName, value = product(), options = {}) {
   if(options.selection)realm.mallStorage.set("product-selection:"+value.id,options.selection);
   const component = evaluate(script.content, {
     "../../catalog-presentation": presentation,
+    "../../components/CatalogImage.vue": { default: { render: () => null } },
+    "../../components/ProductDescription.vue": { default: { render: () => null } },
     "../../catalog-thumbnails": {productThumbnail:value=>value},
     "../../official-support": official,
     "../../product-rich-text": evaluate(readFileSync(new URL('../src/product-rich-text.ts', import.meta.url), 'utf8'), {}),
@@ -161,10 +163,13 @@ test("real images replace the placeholder and multiple unique thumbnails update 
   const first = "https://example.invalid/first.png", second = "https://example.invalid/second.png";
   const h = await page("global", product({ coverImage: first, gallery: [first, second] }));
   let tree = h.tree();
-  assert.equal(nodes(tree).filter(node => node.type === "image").length, 4);
+  assert.equal(nodes(tree).filter(node => typeof node.props?.source === "string").length, 4);
+  assert.equal(h.state.visitedImages.value.has(first), true);
+  assert.equal(h.state.visitedImages.value.has(second), false);
   assert.equal(nodes(tree).some(node => text(node) === "暂无商品图片"), false);
-  const thumbnail = nodes(tree).find(node => node.type === "image" && node.props.src === second && node.props.class !== "main-image");
+  const thumbnail = nodes(tree).find(node => node.props?.source === second && node.props.width === 160);
   thumbnail.props.onClick(); tree = h.tree();
+  assert.equal(h.state.visitedImages.value.has(second), true);
   let carousel = nodes(tree).find(node => node.type === "swiper");
   assert.equal(carousel.props.current, 1);
   assert.equal(carousel.props.autoplay, true);
