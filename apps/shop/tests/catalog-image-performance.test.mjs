@@ -103,6 +103,15 @@ test("wide desktop descriptions keep a larger rendition for readable text", () =
   h.observer().intersect(image); assert.equal(image.getAttribute("src"), source + "/image?width=1440");
 });
 
+test("legacy width/height hints cannot stretch an image after its real pixels load", () => {
+  const h = harness(), prepared = h.prepareProductDescription(`<img src="${source}" width="100" height="1000">`), image = new Image(prepared.images[0].marker);
+  image.style.aspectRatio = "100 / 1000";
+  h.attachDeferredProductImages({ querySelectorAll: () => [image] }, prepared.images);
+  assert.equal(image.style.aspectRatio, "100 / 1000");
+  h.observer().intersect(image); image.dispatch("load");
+  assert.equal(image.style.aspectRatio, "");
+});
+
 test("descriptions retain the existing rich-text security boundary", () => {
   const component = readFileSync(new URL("../src/components/ProductDescription.vue", import.meta.url), "utf8");
   assert.match(component, /<rich-text :nodes="prepared\.html"/);

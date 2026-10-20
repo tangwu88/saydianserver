@@ -53,7 +53,13 @@ export function attachDeferredProductImages(root: HTMLElement, descriptors: Defe
     image.loading = "lazy"; image.decoding = "async";
     image.style.minHeight = image.style.aspectRatio ? "" : "320px";
     image.style.backgroundColor = "#f5f6f8";
-    const loaded = () => { if (!disposed && image.getAttribute("src") && image.complete && image.naturalWidth > 0) { image.alt = source.alt; image.style.minHeight = ""; image.style.backgroundColor = ""; image.removeAttribute("data-image-failed"); image.removeAttribute("role"); image.removeAttribute("tabindex"); } };
+    const loaded = () => {
+      if (disposed || !image.getAttribute("src") || !image.complete || image.naturalWidth <= 0) return;
+      // Old HTML dimensions only reserve unloaded layout; decoded pixels own the final ratio.
+      image.style.aspectRatio = "";
+      image.alt = source.alt; image.style.minHeight = ""; image.style.backgroundColor = "";
+      image.removeAttribute("data-image-failed"); image.removeAttribute("role"); image.removeAttribute("tabindex");
+    };
     const failed = () => {
       if (disposed || !image.getAttribute("src")) return;
       if (image.getAttribute("src") !== image.dataset.productOriginal) {
