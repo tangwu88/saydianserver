@@ -33,7 +33,7 @@ function harness(roles = ["SUPER_ADMIN"], canWrite = true) {
         ? { ...order, status: "CANCELLED", version: 3, cancelledAt: "2026-09-11T12:00:00.000Z" }
         : { ...order, status: "PAID", payableCents: 9_000, version: 3, paidAt: "2026-09-11T12:00:00.000Z" }
   } })) };
-  const ElMessage = { success: vi.fn(), error: vi.fn() };
+  const ElMessage = { success: vi.fn(), error: vi.fn(), warning: vi.fn() };
   const confirm = vi.fn(async () => true);
   const prompt = vi.fn(async () => ({ value: "客户要求改价，已核对尚未付款" }));
   const deps = {
@@ -53,12 +53,25 @@ function harness(roles = ["SUPER_ADMIN"], canWrite = true) {
   };
   const state = new Function(
     ...Object.keys(deps),
-    `${code}\nreturn { inventorySyncing, syncInventory, detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, paymentCloseSaving, orderCloseSaving, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel, hasActiveOnlinePayment, activeOnlinePayment, orderAddress, closeOnlinePayment, closeOrder };`,
+    `${code}\nreturn { inventorySyncing, inventorySyncNotice, syncInventory, detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, paymentCloseSaving, orderCloseSaving, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel, hasActiveOnlinePayment, activeOnlinePayment, orderAddress, closeOnlinePayment, closeOrder };`,
   )(...Object.values(deps));
   return { ...state, props, order, api, emit, ElMessage, confirm, prompt };
 }
 
 describe("product inventory sync button", () => {
+  it.each([1, 0])("shows a persistent skipped-SKU warning while refreshing successful inventory (%s matched)", async (matched) => {
+    const h = harness(); h.props.resource = "commerce-products";
+    const skippedSkuIds = matched ? ["ERP-missing"] : ["ERP-missing", "ERP-other"];
+    h.api.post.mockResolvedValueOnce({ data: { data: { productCount: 1, skuCount: 2, updatedSkuCount: matched, syncedSkuCount: matched, skippedSkuCount: skippedSkuIds.length, skippedSkuIds } } } as any);
+    await h.syncInventory();
+    expect(h.ElMessage.success).not.toHaveBeenCalled();
+    expect(h.ElMessage.warning).toHaveBeenCalledWith(expect.stringContaining(`成功同步 ${matched} 个 SKU`));
+    expect(h.inventorySyncNotice.value).toEqual({ title: expect.stringContaining("已保留原库存"), skus: skippedSkuIds });
+    expect(h.emit).toHaveBeenCalledWith("refresh");
+    h.api.post.mockResolvedValueOnce({ data: { data: { productCount: 1, skuCount: 2, updatedSkuCount: 0, syncedSkuCount: 2, skippedSkuCount: 0, skippedSkuIds: [] } } } as any);
+    await h.syncInventory();
+    expect(h.inventorySyncNotice.value).toBeNull();
+  });
   it("syncs all ERP inventory and refreshes with a result summary", async () => {
     const h = harness(); h.props.resource = "commerce-products";
     h.api.post.mockResolvedValueOnce({ data: { data: { productCount: 2, skuCount: 4, updatedSkuCount: 3 } } } as any);

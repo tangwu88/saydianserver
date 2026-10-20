@@ -406,7 +406,7 @@ async function performJushuitanInventorySync(
       message: "待同步 SKU 超过 5000 个，请联系管理员分批处理",
     });
   }
-  if (!skus.length) return { productCount: 0, skuCount: 0, updatedSkuCount: 0 };
+  if (!skus.length) return { productCount: 0, skuCount: 0, updatedSkuCount: 0, syncedSkuCount: 0, skippedSkuCount: 0, skippedSkuIds: [] as string[] };
   const ids = skus.map((sku) => sku.erpSkuId.trim());
   if (ids.some((id) => !id || /[,\r\n]/.test(id))) {
     throw new BadRequestException({
@@ -458,46 +458,53 @@ async function performJushuitanInventorySync(
     );
   }
   const inventory = new Map(rows.map((row) => [normalizedSku(row), row]));
-  // Validate the complete response before changing any stock. Missing is not zero.
-  const updates = skus.map((sku) => {
+  // A complete successful query may omit individual SKUs. Preserve their stock
+  // and historical order policy; only returned rows participate in this sync.
+  const skippedSkuIds: string[] = [];
+  const updates = skus.flatMap((sku) => {
     const row = inventory.get(sku.erpSkuId.trim().toLowerCase());
-    if (!row)
-      throw new JushuitanUnavailableException(
-        `聚水潭未返回 SKU ${sku.erpSkuId} 的库存；本次未更新，请稍后重试`,
-      );
+    if (!row) {
+      skippedSkuIds.push(sku.erpSkuId);
+      return [];
+    }
     const available = inventoryStock(row);
     const held = reserved.get(sku.id) ?? 0;
     // Paid backorders retain their debt until ERP replenishment; unpaid orders hold nothing.
-    return { ...sku, newStock: available - held };
+    return [{ ...sku, newStock: available - held }];
   });
+  const syncedIds = new Set(updates.map((sku) => sku.id));
+  const syncedPending = pending.filter((item) => syncedIds.has(item.skuId));
+  const syncedReservations = reservations.filter((item) => syncedIds.has(item.skuId));
+  const syncedPendingWhere = { ...pendingWhere, skuId: { in: [...syncedIds] } };
+  const syncedReservationWhere = { ...reservationWhere, skuId: { in: [...syncedIds] } };
   await markIntegrationVerified(prisma, "jushuitan");
   const changed = updates.filter((sku) => sku.newStock !== sku.stock);
-  await prisma.$transaction(
+  if (updates.length) await prisma.$transaction(
     async (tx) => {
       const orderIds = [
-        ...new Set([...pending.map((item) => item.orderId)]),
+        ...new Set([...syncedPending.map((item) => item.orderId)]),
       ].sort();
       if (orderIds.length)
         await tx.$queryRaw(
           Prisma.sql`SELECT id FROM "CommerceOrder" WHERE id IN (${Prisma.join(orderIds.map((id) => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`,
         );
       const currentPending = await tx.commerceOrderItem.findMany({
-        where: pendingWhere,
+        where: syncedPendingWhere,
         select: pendingSelect,
         orderBy: { id: "asc" },
       });
-      if (JSON.stringify(currentPending) !== JSON.stringify(pending))
+      if (JSON.stringify(currentPending) !== JSON.stringify(syncedPending))
         throw new ConflictException({
           errorKey: "inventory_sync_concurrent_change",
           message: "同步期间待付款订单已变化；本次未更新，请重新同步",
         });
       const currentReservations = await tx.commerceOrderItem.findMany({
-        where: reservationWhere,
+        where: syncedReservationWhere,
         select: reservationSelect,
         orderBy: { id: "asc" },
       });
       if (
-        JSON.stringify(currentReservations) !== JSON.stringify(reservations)
+        JSON.stringify(currentReservations) !== JSON.stringify(syncedReservations)
       ) {
         throw new ConflictException({
           errorKey: "inventory_sync_concurrent_change",
@@ -506,9 +513,9 @@ async function performJushuitanInventorySync(
       }
       // ERP stock replaces historical checkout holds. Persist that evidence in the
       // same transaction so later payment/cancellation cannot deduct/return twice.
-      const deferred = await deferredStockItems(tx, pending);
+      const deferred = await deferredStockItems(tx, syncedPending);
       const releasedSkuIds = new Set(
-        pending
+        syncedPending
           .filter((item) => !deferred.has(item.id))
           .map((item) => item.skuId),
       );
@@ -516,7 +523,7 @@ async function performJushuitanInventorySync(
         await markPaymentStockItems(
           tx,
           orderId,
-          pending.filter(
+          syncedPending.filter(
             (item) => item.orderId === orderId && !deferred.has(item.id),
           ),
         );
@@ -550,6 +557,9 @@ async function performJushuitanInventorySync(
     productCount: new Set(skus.map((sku) => sku.productId)).size,
     skuCount: skus.length,
     updatedSkuCount: changed.length,
+    syncedSkuCount: updates.length,
+    skippedSkuCount: skippedSkuIds.length,
+    skippedSkuIds,
   };
 }
 

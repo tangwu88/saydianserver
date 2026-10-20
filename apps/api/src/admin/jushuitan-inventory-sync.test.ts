@@ -100,7 +100,7 @@ describe("manual ERP inventory synchronization", () => {
     expect(h.prisma.integrationConfig.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ lastError: expect.anything() }) }));
     if (!["stock-change", "unexpected"].includes(failure)) expect(h.tx.commerceSku.updateMany).not.toHaveBeenCalled();
   });
-  it.each(["configuration", "credentials", "secret-store", "permission", "provider", "network", "missing-inventory"])(
+  it.each(["configuration", "credentials", "secret-store", "permission", "provider", "network"])(
     "returns a useful safe HTTP diagnostic for %s instead of the generic English error",
     async (failure) => {
       const h = fixture(1);
@@ -110,7 +110,6 @@ describe("manual ERP inventory synchronization", () => {
       if (failure === "secret-store") h.secrets.resolve.mockRejectedValueOnce(new ServiceUnavailableException("集成密钥暂时无法读取，请联系管理员"));
       if (failure === "permission" || failure === "provider") h.fetch.mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify({ code: failure === "permission" ? 190 : 199, msg: sensitive }) });
       if (failure === "network") h.fetch.mockRejectedValueOnce(new Error(`https://vendor.invalid?access_token=${sensitive}`));
-      if (failure === "missing-inventory") h.fetch.mockResolvedValueOnce(response([]));
       let exception: unknown;
       try { await h.run(); } catch (error) { exception = error; }
       expect(exception).toBeInstanceOf(ServiceUnavailableException);
@@ -138,9 +137,9 @@ describe("manual ERP inventory synchronization", () => {
   );
   it("preserves the real diagnostic if recording integration health fails", async () => {
     const h = fixture(1);
-    h.fetch.mockResolvedValueOnce(response([]));
+    h.fetch.mockRejectedValueOnce(new Error("synthetic network outage"));
     h.prisma.integrationConfig.updateMany.mockRejectedValueOnce(new Error("synthetic-database-outage"));
-    await expect(h.run()).rejects.toThrow("未返回 SKU ERP-0");
+    await expect(h.run()).rejects.toThrow("聚水潭库存查询失败");
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
   it("subtracts only paid orders not yet uploaded to ERP", async () => {
@@ -207,6 +206,9 @@ describe("manual ERP inventory synchronization", () => {
       productCount: 1,
       skuCount: 2,
       updatedSkuCount: 2,
+      syncedSkuCount: 2,
+      skippedSkuCount: 0,
+      skippedSkuIds: [],
     });
     expect(h.prisma.commerceSku.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -270,10 +272,50 @@ describe("manual ERP inventory synchronization", () => {
     ).toEqual([1, 2, 1]);
     expect(h.tx.commerceSku.updateMany).toHaveBeenCalledTimes(101);
   });
-  it("does not turn missing SKU inventory into zero or write partial results", async () => {
+  it("updates returned inventory and preserves missing SKU stock", async () => {
     const h = fixture();
     h.fetch.mockResolvedValue(response([{ sku_id: "ERP-0", qty: 2 }]));
-    await expect(h.run()).rejects.toThrow("未返回 SKU ERP-1");
+    expect(await h.run()).toMatchObject({ skuCount: 2, syncedSkuCount: 1, updatedSkuCount: 1, skippedSkuCount: 1, skippedSkuIds: ["ERP-1"] });
+    expect(h.tx.commerceSku.updateMany).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ where: expect.objectContaining({ id: "sku-0" }), data: { stock: 2 } }));
+  });
+  it("reports all missing inventory without changing stock or historical holds", async () => {
+    const h = fixture();
+    h.fetch.mockResolvedValue(response([]));
+    expect(await h.run()).toMatchObject({ syncedSkuCount: 0, updatedSkuCount: 0, skippedSkuCount: 2, skippedSkuIds: ["ERP-0", "ERP-1"] });
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    expect(h.tx.commerceSku.updateMany).not.toHaveBeenCalled();
+    expect(h.tx.auditLog.createMany).not.toHaveBeenCalled();
+  });
+  it("keeps unchanged returned inventory distinct from missing rows", async () => {
+    const h = fixture();
+    h.fetch.mockResolvedValue(response([{ sku_id: "ERP-0", qty: 5 }]));
+    expect(await h.run()).toMatchObject({ syncedSkuCount: 1, updatedSkuCount: 0, skippedSkuCount: 1 });
+    expect(h.tx.commerceSku.updateMany).not.toHaveBeenCalled();
+  });
+  it("continues across batches when a SKU is missing in the first batch", async () => {
+    const h = fixture(101);
+    h.fetch.mockReset().mockResolvedValueOnce(response(h.skus.slice(0, 99).map(s => ({ sku_id: s.erpSkuId, qty: 2 }))))
+      .mockResolvedValueOnce(response([{ sku_id: "ERP-100", qty: 3 }]));
+    expect(await h.run()).toMatchObject({ syncedSkuCount: 100, updatedSkuCount: 100, skippedSkuCount: 1, skippedSkuIds: ["ERP-99"] });
+    expect(h.tx.commerceSku.updateMany).toHaveBeenCalledTimes(100);
+    expect(h.tx.commerceSku.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: "sku-99" }) }));
+  });
+  it("only releases historical holds and checks paid reservations for returned SKUs", async () => {
+    const h = fixture();
+    const pending = h.skus.map((sku, i) => ({ id: `old-${i}`, orderId: `11111111-1111-4111-8111-11111111111${i}`, skuId: sku.id, quantity: 2, order: { updatedAt: new Date() } }));
+    const paid = h.skus.map((sku, i) => ({ id: `paid-${i}`, skuId: sku.id, quantity: 4, order: { updatedAt: new Date() } }));
+    for (const db of [h.prisma, h.tx]) db.commerceOrderItem.findMany.mockImplementation(async (query: any) =>
+      (query.where.order.status === "PENDING_PAYMENT" ? pending : paid).filter(item => query.where.skuId.in.includes(item.skuId)));
+    h.fetch.mockResolvedValue(response([{ sku_id: "ERP-0", qty: 3 }]));
+    await h.run();
+    expect(h.tx.commerceSku.updateMany).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ where: expect.objectContaining({ id: "sku-0" }), data: { stock: -1 } }));
+    expect(h.tx.auditLog.createMany).toHaveBeenCalledExactlyOnceWith({ data: [expect.objectContaining({ entityId: "old-0" })] });
+    for (const [query] of h.tx.commerceOrderItem.findMany.mock.calls as any) expect(query.where.skuId.in).toEqual(["sku-0"]);
+  });
+  it("still rejects invalid returned quantities when other SKU rows are missing", async () => {
+    const h = fixture();
+    h.fetch.mockResolvedValue(response([{ sku_id: "ERP-0", qty: "invalid" }]));
+    await expect(h.run()).rejects.toThrow("缺少有效数量");
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
   it.each([null, undefined, "", " ", "invalid", true, 2147483648])(
