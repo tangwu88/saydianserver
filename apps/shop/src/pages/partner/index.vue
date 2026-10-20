@@ -41,6 +41,11 @@ function login() {
   mallStorage.set("saidian-post-login-route", returnRoute());
   uni.navigateTo({ url: "/pages/login/index" });
 }
+function partnerAccountLogin() {
+  /* #ifdef H5 */
+  window.location.assign(`/vip/login?password=1&next=${encodeURIComponent(next.value)}`);
+  /* #endif */
+}
 async function load() {
   authorized.value = !!mallStorage.get("saidian-token");
   if (!authorized.value || busy.value) return;
@@ -218,6 +223,9 @@ onShow(() => {
           {{ busy ? "正在提交…" : "提交申请" }}
         </button>
       </form>
+      <!-- #ifdef H5 -->
+      <button class="text-button" @click="partnerAccountLogin">已有合作账号？使用账号密码登录</button>
+      <!-- #endif -->
       <button class="text-button" @click="back">返回个人中心</button>
     </view></view
   >
