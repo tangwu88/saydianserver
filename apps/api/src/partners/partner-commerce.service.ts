@@ -1,3 +1,4 @@
+import { orderErpSnapshot } from "../commerce/order-erp-snapshot";
 import {
   BadRequestException,
   ConflictException,
@@ -501,53 +502,7 @@ export class PartnerCommerceService {
   }
 
   async processing(partnerId: string, id: string) {
-    const order = await this.order(partnerId, id);
-    const cache = safeObject(order.erpProcessLogJson),
-      items = Array.isArray(cache.items) ? cache.items : [];
-    if (!order.erpOrderId || order.executionOwner !== "NEW_SYSTEM")
-      return {
-        items,
-        state: "WAITING_ORDER",
-        syncedAt: order.erpProcessLogSyncedAt,
-        truncated: cache.truncated === true,
-      };
-    const integration = await this.prisma.integrationConfig.findUnique({
-      where: { key: "jushuitan" },
-      select: { state: true },
-    });
-    if (integration?.state !== "CONFIGURED")
-      return {
-        items,
-        state: "UNAVAILABLE",
-        syncedAt: order.erpProcessLogSyncedAt,
-        truncated: cache.truncated === true,
-      };
-    const stale =
-      !order.erpProcessLogSyncedAt ||
-      Date.now() - order.erpProcessLogSyncedAt.getTime() >= 60_000;
-    let state = "READY";
-    if (stale) {
-      const key = `partner-erp-logs:${id}:${Math.floor(Date.now() / 60_000)}`;
-      const job = await this.prisma.commerceIntegrationJob.upsert({
-        where: { idempotencyKey: key },
-        create: {
-          type: "JUSHUITAN_ORDER_LOG_SYNC",
-          aggregateType: "commerce_order",
-          aggregateId: id,
-          payload: { orderId: id },
-          idempotencyKey: key,
-        },
-        update: {},
-        select: { status: true },
-      });
-      state = job.status === "DEAD_LETTER" ? "ERROR" : "PENDING";
-    }
-    return {
-      items,
-      state,
-      syncedAt: order.erpProcessLogSyncedAt,
-      truncated: cache.truncated === true,
-    };
+    return orderErpSnapshot(this.prisma, id, "stale", partnerId);
   }
 
   async logistics(partnerId: string, id: string) {

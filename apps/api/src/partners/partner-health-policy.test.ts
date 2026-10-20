@@ -101,6 +101,7 @@ describe("cooperation health access and ERP log boundaries", () => {
       },
       commerceIntegrationJob: {
         upsert: vi.fn(async () => ({ status: "DEAD_LETTER" })),
+        findFirst: vi.fn(async () => ({ status: "DEAD_LETTER" })),
       },
     };
     const service = new PartnerCommerceService(prisma);

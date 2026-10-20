@@ -609,6 +609,18 @@ export class AdminController {
     return this.admin.updateCommerceOrder(id, input);
   }
 
+  @Get("commerce-orders/:id/erp")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS, AdminRole.FINANCE, AdminRole.CUSTOMER_SERVICE, AdminRole.READ_ONLY)
+  commerceOrderErp(@Param("id") id: string) {
+    return this.admin.commerceOrderErp(id);
+  }
+
+  @Post("commerce-orders/:id/erp-sync")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.COMMERCE_OPERATIONS)
+  syncCommerceOrderErp(@Param("id") id: string) {
+    return this.admin.commerceOrderErp(id, true);
+  }
+
   @Post("commerce-orders/:id/manual-payment")
   @AdminRoles(AdminRole.SUPER_ADMIN)
   manuallySettleCommerceOrder(

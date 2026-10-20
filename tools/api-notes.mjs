@@ -15,6 +15,8 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+  "AdminController.commerceOrderErp": entry("读取订单ERP状态、包裹与操作日志缓存", "id为订单UUID", "{erpStatus,orderStatus,shipments,items,state,syncedAt,truncated}；最多最近300日志；GET不调供应商、不排队", "订单查看权限；无关联或未配置明确返回；不返回供应商原始响应"),
+  "AdminController.syncCommerceOrderErp": entry("获取当前订单ERP状态、包裹与操作日志", "id为订单UUID；空对象", "同一订单每分钟幂等排队；轮询GET获取结果", "SUPER_ADMIN/COMMERCE_OPERATIONS；审计；不更改付款/退款或供应商订单"),
   "PartnerMemberController.status": entry("当前会员合作申请与账户状态", "已验证商城会员会话", "{partner,application}；仅该会员数据", "主库；会员绑定独立于推广归属"),
   "PartnerMemberController.apply": entry("会员提交合作申请", "{name,contactName,mobile,region,description,idempotencyKey}", "申请；同一会员仅一个待审核或通过申请，重试不重复", "已验证会员；总管理员审核"),
   "PartnerMemberController.ticket": entry("商城会员进入合作平台", "{codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话", "{ticket,expiresAt}；哈希存储，120秒一次性凭证", "已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份"),
@@ -32,7 +34,7 @@ export const notes = {
   "AuthController.migrationStatus": entry("查询本人美国迁移核验状态", "仅美国部署、当前会员会话；不接受账号参数", "{completed:false} 或已核验批次、来源/目标账号和域名、verifiedAt", "私有迁移凭证；未完成迁移不得复制手机缓存"),
   "PartnerPublicController.certificate": entry("核验赛电电子授权证书", "code为公开推广码；公开只读", "授权方、伙伴名称/编号、当前合作等级、启用状态、登记日期；不返回联系方式、账号、余额或内部ID", "主库当前状态；停用即时失效"),
   "PartnerController.certificate": entry("查看与打印电子授权证书", "本人伙伴会话", "赛电授权数据、当前等级/状态、核验链接和二维码；随账户启用状态有效", "主库当前伙伴账户"),
-  "PartnerController.processing": entry("同步采购订单ERP处理明细", "id为本人订单UUID", "{items,state,syncedAt,truncated}；缓存一分钟；实际ERP操作时间/名称/操作人/备注，后台只读同步任务", "聚水潭order.action.query已授权；不伪造处理记录"),
+  "PartnerController.processing": entry("同步采购订单ERP状态、物流与处理明细", "id为本人订单UUID", "{erpStatus,orderStatus,shipments,items,state,syncedAt,truncated}；一分钟幂等缓存；最多最近300操作日志", "订单partnerId限定；聚水潭orders.single.query与order.action.query已授权；仅真实Sent/运单推进履约，不改财务终态"),
   "PartnerAdminController.orders": entry("查询品牌伙伴采购订单", "id为伙伴UUID、page?；财务只读", "{items,total,page,pageSize}；金额、商品、地址及发货，无支付原始响应", "主库；含已停用伙伴历史交易"),
   "PartnerPublicController.login": entry("品牌伙伴登录", "{username,password}；每IP每分钟10次；独立伙伴会话", "{token,expiresAt,user}；停用或改密后旧会话失效", "品牌伙伴已开通"),
   "PartnerPublicController.promotion": entry("验证品牌伙伴推广来源", "code为伙伴推广码；公开只读", "{name,partnerCode,noticeVersion,notice}；失效返回404", "品牌伙伴启用"),
