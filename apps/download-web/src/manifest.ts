@@ -50,27 +50,33 @@ export function manifestFromApiData(data: unknown): DownloadManifestContract {
 
 export function productManifestFromApiData(
   data: unknown,
-  product: "health" | "ring",
+  product: "health" | "ring" | "cn",
 ): DownloadManifestContract {
   const candidate = manifestSource(data);
-  const packageId =
+  const packageId = product === "cn" ? "cc.saidian.app" :
     product === "health" ? "cn.saydian.app.global" : "cn.saydian.ring";
   if (
     !isRecord(candidate) ||
     candidate.realm !== "global" ||
+    (product === "cn" && candidate.product !== "saydian-app-cn") ||
     !Array.isArray(candidate.releases) ||
     candidate.releases.some(
       (release) =>
         !isRecord(release) ||
-        release.packageId !==
-          `${packageId}${release.platform === "harmonyos" ? ".hm" : ""}` ||
+        release.packageId !== (product === "cn" && release.platform === "ios" ? "" :
+          `${packageId}${release.platform === "harmonyos" ? ".hm" : ""}`) ||
+        (product === "cn" && release.platform !== "android" &&
+          (release.status !== "coming_soon" || release.destination)) ||
+        (product === "cn" && isRecord(release.destination) &&
+          release.destination.kind === "direct" &&
+          !String(release.destination.fileName).startsWith("saydian-app-cn-")) ||
         (isRecord(release.destination) &&
           release.destination.kind === "direct" &&
           !String(release.destination.url).startsWith("/global/")),
     )
   ) {
     throw new Error(
-      `${product === "health" ? "SAYDIAN Health" : "Say Ring"} 下载信息无效`,
+      `${product === "cn" ? "赛电中文" : product === "health" ? "赛电国际" : "赛电戒指"} 下载信息无效`,
     );
   }
   return manifestFromApiData(data);

@@ -18,18 +18,19 @@ const path = window.location.pathname.replace(/\/$/, "");
 const product =
   ["/down2", "/say-ring"].includes(path)
     ? "ring"
-    : path === "/down/legacy" ? "legacy" : "health";
+    : path === "/down/global" ? "health" : path === "/down/legacy" ? "legacy" : "cn";
 const visiblePlatforms: readonly DownloadPlatform[] = product === "ring"
   ? downloadPlatforms.filter(platform => platform !== "harmonyos")
   : downloadPlatforms;
 const pages = {
   health: {
-    name: "SAYDIAN Health",
-    path: "/global/down",
+    name: "赛电国际",
+    path: "/down/global",
     query: "?product=saydian-global",
   },
-  legacy: { name: "原赛电 App", path: "/down/legacy", query: "" },
-  ring: { name: "Say Ring App", path: "/down2", query: "?product=say-ring" },
+  cn: { name: "赛电中文", path: "/global/down", query: "?product=saydian-app-cn" },
+  legacy: { name: "赛电历史版本", path: "/down/legacy", query: "" },
+  ring: { name: "赛电戒指", path: "/down2", query: "?product=say-ring" },
 } as const;
 const currentPage = pages[product];
 
@@ -227,18 +228,17 @@ function configurePage(): void {
       ? "健康设备配套 App"
       : product === "ring"
         ? "智能戒指配套 App"
-        : "原赛电 App · 与 Health 安装包不同";
+        : product === "cn" ? "中文版健康设备配套 App" : "历史版本下载";
   requiredElement<HTMLImageElement>("#brand-lockup").alt = currentPage.name;
   requiredElement<HTMLLinkElement>("#canonical-url").href =
     `${window.location.origin}${currentPage.path}`;
-  requiredElement<HTMLElement>(`#product-${product}`).setAttribute(
+  if (product !== "legacy") requiredElement<HTMLElement>(`#product-${product}`).setAttribute(
     "aria-current",
     "page",
   );
   if (product !== "health")
     requiredElement<HTMLElement>("#health-links").classList.add("is-hidden");
   if (product === "ring") {
-    requiredElement<HTMLElement>("#product-nav").classList.add("is-hidden");
     requiredElement<HTMLElement>("#ring-links").classList.remove("is-hidden");
     requiredElement<HTMLElement>("#release-grid").classList.add("release-grid--two");
     requiredElement<HTMLElement>('[data-platform="harmonyos"]').setAttribute("hidden", "");
