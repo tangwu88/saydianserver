@@ -15,6 +15,7 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+  "FilesController.image": entry("公开商品图片轻量版本", "id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选", "WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404", "只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界"),
   "AdminController.commerceOrderErp": entry("读取订单ERP状态、包裹与操作日志缓存", "id为订单UUID", "{erpStatus,orderStatus,shipments,items,state,syncedAt,truncated}；最多最近300日志；GET不调供应商、不排队", "订单查看权限；无关联或未配置明确返回；不返回供应商原始响应"),
   "AdminController.syncCommerceOrderErp": entry("获取当前订单ERP状态、包裹与操作日志", "id为订单UUID；空对象", "同一订单每分钟幂等排队；轮询GET获取结果", "SUPER_ADMIN/COMMERCE_OPERATIONS；审计；不更改付款/退款或供应商订单"),
   "PartnerMemberController.status": entry("当前会员合作申请与账户状态", "已验证商城会员会话", "{partner,application}；仅该会员数据", "主库；会员绑定独立于推广归属"),

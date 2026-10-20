@@ -11,14 +11,16 @@
     ><view class="container product-layout"
       ><view class="gallery"
         ><swiper v-if="images.length" class="product-carousel" :current="imageIndex" :autoplay="images.length > 1" :circular="images.length > 1" :indicator-dots="images.length > 1" :interval="5000" :duration="350" @change="onImageChange">
-          <swiper-item v-for="image in images" :key="image"><image class="main-image" :src="productThumbnail(image)" :lazy-load="true" mode="aspectFit" @click="previewProductImages" /></swiper-item>
+          <swiper-item v-for="image in images" :key="image"><CatalogImage class="main-image" :source="image" :enabled="visitedImages.has(image)" :priority="currentImage === image" :alt="productTitle(product)" @click="previewProductImages" /></swiper-item>
         </swiper><view v-else class="main-image missing-image">暂无商品图片</view><scroll-view v-if="images.length > 1" scroll-x class="thumbs"
-          ><image
+          ><CatalogImage
             v-for="image in images"
             :key="image"
+            class="gallery-thumb"
             :class="currentImage === image && 'active'"
-            :src="image"
-            mode="aspectFill"
+            :source="productThumbnail(image)"
+            :width="160"
+            :cover="true"
             @click="currentImage = image" /></scroll-view></view
       ><view class="product-info card"
         ><view class="tags"
@@ -48,7 +50,7 @@
       ></view
     ><view class="container detail card"
       ><view class="section-title">商品详情</view
-      ><rich-text v-if="product.detailHtml" class="product-rich-text" :nodes="responsiveProductHtml(product.detailHtml)" /><view
+      ><ProductDescription v-if="product.detailHtml" class="product-rich-text" :html="product.detailHtml" /><view
         v-else
         class="empty"
         >暂无更多商品详情</view
@@ -72,13 +74,14 @@
 </template>
 <script setup lang="ts">
 import { mallStorage } from "../../realm";
-import { responsiveProductHtml } from "../../product-rich-text";
+import ProductDescription from "../../components/ProductDescription.vue";
+import CatalogImage from "../../components/CatalogImage.vue";
 defineOptions({ inheritAttrs: false });
 import { onLoad, onShow, onShareAppMessage } from "@dcloudio/uni-app";
 import { preferredSku, availableSku, isSizingSku, publicTags, productTitle, officialProductUrl, catalogKind } from "../../catalog-presentation";
 import { productThumbnail } from "../../catalog-thumbnails";
 import { officialSupport, openOfficial } from "../../official-support";
-import { computed, ref, getCurrentInstance } from "vue";
+import { computed, ref, getCurrentInstance, watch } from "vue";
 import { buildMiniPoster, miniPosterEnvironment } from '../../mini-poster';
 import { miniSharePath, miniShareAsset, copyMiniShareLink } from '../../mini-share';
 import QRCode from "qrcode";
@@ -111,6 +114,8 @@ const images = computed(() => [
   ),
 ]);
 const imageIndex = computed(() => Math.max(0, images.value.indexOf(currentImage.value)));
+const visitedImages = ref(new Set<string>());
+watch(currentImage, image => { if (image) visitedImages.value.add(image); }, { flush: "sync" });
 function onImageChange(event: { detail: { current: number } }) {
   currentImage.value = images.value[event.detail.current] || images.value[0] || "";
 }
@@ -188,6 +193,7 @@ async function load() {
     selectedSku.value = preferredSku(product.value.skus || [], selectedId);
     quantity.value = Math.max(1, Math.min(quantity.value, selectedSku.value?.stock || 1));
     currentImage.value = images.value[0] || "";
+    visitedImages.value = new Set(currentImage.value ? [currentImage.value] : []);
     mallStorage.remove('product-selection:'+id.value);
     product.value.favorite = false;
     if (isLoggedIn() && !mallStorage.get('saidian-user')?.phoneTestMode) {
@@ -282,7 +288,7 @@ async function toggleFavorite() {
 .recovery-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:12px;background:#fff6de;border-radius:12px;font-size:14px}.recovery-entry button{width:auto;min-height:44px;margin:0;padding:8px 12px;line-height:1.5;font-size:14px;flex:none}
 .poster-overlay{position:fixed;inset:0;z-index:1200;background:rgba(13,24,34,.72);display:grid;place-items:center;padding:20px}.poster-card{width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;padding:18px;background:#fff;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.24)}.poster-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.poster-heading>b{font-size:18px}.poster-heading button{width:40px;min-height:40px;margin:0;padding:0;background:#f4f6f8;color:#374151;line-height:40px}.poster-loading{min-height:240px;display:grid;place-items:center;color:var(--muted)}.share-poster{display:block;width:100%;border-radius:12px;background:#f4f6f8}.poster-tip{display:block;margin:12px 0;color:var(--muted);font-size:13px;line-height:1.6;text-align:center}.poster-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.poster-actions button{margin:0;min-height:46px;font-size:14px}.poster-actions button,.product-shortcuts button,.actions button{display:flex;align-items:center;justify-content:center;gap:7px}
 .product-shortcuts {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px;}
-.product-shortcuts button {margin:0;padding:0 16px;min-height:44px;line-height:44px;font-size:14px;background:#fff;color:var(--green);}
+.product-shortcuts button {margin:0;padding:0 8px;min-height:44px;line-height:44px;font-size:14px;white-space:nowrap;background:#fff;color:var(--green);}
 /* #ifdef MP-WEIXIN */
 .product-shortcuts{display:flex;gap:10px;}
 .product-shortcuts button{flex:1;min-width:0;white-space:nowrap;height:44px;min-height:44px;padding:0 8px;line-height:44px;}
@@ -316,14 +322,15 @@ async function toggleFavorite() {
   white-space: nowrap;
   margin-top: 16rpx;
 }
-.thumbs image {
+.gallery-thumb {
+  display: inline-block;
   width: 110rpx;
   height: 110rpx;
   border-radius: 14rpx;
   margin-right: 14rpx;
   border: 4rpx solid transparent;
 }
-.thumbs image.active {
+.gallery-thumb.active {
   border-color: var(--green);
 }
 .tags {

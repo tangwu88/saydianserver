@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **458 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **459 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -168,7 +168,7 @@
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
 
-## V2 App 接口（126）
+## V2 App 接口（127）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -297,6 +297,7 @@
 | `POST /api/saydian-app/v2/files/say-ring-avatar` | Say Ring 上传头像 | member | file:file；会员令牌；multipart file，JPEG/PNG/WebP，最大 10 MiB；仅国际环境 | {id,url,sha256,byteSize}；URL 与现有头像接口一致 | Say Ring 专用服务器持久目录；开关关闭时沿用原头像存储 |
 | `POST /api/saydian-app/v2/files` | 上传图片 | member | file:file，query:purpose?；multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP | {id,url,...} | 私有对象存储 |
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
+| `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
 ## 管理后台接口（147）

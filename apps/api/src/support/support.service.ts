@@ -19,12 +19,13 @@ import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
 import { PrismaService } from "../common/prisma.service";
 import { env, envBoolean } from "../common/environment";
-import { safeObject, sha256 } from "../common/crypto";
+import { isUuid, safeObject, sha256 } from "../common/crypto";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
 import { markIntegrationVerified } from "../common/integration-health";
 import { sayRingIosModuleVisibility } from "../common/say-ring-module-visibility";
 
 import { parseGlobalDownloadManifest } from "./global-download-manifest";
+import { PublicImageVariants, publicImageWidth } from "./public-image-variants";
 import { normalizePublishedGlobalSupport } from "./global-support-config";
 import { canAdminResource } from "@saydian/app-contracts";
 import { parseSportRoute, renderAmapSportRoute } from "./sport-route-map";
@@ -47,6 +48,7 @@ const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 @Injectable()
 export class SupportService implements OnModuleInit {
+  private readonly publicImageVariants = new PublicImageVariants();
   constructor(
     private readonly prisma: PrismaService,
     private readonly integrationSecrets: IntegrationSecretsService,
@@ -763,6 +765,37 @@ export class SupportService implements OnModuleInit {
     return { body: object.Body as NodeJS.ReadableStream,
       byteSize: file.byteSize, sha256: artifact.sha256,
       sampleRateHz: artifact.sampleRateHz, sampleCount: artifact.sampleCount };
+  }
+
+  async publicImage(id: string, widthInput: unknown) {
+    const width = publicImageWidth(widthInput);
+    if (!isUuid(id)) throw new NotFoundException("商品图片不存在");
+    // Recheck the source even on cache hits: cached bytes never widen public scope.
+    const file = await this.prisma.fileObject.findFirst({ where: { id, status: "ACTIVE", purpose: "admin-content", ownerUserId: null } });
+    if (!file || !allowedImageTypes.has(file.contentType)) throw new NotFoundException("商品图片不存在");
+    if (file.byteSize <= 0 || file.byteSize > 10 * 1024 * 1024) throw new BadRequestException("商品图片过大");
+    const value = await this.publicImageVariants.get(file.sha256, width, async () => {
+      const storage = await this.storage();
+      let result;
+      try { result = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }), { abortSignal: AbortSignal.timeout(10_000) }); }
+      catch { throw new ServiceUnavailableException("商品图片暂时无法读取"); }
+      if (!result.Body) throw new NotFoundException("商品图片不存在");
+      const stream = result.Body as Readable;
+      const timer = setTimeout(() => stream.destroy(new Error("Image read timeout")), 10_000);
+      timer.unref();
+      const chunks: Buffer[] = []; let size = 0;
+      try {
+        for await (const chunk of stream) {
+          const bytes = Buffer.from(chunk); size += bytes.length;
+          if (size > file.byteSize || size > 10 * 1024 * 1024) throw new Error("Image size mismatch");
+          chunks.push(bytes);
+        }
+        if (size !== file.byteSize) throw new Error("Image size mismatch");
+        return Buffer.concat(chunks, size);
+      } catch { throw new ServiceUnavailableException("商品图片暂时无法读取"); }
+      finally { clearTimeout(timer); stream.destroy(); }
+    });
+    return { body: Readable.from([value.bytes]), contentType: value.contentType, byteSize: value.bytes.length, sha256: value.sha256 };
   }
 
   async publicFile(id: string) {

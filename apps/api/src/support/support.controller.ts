@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
   Param,
   Post,
   Query,
@@ -133,6 +134,22 @@ export class FilesController {
       file,
       String(body.sha256 ?? ""),
     );
+  }
+
+  @Get(":id/image")
+  @RawResponse()
+  async image(@Param("id") id: string, @Query("width") width: string, @Headers("if-none-match") ifNoneMatch: string | undefined, @Res() response: Response) {
+    const file = await this.support.publicImage(id, width);
+    const etag = `"${file.sha256}"`;
+    response.setHeader("cache-control", "public, max-age=86400");
+    response.setHeader("etag", etag);
+    response.setHeader("x-content-type-options", "nosniff");
+    if (ifNoneMatch?.split(",").some(value => value.trim().replace(/^W\//, "") === etag || value.trim() === "*")) {
+      file.body.destroy(); response.status(304).end(); return;
+    }
+    response.setHeader("content-type", file.contentType);
+    response.setHeader("content-length", String(file.byteSize));
+    file.body.pipe(response);
   }
 
   @Get(":id")
