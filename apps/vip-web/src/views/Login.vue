@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, data, errorMessage, partnerTokenKey } from "../api";
 const form = reactive({ username: "", password: "" }),
@@ -9,8 +9,18 @@ import { beginMemberLogin } from "../login-bridge";
 import { safeReturnPath } from "../navigation";
 const router = useRouter(),
   route = useRoute();
-async function mallLogin() { try { await beginMemberLogin(route.query.next); } catch { error.value = "请允许浏览器保存登录状态后重试"; } }
-onMounted(() => { if (/micromessenger/i.test(navigator.userAgent) && route.query.password !== "1") mallLogin(); });
+async function mallLogin() {
+  if (busy.value) return;
+  busy.value = true;
+  error.value = "";
+  try {
+    await beginMemberLogin(route.query.next);
+  } catch {
+    error.value = "请允许浏览器保存登录状态后重试";
+  } finally {
+    busy.value = false;
+  }
+}
 async function login() {
   if (busy.value) return;
   if (!form.username.trim() || !form.password) {
@@ -80,8 +90,8 @@ async function login() {
           class="login-button"
           >登录平台</el-button
         >
-        <el-button class="login-button" size="large" @click="mallLogin">通过商城会员进入 / 申请合作</el-button>
-        <p class="help">微信内沿用商城授权登录。账号登录需要管理员开通或重置密码。</p>
+        <el-button class="login-button" size="large" :disabled="busy" @click="mallLogin">商城会员登录 / 申请合作</el-button>
+        <p class="help">已开通的伙伴可使用账号密码登录。已绑定商城会员的伙伴，也可选择商城会员登录。</p>
       </form>
       <small class="copyright">赛电 SAYDIAN · 品牌伙伴平台</small>
     </section>
