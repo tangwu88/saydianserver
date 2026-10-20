@@ -20,7 +20,11 @@ export function prepareProductDescription(value: unknown): { html: string; image
       else if (name === "height" && /^\d{1,5}$/.test(text)) height = Number(text);
     }
     // The existing Uni rich-text allowlist still sanitizes all rendered markup.
-    if (!/^(?:https?:\/\/|\/(?!\/))[^\s<>"']+$/i.test(source)) return "";
+    if (!source || /[\u0000-\u0020<>"']/.test(source)) return "";
+    if (source.startsWith("//")) source = "https:" + source;
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1]?.toLowerCase();
+    if (scheme && !["https", "http"].includes(scheme) &&
+      !(source.length <= 2 * 1024 * 1024 && /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/]+={0,2}$/i.test(source))) return "";
     const ratio = width > 0 && height > 0 ? `aspect-ratio:${width}/${height};` : "";
     const marker = `catalog-deferred-image-${images.length}`;
     images.push({ marker, source: catalogImageSource(source, 960), original: source, alt });

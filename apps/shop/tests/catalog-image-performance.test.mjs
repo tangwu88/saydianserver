@@ -55,7 +55,14 @@ test("description markup initially contains inert placeholders and no downloadab
   assert.match(prepared.html, /aspect-ratio:1600\/3000/);
   assert.doesNotMatch(prepared.html, /app\.saydian\.cn|other\.invalid|onerror|srcset/);
   assert.equal(h.prepareProductDescription(null).html, "");
-  assert.equal(h.prepareProductDescription('<img src="javascript:bad()"><img src="//other.invalid/a.png">').images.length, 0);
+  assert.equal(h.prepareProductDescription('<img src="javascript:bad()"><img src="file:///private.png"><img src="data:image/svg+xml;base64,PHN2Zz4=">').images.length, 0);
+});
+
+test("CDN, relative and embedded raster details keep working without an arbitrary image proxy", () => {
+  const h = harness(), prepared = h.prepareProductDescription('<img src="//cdn.example.invalid/detail.jpg"><img src="images/detail.png"><img src="../detail.webp"><img src="data:image/png;base64,aGVsbG8=">');
+  assert.deepEqual(Array.from(prepared.images, image => image.original), ['https://cdn.example.invalid/detail.jpg', 'images/detail.png', '../detail.webp', 'data:image/png;base64,aGVsbG8=']);
+  assert.equal(prepared.images[0].source, prepared.images[0].original);
+  assert.equal(prepared.images[1].source, prepared.images[1].original);
 });
 
 test("only images near the viewport begin network loading, with reserved placeholder height", () => {
