@@ -53,12 +53,21 @@ function harness(roles = ["SUPER_ADMIN"], canWrite = true) {
   };
   const state = new Function(
     ...Object.keys(deps),
-    `${code}\nreturn { inventorySyncing, inventorySyncNotice, syncInventory, detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, paymentCloseSaving, orderCloseSaving, canManuallySettleOrder, openDetail, openManualOrder, saveManualOrder, paymentChannelLabel, hasActiveOnlinePayment, activeOnlinePayment, orderAddress, closeOnlinePayment, closeOrder };`,
+    `${code}\nreturn { inventorySyncing, inventorySyncNotice, syncInventory, detailRow, detailVisible, manualOrderVisible, manualOrderSaving, manualOrderForm, paymentCloseSaving, orderCloseSaving, canManuallySettleOrder, openDetail, onErpSynced, openManualOrder, saveManualOrder, paymentChannelLabel, hasActiveOnlinePayment, activeOnlinePayment, orderAddress, closeOnlinePayment, closeOrder };`,
   )(...Object.values(deps));
   return { ...state, props, order, api, emit, ElMessage, confirm, prompt };
 }
 
 describe("product inventory sync button", () => {
+  it("rejects the previous drawer's ERP update before unmount and after close", () => {
+    const h = harness();h.openDetail({ id: "current", status: "PAID" });
+    h.onErpSynced("previous", { orderStatus: "SHIPPED", shipments: [{ trackingNo: "old" }] });
+    expect(h.detailRow.value).toEqual({ id: "current", status: "PAID" });expect(h.emit).not.toHaveBeenCalled();
+    h.onErpSynced("current", { orderStatus: "SHIPPED", erpStatus: "Sent", shipments: [] });
+    expect(h.detailRow.value.status).toBe("SHIPPED");expect(h.emit).toHaveBeenCalledWith("refresh");
+    h.detailVisible.value = false;h.onErpSynced("current", { orderStatus: "CANCELLED" });
+    expect(h.detailRow.value.status).toBe("SHIPPED");
+  });
   it.each([1, 0])("shows a persistent skipped-SKU warning while refreshing successful inventory (%s matched)", async (matched) => {
     const h = harness(); h.props.resource = "commerce-products";
     const skippedSkuIds = matched ? ["ERP-missing"] : ["ERP-missing", "ERP-other"];

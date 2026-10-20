@@ -20,7 +20,7 @@ describe("order ERP panel lifecycle", () => {
     await vi.waitFor(() => expect(h.snapshot.value.erpStatus).toBe("Sent"));
     expect(h.api.post).toHaveBeenCalledWith("/commerce-orders/order-1/erp-sync", {});
     expect(h.expanded.value).toBe(false);
-    await h.refresh();expect(h.expanded.value).toBe(true);expect(h.emit).toHaveBeenCalledWith("synced", expect.objectContaining({ orderStatus: "SHIPPED" }));
+    await h.refresh();expect(h.expanded.value).toBe(true);expect(h.emit).toHaveBeenCalledWith("synced", "order-1", expect.objectContaining({ orderStatus: "SHIPPED" }));
   });
   it("never queues a query for a read-only viewer", async () => {
     const h = harness(false);await h.refresh();

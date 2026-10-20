@@ -281,7 +281,8 @@ function openDetail(row: Row): void {
   detailVisible.value = true;
 }
 
-function onErpSynced(snapshot: Row): void {
+function onErpSynced(orderId: string, snapshot: Row): void {
+  if (!detailVisible.value || detailRow.value.id !== orderId || props.resource !== "commerce-orders") return;
   detailRow.value = { ...detailRow.value, erpStatus: snapshot.erpStatus,
     ...(snapshot.orderStatus ? { status: snapshot.orderStatus } : {}),
     ...(Array.isArray(snapshot.shipments) ? { shipments: snapshot.shipments } : {}),

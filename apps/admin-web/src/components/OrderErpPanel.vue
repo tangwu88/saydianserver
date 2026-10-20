@@ -4,13 +4,14 @@ import { api, readableError, responseData } from "../api";
 import { erpOrderStatus } from "../commerce-order-erp";
 
 const props = defineProps<{ order: Record<string, any>; canSync: boolean }>();
-const emit = defineEmits<{ synced: [snapshot: Record<string, any>] }>();
+const emit = defineEmits<{ synced: [orderId: string, snapshot: Record<string, any>] }>();
+const orderId = String(props.order.id);
 const snapshot = ref<Record<string, any>>({ erpStatus: props.order.erpStatus, items: [] });
 const expanded = ref(false), busy = ref(false), error = ref("");
 let generation = 0, disposed = false, timer: ReturnType<typeof setTimeout> | undefined;
 onBeforeUnmount(() => { disposed = true; generation++; clearTimeout(timer); });
 onMounted(() => { if (props.canSync && props.order.erpOrderId) void refresh(false); else void load(); });
-const endpoint = () => `/commerce-orders/${encodeURIComponent(String(props.order.id))}/erp`;
+const endpoint = () => `/commerce-orders/${encodeURIComponent(orderId)}/erp`;
 function current(request: number) { return !disposed && request === generation; }
 async function load(request = ++generation, poll = 0): Promise<void> {
   try {
@@ -21,7 +22,7 @@ async function load(request = ++generation, poll = 0): Promise<void> {
       timer = setTimeout(() => { void load(request, poll + 1); }, 2500);
       return;
     }
-    if (result.state === "READY") emit("synced", result);
+    if (result.state === "READY") emit("synced", orderId, result);
   } catch (cause) { if (current(request)) error.value = readableError(cause); }
   finally { if (current(request)) busy.value = false; }
 }
