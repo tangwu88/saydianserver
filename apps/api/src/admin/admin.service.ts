@@ -1,4 +1,5 @@
 import { writeCnDisplaySetting } from "./cn-display-setting";
+import { orderErpSnapshot } from "../commerce/order-erp-snapshot";
 import { usCandidateInventory } from "./us-candidate-inventory";
 import { adminDeviceIdentifier, legacyNativeDeviceKey } from "../common/device-identity";
 import { deductCommercePaymentStock } from "../commerce/commerce-payment-stock";
@@ -2516,6 +2517,8 @@ export class AdminService {
               { recipientMobile: { contains: search } },
               { user: { nickname: { contains: search, mode: "insensitive" } } },
               { user: { mobile: { contains: search } } },
+              { partner: { name: { contains: search, mode: "insensitive" } } },
+              { partner: { partnerNo: { contains: search, mode: "insensitive" } } },
             ],
           }
         : {}),
@@ -2562,6 +2565,10 @@ export class AdminService {
         paidOrderCents: amounts._sum.payableCents ?? 0,
       },
     };
+  }
+
+  commerceOrderErp(id: string, enqueue = false) {
+    return orderErpSnapshot(this.prisma, id, enqueue);
   }
 
   async updateCommerceOrder(id: string, input: unknown) {

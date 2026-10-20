@@ -2732,6 +2732,79 @@
       }
     },
     {
+      "key": "AdminController.commerceOrderErp",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-orders/:id/erp",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS",
+        "FINANCE",
+        "CUSTOMER_SERVICE",
+        "READ_ONLY"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "读取订单ERP状态、包裹与操作日志缓存",
+      "request": "id为订单UUID",
+      "response": "{erpStatus,orderStatus,shipments,items,state,syncedAt,truncated}；最多最近300日志；GET不调供应商、不排队",
+      "dependency": "订单查看权限；无关联或未配置明确返回；不返回供应商原始响应",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.syncCommerceOrderErp",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-orders/:id/erp-sync",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "获取当前订单ERP状态、包裹与操作日志",
+      "request": "id为订单UUID；空对象",
+      "response": "同一订单每分钟幂等排队；轮询GET获取结果",
+      "dependency": "SUPER_ADMIN/COMMERCE_OPERATIONS；审计；不更改付款/退款或供应商订单",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.manuallySettleCommerceOrder",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/commerce-orders/:id/manual-payment",
@@ -28352,10 +28425,10 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/partners/partner.controller.ts",
-      "summary": "同步采购订单ERP处理明细",
+      "summary": "同步采购订单ERP状态、物流与处理明细",
       "request": "id为本人订单UUID",
-      "response": "{items,state,syncedAt,truncated}；缓存一分钟；实际ERP操作时间/名称/操作人/备注，后台只读同步任务",
-      "dependency": "聚水潭order.action.query已授权；不伪造处理记录",
+      "response": "{erpStatus,orderStatus,shipments,items,state,syncedAt,truncated}；一分钟幂等缓存；最多最近300操作日志",
+      "dependency": "订单partnerId限定；聚水潭orders.single.query与order.action.query已授权；仅真实Sent/运单推进履约，不改财务终态",
       "successStatus": 200,
       "contract": {
         "status": "request-reviewed",

@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **456 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **458 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -299,7 +299,7 @@
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（145）
+## 管理后台接口（147）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -376,6 +376,8 @@
 | `PATCH /api/saydian-app/admin/v1/commerce-reviews/:id` | 设置评价展示状态 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, CUSTOMER_SERVICE | path:id；id=评价UUID；{published:boolean} | 评价；不能改写评分或正文 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/commerce-orders` | 总后台订单 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:status?，query:page?，query:search?；status可选；page默认1 | 订单、商品、支付、物流、售后、完整地址和推广上级；仅SUPER_ADMIN返回收货原手机号，其他角色脱敏 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/commerce-orders/:id` | 维护订单备注 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=订单UUID；{adminRemark?}；订单状态不能手工改写 | 订单 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-orders/:id/erp` | 读取订单ERP状态、包裹与操作日志缓存 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | path:id；id为订单UUID | {erpStatus,orderStatus,shipments,items,state,syncedAt,truncated}；最多最近300日志；GET不调供应商、不排队 | 订单查看权限；无关联或未配置明确返回；不返回供应商原始响应 |
+| `POST /api/saydian-app/admin/v1/commerce-orders/:id/erp-sync` | 获取当前订单ERP状态、包裹与操作日志 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id为订单UUID；空对象 | 同一订单每分钟幂等排队；轮询GET获取结果 | SUPER_ADMIN/COMMERCE_OPERATIONS；审计；不更改付款/退款或供应商订单 |
 | `POST /api/saydian-app/admin/v1/commerce-orders/:id/manual-payment` | 待付款订单调价或登记线下收款 | admin: SUPER_ADMIN | path:id；id=订单UUID；仅SUPER_ADMIN；{action:ADJUST_PRICE\|CONFIRM_OFFLINE_PAID,payableCents:正整数分,note:2–500字,orderVersion,idempotencyKey:8–120字符} | 更新后的订单、商品金额分摊和收款记录；确认线下收款成功后扣库存，历史已扣库存不重复扣；重复同键同参数返回reused=true；异参、过期版本、非新系统订单、非待付款或渠道支付处理中均拒绝 | 主库商城；线下收款只登记已核实结果，不调用或伪造第三方支付 |
 | `POST /api/saydian-app/admin/v1/commerce-orders/:id/close` | 关闭未付款订单 | admin: SUPER_ADMIN | path:id；id=订单UUID；仅SUPER_ADMIN；{note:2–500字,orderVersion,idempotencyKey:8–120字符} | CANCELLED订单；退回占用优惠券与积分，新订单未付款不扣库存，旧订单仅返还尚未释放的原扣减；在线支付未关单时拒绝 | 主库商城 |
 | `GET /api/saydian-app/admin/v1/commerce-orders/:id/fulfillment-preview` | 本地订单可发货数量 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；订单UUID路径参数；限超级管理员/商城运营 | {orderId,version,status,items:[{orderItemId,name,quantity,shippedQuantity,refundedQuantity,afterSaleReservedQuantity,remainingQuantity}],shipments,unavailableReason?}；旧包裹或售后归属不明时阻断 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
@@ -479,7 +481,7 @@
 | `POST /api/saydian-app/vip/v1/orders` | 余额支付创建品牌伙伴采购订单 | partner | PartnerCheckoutInput：items、address、expectedQuote、idempotencyKey、buyerRemark? | 订单及成功余额凭证；扣款/账本/付款库存/ERP任务同事务；不足或报价变化不部分扣款 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/orders` | 品牌伙伴采购订单列表 | partner | query:page?；page? | {items,total,page,pageSize}；仅本人采购交易 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/orders/:id` | 品牌伙伴采购订单详情 | partner | path:id；id为订单UUID | 成交等级/合作价快照、收货信息、付款、售后及ERP状态 | 主库；伙伴身份与会员/员工推广隔离 |
-| `GET /api/saydian-app/vip/v1/orders/:id/processing` | 同步采购订单ERP处理明细 | partner | path:id；id为本人订单UUID | {items,state,syncedAt,truncated}；缓存一分钟；实际ERP操作时间/名称/操作人/备注，后台只读同步任务 | 聚水潭order.action.query已授权；不伪造处理记录 |
+| `GET /api/saydian-app/vip/v1/orders/:id/processing` | 同步采购订单ERP状态、物流与处理明细 | partner | path:id；id为本人订单UUID | {erpStatus,orderStatus,shipments,items,state,syncedAt,truncated}；一分钟幂等缓存；最多最近300操作日志 | 订单partnerId限定；聚水潭orders.single.query与order.action.query已授权；仅真实Sent/运单推进履约，不改财务终态 |
 | `GET /api/saydian-app/vip/v1/orders/:id/logistics` | 品牌伙伴采购发货与物流 | partner | path:id；id为订单UUID | {items}；物流公司/单号/发货时间/筛选后的实际轨迹，不透出ERP原始响应 | ERP或总后台真实发货记录 |
 | `GET /api/saydian-app/vip/v1/wallet` | 品牌伙伴资金账户 | partner | 本人伙伴会话 | 消费余额和保证金分别以整数分返回 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/ledger` | 品牌伙伴资金流水 | partner | query:account?，query:page?；account?:BALANCE\|DEPOSIT、page? | 不可变资金记录、变动金额、变动后余额和业务引用 | 主库；伙伴身份与会员/员工推广隔离 |

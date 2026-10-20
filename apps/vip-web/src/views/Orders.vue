@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { api, data, errorMessage } from "../api";
-import { money, date, statuses, erpStatuses } from "../present";
+import { money, date, statuses, partnerOrderStatus, erpStatuses } from "../present";
 import { partnerLevelName } from "@saydian/app-contracts";
 import { Refresh, Van, CopyDocument } from "@element-plus/icons-vue";
 import PageError from "../components/PageError.vue";
@@ -17,7 +17,7 @@ const processing = ref<any>(),
   processingBusy = ref(false);
 let processingTimer: ReturnType<typeof setTimeout> | undefined;
 let listRequest = 0,
-  detailRequest = 0;
+  detailRequest = 0, processingRequest = 0;
 onBeforeUnmount(() => {
   clearTimeout(processingTimer);
   listRequest++;
@@ -74,29 +74,42 @@ async function open(id: string) {
   if (detail.value) void loadProcessing(id, request);
 }
 function stopProcessing() {
+  processingRequest++;
   clearTimeout(processingTimer);
 }
 async function loadProcessing(
   id = selectedId.value,
   request = detailRequest,
   poll = 0,
+  cycle = ++processingRequest,
 ) {
   clearTimeout(processingTimer);
   processingBusy.value = true;
   processingError.value = "";
   try {
     const result = data(await api.get(`/orders/${id}/processing`));
-    if (request !== detailRequest || id !== selectedId.value || !drawer.value)
+    if (request !== detailRequest || cycle !== processingRequest || id !== selectedId.value || !drawer.value)
       return;
     processing.value = result;
-    if (result.state === "PENDING" && poll < 6)
+    if (detail.value && Object.prototype.hasOwnProperty.call(result, "erpStatus")) {
+      const patch = { erpStatus: result.erpStatus, ...(result.orderStatus ? { status: result.orderStatus } : {}) };
+      detail.value = { ...detail.value, ...patch };
+      orders.value = orders.value.map(order => order.id === id ? { ...order, ...patch } : order);
+    }
+    if (result.state === "PENDING" && poll < 12)
       processingTimer = setTimeout(() => {
-        void loadProcessing(id, request, poll + 1);
+        void loadProcessing(id, request, poll + 1, cycle);
       }, 2500);
+    if (result.state === "READY") {
+      try {
+        const shipments = data(await api.get(`/orders/${id}/logistics`)).items;
+        if (request === detailRequest && cycle === processingRequest && drawer.value) { logistics.value = shipments; logisticsError.value = ""; }
+      } catch (cause) { if (request === detailRequest && cycle === processingRequest) logisticsError.value = errorMessage(cause); }
+    }
   } catch (cause) {
-    if (request === detailRequest) processingError.value = errorMessage(cause);
+    if (request === detailRequest && cycle === processingRequest) processingError.value = errorMessage(cause);
   } finally {
-    if (request === detailRequest) processingBusy.value = false;
+    if (request === detailRequest && cycle === processingRequest) processingBusy.value = false;
   }
 }
 async function copyTracking(value: string) {
@@ -136,7 +149,7 @@ async function copyTracking(value: string) {
             <b class="record-number">{{ order.orderNo }}</b
             ><small>{{ date(order.createdAt) }}</small>
           </div>
-          <el-tag>{{ statuses[order.status] || order.status }}</el-tag>
+          <el-tag>{{ partnerOrderStatus(order) }}</el-tag>
         </div>
         <div v-for="item in order.items" :key="item.id" class="order-item">
           <img
@@ -181,7 +194,7 @@ async function copyTracking(value: string) {
         <PageError :message="detailError" @retry="open(selectedId)" /><template
           v-if="detail"
           ><h2 class="detail-order-number">{{ detail.orderNo }}</h2>
-          <el-tag>{{ statuses[detail.status] || detail.status }}</el-tag>
+          <el-tag>{{ partnerOrderStatus(detail) }}</el-tag>
           <dl class="facts" style="margin-top: 26px">
             <div>
               <dt>成交等级</dt>
@@ -204,7 +217,7 @@ async function copyTracking(value: string) {
               <dd>
                 {{
                   erpStatuses[detail.erpStatus] ||
-                  (detail.erpStatus ? "处理中" : "等待同步")
+                  detail.erpStatus || "等待同步"
                 }}
               </dd>
             </div>
@@ -300,7 +313,7 @@ async function copyTracking(value: string) {
             }}
           </p>
           <p v-if="processing?.truncated" class="muted">
-            记录较多，当前显示最近查询到的 6,000 条记录。
+            记录较多，当前显示最近同步取得的 300 条记录。
           </p>
           <h3 style="margin-top: 30px">发货与物流</h3>
           <PageError
@@ -308,8 +321,8 @@ async function copyTracking(value: string) {
             @retry="open(selectedId)"
           /><EmptyState
             v-if="!logistics.length && !logisticsError"
-            title="等待发货"
-            description="发货后将在这里显示运单号和物流进度。"
+            :title="detail.erpStatus === 'Sent' || detail.status === 'SHIPPED' ? '物流信息待同步' : '暂无发货信息'"
+            :description="processing?.state === 'PENDING' ? '正在向 ERP 获取物流信息…' : '可点击上方同步 / 刷新，获取 ERP 实际返回的快递公司和运单号。'"
           />
           <div
             v-for="shipment in logistics"

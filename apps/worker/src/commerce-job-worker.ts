@@ -100,6 +100,10 @@ export class CommerceJobWorker {
       await this.syncOrderLogs(identifier("orderId"));
       return;
     }
+    if (type === "JUSHUITAN_ORDER_DETAIL_SYNC") {
+      await this.syncOrderLogs(identifier("orderId"), true);
+      return;
+    }
     if (type === "JUSHUITAN_AFTER_SALE_PUSH") {
       await this.uploadAfterSale(identifier("afterSaleId"));
       return;
@@ -409,13 +413,42 @@ export class CommerceJobWorker {
     }
   }
 
-  private async syncOrderLogs(orderId: string) {
+  private async syncOrderLogs(orderId: string, syncStatus = false) {
     const order = await this.prisma.commerceOrder.findUnique({ where: { id: orderId } });
     if (!order || order.executionOwner !== "NEW_SYSTEM" || !order.erpOrderId || !/^[1-9]\d*$/.test(order.erpOrderId))
       throw new PermanentCommerceJobError("Order has no valid ERP order identifier");
     const erpId = Number(order.erpOrderId);
     if (!Number.isSafeInteger(erpId)) throw new PermanentCommerceJobError("ERP order identifier exceeds safe integer range");
     const settings = await this.settings(), events = new Map<string, { id: string; name: string; remark: string; time: string; operator: string }>();
+    let erpStatus: string | undefined;
+    let shipment: { trackingNo: string; logisticsCompany: string; logisticsCode: string | null; shippedAt: Date | null } | undefined;
+    if (syncStatus) {
+      const shopId = jstShopId(order.erpShopId ?? settings.shopId);
+      const matches: Record<string, unknown>[] = [];
+      for (let page = 1; page <= 20; page++) {
+        const result = await this.call(settings, settings.paths.orderQuery!, {
+          shop_id: shopId, so_ids: [order.orderNo], page_index: page, page_size: 50,
+        });
+        if (!Array.isArray(result.orders)) throw new Error("ERP order query response has no orders array");
+        matches.push(...result.orders.map(asObject).filter(row =>
+          String(row.o_id) === order.erpOrderId && String(row.so_id) === order.orderNo && String(row.shop_id) === String(shopId)));
+        const next = [true, 1, "true", "1"].includes(result.has_next as any) || Number(result.page_count) > page;
+        if (!next) break;
+        if (page === 20) throw new Error("ERP order query pagination is incomplete");
+      }
+      if (matches.length !== 1) throw new Error("ERP order identity was not uniquely verified");
+      const status = matches[0]!.status;
+      if (typeof status !== "string" || !status.trim() || status.length > 80) throw new Error("ERP order status is missing or invalid");
+      erpStatus = status.trim();
+      const matched = matches[0]!;
+      const trackingNo = typeof matched.l_id === "string" ? matched.l_id.trim() : "";
+      if (erpStatus === "Sent" && trackingNo && trackingNo.length <= 200 && !/^0+$/.test(trackingNo)) {
+        const sent = typeof matched.send_date === "string" ? matched.send_date.trim() : "";
+        const timestamp = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(sent) ? sent.replace(" ", "T") + "+08:00" : sent;
+        shipment = { trackingNo, logisticsCompany: String(matched.logistics_company || matched.lc_name || "物流公司未返回").slice(0, 160),
+          logisticsCode: matched.lc_id ? String(matched.lc_id).slice(0, 80) : null, shippedAt: parseDate(timestamp) };
+      }
+    }
     let truncated = false;
     for (let page = 1; page <= 20; page++) {
       const result = await this.call(settings, settings.paths.orderLogs!, { o_id: erpId, page_index: page, page_size: 300 });
@@ -434,8 +467,26 @@ export class CommerceJobWorker {
       if (page === 20) truncated = true;
     }
     const items = [...events.values()].sort((a,b) => a.time.localeCompare(b.time) || a.id.localeCompare(b.id, undefined, {numeric:true}));
-    await this.prisma.commerceOrder.updateMany({ where: { id: order.id, erpOrderId: order.erpOrderId, executionOwner: "NEW_SYSTEM" },
-      data: { erpProcessLogJson: { items, truncated } as Prisma.InputJsonValue, erpProcessLogSyncedAt: new Date() } });
+    const where = {
+      id: order.id, erpOrderId: order.erpOrderId, executionOwner: "NEW_SYSTEM",
+      ...(syncStatus ? { version: order.version, erpStatus: order.erpStatus, updatedAt: order.updatedAt } : {}),
+    };
+    const data = { erpProcessLogJson: { items, truncated, ...(syncStatus ? { statusVerified: true } : {}) } as Prisma.InputJsonValue,
+      erpProcessLogSyncedAt: new Date(), ...(erpStatus ? { erpStatus } : {}) };
+    if (!syncStatus) { await this.prisma.commerceOrder.updateMany({ where, data }); return; }
+    await this.prisma.$transaction(async tx => {
+      const fulfill = shipment && [CommerceOrderStatus.PAID, CommerceOrderStatus.WAITING_FULFILLMENT, CommerceOrderStatus.SHIPPED].some(status => status === order.status);
+      const changed = await tx.commerceOrder.updateMany({ where, data: { ...data,
+        ...(fulfill ? { status: CommerceOrderStatus.SHIPPED, shippedAt: order.shippedAt ?? shipment!.shippedAt,
+          version: { increment: 1 } } : {}),
+      } });
+      if (changed.count !== 1) throw new Error("Order changed during ERP query; retry required");
+      if (shipment) await tx.commerceShipment.upsert({ where: { orderId_trackingNo: { orderId: order.id, trackingNo: shipment.trackingNo } },
+        create: { orderId: order.id, ...shipment, traceJson: { source: "ERP_ORDER_QUERY", erpOrderId: order.erpOrderId, status: erpStatus! } },
+        update: { logisticsCompany: shipment.logisticsCompany, logisticsCode: shipment.logisticsCode,
+          ...(shipment.shippedAt ? { shippedAt: shipment.shippedAt } : {}) },
+      });
+    });
   }
 
   private async settings(): Promise<JstSettings> {
@@ -472,6 +523,7 @@ export class CommerceJobWorker {
         orderUpload: String(customMethods.orderUpload ?? customPaths.orderUpload ?? "jushuitan.orders.upload"),
         afterSaleUpload: String(customMethods.afterSaleUpload ?? customPaths.afterSaleUpload ?? "aftersale.upload"),
         orderLogs: String(customMethods.orderLogs ?? customPaths.orderLogs ?? "order.action.query"),
+        orderQuery: String(customMethods.orderQuery ?? customPaths.orderQuery ?? "orders.single.query"),
         fulfillment: String(customMethods.fulfillment ?? customPaths.fulfillment ?? "logistic.query"),
       },
     };

@@ -5,6 +5,9 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { api, getAdminRoles, readableError, responseData } from "../api";
 import AfterSaleEvidence from "./AfterSaleEvidence.vue";
 import ProductSkuQuickEditor from "./ProductSkuQuickEditor.vue";
+import { orderPurchaser } from "../commerce-order-purchaser";
+import OrderErpPanel from "./OrderErpPanel.vue";
+import { erpOrderStatus } from "../commerce-order-erp";
 
 type Row = Record<string, any>;
 type TagType = "primary" | "success" | "warning" | "info" | "danger";
@@ -124,7 +127,7 @@ const filterPlaceholder = computed(() => ({
   "commerce-categories": "分类名称、上级分类",
   "commerce-banners": "轮播标题、跳转地址",
   "commerce-business-configs": "配置项、名称",
-  "commerce-orders": "订单号、买家、收货人",
+  "commerce-orders": "订单号、下单人、伙伴编号、收货人",
   "commerce-after-sales": "售后单号、订单号、原因",
   "commerce-reviews": "商品、评价人、评价内容",
   "commerce-coupons": "优惠券名称",
@@ -276,6 +279,14 @@ function categoryName(row: Row): string {
 function openDetail(row: Row): void {
   detailRow.value = row;
   detailVisible.value = true;
+}
+
+function onErpSynced(snapshot: Row): void {
+  detailRow.value = { ...detailRow.value, erpStatus: snapshot.erpStatus,
+    ...(snapshot.orderStatus ? { status: snapshot.orderStatus } : {}),
+    ...(Array.isArray(snapshot.shipments) ? { shipments: snapshot.shipments } : {}),
+  };
+  emit("refresh");
 }
 
 function paymentChannelLabel(channel: unknown): string {
@@ -522,8 +533,8 @@ function changeStatus(value: unknown): void {
       <el-table-column label="商品清单" min-width="240"><template #default="scope"><a v-if="storefrontProductUrl(scope.row.items?.[0]?.productId)" class="product-link" :href="storefrontProductUrl(scope.row.items[0].productId)" target="_blank" rel="noopener noreferrer">{{ orderItemsSummary(scope.row) }}</a><template v-else>{{ orderItemsSummary(scope.row) }}</template></template></el-table-column>
       <el-table-column label="金额" width="145"><template #default="scope"><strong>{{ money(scope.row.payableCents, scope.row.currency) }}</strong><small>运费 {{ money(scope.row.shippingCents, scope.row.currency) }}</small></template></el-table-column>
       <el-table-column label="收货信息" min-width="190"><template #default="scope"><strong>{{ scope.row.recipientName }}</strong><small>{{ scope.row.recipientMobile }}</small><small>{{ scope.row.province }} {{ scope.row.city }} {{ scope.row.district }}</small></template></el-table-column>
-      <el-table-column label="买家" min-width="135"><template #default="scope">{{ scope.row.user?.nickname || "未命名会员" }}<small>{{ scope.row.user?.mobile }}</small></template></el-table-column>
-      <el-table-column label="状态" width="110"><template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag></template></el-table-column>
+      <el-table-column label="下单人" min-width="180"><template #default="scope"><div><el-tag size="small" :type="orderPurchaser(scope.row).tag">{{ orderPurchaser(scope.row).label }}</el-tag></div><strong>{{ orderPurchaser(scope.row).name }}</strong><small v-if="orderPurchaser(scope.row).kind === 'partner'">{{ orderPurchaser(scope.row).reference }}</small><small v-else>{{ orderPurchaser(scope.row).contact }}</small></template></el-table-column>
+      <el-table-column label="状态" min-width="155"><template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag><small v-if="scope.row.erpOrderId"><el-button link type="primary" size="small" @click="openDetail(scope.row)">ERP：{{ erpOrderStatus(scope.row.erpStatus) }}</el-button></small></template></el-table-column>
       <el-table-column label="配送" width="130"><template #default="scope">{{ scope.row.shipments?.length ? `${scope.row.shipments.length} 个包裹` : "未发货" }}</template></el-table-column>
       <el-table-column label="操作" width="305" fixed="right"><template #default="scope"><el-button size="small" @click="openDetail(scope.row)">详情</el-button><el-button v-if="canEdit" size="small" type="primary" plain @click="emit('edit', scope.row)">备注</el-button><el-button v-if="canEdit && scope.row.paidAt && ['PAID', 'WAITING_FULFILLMENT', 'AFTER_SALE'].includes(scope.row.status)" size="small" type="success" plain @click="emit('ship', scope.row)">发货</el-button><el-button v-if="canRefund && Number(scope.row.shippingCents) > 0 && scope.row.paidAt" size="small" type="warning" plain @click="emit('shipping-refund', scope.row)">退运费申请</el-button></template></el-table-column>
     </el-table>
@@ -631,9 +642,10 @@ function changeStatus(value: unknown): void {
       <el-descriptions :column="1" border>
         <el-descriptions-item label="编号">{{ detailRow.id || "—" }}</el-descriptions-item>
         <el-descriptions-item v-if="detailRow.orderNo" label="订单号">{{ detailRow.orderNo }}</el-descriptions-item>
+        <el-descriptions-item v-if="resource === 'commerce-orders'" label="下单人"><el-tag size="small" :type="orderPurchaser(detailRow).tag">{{ orderPurchaser(detailRow).label }}</el-tag> {{ orderPurchaser(detailRow).name }}<small v-if="orderPurchaser(detailRow).reference">{{ orderPurchaser(detailRow).kind === 'partner' ? '伙伴编号' : '会员 ID' }}：{{ orderPurchaser(detailRow).reference }}</small><small v-if="orderPurchaser(detailRow).contact">{{ orderPurchaser(detailRow).contact }}</small></el-descriptions-item>
         <el-descriptions-item v-if="detailRow.afterSaleNo" label="售后单号">{{ detailRow.afterSaleNo }}</el-descriptions-item>
         <el-descriptions-item v-if="detailRow.paymentNo" label="支付单号">{{ detailRow.paymentNo }}</el-descriptions-item>
-        <el-descriptions-item v-if="detailRow.status" label="状态">{{ statusLabel(detailRow.status) }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailRow.status" label="状态"><template v-if="resource === 'commerce-orders'"><OrderErpPanel v-if="detailVisible" :key="detailRow.id" :order="detailRow" :can-sync="canEdit" @synced="onErpSynced" /><small>商城：{{ statusLabel(detailRow.status) }}</small></template><template v-else>{{ statusLabel(detailRow.status) }}</template></el-descriptions-item>
         <el-descriptions-item v-if="detailRow.createdAt" label="创建时间">{{ dateTime(detailRow.createdAt) }}</el-descriptions-item>
         <el-descriptions-item v-if="detailRow.updatedAt" label="更新时间">{{ dateTime(detailRow.updatedAt) }}</el-descriptions-item>
       </el-descriptions>
