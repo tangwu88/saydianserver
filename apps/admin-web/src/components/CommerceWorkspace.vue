@@ -41,15 +41,21 @@ const manualOrderSaving = ref(false);
 const paymentCloseSaving = ref(false);
 const orderCloseSaving = ref(false);
 const inventorySyncing = ref(false);
+const inventorySyncNotice = ref<{ title: string; skus: string[] } | null>(null);
 
 async function syncInventory(): Promise<void> {
   if (inventorySyncing.value || props.resource !== "commerce-products" || !canEdit.value) return;
   inventorySyncing.value = true;
+  inventorySyncNotice.value = null;
   try {
-    const result = responseData<{ productCount: number; skuCount: number; updatedSkuCount: number }>(
+    const result = responseData<{ productCount: number; skuCount: number; updatedSkuCount: number; syncedSkuCount?: number; skippedSkuCount?: number; skippedSkuIds?: string[] }>(
       await api.post("/commerce-products/inventory-sync", {}, { timeout: 300000 }),
     );
-    ElMessage.success(result.skuCount
+    if (result.skippedSkuCount) {
+      const title = `库存同步完成：成功同步 ${result.syncedSkuCount ?? result.skuCount - result.skippedSkuCount} 个 SKU，更新 ${result.updatedSkuCount} 个；${result.skippedSkuCount} 个未返回，已保留原库存。`;
+      inventorySyncNotice.value = { title, skus: result.skippedSkuIds ?? [] };
+      ElMessage.warning(title);
+    } else ElMessage.success(result.skuCount
       ? `库存同步完成：${result.productCount} 个商品、${result.skuCount} 个 SKU，更新 ${result.updatedSkuCount} 个 SKU 库存`
       : "暂无需要同步库存的 ERP 商品");
     emit("refresh");
@@ -73,6 +79,7 @@ const canRefund = computed(() => canAdminResource(getAdminRoles(), props.resourc
 const canManuallySettleOrder = computed(() => getAdminRoles().includes("SUPER_ADMIN"));
 
 watch(() => props.resource, () => {
+  inventorySyncNotice.value = null;
   statusFilter.value = "";
   detailVisible.value = false;
   manualOrderVisible.value = false;
@@ -463,6 +470,7 @@ function changeStatus(value: unknown): void {
       <span class="result-count">当前显示 {{ visibleRows.length }} 条</span>
     </div>
 
+    <el-alert v-if="resource === 'commerce-products' && inventorySyncNotice" :title="inventorySyncNotice.title" :description="`未返回库存的 SKU：${inventorySyncNotice.skus.join('、')}`" type="warning" :closable="false" show-icon style="margin-bottom: 16px; max-height: 220px; overflow: auto" />
     <el-table v-if="resource === 'commerce-products'" v-loading="loading" :data="visibleRows" border stripe empty-text="暂无商品，可新增本地商品或从ERP同步" @selection-change="(items: Row[]) => selectedProductIds = items.map((item) => item.id)">
       <el-table-column type="selection" width="45" />
       <el-table-column label="来源" width="85"><template #default="scope"><el-tag size="small">{{ scope.row.source === 'LOCAL' ? '本地' : 'ERP' }}</el-tag></template></el-table-column>

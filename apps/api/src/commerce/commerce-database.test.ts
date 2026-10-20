@@ -5,7 +5,7 @@ import { BusinessType, PaymentChannel, PaymentStatus, PrismaClient, ProductStatu
 import { CommerceStoreService } from "./commerce-store.service";
 import { BillingService } from "../billing/billing.service";
 import type { PrismaService } from "../common/prisma.service";
-import { importJushuitanProductBySku } from "../admin/jushuitan-product-import";
+import { importJushuitanProductBySku, syncJushuitanInventory } from "../admin/jushuitan-product-import";
 
 // Opt-in only; never run destructive fixture cleanup against any non-loopback DB.
 const enabled = process.env.RUN_LOCAL_DATABASE_TESTS === "1";
@@ -84,6 +84,55 @@ describe.runIf(enabled)("local PostgreSQL transaction acceptance", () => {
     } finally {
       vi.unstubAllGlobals();
       await prisma.commerceProduct.deleteMany({ where: { erpItemId: itemId } });
+    }
+  });
+
+  it("partially syncs ERP stock without releasing missing-SKU historical holds and cancels mixed-policy orders correctly", async () => {
+    const syncProductId = randomUUID();
+    const syncSkuIds: [string, string] = [randomUUID(), randomUUID()];
+    const itemId = `ERP-PARTIAL-${suffix}`;
+    let orderId: string | undefined;
+    let empty = false;
+    await prisma.commerceProduct.create({ data: { id: syncProductId, erpItemId: itemId, source: "ERP", name: "合成部分库存同步", status: ProductStatus.PUBLISHED, gallery: [], tags: [],
+      skus: { create: syncSkuIds.map((id, i) => ({ id, erpSkuId: `${itemId}-${i}`, erpItemId: itemId, salePriceCents: 1000, stock: 20 })) },
+    } });
+    try {
+      const order = await store.createOrder(members[0]!, { addressId, items: syncSkuIds.map(skuId => ({ skuId, quantity: 2 })), idempotencyKey: `${suffix}-partial-sync` });
+      orderId = order.id;
+      const items = await prisma.commerceOrderItem.findMany({ where: { orderId } });
+      // Simulate exactly this synthetic order's legacy checkout deductions.
+      await prisma.auditLog.deleteMany({ where: { action: "COMMERCE_ITEM_PAYMENT_STOCK_V1", entityId: { in: items.map(item => item.id) } } });
+      await prisma.commerceSku.updateMany({ where: { id: { in: syncSkuIds } }, data: { stock: 18 } });
+      const missingBefore = await prisma.commerceSku.findUniqueOrThrow({ where: { id: syncSkuIds[1] } });
+      const db = {
+        commerceSku: { findMany: (query: any) => prisma.commerceSku.findMany({ ...query, where: { ...query.where, productId: syncProductId } }) },
+        commerceOrderItem: prisma.commerceOrderItem,
+        integrationConfig: { findUnique: vi.fn().mockResolvedValue({ state: "CONFIGURED", publicConfig: {} }), updateMany: vi.fn() },
+        $transaction: prisma.$transaction.bind(prisma),
+      };
+      const secrets = { resolve: vi.fn().mockResolvedValue({ appKey: "synthetic", appSecret: "synthetic", accessToken: "synthetic" }) };
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ code: 0, inventorys: empty ? [] : [{ sku_id: `${itemId}-0`, qty: 7 }] }), { status: 200 })));
+      const run = () => syncJushuitanInventory(db as unknown as PrismaService, secrets as any);
+      expect(await run()).toMatchObject({ syncedSkuCount: 1, updatedSkuCount: 1, skippedSkuCount: 1, skippedSkuIds: [`${itemId}-1`] });
+      expect((await prisma.commerceSku.findUniqueOrThrow({ where: { id: syncSkuIds[0] } })).stock).toBe(7);
+      expect(await prisma.commerceSku.findUniqueOrThrow({ where: { id: syncSkuIds[1] } })).toEqual(missingBefore);
+      const marked = await prisma.auditLog.findMany({ where: { action: "COMMERCE_ITEM_PAYMENT_STOCK_V1", entityId: { in: items.map(item => item.id) } } });
+      expect(marked.map(row => row.entityId)).toEqual([items.find(item => item.skuId === syncSkuIds[0])!.id]);
+      await store.cancelOrder(members[0]!, orderId);
+      expect((await prisma.commerceSku.findUniqueOrThrow({ where: { id: syncSkuIds[0] } })).stock).toBe(7);
+      expect((await prisma.commerceSku.findUniqueOrThrow({ where: { id: syncSkuIds[1] } })).stock).toBe(20);
+      const beforeEmpty = await prisma.commerceSku.findMany({ where: { productId: syncProductId }, orderBy: { id: "asc" } });
+      empty = true;
+      expect(await run()).toMatchObject({ syncedSkuCount: 0, updatedSkuCount: 0, skippedSkuCount: 2 });
+      expect(await prisma.commerceSku.findMany({ where: { productId: syncProductId }, orderBy: { id: "asc" } })).toEqual(beforeEmpty);
+    } finally {
+      vi.unstubAllGlobals();
+      if (orderId) {
+        const items = await prisma.commerceOrderItem.findMany({ where: { orderId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: { in: [orderId, ...items.map(item => item.id)] } } });
+        await prisma.commerceOrder.delete({ where: { id: orderId } });
+      }
+      await prisma.commerceProduct.delete({ where: { id: syncProductId } });
     }
   });
 
