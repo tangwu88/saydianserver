@@ -83,6 +83,20 @@ const ring = {
   })),
 };
 
+const cn = {
+  ...health,
+  product: "saydian-app-cn",
+  releases: health.releases.map(release => ({
+    ...release,
+    packageId: release.platform === "ios" ? "" :
+      `cc.saidian.app${release.platform === "harmonyos" ? ".hm" : ""}`,
+    ...(release.destination ? { destination: { ...release.destination,
+      fileName: "saydian-app-cn-test.apk",
+      url: "/global/api/saydian-app/v2/support/app-package/saydian-app-cn-test.apk",
+    }} : {}),
+  })),
+};
+
 function element() {
   const attributes = new Map<string, string>();
   const classes = new Set<string>();
@@ -93,6 +107,7 @@ function element() {
     alt: "",
     attributes,
     classList: {
+      contains: (name: string) => classes.has(name),
       add: (...names: string[]) => names.forEach((name) => classes.add(name)),
       remove: (...names: string[]) =>
         names.forEach((name) => classes.delete(name)),
@@ -116,7 +131,7 @@ function page(path = "/down") {
     "brand-lockup",
     "canonical-url",
     "product-health",
-    "product-legacy",
+    "product-cn",
     "product-ring",
     "health-links",
     "ring-links",
@@ -181,7 +196,40 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("isolated download pages", () => {
-  it.each(["/down", "/down/", "/global/down", "/global/down/"])(
+  it.each(["/down", "/down/", "/global/down", "/global/down/", "/down/cn", "/down/cn/"])("loads the Chinese app independently on %s", async path => {
+    const p = page(path);
+    const fetch = vi.fn(async () => response(cn));
+    vi.stubGlobal("fetch", fetch);
+    await import("./main");
+    await vi.waitFor(() => expect(p.cards.get("android")!.fields.get('[data-field="action"]')!.href)
+      .toBe("/global/api/saydian-app/v2/support/app-package/saydian-app-cn-test.apk"));
+    expect(fetch).toHaveBeenCalledExactlyOnceWith("/api/saydian-app/v2/support/app-update?product=saydian-app-cn", expect.any(Object));
+    expect(p.nodes.get("#page-title")!.innerHTML).toContain("赛电中文");
+    expect(p.nodes.get("#product-cn")!.attributes.get("aria-current")).toBe("page");
+    expect(p.nodes.get("#canonical-url")!.href).toBe("https://app.saydian.cn/global/down");
+    expect(QRCode.toCanvas).toHaveBeenCalledWith(p.nodes.get("#page-qr"), "https://app.saydian.cn/global/down", expect.any(Object));
+    expect(p.cards.get("ios")!.fields.get('[data-field="action"]')!.href).toBe("");
+    expect(p.cards.get("harmonyos")!.fields.get('[data-field="action"]')!.href).toBe("");
+  });
+
+  it.each(["missing", "legacy", "health", "wrong-package", "missing-product", "foreign-file"])("never substitutes another app for %s Chinese metadata", async failure => {
+    const p = page("/down/cn");
+    let candidate: any = structuredClone(cn);
+    if (failure === "legacy") candidate = legacy;
+    if (failure === "health") candidate = health;
+    if (failure === "wrong-package") candidate.releases[0].packageId = "cn.saydian.ring";
+    if (failure === "missing-product") delete candidate.product;
+    if (failure === "foreign-file") candidate.releases[0].destination = health.releases[0]!.destination;
+    const fetch = vi.fn(async () => response(candidate, failure !== "missing"));
+    vi.stubGlobal("fetch", fetch);
+    await import("./main");
+    await vi.waitFor(() => expect(p.cards.get("android")!.fields.get(".status-badge")!.textContent).toBe("暂不可用"));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const platform of ["android", "ios", "harmonyos"])
+      expect(p.cards.get(platform)!.fields.get('[data-field="action"]')!.href).toBe("");
+  });
+
+  it.each(["/down/global", "/down/global/"])(
     "loads only Health on %s, never the domestic HAP",
     async (path) => {
       const p = page(path);
@@ -194,15 +242,15 @@ describe("isolated download pages", () => {
             .textContent,
         ).toBe("1.0.0（1012）"),
       );
-      expect(p.nodes.get("#page-title")!.innerHTML).toContain("SAYDIAN Health");
+      expect(p.nodes.get("#page-title")!.innerHTML).toContain("赛电国际");
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(fetch.mock.calls[0]?.[0]).toContain("product=saydian-global");
       expect(p.nodes.get("#canonical-url")!.href).toBe(
-        "https://app.saydian.cn/global/down",
+        "https://app.saydian.cn/down/global",
       );
       expect(QRCode.toCanvas).toHaveBeenCalledWith(
         p.nodes.get("#page-qr"),
-        "https://app.saydian.cn/global/down",
+        "https://app.saydian.cn/down/global",
         expect.any(Object),
       );
       expect(
@@ -236,7 +284,7 @@ describe("isolated download pages", () => {
   it.each(["missing", "wrong-package", "invalid-hash"])(
     "fails closed for %s Health data without a domestic fallback",
     async (failure) => {
-      const p = page();
+      const p = page("/down/global");
       const invalid = structuredClone(health);
       if (failure === "wrong-package")
         invalid.releases[0]!.packageId = "cc.saidian.app";
@@ -286,7 +334,7 @@ describe("isolated download pages", () => {
       expect(
         p.cards.get("harmonyos")!.fields.get('[data-field="action"]')!.href,
       ).toBe("/down/files/old.hap");
-      expect(p.nodes.get("#page-title")!.innerHTML).toContain("原赛电 App");
+      expect(p.nodes.get("#page-title")!.innerHTML).toContain("赛电历史版本");
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(fetch.mock.calls[0]?.[0]).toBe(
         "/api/saydian-app/v2/support/app-update",
@@ -309,7 +357,8 @@ describe("isolated download pages", () => {
     expect(fetch.mock.calls[0]?.[0]).toBe(
       "/api/saydian-app/v2/support/app-update?product=say-ring",
     );
-    expect(p.nodes.get("#page-title")!.innerHTML).toContain("Say Ring");
+    expect(p.nodes.get("#page-title")!.innerHTML).toContain("赛电戒指");
+    expect(p.nodes.get("#product-nav")!.classList.contains("is-hidden")).toBe(false);
     expect(p.nodes.get("#canonical-url")!.href).toBe("https://app.saydian.cn/down2");
     expect(QRCode.toCanvas).toHaveBeenCalledWith(p.nodes.get("#page-qr"), "https://app.saydian.cn/down2", expect.any(Object));
     expect(p.cards.get("harmonyos")!.attributes.get("hidden")).toBe("");
@@ -371,7 +420,7 @@ describe("isolated download pages", () => {
   });
 
   it("enables only an explicitly available official TestFlight release", async () => {
-    const p = page();
+    const p = page("/down/global");
     const approved = {
       ...health,
       releases: health.releases.map((release) =>
@@ -409,7 +458,7 @@ describe("isolated download pages", () => {
   it.each([undefined, "review"])(
     "uses editable pendingReason %s instead of guessing from the build number",
     async (pendingReason) => {
-      const p = page();
+      const p = page("/down/global");
       const manifest = {
         ...health,
         releases: health.releases.map((release) =>
