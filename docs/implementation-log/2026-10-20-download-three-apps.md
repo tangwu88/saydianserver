@@ -11,3 +11,5 @@
 - PR49 合并 f715e9ca685c00b288dd7253c6678dcd1493e4a7，CI39373250092 verify/resolve/deploy均成功，US skipped；双readiness返回该revision。线上/global/down、/down、/down/cn、/down2均200。随后完整地址复核发现未在导航使用的/down/global兼容地址与已有静态global目录冲突（301后403），保留原失败结果，不将全验收写成通过。改为/down/international以避开目录，导航仍为用户指定美国站地址；无需改nginx、美国站或生产配置。修复后重跑全量检查与发布。
 - 真实API下载配置经新manifest解析器逐项验证三个产品均通过；这只证明配置兼容，不等同于真机安装。
 - 兼容路径补修后串行api:docs:check/tools:test/typecheck/test/build/diff再次全部通过（0.4/60.7/6.9/16.5/7.8秒）；公开GET /down/international为200，无目录跳转。保留first-release-acceptance.json及两轮检查输出，不隐藏初次兼容地址验收失败。
+- PR50补修合并 aa647e90e2474e20cdb05c260c87a3e0bf3e0256；CI39374460933 verify/resolve/China deploy全部成功、US skipped。双readiness均ready/database ok、revision精确等于aa647e9。/global/down、/down、/down/cn、/down/international、/down2实际GET均200/no-store，逐项解析导航为中文/global/down、国际https://us.saydian.com/down/、戒指https://app.saydian.cn/down2；无旧版导航，入口脚本均为index-D_ZZGEEY.js。JS/CSS实际下载SHA256与本地构建相同，资源max-age=31536000；未宣称未返回的gzip。验收存于ignored artifacts/download-three-apps-20261020/production-acceptance.json。
+- 最终fetch确认本地与origin/main均aa647e9且干净；本条回执以纯文档skip-ci提交，避免再部署相同源码。真机安装、App商店状态和安装包版本不在本轮修改/验收范围内。
