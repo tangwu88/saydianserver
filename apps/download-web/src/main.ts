@@ -18,14 +18,14 @@ const path = window.location.pathname.replace(/\/$/, "");
 const product =
   ["/down2", "/say-ring"].includes(path)
     ? "ring"
-    : path === "/down/global" ? "health" : path === "/down/legacy" ? "legacy" : "cn";
+    : path === "/down/international" ? "health" : path === "/down/legacy" ? "legacy" : "cn";
 const visiblePlatforms: readonly DownloadPlatform[] = product === "ring"
   ? downloadPlatforms.filter(platform => platform !== "harmonyos")
   : downloadPlatforms;
 const pages = {
   health: {
     name: "赛电国际",
-    path: "/down/global",
+    path: "/down/international",
     query: "?product=saydian-global",
   },
   cn: { name: "赛电中文", path: "/global/down", query: "?product=saydian-app-cn" },

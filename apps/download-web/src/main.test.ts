@@ -229,7 +229,7 @@ describe("isolated download pages", () => {
       expect(p.cards.get(platform)!.fields.get('[data-field="action"]')!.href).toBe("");
   });
 
-  it.each(["/down/global", "/down/global/"])(
+  it.each(["/down/international", "/down/international/"])(
     "loads only Health on %s, never the domestic HAP",
     async (path) => {
       const p = page(path);
@@ -246,11 +246,11 @@ describe("isolated download pages", () => {
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(fetch.mock.calls[0]?.[0]).toContain("product=saydian-global");
       expect(p.nodes.get("#canonical-url")!.href).toBe(
-        "https://app.saydian.cn/down/global",
+        "https://app.saydian.cn/down/international",
       );
       expect(QRCode.toCanvas).toHaveBeenCalledWith(
         p.nodes.get("#page-qr"),
-        "https://app.saydian.cn/down/global",
+        "https://app.saydian.cn/down/international",
         expect.any(Object),
       );
       expect(
@@ -284,7 +284,7 @@ describe("isolated download pages", () => {
   it.each(["missing", "wrong-package", "invalid-hash"])(
     "fails closed for %s Health data without a domestic fallback",
     async (failure) => {
-      const p = page("/down/global");
+      const p = page("/down/international");
       const invalid = structuredClone(health);
       if (failure === "wrong-package")
         invalid.releases[0]!.packageId = "cc.saidian.app";
@@ -420,7 +420,7 @@ describe("isolated download pages", () => {
   });
 
   it("enables only an explicitly available official TestFlight release", async () => {
-    const p = page("/down/global");
+    const p = page("/down/international");
     const approved = {
       ...health,
       releases: health.releases.map((release) =>
@@ -458,7 +458,7 @@ describe("isolated download pages", () => {
   it.each([undefined, "review"])(
     "uses editable pendingReason %s instead of guessing from the build number",
     async (pendingReason) => {
-      const p = page("/down/global");
+      const p = page("/down/international");
       const manifest = {
         ...health,
         releases: health.releases.map((release) =>
