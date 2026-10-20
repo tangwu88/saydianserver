@@ -8,3 +8,6 @@
 - 用户指定赛电戒指为 https://app.saydian.cn/down2 ，导航使用完整绝对地址；国际导航同样使用指定美国站完整地址。
 - 串行全量检查全部退出0：api:docs:check 0.4秒、tools:test 61.6秒、typecheck 7.8秒、test 18.0秒、build 9.6秒、git diff --check。下载页41项、商城181项、伙伴66项通过；API1281通过/36个数据库用例本地跳过，真实数据库及镜像由CI验收。构建导航逐项核对三个地址，默认中文版二维码/canonical及产品隔离测试通过。国际目标真实GET为200。
 - 当前无可用的内置浏览器操作入口，本轮验证是实际页面构建、处理函数测试及公开HTTP；未冒认真机安装或真实App版本更新。发布范围仅中国站，保留[deploy cn only]；不更改美国站网站或服务。
+- PR49 合并 f715e9ca685c00b288dd7253c6678dcd1493e4a7，CI39373250092 verify/resolve/deploy均成功，US skipped；双readiness返回该revision。线上/global/down、/down、/down/cn、/down2均200。随后完整地址复核发现未在导航使用的/down/global兼容地址与已有静态global目录冲突（301后403），保留原失败结果，不将全验收写成通过。改为/down/international以避开目录，导航仍为用户指定美国站地址；无需改nginx、美国站或生产配置。修复后重跑全量检查与发布。
+- 真实API下载配置经新manifest解析器逐项验证三个产品均通过；这只证明配置兼容，不等同于真机安装。
+- 兼容路径补修后串行api:docs:check/tools:test/typecheck/test/build/diff再次全部通过（0.4/60.7/6.9/16.5/7.8秒）；公开GET /down/international为200，无目录跳转。保留first-release-acceptance.json及两轮检查输出，不隐藏初次兼容地址验收失败。
