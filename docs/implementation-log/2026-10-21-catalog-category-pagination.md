@@ -28,3 +28,5 @@
 
 - 同步c344af8后的最终串行门禁全部退出0：corepack pnpm typecheck、pnpm test、pnpm build、pnpm api:docs:check、pnpm tools:test、git diff --check。API1312通过/38仅本地跳过，后台260、伙伴74、商城193、下载41、Worker141、contracts58、commerce-domain28、migrator11通过；API目录459路由。工具检查58项、H5流程62项、H5契约38项通过。真实PG新增分页验收等待PR CI，不视为本地已运行。
 - 2026-10-21 09:54发布前重新fetch/prune确认HEAD与origin/main均c344af852b5738affdca87853c15dc3905dd1fac；仅显式提交本轮23个源码/测试/契约/实施记录文件，无生成产物、密钥、服务器备份。CI及线上回执保留ignored artifacts/release，未取得实际发布成功前不称已上线。
+- PR57首轮CI39530529994的真实PG验收全部通过（含新增分页用例），后续HTTP兼容测试在canViewMemberHealth断言失败。原因是新增合成等级未显式sort，默认0排在种子战略合作前，而旧HTTP夹具使用第一个active等级；按既有合成等级约定设sort=10000，避免污染后续夹具选择，不修改业务权限或放宽断言。源码已推送但未合并/部署，补充提交后重新执行全部门禁及PR CI。
+- 补充修复后再次串行执行typecheck/test/build/api:docs:check/tools:test及diff检查，全部退出0；真实PG首轮已通过，修复夹具排序后的完整PR CI仍须通过。发布前两次代理Git握手失败后，使用schannel直接连接成功fetch，origin/main仍为c344af8；未将失败fetch当作更新成功。
