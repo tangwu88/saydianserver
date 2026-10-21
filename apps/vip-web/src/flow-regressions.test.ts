@@ -101,6 +101,7 @@ function harness(view: string, store = memoryStorage()) {
                         {
                           id: "sku",
                           purchasable: true,
+                          stock: 10,
                           distributionPriceCents: 100,
                         },
                       ],
@@ -159,7 +160,7 @@ function harness(view: string, store = memoryStorage()) {
   };
   const exports =
     view === "Products"
-      ? "load, filterProducts, changePagination, page, pageSize, categoryId, products, total, itemCount, subtotal, productPrice, selectedCount, review, preparePurchase, purchase, cancelPurchaseConfirmation, paymentReview, preparingPurchase, quantities, address, addressForm, submittedRequest, submitting, quote, quoteStale, checkoutError, balance, buyerRemark, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
+      ? "load, canAddSku, available, hasPrice, filterProducts, changePagination, page, pageSize, categoryId, products, total, itemCount, subtotal, productPrice, selectedCount, review, preparePurchase, purchase, cancelPurchaseConfirmation, paymentReview, preparingPurchase, quantities, address, addressForm, submittedRequest, submitting, quote, quoteStale, checkoutError, balance, buyerRemark, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
       : "load, create, viewRecharge, retryPayment, poll, pendingInput, form, currentRecharge, payment, paymentError, pollError, paying";
   const state = new Function(
     ...Object.keys(deps),
@@ -597,5 +598,51 @@ describe("procurement catalog filters and pages", () => {
     await h.changePagination(2, 10);
     expect(h.products.value).toEqual([]);
     expect(h.total.value).toBe(0);
+  });
+});
+
+
+describe("out-of-stock procurement variants", () => {
+  const variants = [
+    { id: "in-stock", stock: 2, purchasable: true, distributionPriceCents: 700 },
+    { id: "empty", stock: 0, purchasable: false, distributionPriceCents: 600 },
+    { id: "debt", stock: -3, purchasable: false, distributionPriceCents: 500 },
+  ];
+  it("keeps every priced sibling and its price visible, while blocking zero and negative stock", () => {
+    const h = harness("Products");
+    expect(h.available({ skus: variants })).toEqual(variants);
+    expect(variants.map(h.canAddSku)).toEqual([true, false, false]);
+    expect(h.available({ skus: variants.slice(1) })).toHaveLength(2);
+    expect(h.productPrice({ skus: variants.slice(1) })).not.toBe("暂无合作价");
+    expect(h.canAddSku({ ...variants[0], stock: undefined })).toBe(false);
+    expect(h.canAddSku({ ...variants[0], purchasable: false })).toBe(false);
+    const template = readFileSync(new URL("./views/Products.vue", import.meta.url), "utf8");
+    expect(template).toContain(':disabled="!!submittedRequest || !canAddSku(sku)"');
+    expect(template).toContain('role="status">暂无库存');
+    expect(template).not.toContain('可下单，需安排补货');
+  });
+  it("clears newly unavailable selections and invalidates the old quote on refresh", async () => {
+    const h = harness("Products");
+    h.quantities.empty = 3;
+    h.quantities.debt = 1;
+    h.quantities["other-page"] = 2;
+    h.quote.value = quote;
+    h.api.get.mockResolvedValueOnce(response({ items: [{ id: "p", skus: variants }], total: 1 }));
+    await h.load();
+    expect(h.quantities.empty).toBeUndefined();
+    expect(h.quantities.debt).toBeUndefined();
+    expect(h.quantities["other-page"]).toBe(2);
+    expect(h.quoteStale.value).toBe(true);
+  });
+  it("retains the exact in-flight request and quantities even when the refreshed SKU is depleted", async () => {
+    const h = harness("Products");
+    h.submittedRequest.value = { items: [{ skuId: "empty", quantity: 1 }], idempotencyKey: "synthetic-existing-request" };
+    const original = JSON.parse(JSON.stringify(h.submittedRequest.value));
+    h.quantities.empty = 1;
+    h.api.get.mockResolvedValueOnce(response({ items: [{ id: "p", skus: variants }], total: 1 }));
+    await h.load();
+    expect(h.quantities.empty).toBe(1);
+    expect(h.submittedRequest.value).toEqual(original);
+    expect(h.canAddSku(variants[1])).toBe(false);
   });
 });

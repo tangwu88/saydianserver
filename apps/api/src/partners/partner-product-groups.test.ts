@@ -79,8 +79,9 @@ describe("partner product grouping", () => {
   });
 
   it("keeps distinct product IDs despite equal names and deterministic SKU ordering in procurement", async () => {
-    const sku = (id: string, name: string) => ({
+    const sku = (id: string, name: string, stock = 1) => ({
       id,
+      stock,
       partnerPrices: [{ productName: name, priceCents: 600 }],
       specification: id,
       salePriceCents: 1000,
@@ -89,7 +90,7 @@ describe("partner product grouping", () => {
       {
         id: "a",
         name: "同名商品",
-        skus: [sku("sku-a", "名称甲"), sku("sku-b", "名称乙")],
+        skus: [sku("sku-a", "名称甲"), sku("sku-b", "名称乙", 0), sku("sku-debt", "名称丙", -1)],
       },
       { id: "b", name: "同名商品", skus: [sku("sku-c", "名称甲")] },
     ];
@@ -117,7 +118,11 @@ describe("partner product grouping", () => {
     expect(result.items[0]!.skus.map((row) => row.name)).toEqual([
       "名称甲",
       "名称乙",
+      "名称丙",
     ]);
+    expect(result.items[0]!.skus.map((row) => row.purchasable)).toEqual([true, false, false]);
+    expect(result.total).toBe(2);
+    expect(db.commerceProduct.findMany.mock.calls[0][0].where.skus.some).not.toHaveProperty("stock");
     expect(
       db.commerceProduct.findMany.mock.calls[0][0].include.skus.orderBy,
     ).toEqual({ id: "asc" });

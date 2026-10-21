@@ -514,6 +514,8 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
     ).toBe(0);
   });
   it("reuses an identical order request and rejects changed parameters or a stale price", async () => {
+    // The preceding oversale fixture is depleted; replenish this distinct acceptance scenario.
+    await prisma.commerceSku.update({ where: { id: sku.id }, data: { stock: 1 } });
     const quote = await commerce.quote(a.id, {
         items: [{ skuId: sku.id, quantity: 1 }],
       }),
@@ -525,10 +527,12 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
         idempotencyKey: key,
       };
     const first = await commerce.createOrder(a.id, input);
+    expect((await prisma.commerceSku.findUniqueOrThrow({ where: { id: sku.id } })).stock).toBe(0);
     expect((await commerce.createOrder(a.id, input)).id).toBe(first.id);
     await expect(
       commerce.createOrder(a.id, { ...input, buyerRemark: "changed" }),
     ).rejects.toThrow("不同参数");
+    await prisma.commerceSku.update({ where: { id: sku.id }, data: { stock: 1 } });
     const price = await prisma.partnerSkuPrice.findUniqueOrThrow({
       where: { levelId_skuId: { levelId: a.levelId, skuId: sku.id } },
     });
@@ -935,6 +939,45 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
       expect(uncategorized.total).toBe(1);
       expect(uncategorized.items).toHaveLength(1);
     }
+  });
+  it("shows depleted variants, rejects stale stock before charging, and replays a paid order after depletion", async () => {
+    const key = randomUUID();
+    const level = await prisma.partnerLevel.create({ data: { code: `stock-${key}`, name: "合成库存等级", sort: 10000 } });
+    const buyer = await admin.create(actorId, { username: `qa-stock-${key}`, name: "合成库存买家", password: "synthetic-stock-password", levelId: level.id }, key);
+    const item = await prisma.commerceProduct.create({ data: {
+      erpItemId: `STOCK-${key}`, name: `合成缺货商品-${key}`, source: "ERP", status: "PUBLISHED", gallery: [], tags: [],
+      skus: { create: [0, -1, 1].map((stock, i) => ({ erpItemId: `STOCK-${key}`, erpSkuId: `STOCK-${key}-${i}`, stock, specification: `规格${i}`, salePriceCents: 1000,
+        partnerPrices: { create: { levelId: level.id, priceCents: 500, enabled: true } },
+      })) },
+    }, include: { skus: true } });
+    let catalog = await commerce.products(buyer.id, key, 1);
+    expect(catalog.total).toBe(1);
+    expect(catalog.items[0]!.skus).toHaveLength(3);
+    expect(catalog.items[0]!.skus.filter(row => row.purchasable)).toHaveLength(1);
+    for (const depleted of item.skus.filter(row => row.stock <= 0)) {
+      await expect(commerce.quote(buyer.id, { items: [{ skuId: depleted.id, quantity: 1 }] })).rejects.toThrow("暂无库存");
+    }
+    const stocked = item.skus.find(row => row.stock > 0)!;
+    const items = [{ skuId: stocked.id, quantity: 1 }];
+    const quote = await commerce.quote(buyer.id, { items });
+    const input = { items, address, expectedQuote: quote.fingerprint, idempotencyKey: randomUUID() };
+    await prisma.commerceSku.update({ where: { id: stocked.id }, data: { stock: 0 } });
+    const wallet = await partners.wallet(buyer.id);
+    await expect(commerce.createOrder(buyer.id, input)).rejects.toThrow("暂无库存");
+    expect(await prisma.commerceOrder.count({ where: { partnerId: buyer.id } })).toBe(0);
+    expect(await prisma.paymentIntent.count({ where: { partnerId: buyer.id } })).toBe(0);
+    expect(await partners.wallet(buyer.id)).toEqual(wallet);
+    await prisma.commerceSku.update({ where: { id: stocked.id }, data: { stock: 1 } });
+    await admin.rechargeBalance(actorId, buyer.id, { amountCents: quote.payableCents, reason: "合成补货采购", idempotencyKey: randomUUID() }, key);
+    const paid = await commerce.createOrder(buyer.id, input);
+    expect((await prisma.commerceSku.findUniqueOrThrow({ where: { id: stocked.id } })).stock).toBe(0);
+    expect((await commerce.createOrder(buyer.id, input)).id).toBe(paid.id);
+    expect(await prisma.paymentIntent.count({ where: { commerceOrderId: paid.id } })).toBe(1);
+    expect(await prisma.partnerLedger.count({ where: { referenceId: paid.id, type: "PURCHASE" } })).toBe(1);
+    catalog = await commerce.products(buyer.id, key, 1);
+    expect(catalog.total).toBe(1);
+    expect(catalog.items[0]!.skus).toHaveLength(3);
+    expect(catalog.items[0]!.skus.every(row => !row.purchasable)).toBe(true);
   });
   it("records deposit once and rolls back money when the audit cannot be saved", async () => {
     const before = await partners.wallet(b.id);

@@ -28066,7 +28066,7 @@
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "品牌伙伴采购商品",
       "request": "search?、page默认1、pageSize默认10/最大100、categoryId可选UUID或uncategorized（上级含后代）",
-      "response": "{items,total,page,pageSize,categories,level}；仅当前等级已设置有效合作价的SKU；无此类SKU的商品不进入列表与总数；筛选后按商品分页，不返回成本或其他等级价格",
+      "response": "{items,total,page,pageSize,categories,level}；仅当前等级已设置有效合作价的SKU；库存≤0仍展示SKU及价格但purchasable=false，全部缺货的商品仍计入总数；无有效合作价SKU的商品不进入列表与总数；筛选后按商品分页，不返回成本或其他等级价格",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -28098,7 +28098,7 @@
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "计算品牌伙伴采购报价",
       "request": "{items:[{skuId,quantity}]}",
-      "response": "PartnerQuote：等级、商品行、合作价、运费、总额和fingerprint",
+      "response": "PartnerQuote：等级、商品行、合作价、运费、总额和fingerprint；任一请求SKU库存≤0拒绝新报价",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 201,
       "contract": {
@@ -28235,7 +28235,7 @@
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "余额支付创建品牌伙伴采购订单",
       "request": "PartnerCheckoutInput：items、address、expectedQuote、idempotencyKey、buyerRemark?",
-      "response": "订单及成功余额凭证；扣款/账本/付款库存/ERP任务同事务；不足或报价变化不部分扣款",
+      "response": "订单及成功余额凭证；扣款/账本/付款库存/ERP任务同事务；新订单再次校验SKU库存>0，库存耗尽、余额不足或报价变化不部分扣款；已成功同参幂等请求即使缺货仍返回原订单",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 201,
       "contract": {
