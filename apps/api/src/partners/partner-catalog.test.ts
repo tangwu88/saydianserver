@@ -66,4 +66,23 @@ describe("partner catalog import and binding", () => {
     price.productName = "再次修改";
     expect((await service.quote("partner", { items: [{ skuId, quantity: 1 }] })).fingerprint).not.toBe(result.fingerprint);
   });
+  it.each([0, -1])("rejects new quotes and orders at stock %s before any order or money write", async (stock) => {
+    const h = harness();
+    h.sku.stock = stock;
+    const create = vi.fn();
+    const tx: any = {
+      $executeRaw: vi.fn(), $queryRaw: vi.fn(),
+      brandPartner: { findFirst: vi.fn(async () => ({ levelId, level: { active: true, name: "合成等级" } })) },
+      partnerSkuPrice: { findMany: vi.fn(async () => [{ skuId, priceCents: 500, sku: h.sku }]) },
+      commerceOrder: { findUnique: vi.fn(async () => null), create },
+    };
+    const service = new PartnerCommerceService({ $transaction: (fn: any) => fn(tx) } as any);
+    const items = [{ skuId, quantity: 1 }];
+    await expect(service.quote("partner", { items })).rejects.toThrow("暂无库存");
+    await expect(service.createOrder("partner", {
+      items, expectedQuote: "a".repeat(64), idempotencyKey: randomUUID(),
+      address: { recipientName: "合成买家", recipientMobile: "19900000000", province: "测试省", city: "测试市", addressDetail: "测试地址" },
+    })).rejects.toThrow("暂无库存");
+    expect(create).not.toHaveBeenCalled();
+  });
 });

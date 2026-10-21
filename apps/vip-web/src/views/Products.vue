@@ -218,11 +218,18 @@ async function load() {
     products.value = result.items;
     total.value = result.total;
     level.value = result.level;
+    let removedUnavailable = false;
     for (const product of products.value)
       for (const sku of product.skus) {
         catalog[sku.id] = { ...sku, name: sku.name ?? product.name };
         quantities[sku.id] ??= 0;
+        if (!submittedRequest.value && !canAddSku(sku) && quantities[sku.id]) {
+          delete quantities[sku.id];
+          if (quote.value) quoteStale.value = true;
+          removedUnavailable = true;
+        }
       }
+    if (removedUnavailable) ElMessage.info("部分已选规格暂无库存或暂不可采购，已移出待采购清单");
   } catch (cause) {
     if (request === listRequest) {
       products.value = [];
@@ -253,8 +260,15 @@ onMounted(async () => {
   }
   if (alive) await load();
 });
+function hasPrice(sku: any) {
+  return Number.isSafeInteger(sku.distributionPriceCents) && sku.distributionPriceCents > 0;
+}
+function canAddSku(sku: any) {
+  return hasPrice(sku) && Boolean(sku.purchasable) && Number.isSafeInteger(sku.stock) && sku.stock > 0;
+}
 function available(product: any) {
-  return product.skus.filter((sku: any) => sku.purchasable);
+  // Keep priced, out-of-stock variants visible, including a fully sold-out product.
+  return product.skus.filter(hasPrice);
 }
 function productPrice(product: any) {
   const values = available(product).map(
@@ -488,7 +502,7 @@ async function purchase() {
                   <small v-if="sku.retailPriceCents != null"
                     >零售价 {{ money(sku.retailPriceCents) }}</small
                   >
-                  <small v-if="sku.stock <= 0">可下单，需安排补货</small>
+                  <small v-if="sku.stock <= 0" class="stock-unavailable" role="status">暂无库存</small>
                 </div>
                 <b class="price">{{ money(sku.distributionPriceCents) }}</b
                 ><el-input-number
@@ -496,12 +510,12 @@ async function purchase() {
                   :min="0"
                   :max="9999"
                   :precision="0"
-                  :disabled="!!submittedRequest"
+                  :disabled="!!submittedRequest || !canAddSku(sku)"
                   :aria-label="`${sku.name || product.name} ${sku.specification || '默认规格'} 数量`"
                 />
               </div>
               <details
-                v-if="product.skus.some((sku: any) => !sku.purchasable)"
+                v-if="product.skus.some((sku: any) => !hasPrice(sku))"
                 class="quiet-details"
               >
                 <summary>
@@ -510,7 +524,7 @@ async function purchase() {
                 </summary>
                 <p
                   v-for="sku in product.skus.filter(
-                    (sku: any) => !sku.purchasable,
+                    (sku: any) => !hasPrice(sku),
                   )"
                   :key="sku.id"
                 >
@@ -848,6 +862,7 @@ async function purchase() {
 </template>
 <style scoped>
 .catalog-panel :deep(.el-pagination) { flex-wrap: wrap; gap: 8px; }
+.sku-description .stock-unavailable { color: #b45309; font-weight: 600; }
 .product-specs > summary {
   cursor: pointer;
   color: #355773;

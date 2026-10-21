@@ -255,7 +255,7 @@ export class PartnerCommerceService {
           image: sku.image,
           stock: sku.stock,
           distributionPriceCents: sku.partnerPrices[0]?.priceCents ?? null,
-          purchasable: Boolean(sku.partnerPrices[0]),
+          purchasable: Boolean(sku.partnerPrices[0]) && sku.stock > 0,
         })),
       })),
       total,
@@ -294,6 +294,8 @@ export class PartnerCommerceService {
         throw new ConflictException(
           "部分商品未设置合作价或已下架，请刷新商品列表",
         );
+      if (price.sku.stock <= 0)
+        throw new ConflictException("部分商品暂无库存，请刷新商品列表后重新选择");
       return {
         skuId: item.skuId,
         fulfillmentSource: price.sku.product.source,
