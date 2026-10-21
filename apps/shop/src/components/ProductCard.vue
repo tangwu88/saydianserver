@@ -1,14 +1,14 @@
 <template><view class="product-card">
   <view class="product-image-wrap" role="button" tabindex="0" :aria-label="productTitle(product)" @click="$emit('open',product.id)" @keydown.enter="$emit('open',product.id)">
-    <image v-if="product.coverImage && !imageFailed" class="product-image" :src="productThumbnail(product.coverImage)" :lazy-load="!priority" mode="aspectFit" @error="imageFailed=true" /><view v-else class="product-image missing-image">暂无商品图片</view>
+    <CatalogImage v-if="product.coverImage" class="product-image" :source="productThumbnail(product.coverImage)" :alt="productTitle(product)" :width="480" sizes="(min-width: 1200px) 380px, (min-width: 900px) 32vw, 50vw" :priority="priority || false" defer /><view v-else class="product-image missing-image">暂无商品图片</view>
   </view><view class="product-body"><text class="product-name" @click="$emit('open',product.id)">{{ productTitle(product) }}</text><text v-if="product.subtitle" class="product-subtitle">{{ product.subtitle }}</text>
   <view v-if="publicTags(product.tags).length" class="tag-row"><text v-for="tag in publicTags(product.tags)" :key="tag" class="tag">{{ tag }}</text></view>
   <text v-if="isSizingSku(product.defaultSku)" class="price-caption">{{ priceCaption(product) }}</text><view class="price-row"><text class="price">{{ product.priceNeedsSelection ? "选择规格查看价格" : product.priceCents == null ? "价格待确认" : money(product.priceCents) }}</text><text class="sales">{{ product.stock == null ? "库存待确认" : product.stock > 0 ? "有货" : "暂时缺货" }}</text></view>
   <button class="product-buy" @click="$emit('open',product.id)">{{ product.stock === 0 ? "查看详情" : "选择规格" }} <text>→</text></button>
 </view></view></template>
 <script setup lang="ts">
-import { ref } from "vue"; import { productTitle, publicTags, priceCaption, isSizingSku } from "../catalog-presentation"; import { productThumbnail } from "../catalog-thumbnails"; import { money } from "../api";
-defineProps<{product:any;priority?:boolean}>();defineEmits<{open:[id:string];buy:[product:any]}>();const imageFailed=ref(false);
+import CatalogImage from "./CatalogImage.vue"; import { productTitle, publicTags, priceCaption, isSizingSku } from "../catalog-presentation"; import { productThumbnail } from "../catalog-thumbnails"; import { money } from "../api";
+defineProps<{product:any;priority?:boolean}>();defineEmits<{open:[id:string];buy:[product:any]}>();
 </script>
 <style scoped>.product-body{padding:12px}.product-name{font-size:15px;line-height:1.45;min-height:44px}.product-subtitle{font-size:12px;line-height:1.5;margin-top:6px}.tag-row{min-height:20px;margin-top:6px;gap:4px;flex-wrap:wrap}.tag{font-size:11px;padding:2px 5px}.price-row{min-height:44px;margin-top:10px;flex-wrap:wrap;gap:4px 8px;align-content:center;align-items:center}.price{font-size:18px}.price,.sales{white-space:nowrap}.sales{font-size:12px;color:var(--muted)}.product-image{height:auto;aspect-ratio:1}.product-buy{margin:14px 0 0;display:flex;justify-content:space-between;align-items:center;min-height:44px;line-height:1.4;padding:10px 12px;border-radius:4px;background:var(--green);color:#fff;font-size:14px;white-space:nowrap}.product-buy::after{border:0}.product-image-wrap{cursor:pointer}.missing-image{display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);background:#f7f7f7}</style>
 
