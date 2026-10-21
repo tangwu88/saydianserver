@@ -34,6 +34,7 @@ describe("partner product grouping", () => {
       },
     ];
     const db: any = {
+      commerceCategory: { findMany: vi.fn(async () => []) },
       commerceProduct: {
         findMany: vi.fn(async () => rows),
         count: vi.fn(async () => 31),
@@ -45,7 +46,7 @@ describe("partner product grouping", () => {
       "alias-34",
       2,
     );
-    expect(result).toMatchObject({ total: 31, page: 2, pageSize: 30 });
+    expect(result).toMatchObject({ total: 31, page: 2, pageSize: 10 });
     expect(result.items[0]!.skus).toHaveLength(35);
     expect(result.items[0]).toMatchObject({ id: "product", name: "伙伴名称" });
     expect(result.items[0]!.skus[34]).toMatchObject({
@@ -55,8 +56,8 @@ describe("partner product grouping", () => {
     });
     const query = db.commerceProduct.findMany.mock.calls[0][0];
     expect(query).toMatchObject({
-      skip: 30,
-      take: 30,
+      skip: 10,
+      take: 10,
       select: { skus: { where: { partnerPrices: { some: { levelId } } } } },
     });
     expect(query.select.skus).not.toHaveProperty("take");
@@ -93,6 +94,7 @@ describe("partner product grouping", () => {
       { id: "b", name: "同名商品", skus: [sku("sku-c", "名称甲")] },
     ];
     const db: any = {
+      commerceCategory: { findMany: vi.fn(async () => []) },
       brandPartner: {
         findFirst: vi.fn(async () => ({
           levelId: "level",

@@ -202,8 +202,10 @@ export class PartnerController {
     @CurrentPartner() partner: Partner,
     @Query("search") search = "",
     @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("categoryId") categoryId?: string,
   ) {
-    return this.commerce.products(partner.id, search, page);
+    return this.commerce.products(partner.id, search, page, pageSize, categoryId);
   }
   @Post("quote")
   quote(@CurrentPartner() partner: Partner, @Body() body: unknown) {

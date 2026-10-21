@@ -1,3 +1,4 @@
+import { productPage, productCategoryFilter } from "../commerce/product-list-query";
 import { orderErpSnapshot } from "../commerce/order-erp-snapshot";
 import {
   BadRequestException,
@@ -144,9 +145,9 @@ export class PartnerCommerceService {
     return partner;
   }
 
-  async products(partnerId: string, search: string, pageInput: unknown) {
+  async products(partnerId: string, search: string, pageInput: unknown, sizeInput: unknown = 10, categoryId = "") {
     const partner = await this.currentPartner(this.prisma, partnerId),
-      { page, pageSize, skip } = partnerPage(pageInput);
+      { page, pageSize, skip } = productPage(pageInput, sizeInput);
     const pricedSku: Prisma.CommerceSkuWhereInput = {
       enabled: true,
       partnerPrices: {
@@ -157,7 +158,9 @@ export class PartnerCommerceService {
         },
       },
     };
+    const category = await productCategoryFilter(this.prisma, categoryId);
     const where: Prisma.CommerceProductWhereInput = {
+      ...category.where,
       source: { in: ["ERP", "LOCAL"] },
       localArchived: false,
       status: "PUBLISHED",
@@ -258,6 +261,7 @@ export class PartnerCommerceService {
       total,
       page,
       pageSize,
+      categories: category.categories,
     };
   }
 

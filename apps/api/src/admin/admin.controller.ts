@@ -437,8 +437,10 @@ export class AdminController {
     @Query("search") search?: string,
     @Query("page") page?: string,
     @Query("status") status?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("categoryId") categoryId?: string,
   ) {
-    return this.admin.commerceProducts(search, Number(page ?? 1), status);
+    return this.admin.commerceProducts(search, Number(page ?? 1), status, pageSize, categoryId);
   }
 
   @Post("commerce-products")

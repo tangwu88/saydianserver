@@ -19,6 +19,7 @@ const props = defineProps<{
   loading: boolean;
   createable: boolean;
   search: string;
+  categoryId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -30,6 +31,8 @@ const emit = defineEmits<{
   ship: [row: Row];
   "shipping-refund": [row: Row];
   "page-change": [page: number];
+  "product-pagination": [page: number, pageSize: number];
+  "category-change": [categoryId: string];
   "status-change": [status: string];
   "run-action": [path: string, success: string];
   "batch-products": [ids: string[], action: string];
@@ -466,6 +469,10 @@ function changeStatus(value: unknown): void {
       <el-select v-if="filterOptions.length" :model-value="statusFilter" clearable placeholder="全部状态" class="status-select" @change="changeStatus">
         <el-option v-for="option in filterOptions" :key="option[0]" :label="option[1]" :value="option[0]" />
       </el-select>
+      <el-select v-if="resource === 'commerce-products'" :model-value="categoryId || ''" clearable filterable placeholder="全部分类" aria-label="商品分类" class="status-select" @change="emit('category-change', String($event || ''))">
+        <el-option label="未分类" value="uncategorized" />
+        <el-option v-for="category in meta.categories || []" :key="category.id" :label="category.label" :value="category.id" />
+      </el-select>
       <el-button type="primary" @click="emit('refresh')">刷新</el-button>
       <el-button v-if="createable" @click="emit('create')">新增</el-button>
       <el-button v-if="resource === 'commerce-products' && canEdit" type="primary" plain :loading="inventorySyncing" @click="syncInventory">聚水潭库存同步</el-button>
@@ -627,14 +634,17 @@ function changeStatus(value: unknown): void {
       <el-table-column label="操作" width="95" fixed="right"><template #default="scope"><el-button size="small" @click="openDetail(scope.row)">详情</el-button></template></el-table-column>
     </el-table>
 
-    <div v-if="Number(meta.total) > Number(meta.pageSize)" class="pagination-row">
+    <div v-if="resource === 'commerce-products' || Number(meta.total) > Number(meta.pageSize)" class="pagination-row">
       <el-pagination
         background
-        layout="total, prev, pager, next"
+        :layout="resource === 'commerce-products' ? 'total, sizes, prev, pager, next' : 'total, prev, pager, next'"
+        :page-sizes="[10, 20, 50, 100]"
+        :disabled="loading"
         :current-page="Number(meta.page || 1)"
-        :page-size="Number(meta.pageSize || 50)"
+        :page-size="Number(meta.pageSize || (resource === 'commerce-products' ? 10 : 50))"
         :total="Number(meta.total || 0)"
-        @current-change="emit('page-change', Number($event))"
+        @current-change="(page: number) => resource === 'commerce-products' ? emit('product-pagination', page, Number(meta.pageSize || 10)) : emit('page-change', page)"
+        @size-change="emit('product-pagination', 1, Number($event))"
       />
     </div>
 
@@ -716,7 +726,7 @@ function changeStatus(value: unknown): void {
 .search-input { flex: 1 1 260px; width: 320px; }
 .status-select { width: 160px; }
 .result-count { margin-left: auto; color: #768396; font-size: 13px; }
-.pagination-row { display: flex; justify-content: flex-end; padding: 4px 0; }
+.pagination-row { display: flex; justify-content: flex-end; padding: 4px 0; overflow-x: auto; }
 .thumb, .image-fallback { width: 58px; height: 58px; border-radius: 8px; }
 .category-icon, .category-icon + .image-fallback { width: 48px; height: 48px; border-radius: 8px; }
 .banner-thumb, .banner-fallback { width: 150px; height: 64px; border-radius: 8px; }

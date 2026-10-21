@@ -6,6 +6,7 @@ describe("commerce administration", () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const count = vi.fn().mockResolvedValue(0);
     const prisma = {
+      commerceCategory: { findMany: vi.fn(async () => []) },
       commerceProduct: { findMany, count },
       $transaction: vi.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
     };
