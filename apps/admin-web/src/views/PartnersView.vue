@@ -17,6 +17,9 @@ const route = useRoute(),
   prices = ref<any[]>([]),
   total = ref(0),
   page = ref(1),
+  pricePageSize = ref(10),
+  categoryId = ref(""),
+  categories = ref<any[]>([]),
   search = ref(""),
   levelId = ref(""),
   partnerId = ref(""),
@@ -156,6 +159,7 @@ const ledgerDetail = ref<any>();
 let financeRequest = 0;
 onBeforeUnmount(() => {
   financeRequest++;
+  priceListRequest++;
 });
 const accountForm = ref<FormInstance>();
 const memberDialog = ref(false),
@@ -287,11 +291,25 @@ async function loadPartners(searchInput = search.value) {
   )
     total.value = result.total;
 }
+let priceListRequest = 0;
+async function filterPrices() {
+  page.value = 1;
+  await load();
+}
+async function changePricePagination(nextPage: number, nextSize: number) {
+  if (page.value === nextPage && pricePageSize.value === nextSize) return;
+  page.value = nextSize === pricePageSize.value ? nextPage : 1;
+  pricePageSize.value = nextSize;
+  await load();
+}
 async function load() {
+  const request = ++priceListRequest;
   selectedPrices.value = [];
   loading.value = true;
   try {
-    levels.value = responseData(await api.get("/partner-levels"));
+    const loadedLevels = responseData<any[]>(await api.get("/partner-levels"));
+    if (request !== priceListRequest) return;
+    levels.value = loadedLevels;
     if (!levelId.value && levels.value.length)
       levelId.value = levels.value[0].id;
     if (resource.value === "partner-prices") {
@@ -303,9 +321,13 @@ async function load() {
               search: search.value,
               page: page.value,
               groupBy: "product",
+              pageSize: pricePageSize.value,
+              categoryId: categoryId.value,
             },
           }),
         );
+        if (request !== priceListRequest) return;
+        categories.value = result.categories ?? [];
         prices.value = result.items;
         total.value = result.total;
       }
@@ -318,9 +340,12 @@ async function load() {
         await loadFinance();
     }
   } catch (cause) {
-    ElMessage.error(readableError(cause));
+    if (request === priceListRequest) {
+      if (resource.value === "partner-prices") { prices.value = []; total.value = 0; }
+      ElMessage.error(readableError(cause));
+    }
   } finally {
-    loading.value = false;
+    if (request === priceListRequest) loading.value = false;
   }
 }
 onMounted(load);
@@ -612,7 +637,10 @@ async function copyPromotion() {
           :key="level.id"
           :value="level.id"
           :label="level.name" /></el-select
-      ><el-button
+      ><el-select v-if="resource === 'partner-prices'" v-model="categoryId" clearable filterable placeholder="全部分类" aria-label="商品分类" style="width: 220px" @change="filterPrices">
+        <el-option label="未分类" value="uncategorized" />
+        <el-option v-for="category in categories" :key="category.id" :value="category.id" :label="category.label" />
+      </el-select><el-button
         @click="
           page = 1;
           load();
@@ -1034,8 +1062,9 @@ async function copyPromotion() {
           </el-table></template
         ></template
       >
+      <el-pagination v-if="resource === 'partner-prices'" :current-page="page" :page-size="pricePageSize" :page-sizes="[10, 20, 50, 100]" :total="total" :disabled="loading" layout="total, sizes, prev, pager, next" @current-change="changePricePagination($event, pricePageSize)" @size-change="changePricePagination(1, $event)" />
       <el-pagination
-        v-if="resource !== 'partner-levels'"
+        v-else-if="resource !== 'partner-levels'"
         v-model:current-page="page"
         :total="total"
         :page-size="30"
@@ -1433,6 +1462,8 @@ async function copyPromotion() {
   text-align: center;
 }
 .el-pagination {
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 20px;
 }
 </style>

@@ -1,3 +1,4 @@
+import { productPage, productCategoryFilter } from "../commerce/product-list-query";
 import {
   BadRequestException,
   ConflictException,
@@ -429,14 +430,16 @@ export class PartnerAdminService {
     };
   }
 
-  async groupedPrices(levelId: string, search: string, pageInput: unknown) {
+  async groupedPrices(levelId: string, search: string, pageInput: unknown, sizeInput: unknown = 10, categoryId = "") {
     if (!isUuid(levelId)) throw new BadRequestException("请选择合作等级");
-    const { page, pageSize, skip } = partnerPage(pageInput);
+    const { page, pageSize, skip } = productPage(pageInput, sizeInput);
     const text = { contains: search.trim(), mode: "insensitive" as const };
     const imported: Prisma.CommerceSkuWhereInput = {
       partnerPrices: { some: { levelId } },
     };
+    const category = await productCategoryFilter(this.prisma, categoryId);
     const where: Prisma.CommerceProductWhereInput = {
+      ...category.where,
       localArchived: false,
       skus: { some: imported },
       ...(search.trim()
@@ -531,6 +534,7 @@ export class PartnerAdminService {
       total,
       page,
       pageSize,
+      categories: category.categories,
     };
   }
 

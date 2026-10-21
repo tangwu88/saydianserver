@@ -903,6 +903,39 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
     expect((await commerce.order(buyer.id, order.id)).items[0]).toMatchObject({ nameSnapshot: `伙伴定制名-${suffix}`, specificationSnapshot: "伙伴礼盒规格" });
     expect((await prisma.commerceProduct.findUniqueOrThrow({ where: { id: item.id } })).name).toBe(item.name);
   });
+  it("filters categories before paging product groups in all three catalogs", async () => {
+    const key = randomUUID();
+    const root = await prisma.commerceCategory.create({ data: { name: `合成分类-${key}` } });
+    const child = await prisma.commerceCategory.create({ data: { name: "合成子类", parentId: root.id } });
+    const level = await prisma.partnerLevel.create({ data: { code: `pages-${key}`, name: "合成分页等级", sort: 10000 } });
+    const buyer = await admin.create(actorId, { username: `qa-pages-${key}`, name: "合成分页伙伴", password: "synthetic-partner-password", levelId: level.id }, key);
+    for (let n = 0; n < 13; n++) {
+      const item = `PAGE-${key}-${n}`;
+      await prisma.commerceProduct.create({ data: {
+        erpItemId: item, name: `合成分页-${key}`, source: "ERP", status: "PUBLISHED", categoryId: n < 12 ? child.id : null, gallery: [], tags: [],
+        skus: { create: [0, 1].map(i => ({ erpItemId: item, erpSkuId: `${item}-${i}`, specification: `规格${i}`, salePriceCents: 1000, stock: 0,
+          partnerPrices: { create: { levelId: level.id, priceCents: 500, enabled: true } },
+        })) },
+      } });
+    }
+    const mall = new AdminService(prisma as any, {} as any);
+    for (const list of [
+      (p: number, size: number, category: string) => mall.commerceProducts(key, p, "PUBLISHED", size, category),
+      (p: number, size: number, category: string) => admin.groupedPrices(level.id, key, p, size, category),
+      (p: number, size: number, category: string) => commerce.products(buyer.id, key, p, size, category),
+    ]) {
+      const first = await list(1, 10, root.id), second = await list(2, 10, root.id);
+      expect(first.total).toBe(12);
+      expect(first.items).toHaveLength(10);
+      expect(second.items).toHaveLength(2);
+      expect(new Set([...first.items, ...second.items].map(row => row.id)).size).toBe(12);
+      for (const row of [...first.items, ...second.items]) expect(row.skus).toHaveLength(2);
+      expect((await list(1, 20, root.id)).items).toHaveLength(12);
+      const uncategorized = await list(1, 10, "uncategorized");
+      expect(uncategorized.total).toBe(1);
+      expect(uncategorized.items).toHaveLength(1);
+    }
+  });
   it("records deposit once and rolls back money when the audit cannot be saved", async () => {
     const before = await partners.wallet(b.id);
     const input = {

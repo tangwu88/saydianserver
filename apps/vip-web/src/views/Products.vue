@@ -43,6 +43,9 @@ type PurchaseConfirmation = {
 };
 const products = ref<any[]>([]),
   page = ref(1),
+  pageSize = ref(10),
+  categoryId = ref(""),
+  categories = ref<any[]>([]),
   total = ref(0),
   search = ref(""),
   level = ref(""),
@@ -190,6 +193,16 @@ onBeforeUnmount(() => {
   alive = false;
   listRequest++;
 });
+async function filterProducts() {
+  page.value = 1;
+  await load();
+}
+async function changePagination(nextPage: number, nextSize: number) {
+  if (page.value === nextPage && pageSize.value === nextSize) return;
+  page.value = nextSize === pageSize.value ? nextPage : 1;
+  pageSize.value = nextSize;
+  await load();
+}
 async function load() {
   const request = ++listRequest;
   busy.value = true;
@@ -197,10 +210,11 @@ async function load() {
   try {
     const result = data(
       await api.get("/products", {
-        params: { search: search.value, page: page.value },
+        params: { search: search.value, page: page.value, pageSize: pageSize.value, categoryId: categoryId.value },
       }),
     );
     if (request !== listRequest) return;
+    categories.value = result.categories ?? [];
     products.value = result.items;
     total.value = result.total;
     level.value = result.level;
@@ -210,7 +224,11 @@ async function load() {
         quantities[sku.id] ??= 0;
       }
   } catch (cause) {
-    if (request === listRequest) error.value = errorMessage(cause);
+    if (request === listRequest) {
+      products.value = [];
+      total.value = 0;
+      error.value = errorMessage(cause);
+    }
   } finally {
     if (request === listRequest) busy.value = false;
   }
@@ -422,7 +440,10 @@ async function purchase() {
             page = 1;
             load();
           "
-        /><el-button native-type="submit" type="primary">搜索</el-button
+        /><el-select v-model="categoryId" clearable filterable placeholder="全部分类" aria-label="商品分类" style="width: 220px" @change="filterProducts">
+          <el-option label="未分类" value="uncategorized" />
+          <el-option v-for="category in categories" :key="category.id" :label="category.label" :value="category.id" />
+        </el-select><el-button native-type="submit" type="primary">搜索</el-button
         ><router-link to="/wallet" class="wallet-link"
           ><el-icon><Wallet /></el-icon>余额 {{ money(balance) }}</router-link
         >
@@ -509,12 +530,14 @@ async function purchase() {
         />
       </div>
       <el-pagination
-        v-if="total > 30"
-        v-model:current-page="page"
+        :current-page="page"
         :total="total"
-        :page-size="30"
-        layout="prev, pager, next, total"
-        @current-change="load"
+        :page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        :disabled="busy"
+        layout="total, sizes, prev, pager, next"
+        @current-change="changePagination($event, pageSize)"
+        @size-change="changePagination(1, $event)"
       />
     </div>
     <div class="checkout-bar">
@@ -824,6 +847,7 @@ async function purchase() {
   </section>
 </template>
 <style scoped>
+.catalog-panel :deep(.el-pagination) { flex-wrap: wrap; gap: 8px; }
 .product-specs > summary {
   cursor: pointer;
   color: #355773;

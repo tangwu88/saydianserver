@@ -98,9 +98,11 @@ export class PartnerAdminController {
     @Query("search") search = "",
     @Query("page") page?: string,
     @Query("groupBy") groupBy?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("categoryId") categoryId?: string,
   ) {
     return groupBy === "product"
-      ? this.admin.groupedPrices(levelId, search, page)
+      ? this.admin.groupedPrices(levelId, search, page, pageSize, categoryId)
       : this.admin.prices(levelId, search, page);
   }
   @Patch("partner-prices/:levelId/:skuId")

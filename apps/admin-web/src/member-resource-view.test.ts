@@ -92,7 +92,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     healthRawJson,
     healthTime,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, changeDeviceHistoryTab, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, changeContentLocale, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, visibleRows, appProductFilter, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceHistoryTab, deviceMeasurements, deviceMeasurementsLoading, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal, contentProductLabel, rowProducts, appendProductGalleryImage }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, productPageSize, productCategoryId, changeProductCategory, changeProductPagination, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, changeDeviceHistoryTab, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, changeContentLocale, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, visibleRows, appProductFilter, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceHistoryTab, deviceMeasurements, deviceMeasurementsLoading, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal, contentProductLabel, rowProducts, appendProductGalleryImage }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -1462,7 +1462,7 @@ describe("administrator commerce and service editor improvements", () => {
     expect(h.confirm).toHaveBeenCalledWith(expect.stringContaining("测试手表"), "删除商品", expect.objectContaining({ confirmButtonText: "确认删除" }));
     expect(h.api.delete).toHaveBeenCalledWith("/commerce-products/product-1");
     expect(h.messages.success).toHaveBeenCalledWith("商品已删除");
-    expect(h.api.get).toHaveBeenCalledWith("/commerce-products", { params: { page: 1 } });
+    expect(h.api.get).toHaveBeenCalledWith("/commerce-products", { params: { page: 1, pageSize: 10, categoryId: "" } });
     expect(h.sfc).toContain('@delete-product="deleteCommerceProduct"');
   });
 
@@ -1558,5 +1558,26 @@ describe("CN AI visibility editor", () => {
     h.form.value.hideAi = true;
     await h.save();
     expect(h.api.patch).toHaveBeenCalledWith("/settings/cn_app_display", {value:{hideAi:true},public:true});
+  });
+});
+
+
+describe("mall product filter pagination", () => {
+  it("combines product category with search/status and clears filters when leaving the resource", async () => {
+    const h = harness();
+    h.route.params.resource = "commerce-products";
+    h.api.get.mockResolvedValue(envelope([], 45));
+    await h.load();
+    expect(h.api.get).toHaveBeenLastCalledWith("/commerce-products", { params: { page: 1, pageSize: 10, categoryId: "" } });
+    await h.changeProductPagination(3, 10);
+    expect(h.currentPage.value).toBe(3);
+    h.search.value = "手表";
+    await h.changeProductCategory("uncategorized");
+    expect(h.currentPage.value).toBe(1);
+    await h.changeProductPagination(5, 20);
+    expect(h.api.get).toHaveBeenLastCalledWith("/commerce-products", { params: { search: "手表", page: 1, pageSize: 20, categoryId: "uncategorized" } });
+    h.resetResourceView();
+    expect(h.productCategoryId.value).toBe("");
+    expect(h.productPageSize.value).toBe(10);
   });
 });

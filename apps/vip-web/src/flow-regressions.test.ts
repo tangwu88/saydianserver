@@ -159,7 +159,7 @@ function harness(view: string, store = memoryStorage()) {
   };
   const exports =
     view === "Products"
-      ? "load, productPrice, selectedCount, review, preparePurchase, purchase, cancelPurchaseConfirmation, paymentReview, preparingPurchase, quantities, address, addressForm, submittedRequest, submitting, quote, quoteStale, checkoutError, balance, buyerRemark, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
+      ? "load, filterProducts, changePagination, page, pageSize, categoryId, products, total, itemCount, subtotal, productPrice, selectedCount, review, preparePurchase, purchase, cancelPurchaseConfirmation, paymentReview, preparingPurchase, quantities, address, addressForm, submittedRequest, submitting, quote, quoteStale, checkoutError, balance, buyerRemark, fillAddress, undoAddress, pastedAddress, addressNotice, rules"
       : "load, create, viewRecharge, retryPayment, poll, pendingInput, form, currentRecharge, payment, paymentError, pollError, paying";
   const state = new Function(
     ...Object.keys(deps),
@@ -562,5 +562,40 @@ describe("input and navigation boundaries", () => {
       expect(activeShortcut("/wallet", path)).toBe(false);
     expect(activeShortcut("/", "/orders")).toBe(false);
     expect(activeShortcut("/orders", "/orders")).toBe(true);
+  });
+});
+
+
+describe("procurement catalog filters and pages", () => {
+  it("sends server category/page/size and preserves a cross-page cart", async () => {
+    const h = harness("Products");
+    await h.load();
+    expect(h.api.get).toHaveBeenLastCalledWith("/products", { params: { search: "", page: 1, pageSize: 10, categoryId: "" } });
+    h.quantities.sku = 2;
+    await h.changePagination(2, 10);
+    expect(h.page.value).toBe(2);
+    h.categoryId.value = "uncategorized";
+    await h.filterProducts();
+    expect(h.page.value).toBe(1);
+    await h.changePagination(4, 20);
+    expect(h.api.get).toHaveBeenLastCalledWith("/products", { params: { search: "", page: 1, pageSize: 20, categoryId: "uncategorized" } });
+    expect(h.quantities.sku).toBe(2);
+    expect(h.itemCount.value).toBe(2);
+    expect(h.subtotal.value).toBe(200);
+  });
+  it("ignores an older page response after a category change, and clears stale results on errors", async () => {
+    const h = harness("Products");
+    let finish!: (value: any) => void;
+    h.api.get.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const old = h.load();
+    h.categoryId.value = "uncategorized";
+    await h.filterProducts();
+    finish(response({ items: [], total: 100, level: "old" }));
+    await old;
+    expect(h.products.value).toHaveLength(1);
+    h.api.get.mockRejectedValueOnce(new Error("offline"));
+    await h.changePagination(2, 10);
+    expect(h.products.value).toEqual([]);
+    expect(h.total.value).toBe(0);
   });
 });

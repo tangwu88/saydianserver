@@ -80,7 +80,7 @@ function harness() {
   };
   const state = new Function(
     ...Object.keys(deps),
-    `${code}\nreturn { open, save, form, levels, levelId, prices, togglePrices, isPriceSelected, allPricesSelected, selectedPrices, importDialog, importLevel, importSelected, openImport, importProducts, deleteProducts, accountForm, dialog, saving, pendingFunds, partnerId, partners, funds, loadFinance };`,
+    `${code}\nreturn { load, filterPrices, changePricePagination, page, pricePageSize, categoryId, categories, total, open, save, form, levels, levelId, prices, togglePrices, isPriceSelected, allPricesSelected, selectedPrices, importDialog, importLevel, importSelected, openImport, importProducts, deleteProducts, accountForm, dialog, saving, pendingFunds, partnerId, partners, funds, loadFinance };`,
   )(...Object.values(deps));
   state.levels.value = levels;
   state.accountForm.value = {
@@ -170,5 +170,37 @@ describe("partner catalog admin actions", () => {
       "/partner-prices/level-1/batch-delete",
       { items: [{ skuId: "sku-1", updatedAt: "2026-10-16T00:00:00.000Z" }] },
     );
+  });
+});
+
+
+describe("partner price catalog pagination", () => {
+  it("queries product groups with category, defaults to ten and resets the page for changed filters or sizes", async () => {
+    const h = harness();
+    await h.load();
+    expect(h.api.get).toHaveBeenLastCalledWith("/partner-prices", { params: { levelId: "level-1", search: "", page: 1, groupBy: "product", pageSize: 10, categoryId: "" } });
+    await h.changePricePagination(3, 10);
+    expect(h.page.value).toBe(3);
+    h.categoryId.value = "uncategorized";
+    await h.filterPrices();
+    expect(h.page.value).toBe(1);
+    h.selectedPrices.value = [{ id: "old-sku" }];
+    await h.changePricePagination(2, 50);
+    expect(h.api.get).toHaveBeenLastCalledWith("/partner-prices", { params: { levelId: "level-1", search: "", page: 1, groupBy: "product", pageSize: 50, categoryId: "uncategorized" } });
+    expect(h.selectedPrices.value).toEqual([]);
+  });
+  it("retains the latest category results when an older grouped request finishes late", async () => {
+    const h = harness();
+    let finish!: (value: any) => void;
+    h.api.get.mockImplementationOnce(async () => ({ data: { data: levels } }));
+    h.api.get.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const old = h.load();
+    await Promise.resolve();
+    await Promise.resolve();
+    h.categoryId.value = "uncategorized";
+    await h.filterPrices();
+    finish({ data: { data: { items: [{ id: "stale" }], total: 99 } } });
+    await old;
+    expect(h.prices.value.some((row: any) => row.id === "stale")).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import { productPage, productCategoryFilter } from "../commerce/product-list-query";
 import { writeCnDisplaySetting } from "./cn-display-setting";
 import { orderErpSnapshot } from "../commerce/order-erp-snapshot";
 import { usCandidateInventory } from "./us-candidate-inventory";
@@ -2014,10 +2015,12 @@ export class AdminService {
     });
   }
 
-  async commerceProducts(search = "", pageInput = 1, statusInput = "") {
-    const page = Math.max(Number(pageInput) || 1, 1);
+  async commerceProducts(search = "", pageInput = 1, statusInput = "", sizeInput: unknown = 10, categoryId = "") {
+    const { page, pageSize, skip } = productPage(pageInput, sizeInput);
+    const category = await productCategoryFilter(this.prisma, categoryId);
     const searchText = String(search).trim();
     const where: Prisma.CommerceProductWhereInput = {
+      ...category.where,
       ...(statusInput === "ARCHIVED"
         ? { localArchived: true }
         : statusInput === "OUT_OF_STOCK"
@@ -2049,13 +2052,13 @@ export class AdminService {
           category: { select: { id: true, name: true } },
           skus: true,
         },
-        orderBy: [{ sort: "desc" }, { updatedAt: "desc" }],
-        skip: (page - 1) * 50,
-        take: 50,
+        orderBy: [{ sort: "desc" }, { updatedAt: "desc" }, { id: "asc" }],
+        skip,
+        take: pageSize,
       }),
       this.prisma.commerceProduct.count({ where }),
     ]);
-    return { items, total, page, pageSize: 50 };
+    return { items, total, page, pageSize, categories: category.categories };
   }
 
   async importCommerceProductBySku(input: unknown) {
