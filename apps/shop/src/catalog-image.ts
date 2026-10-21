@@ -10,3 +10,20 @@ export function catalogImageSet(source: string): string | undefined {
   if (catalogImageSource(source, 480) === source) return undefined;
   return ([480, 960, 1440] as const).map(width => `${catalogImageSource(source, width)} ${width}w`).join(", ");
 }
+
+/** Cards start fetching only near the viewport; disposal also guards queued callbacks. */
+export function observeCatalogImage(element: Element, activate: () => void): () => void {
+  let disposed = false, started = false;
+  if (typeof IntersectionObserver === "undefined") {
+    activate();
+    return () => { disposed = true; };
+  }
+  const observer = new IntersectionObserver(entries => {
+    if (disposed || started || !entries.some(entry => entry.isIntersecting)) return;
+    started = true;
+    observer.disconnect();
+    activate();
+  }, { rootMargin: "160px 0px" });
+  observer.observe(element);
+  return () => { disposed = true; observer.disconnect(); };
+}

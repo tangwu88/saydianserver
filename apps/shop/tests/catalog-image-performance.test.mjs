@@ -117,3 +117,36 @@ test("descriptions retain the existing rich-text security boundary", () => {
   assert.match(component, /<rich-text :nodes="prepared\.html"/);
   assert.doesNotMatch(component, /v-html|innerHTML/);
 });
+
+test("card images wait until near the viewport and activate only once", () => {
+  let observer;
+  class Observer {
+    constructor(callback, options) { this.callback = callback; this.options = options; observer = this; }
+    observe(element) { this.element = element; }
+    disconnect() { this.disconnected = true; }
+  }
+  const images = evaluate("catalog-image", {}, { IntersectionObserver: Observer });
+  let activated = 0; const element = {};
+  images.observeCatalogImage(element, () => activated++);
+  assert.equal(activated, 0); assert.equal(observer.element, element);
+  assert.equal(observer.options.rootMargin, "160px 0px");
+  observer.callback([{ isIntersecting: false }]); assert.equal(activated, 0);
+  observer.callback([{ isIntersecting: true }]); assert.equal(activated, 1);
+  observer.callback([{ isIntersecting: true }]); assert.equal(activated, 1);
+  assert.equal(observer.disconnected, true);
+});
+
+test("removed or changed card images ignore queued viewport callbacks", () => {
+  let callback, disconnected = false, activated = false;
+  class Observer { constructor(fn) { callback = fn; } observe() {} disconnect() { disconnected = true; } }
+  const images = evaluate("catalog-image", {}, { IntersectionObserver: Observer });
+  const dispose = images.observeCatalogImage({}, () => { activated = true; });
+  dispose(); callback([{ isIntersecting: true }]);
+  assert.equal(disconnected, true); assert.equal(activated, false);
+});
+
+test("card images remain usable without IntersectionObserver", () => {
+  let activated = 0;
+  const dispose = catalog.observeCatalogImage({}, () => activated++);
+  assert.equal(activated, 1); dispose();
+});
