@@ -11,3 +11,11 @@
 已有pnpm11.25自动下载仓库11.19等待，安全中止后使用已安装版本并显式pm-on-fail=ignore、子进程PNPM_CONFIG_PM_ON_FAIL=ignore，不更改锁或安装依赖。工具检查初轮被中止发生pending，第二轮57通过/1失败因PATH无pwsh；加入现有PowerShell路径后用现有Node24.21纯工具检查58/58通过，H5流程62/62通过。该签名Node不允许加载其它Team的Rollup原生模块，H5契约构建报原生模块签名错误；回到此前完整build已通过的用户Node24.19和正确PATH重验完整tools:test，未修改库签名或系统安全设置。最终结果续记。
 
 发布前重新fetch确认main仍a9b4589；当前线上双readiness为7415b8d，main中已有a9b4589合作价缺货修复尚在CI，生产发布须等待当前主线及本PR完整CI验证，不将main等同当前部署。仅中国站发布，不变更美国环境、维护/停写/worker/回调、协议、供应商配置或任何真实会员/戒指数据。
+
+## 生产续验（2026-10-22）
+
+PR59完整CI39719000560成功，首次绑定判定以90acb7f97cb13228600ecdaf6762df7ed3b57edc合入main，提交含deploy cn only，US跳过。main CI39720064295的verify成功，但deploy在GHCR拉取api镜像等待一小时后取消；当时线上仍为a9b4589且数据库正常，不将verify通过写成部署成功。
+
+使用现有受控恢复工作流：39733990288成功导出同次构建的原始镜像artifact12406098341（369,411,238字节），SSH分块传输慢而取消；未重启服务或改变镜像内容。改以既有HTTPS original-artifact路径运行39734715590，核对artifact摘要sha256:e709acfa181ed9ae4b9e324b166ae3ef30056710ff38e2336cb982c1acdbe308、归档/manifest和精确镜像ID后导入成功，日志明确无应用重启。未降级CI校验、镜像校验或磁盘余量门禁。
+
+确认main仍为90ac后，运行现有Deploy production 39736751994，revision精确90ac、offline_images=true、first_cutover=false。resolve成功、deploy55秒成功；双公开readiness均返回90ac和database ok。Say Ring auth/capabilities（locale=zh-Hans、product=say-ring）与iOS app-display均200，v3配套登录协议和现有指标/百科/AI/商城开关保持原样。没有生产夹具、真实OTP、支付、清空或恢复出厂测试。切换中后台一次刷新404，部署完成后恢复原管理员会话和正常页面；未改US、协议或下载清单中的其它平台。
