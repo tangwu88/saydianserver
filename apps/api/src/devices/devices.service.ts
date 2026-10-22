@@ -60,8 +60,16 @@ export class DevicesService {
     const firmware = body.firmware ? String(body.firmware).trim() : null;
     const syncCursor = body.syncCursor ? String(body.syncCursor).trim() : null;
     const rawPayload = serializedRawPayload(body);
+    const initializeFirstBinding = body.product === "say-ring" &&
+      body.initializeFirstBinding === true;
     const connectedAt = new Date();
-    const device = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Serialize ALL reports, including old clients, for this member. Count
+      // lifetime bindings, not just currently bound devices. A lost response
+      // deliberately cannot issue a second destructive initialization grant.
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId}::uuid FOR UPDATE`;
+      const firstBinding = initializeFirstBinding &&
+        await tx.deviceBinding.count({ where: { userId } }) === 0;
       const binding = await tx.deviceBinding.upsert({
         where: { hardwareKey },
         create: {
@@ -101,9 +109,17 @@ export class DevicesService {
           rawPayload,
         },
       });
-      return binding;
+      return { binding, firstBinding };
     });
-    return this.contract(device);
+    return {
+      ...this.contract(result.binding),
+      ...(initializeFirstBinding ? {
+        firstBindingInitialization: {
+          product: "say-ring", deviceId: sourceId,
+          shouldClear: result.firstBinding,
+        },
+      } : {}),
+    };
   }
 
   async list(userId: string) {
