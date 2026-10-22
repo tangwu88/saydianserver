@@ -157,7 +157,7 @@ export const notes = {
   "HealthReportsController.export": entry("按需导出详细健康报告", "id=已解锁且生成完成的报告UUID", "application/pdf文件流；不长期重复保存PDF", "报告字体服务"),
   "HealthReportsController.retry": entry("重试失败的报告", "id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本", "重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还", "AI供应商"),
   "DevicesController.list": entry("已绑定设备", undefined, "Device[]；只含未解绑设备"),
-  "DevicesController.bind": entry("上报设备连接", "{deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?}；macAddress仅接受标准 MAC，iOS UUID 不可冒充", "Device；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 | 字段=值` 字符串；不是服务端蓝牙连接"),
+  "DevicesController.bind": entry("上报设备连接", "{deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?,product?:say-ring,initializeFirstBinding?:boolean}；macAddress仅接受标准 MAC，iOS UUID 不可冒充", "Device；仅say-ring且显式initializeFirstBinding=true时附firstBindingInitialization:{product,deviceId,shouldClear}，账号行锁后检查含已解绑的全部绑定历史，仅首次事务返回true，丢失响应/重复上报不重新授权；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 | 字段=值` 字符串；不是服务端蓝牙连接"),
   "DevicesController.updateCapabilities": entry("更新设备能力及游标", "{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID", "Device"),
   "DevicesController.unbind": entry("解绑设备", "id=绑定记录 UUID", "{unbound:true}；保留历史健康数据"),
   "CareController.relationships": entry("关爱关系列表", undefined, "CareRelationship[]，含 direction、双方昵称、授权指标"),

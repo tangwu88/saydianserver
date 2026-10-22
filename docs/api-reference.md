@@ -251,7 +251,7 @@
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
 | `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503；语言指令不改变健康安全边界 |
 | `GET /api/saydian-app/v2/devices` | 已绑定设备 | member | 无请求体 | Device[]；只含未解绑设备 | 核心服务 |
-| `POST /api/saydian-app/v2/devices` | 上报设备连接 | member | {deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?}；macAddress仅接受标准 MAC，iOS UUID 不可冒充 | Device；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 \| 字段=值` 字符串；不是服务端蓝牙连接 | 核心服务 |
+| `POST /api/saydian-app/v2/devices` | 上报设备连接 | member | {deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?,product?:say-ring,initializeFirstBinding?:boolean}；macAddress仅接受标准 MAC，iOS UUID 不可冒充 | Device；仅say-ring且显式initializeFirstBinding=true时附firstBindingInitialization:{product,deviceId,shouldClear}，账号行锁后检查含已解绑的全部绑定历史，仅首次事务返回true，丢失响应/重复上报不重新授权；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 \| 字段=值` 字符串；不是服务端蓝牙连接 | 核心服务 |
 | `PATCH /api/saydian-app/v2/devices/:id/capabilities` | 更新设备能力及游标 | member | path:id；{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID | Device | 核心服务 |
 | `DELETE /api/saydian-app/v2/devices/:id` | 解绑设备 | member | path:id；id=绑定记录 UUID | {unbound:true}；保留历史健康数据 | 核心服务 |
 | `GET /api/saydian-app/v2/health/records/:recordId/ecg` | 读取本人私有心电波形 | member | path:recordId；recordId=本人clientRecordId | gzip JSON数值数组；响应头x-content-sha256、x-ecg-sample-rate、x-ecg-sample-count；无公开存储地址；不存在404 | 私有文件存储 |

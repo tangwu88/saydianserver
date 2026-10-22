@@ -21061,8 +21061,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/devices/devices.controller.ts",
       "summary": "上报设备连接",
-      "request": "{deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?}；macAddress仅接受标准 MAC，iOS UUID 不可冒充",
-      "response": "Device；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 | 字段=值` 字符串；不是服务端蓝牙连接",
+      "request": "{deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?,product?:say-ring,initializeFirstBinding?:boolean}；macAddress仅接受标准 MAC，iOS UUID 不可冒充",
+      "response": "Device；仅say-ring且显式initializeFirstBinding=true时附firstBindingInitialization:{product,deviceId,shouldClear}，账号行锁后检查含已解绑的全部绑定历史，仅首次事务返回true，丢失响应/重复上报不重新授权；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 | 字段=值` 字符串；不是服务端蓝牙连接",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {
