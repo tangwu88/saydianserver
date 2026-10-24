@@ -49,7 +49,7 @@ test("withdrawal form captures payout details and explains the frozen commission
   const panel = read("components/EmployeeWithdrawalPanel.vue");
   for (const field of ["payoutMethod", "accountName", "payoutAccount", "bankName"]) assert.match(panel, new RegExp(field));
   assert.match(panel, /有可用佣金即可申请/);
-  assert.match(panel, /后台审核通过后显示为已提现/);
+  assert.match(panel, /到账后显示“已提现”/);
   assert.match(panel, /已提交，佣金已冻结/);
   assert.match(panel, /SUCCEEDED: "已提现"/);
 });

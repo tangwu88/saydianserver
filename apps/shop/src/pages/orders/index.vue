@@ -96,7 +96,7 @@ function browse() {
 const labels: any = {
   PENDING_PAYMENT: "待付款",
   PAID: "已支付",
-  ERP_SYNCING: "同步中",
+  ERP_SYNCING: "处理中",
   WAITING_FULFILLMENT: "待发货",
   SHIPPED: "待收货",
   RECEIVED: "已完成",

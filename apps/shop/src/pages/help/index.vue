@@ -39,10 +39,10 @@
             <h2>售后政策</h2><button class="outline-btn" @click="openOfficial(officialSupport.afterSale)">查看官网售后指引</button><rich-text v-if="policies.afterSale" :nodes="policies.afterSale" /><p v-else>您可在订单详情中提交售后申请并查看进度，也可联系官方客服确认商品的售后规则。</p>
           </template>
           <template v-else-if="active === 'privacy'">
-            <h2>隐私政策</h2><rich-text v-if="policies.privacy" :nodes="policies.privacy" /><p v-else>隐私政策尚未在商城后台配置。</p>
+            <h2>隐私政策</h2><rich-text v-if="policies.privacy" :nodes="policies.privacy" /><p v-else>隐私政策暂时无法查看，请稍后重试。</p>
           </template>
           <template v-else-if="active === 'agreement'">
-            <h2>用户协议</h2><rich-text v-if="policies.service" :nodes="policies.service" /><p v-else>用户协议尚未在商城后台配置。</p>
+            <h2>用户协议</h2><rich-text v-if="policies.service" :nodes="policies.service" /><p v-else>用户协议暂时无法查看，请稍后重试。</p>
           </template>
         </view>
       </view>
@@ -148,11 +148,11 @@ function feedbackTypeLabel(value: unknown): string { return feedbackTypes.find(i
 function feedbackStatusLabel(value: unknown): string { return ({ open: "待处理", in_progress: "处理中", resolved: "已回复", closed: "已关闭" } as Record<string, string>)[String(value).toLowerCase()] ?? "处理中"; }
 function dateTime(value: unknown): string { const date = value ? new Date(String(value)) : null; return date && Number.isFinite(date.getTime()) ? date.toLocaleString("zh-CN", { hour12: false }) : "时间未获取"; }
 function orders(): void { uni.navigateTo({ url: "/pages/orders/index" }); }
-function callService(): void { if (/^[+\d -]{5,30}$/.test(String(service.phone))) uni.makePhoneCall({ phoneNumber: String(service.phone) }); else toast("客服电话格式尚未配置正确"); }
+function callService(): void { if (/^[+\d -]{5,30}$/.test(String(service.phone))) uni.makePhoneCall({ phoneNumber: String(service.phone) }); else toast("电话暂时无法拨打，请使用在线客服"); }
 function openService(): void {
   try {
     const target = String(service.wecomUrl);
-    if (!/^https:\/\/work\.weixin\.qq\.com\//.test(target) || /[\\\s]/.test(target)) throw new Error("企业客服地址未正确配置");
+    if (!/^https:\/\/work\.weixin\.qq\.com\//.test(target) || /[\\\s]/.test(target)) throw new Error("在线客服暂时无法打开，请拨打客服电话");
     /* #ifdef H5 */
     location.assign(target);
     /* #endif */

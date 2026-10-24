@@ -35,12 +35,6 @@
         ></view
       ><view class="member card"
         ><text>赛电商城服务</text
-        ><text class="small"
-          >商品说明、库存、订单与售后进度均以商城页面为准。</text
-        ><view class="service-grid"
-          ><view><b>正品</b><text class="small">官方商城</text></view
-          ><view><b>支付</b><text class="small">以已开通渠道为准</text></view
-          ><view><b>售后</b><text class="small">全程可查</text></view></view
         ><button v-if="user" class="outline-btn" @click="logout">退出顾客账号</button></view
       ></view
     ></view
@@ -90,13 +84,13 @@ function go(url: string) {
   uni.navigateTo({ url });
 }
 async function logout() {
-  const answer = await uni.showModal({title: isGlobalMall ? '退出登录' : '退出顾客账号',content: isGlobalMall ? '确定退出当前账号吗？' : '本地购物与个人缓存将清理，订单和积分保留在服务端。员工身份不受影响。'});
+  const answer = await uni.showModal({title: isGlobalMall ? '退出登录' : '退出顾客账号',content: isGlobalMall ? '确定退出当前账号吗？' : '确定退出当前账号吗？订单和积分会保留。'});
   if (!answer.confirm) return;
   try {
     if (isGlobalMall) {
       const result = await logoutGlobalMall();
       if (result === "changed") { toast("账号已切换，未清理新账号登录状态"); return; }
-      if (result === "local") toast("仅本机退出，服务端会话撤销未确认");
+      if (result === "local") toast("已退出本机登录，其他设备的登录状态可能仍保留");
     } else await clearMallSession();
     user.value = null;
     recentOrders.value = [];

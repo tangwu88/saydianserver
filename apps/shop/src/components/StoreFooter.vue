@@ -3,7 +3,6 @@
     <view class="footer-inner">
       <view>
         <text class="footer-brand">SAYDIAN 赛电</text>
-        <text class="footer-copy">选购、使用与售后，都有明确入口</text>
       </view>
       <view class="footer-links"><button @click="openOfficial(officialSupport.wecomUrl)">在线客服</button><button @click="callSupport">{{ officialSupport.phoneLabel }}</button><button @click="openOfficial(officialSupport.home)">赛电官网</button><button @click="openOfficial(officialSupport.authenticity)">正品核验</button>
         <text @click="open('/pages/help/index')">帮助中心</text>
@@ -34,19 +33,13 @@ function open(url: string) {
   max-width: 1360px;
   margin: 0 auto;
 }
-.footer-brand,
-.footer-copy {
+.footer-brand {
   display: block;
 }
 .footer-brand {
   color: var(--ink);
   font-size: 27rpx;
   font-weight: 850;
-}
-.footer-copy {
-  margin-top: 12rpx;
-  color: var(--muted);
-  font-size: 21rpx;
 }
 .footer-links {
   display: flex;
@@ -68,10 +61,6 @@ function open(url: string) {
   }
   .footer-brand {
     font-size: 16px;
-  }
-  .footer-copy {
-    margin-top: 8px;
-    font-size: 12px;
   }
   .footer-links {
     margin-top: 0;

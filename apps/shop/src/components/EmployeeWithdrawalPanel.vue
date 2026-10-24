@@ -58,7 +58,7 @@ onMounted(()=>{const saved=mallStorage.get('employee-withdrawal-draft');if(saved
     <template v-if="data">
       <view v-if="data.wallet" class="balance-summary"><view><text>可提现</text><b>{{ money(data.wallet.availableCents) }}</b></view><view v-if="data.wallet.withdrawingCents"><text>处理中</text><b>{{ money(data.wallet.withdrawingCents) }}</b></view></view>
       <view v-else class="notice">账户数据暂未获取。</view>
-      <text class="rules">有可用佣金即可申请。提交后对应金额会冻结，后台审核通过后显示为已提现；拒绝后退回可用佣金。</text>
+      <text class="rules">有可用佣金即可申请。申请金额暂时冻结；到账后显示“已提现”，未通过则退回可提现余额。</text>
       <view v-if="data.pendingCount" class="notice">已有申请处理中，请勿重复提交。</view>
       <view v-if="data.wallet?.debtCents > 0" class="notice">退款抵扣 {{ money(data.wallet.debtCents) }}，暂不可申请。</view>
       <view v-if="uncertain" class="notice">上次结果待确认，将继续原申请。</view>

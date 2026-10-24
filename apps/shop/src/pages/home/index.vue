@@ -3,7 +3,7 @@
   <view class="mobile-brand"><image :src="brandLogo" mode="aspectFit" /><text>赛电商城</text><button @click="go('/pages/search/index')">搜索</button></view>
   <!-- #ifdef MP-WEIXIN --><view class="home-share-tools"><button open-type="share">分享商城</button><button :disabled="sharing" @click="copyHomeLink">复制小程序链接</button></view><!-- #endif -->
   <view class="page home-page"><view class="container">
-    <view class="shop-intro"><view><text class="eyebrow">SAYDIAN · 赛电商城</text><text class="shop-heading">选好装备，轻松记录每一天。</text></view><button class="guide-link" @click="openOfficial(officialSupport.compare)">型号对比 <UniIcons type="arrow-up" size="16" /></button></view>
+    <view class="shop-intro"><view><text class="shop-heading">赛电商城</text></view><button class="guide-link" @click="openOfficial(officialSupport.compare)">型号对比 <UniIcons type="arrow-up" size="16" /></button></view>
     <button class="home-search" @click="go('/pages/search/index')"><UniIcons type="search" size="21"/><text class="search-placeholder">搜索型号、商品或配件</text><text class="search-action">搜索</text></button>
     <view v-if="notice" class="store-notice">{{ notice }}</view>
     <view v-if="error" class="error-state"><text>{{ error }}</text><button class="outline-btn" @click="load">重新加载</button></view>

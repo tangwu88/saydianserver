@@ -186,7 +186,7 @@ function request<T>(
         else {
           let message = (response.data as any)?.message ?? (response.data as any)?.error?.message ?? "请求失败";
           if (response.statusCode === 401 && /^\/auth\/wechat\/mini(?:\/bind)?$/.test(path) && message === "Please sign in again.") {
-            message = "微信登录验证失败，请重新点击微信登录。若仍失败，请核对后台与开发工具的 AppID，以及对应小程序的 AppSecret。";
+            message = "微信登录暂时无法完成，请稍后重试或选择其他登录方式。";
           }
           if (response.statusCode === 401 && options.auth && allowRefresh) {
             try {

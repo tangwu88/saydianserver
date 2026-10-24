@@ -5,7 +5,7 @@
     <view class="price-filter"><text>价格区间</text><input v-model="minimum" type="digit" placeholder="最低价" aria-label="最低价格（元）"/><text>—</text><input v-model="maximum" type="digit" placeholder="最高价" aria-label="最高价格（元）"/><button @click="applyPrice">确定</button><button v-if="minimum || maximum" @click="resetPrice">清除</button></view>
     <view v-if="error" class="error-state" role="alert">{{ error }}<button class="text-button" :disabled="busy" @click="retry">重新搜索</button></view>
     <view v-if="products.length" class="product-grid"><ProductCard v-for="(product,index) in products" :key="product.id" :product="product" :priority="index<2" @open="open"/></view>
-    <view v-else-if="!error" class="empty"><text>{{ busy?'正在搜索…':searched?'没有找到相关商品，试试其他关键词':'输入型号或商品名称，快速找到需要的商品' }}</text><view v-if="!searched" class="search-suggestions"><button v-for="word in ['W9S','W9','W8','戒指','表带']" :key="word" @click="suggest(word)">{{ word }}</button></view></view>
+    <view v-else-if="!error" class="empty"><text>{{ busy?'正在搜索…':searched?'没有找到相关商品，试试其他关键词':'请输入商品名称或型号' }}</text><view v-if="!searched" class="search-suggestions"><button v-for="word in ['W9S','W9','W8','戒指','表带']" :key="word" @click="suggest(word)">{{ word }}</button></view></view>
   </view></view>
 </template>
 <script setup lang="ts">

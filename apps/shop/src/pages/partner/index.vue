@@ -132,7 +132,7 @@ onShow(() => {
 <template>
   <DesktopHeader /><view class="saydian-app-surface"
     ><view class="partner-content">
-      <h1>{{ status?.partner ? "合作伙伴平台" : "申请合作伙伴" }}</h1>
+      <h1>{{ status?.partner ? "合作伙伴平台" : "申请合作分销" }}</h1>
       <view v-if="error" class="error-state" role="alert"
         >{{ error
         }}<button class="text-button" @click="load">重新查询</button></view

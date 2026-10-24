@@ -98,7 +98,7 @@ export class CommerceStoreService {
               orderBy: { salePriceCents: "asc" },
             },
           },
-          orderBy: [{ sort: "desc" }, { updatedAt: "desc" }],
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: 12,
         }),
         this.prisma.commerceBusinessConfig.findMany({
@@ -154,7 +154,9 @@ export class CommerceStoreService {
     const orderBy: Prisma.CommerceProductOrderByWithRelationInput[] =
       input.sort === "sales"
         ? [{ sales: "desc" }, { updatedAt: "desc" }]
-        : [{ sort: "desc" }, { updatedAt: "desc" }];
+        : input.sort === "newest"
+          ? [{ createdAt: "desc" }, { id: "desc" }]
+          : [{ sort: "desc" }, { updatedAt: "desc" }];
     const [items, total] = await this.prisma.$transaction([
       this.prisma.commerceProduct.findMany({
         where,

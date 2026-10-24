@@ -1,6 +1,6 @@
 <template>
   <DesktopHeader/><view class="page"><view class="container">
-    <view class="catalog-heading"><view><text class="eyebrow">SAYDIAN COLLECTION</text><h1>选一款，适合自己的。</h1></view><button class="text-button" @click="search">搜索商品 <UniIcons type="search" size="20"/></button></view>
+    <view class="catalog-heading"><view><h1>全部商品</h1></view><button class="text-button" @click="search">搜索商品 <UniIcons type="search" size="20"/></button></view>
     <view class="category-nav" role="tablist" aria-label="商品分类"><button v-for="item in categories" :key="item.id" role="tab" :aria-selected="selected===item.id" :class="['category-item',selected===item.id && 'active']" @click="select(item.id)">{{ item.name }} <text>{{ count(item.id) }}</text></button></view>
     <view class="catalog-toolbar"><text>{{ total }} 件商品</text><picker :range="sortLabels" :value="sortIndex" @change="sortIndex=Number($event.detail.value)"><view class="sort-picker">{{ sortLabels[sortIndex] }} <UniIcons type="bottom" size="15"/></view></picker></view>
     <view v-if="error" class="error-state" role="alert">{{ error }}<button class="text-button" :disabled="busy" @click="retry">重新加载</button></view>

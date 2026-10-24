@@ -8,6 +8,6 @@ export function configValue(key: string): any { const item = storefront.configs?
 export async function loadStorefront() {
   const response: any = await api(isGlobalMall ? "/storefront/bootstrap?locale=en" : "/storefront/bootstrap?ref=" + encodeURIComponent(String(mallStorage.get("saidian-ref") || "")));
   Object.assign(storefront, response);
-  if (!storefront.featured.length) { const catalog: any = await api("/storefront/products?page=1&pageSize=12"); storefront.featured = catalog.items || []; }
+  if (!storefront.featured.length) { const catalog: any = await api("/storefront/products?page=1&pageSize=12&sort=newest"); storefront.featured = catalog.items || []; }
   return storefront;
 }

@@ -64,7 +64,7 @@
           ><text class="small">{{ review.content }}</text></view
         ></view
       ></view
-    ><view class="container product-service"><button @click="openOfficial(officialProductUrl(product))"><UniIcons type="info" size="20"/><view><b>型号资料与参数</b><text>查看官网对应产品信息</text></view><UniIcons type="right" size="16"/></button><button @click="openOfficial(officialSupport.wecomUrl)"><UniIcons type="headphones" size="20"/><view><b>选购与售后咨询</b><text>{{ officialSupport.hours }}</text></view><UniIcons type="right" size="16"/></button></view
+    ><view class="container product-service"><button @click="openOfficial(officialProductUrl(product))"><UniIcons type="info" size="20"/><view><b>型号资料与参数</b></view><UniIcons type="right" size="16"/></button><button @click="openOfficial(officialSupport.wecomUrl)"><UniIcons type="headphones" size="20"/><view><b>选购与售后咨询</b><text>{{ officialSupport.hours }}</text></view><UniIcons type="right" size="16"/></button></view
     ><view class="fixed-buy-bar"><view class="actions"
       ><button class="outline-btn" :disabled="busy" @click="toggleFavorite"><UniIcons :type="product.favorite ? 'heart-filled' : 'heart'" color="currentColor" size="20" />{{ product.favorite ? "已收藏" : "收藏" }}</button
       ><button class="outline-btn" :disabled="busy || !canPurchase" @click="addCart"><UniIcons type="cart" color="currentColor" size="20" />加入购物车</button
