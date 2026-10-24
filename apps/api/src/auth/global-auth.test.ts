@@ -344,6 +344,26 @@ describe("global registration challenges", () => {
       "supported product",
     );
   });
+  it("Say Ring never exposes unverified registration even when legacy compatibility is enabled", async () => {
+    vi.stubEnv("GLOBAL_UNVERIFIED_REGISTRATION_ENABLED", "true");
+    const h = harness();
+    expect((await h.service.capabilities("en", "say-ring")).registration.verificationRequired).toBe(true);
+    await expect(h.service.registerWithoutVerification({ product: "say-ring", channel: "email", identifier: "new@example.net", password: "Synthetic-password!" })).rejects.toThrow("verification code");
+    expect(h.users().size).toBe(0);
+  });
+  for (const [channel, identifier] of [["email", "new-ring@example.net"], ["sms", "+12025550123"]]) {
+    it(`Say Ring ${channel} code login cannot create a passwordless member`, async () => {
+      const h = harness();
+      const challenge = await h.service.requestLoginCode({ channel, identifier, locale: "en", product: "say-ring" });
+      const input = { channel, identifier, challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true };
+      await expect(h.service.loginWithCode(input)).rejects.toThrow("register with a password");
+      expect(h.users().size).toBe(0);
+      expect(h.records().get(challenge.challengeId).consumedAt).toBeNull();
+      h.users().set("existing", { id: "existing", status: "ACTIVE", [channel === "email" ? "email" : "mobile"]: identifier });
+      await expect(h.service.loginWithCode(input)).resolves.toBeDefined();
+      expect(h.users().size).toBe(1);
+    });
+  }
   it("allows reset delivery without registration legal documents, but never without a verified channel", async () => {
     const h = harness();
     h.tx.globalLegalDocument.findMany.mockResolvedValue([]);

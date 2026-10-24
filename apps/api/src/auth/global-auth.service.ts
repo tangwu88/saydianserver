@@ -51,7 +51,7 @@ export class GlobalAuthService {
     const ready = await this.delivery.capabilities();
     const legal = await globalLegalBundle(this.prisma, locale, product);
     const deliveryOpen = !businessWritesPaused(process.env);
-    const unverifiedRegistration = this.unverifiedRegistrationEnabled();
+    const unverifiedRegistration = product !== "say-ring" && this.unverifiedRegistrationEnabled();
     const registrationOpen = Boolean(legal) && deliveryOpen;
     const wechatApp = this.wechatApp
       ? await this.wechatApp.capability({
@@ -76,6 +76,7 @@ export class GlobalAuthService {
         verificationRequired: !unverifiedRegistration,
       },
       login: {
+        explicitRegistrationCodeLogin: product === "say-ring",
         email: ready.email && deliveryOpen,
         sms: ready.sms && deliveryOpen,
         defaultChannel: "sms",
@@ -165,6 +166,12 @@ export class GlobalAuthService {
               ? { email: challenge.identifier }
               : { mobile: challenge.identifier };
           const existing = await tx.user.findUnique({ where });
+          // Versioned opt-in: old published code-only clients have no register
+          // entry. Preserve their existing flow while new clients register with
+          // both a password and a purpose=register ownership challenge.
+          if (!existing && legal.product === "say-ring" && body.authFlow === "verified-password-v1") {
+            throw globalError(409, "registration_required", "Please register with a password and verification code first.");
+          }
           if (existing && existing.status !== UserStatus.ACTIVE)
             throw globalError(
               409,
@@ -436,6 +443,9 @@ export class GlobalAuthService {
   }
 
   async registerWithoutVerification(input: unknown) {
+    if (globalLegalProduct(safeObject(input).product) === "say-ring") {
+      throw globalError(400, "verification_required", "Register with a password and verification code.");
+    }
     if (
       !this.unverifiedRegistrationEnabled() ||
       businessWritesPaused(process.env)

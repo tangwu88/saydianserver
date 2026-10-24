@@ -23,8 +23,13 @@ export const integrationDefinitions: IntegrationDefinition[] = [
     url('webhookUrl', '短信发送地址', '由维护人员提供的 HTTPS 地址；不在地址中放入密钥。', { required: true, providers: ['webhook'] }),
     s('webhookToken', '访问令牌', '用于验证短信发送请求，由短信接口维护人员提供。', { providers: ['webhook'] }),
   ] },
-  { key: 'email_otp', title: '邮箱验证码', group: '登录与消息', short: '邮', purpose: '发送邮箱验证码，用于邮箱登录。', prepare: '企业微信邮箱需开启 SMTP，并准备发件邮箱和该邮箱的客户端专用密码。', note: '先保存配置并发送测试邮件；确认收到后，再开启“已完成投递验收”并保存，邮箱登录才会开放。', fields: [
-    p('provider', '接入方式', '企业微信邮箱通过加密 SMTP 连接；已有邮件接口也可继续使用。', { required: true, defaultValue: 'webhook', options: [{ value: 'wecom_smtp', label: '企业微信邮箱' }, { value: 'webhook', label: '邮件发送接口' }] }),
+  { key: 'email_otp', title: '邮箱验证码', group: '登录与消息', short: '邮', purpose: '发送注册、登录及找回密码的邮箱验证码。', prepare: '阿里云需准备已验证的发信地址、所在区域及仅有邮件发送权限的RAM AccessKey；原SMTP和中转配置可继续使用。', note: '先保存配置并发送测试邮件；确认收到后，再开启“已完成投递验收”并保存。修改区域、发信人或凭证后需重新验收；保存不会自动发送邮件。', fields: [
+    p('provider', '接入方式', '阿里云使用SingleSendMail API直连，不使用SMTP密码；已有配置保持不变。', { required: true, defaultValue: 'webhook', options: [{ value: 'aliyun_dm', label: '阿里云邮件推送（API直连）' }, { value: 'wecom_smtp', label: '企业微信邮箱' }, { value: 'webhook', label: '邮件发送接口' }] }),
+    s('accessKeyId', 'AccessKey ID', '阿里云RAM用户凭证；与短信凭证分别保存。', { providers: ['aliyun_dm'] }),
+    s('accessKeySecret', 'AccessKey Secret', '仅加密保存，不回显，不要填写SMTP密码。', { providers: ['aliyun_dm'] }),
+    p('accountName', '阿里云发信地址', '填写邮件推送控制台中已验证、触发邮件类型的完整发信地址。', { required: true, providers: ['aliyun_dm'] }),
+    p('regionId', '发信区域', '必须与阿里云邮件推送控制台区域一致，接口地址由系统固定选择。', { required: true, defaultValue: 'cn-hangzhou', providers: ['aliyun_dm'], options: [{ value: 'cn-hangzhou', label: '华东1（杭州）' }, { value: 'ap-southeast-1', label: '新加坡' }, { value: 'ap-southeast-2', label: '悉尼' }, { value: 'us-east-1', label: '美国（弗吉尼亚）' }, { value: 'eu-central-1', label: '德国（法兰克福）' }] }),
+    p('fromAlias', '发信人名称', '收件人看到的名称，1至14个字符。', { required: true, defaultValue: 'Say Ring', providers: ['aliyun_dm'] }),
     p('fromAddress', '发件邮箱', '完整的企业邮箱地址，例如 support@saydian.com；使用腾讯企业邮 SMTP 加密连接。', { required: true, providers: ['wecom_smtp'] }),
     s('smtpPassword', '客户端专用密码', '在该邮箱的设置中获取，由你本人填写；不要填企业微信管理员密码。', { providers: ['wecom_smtp'] }),
     url('webhookUrl', '邮件发送地址', '由邮件服务维护人员提供的 HTTPS 地址；地址中不要包含账号或密钥。', { required: true, providers: ['webhook'] }),
@@ -119,7 +124,8 @@ export function validateIntegrationDraft(row: IntegrationRow, definition: Integr
     if (f.key === 'apiV3Key' && new TextEncoder().encode(value).length !== 32) errors[f.key] = 'API v3 密钥必须为 32 字节。';
     if (f.key.startsWith('appId') && definition.key.startsWith('wechat_') && !/^wx[A-Za-z0-9]{8,64}$/.test(value)) errors[f.key] = '请核对以 wx 开头的微信 AppID。';
     if (f.key === 'agentId' && !/^\d+$/.test(value)) errors[f.key] = '应用 ID 应为数字。';
-    if (definition.key === 'email_otp' && f.key === 'fromAddress' && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value)) errors[f.key] = '请填写完整的企业邮箱地址。';
+    if (definition.key === 'email_otp' && ['fromAddress', 'accountName'].includes(f.key) && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value)) errors[f.key] = '请填写完整的发信邮箱地址。';
+    if (definition.key === 'email_otp' && f.key === 'fromAlias' && ([...value].length >= 15 || /[\r\n<>]/.test(value))) errors[f.key] = '发信人名称应为1至14个字符，不含换行或尖括号。';
     if (f.key.startsWith('paths.') && (!/^\/(?!\/)/.test(value) || /[?#\s]/.test(value))) errors[f.key] = '请输入以单个 / 开头、不含域名或参数的接口路径。';
     if (f.kind === 'list' && value.split(/[\n,，]+/).filter(v => v.trim()).some(v => !/^(?:[a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+(?::\d+)?$/.test(v.trim()))) errors[f.key] = '每行填写一个域名，不带协议、路径或通配符。';
   }

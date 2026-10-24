@@ -22,6 +22,14 @@ const fixture = { key: 'sms', state: 'UNCONFIGURED', hasSecret: true, publicConf
 describe('enterprise email test flow', () => {
   const definition = integrationDefinitions.find(d => d.key === 'email_otp')!;
   const row = { key: 'email_otp', state: 'CONFIGURED', hasSecret: true, publicConfig: { provider: 'wecom_smtp', fromAddress: 'sender@example.com', deliveryVerified: false } };
+  it('allows a saved Aliyun configuration test without exposing or replacing credentials', async () => {
+    const h = harness();
+    h.begin({ ...row, publicConfig: { provider: 'aliyun_dm', accountName: 'sender@example.com', regionId: 'cn-hangzhou', fromAlias: 'Say Ring', deliveryVerified: false } }, definition);
+    h.emailTestRecipient.value = 'receiver@example.net'; await h.testEmail();
+    expect(h.api.post).toHaveBeenCalledExactlyOnceWith('/integrations/email_otp/test', { recipient: 'receiver@example.net' });
+    expect(h.api.patch).not.toHaveBeenCalled();
+    expect(h.draft.value.values.deliveryVerified).toBe('false');
+  });
   it('blocks readonly, unsaved settings, invalid recipient and unrelated provider', async () => {
     const readonly = harness('READ_ONLY'); readonly.begin(row, definition); readonly.emailTestRecipient.value = 'receiver@example.net'; await readonly.testEmail();
     expect(readonly.api.post).not.toHaveBeenCalled();

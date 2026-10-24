@@ -21,7 +21,7 @@ const saving = ref(false);
 const saveUncertain = ref(false);
 const emailTestRecipient = ref(''), emailTesting = ref(false);
 async function testEmail(): Promise<void> {
-  if (!editable.value || dirty.value || saving.value || emailTesting.value || saveUncertain.value || selected.value?.row.key !== 'email_otp' || selected.value.row.state !== 'CONFIGURED' || selected.value.row.publicConfig?.provider !== 'wecom_smtp') return;
+  if (!editable.value || dirty.value || saving.value || emailTesting.value || saveUncertain.value || selected.value?.row.key !== 'email_otp' || selected.value.row.state !== 'CONFIGURED' || !['wecom_smtp', 'aliyun_dm'].includes(String(selected.value.row.publicConfig?.provider))) return;
   if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(emailTestRecipient.value.trim())) { ElMessage.error('请填写测试收件邮箱'); return; }
   emailTesting.value = true;
   try {
@@ -165,9 +165,9 @@ onMounted(load);
               <p :id="`hint-${field.key}`" class="field-hint">{{ field.hint }}</p>
             </el-form-item>
           </div>
-          <div v-if="selected.row.key === 'email_otp' && draft.values.provider === 'wecom_smtp'" class="credential-choice">
+          <div v-if="selected.row.key === 'email_otp' && ['wecom_smtp', 'aliyun_dm'].includes(String(draft.values.provider))" class="credential-choice">
             <el-form-item label="测试收件邮箱"><el-input v-model="emailTestRecipient" type="email" autocomplete="off" placeholder="填写用于接收测试邮件的邮箱" :disabled="emailTesting" /></el-form-item>
-            <el-button :loading="emailTesting" :disabled="dirty || saving || selected.row.state !== 'CONFIGURED' || selected.row.publicConfig?.provider !== 'wecom_smtp'" @click="testEmail">发送测试邮件</el-button>
+            <el-button :loading="emailTesting" :disabled="dirty || saving || selected.row.state !== 'CONFIGURED' || selected.row.publicConfig?.provider !== draft.values.provider" @click="testEmail">发送测试邮件</el-button>
             <p class="field-hint">先保存，再重新打开本页发送测试。测试不创建登录验证码，不会自动开放邮箱登录。</p>
           </div>
           <p v-if="selected.definition.note" class="service-note">{{ selected.definition.note }}</p>
