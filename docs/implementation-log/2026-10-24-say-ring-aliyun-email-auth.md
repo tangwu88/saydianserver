@@ -25,3 +25,13 @@
 ## 提交与部署边界
 
 Start-Change/Publish-Change的main专用门禁不能用于本次已有未提交文档的候选分支；不改脚本或伪造检查点、不切main夹带历史待发差异。完成同等串行检查、重新fetch/核对main基线后只显式暂存本轮文件，提交/推送独立分支。CI/部署/真实邮件收件未验收，不能把推送写成上线；上线须单独审核main相对线上已有待发差异及当前维护状态。
+
+## 后续主站发布验收
+
+用户另明确授权“现在发布后台代码”。生产原revision与候选父提交一致；使用独立干净clone E:\say-ring-email-release-20261024执行Start-Change、仅应用12文件、frozen/offline依赖安装和Prisma客户端生成（非数据库迁移），原Publish-Change串行api:docs:check/tools:test/typecheck/test/build均退出0。新clone提交时缺本地作者name/email，复制原本项目作者元数据到该clone本地配置后，重新fetch/检查显式清单，重试commit/push；未改全局账号或凭据，源文件与候选逐项一致。正式main提交eca857da1755d8e115cafdb90634276f5889a888，原目录及其它main工作目录未移动。
+
+Actions https://github.com/tangwu88/saydianserver/actions/runs/40062660169 的verify与auto-deploy/deploy均success；/health/ready和/global/health/ready均返回eca857d完整SHA。/admin/与实际主bundle/index-DHUd7cqJ.js均200，包内确有aliyun_dm、accountName、fromAlias配置。静态验证第一次误假设独立IntegrationsView懒加载分包，改为检查真实主bundle后通过，并非部署故障。公开Say Ring短信仍true、邮箱仍false，新explicitRegistrationCodeLogin和verificationRequired均true。没有更换或启用生产邮件凭证，没有真实短信/邮件投递测试。
+
+同run中独立auto-deploy-us/deploy在SSH receiver阶段exit2，导致整个run为failure；不能写整个CI/所有线上均成功。本轮不擅自重试美国环境或更改其凭据/维护状态，主站验收与美国独立任务分别记录。App源码及签名包、实际手机待确认边界见SayRing分支codex/login-camera-r7ultra-1136-20261024的1136实施记录。
+
+本补记只推候选分支，不再次触发main部署。原未提交交接/法律文档均保留；当前候选f6e2dec与main eca857d的业务源码一致，发布脚本自动附加日志及本回执导致文档/SHA不同，不能声称分支SHA相同。
