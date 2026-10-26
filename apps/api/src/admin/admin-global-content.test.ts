@@ -72,12 +72,17 @@ function harness() {
     update: vi.fn(async (args: any) => ({ id: args.where.id, ...args.data })),
     updateMany: vi.fn().mockResolvedValue({ count: 1 }),
   };
-  const tx = { appSetting, legalDocument, globalLegalDocument };
+  const integrationConfig = { upsert: vi.fn().mockResolvedValue({}) };
+  const integrationSecret = {
+    upsert: vi.fn().mockResolvedValue({}),
+    findUnique: vi.fn().mockResolvedValue({ integrationKey: "say_ring_amap" }),
+  };
+  const tx = { appSetting, legalDocument, globalLegalDocument, integrationConfig, integrationSecret };
   const prisma = {
     ...tx,
     $transaction: vi.fn(async (callback: any) => callback(tx)),
   };
-  const secrets = { save: vi.fn().mockResolvedValue(undefined) };
+  const secrets = { prepare: vi.fn().mockReturnValue({ ciphertext: "synthetic-encrypted", iv: "synthetic-iv", authTag: "synthetic-tag", keyVersion: 1 }) };
   return {
     ...tx,
     prisma,
@@ -123,9 +128,16 @@ describe("global admin support and download configuration", () => {
       webServiceKey: "a".repeat(32),
       public: true,
     });
-    expect(h.secrets.save).toHaveBeenCalledWith("say_ring_amap", {
+    expect(h.secrets.prepare).toHaveBeenCalledWith("say_ring_amap", {
       webServiceKey: "a".repeat(32),
     });
+    expect(h.integrationConfig.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: "say_ring_amap" }, update: {},
+    }));
+    expect(h.integrationSecret.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { integrationKey: "say_ring_amap" },
+      create: expect.objectContaining({ ciphertext: "synthetic-encrypted" }),
+    }));
     expect(saved.value).toEqual({
       provider: "amap",
       enabled: true,

@@ -1,5 +1,6 @@
 import { productPage, productCategoryFilter } from "../commerce/product-list-query";
 import { writeCnDisplaySetting } from "./cn-display-setting";
+import { writeSayRingMapSetting } from "./say-ring-map-setting";
 import { orderErpSnapshot } from "../commerce/order-erp-snapshot";
 import { usCandidateInventory } from "./us-candidate-inventory";
 import { adminDeviceIdentifier, legacyNativeDeviceKey } from "../common/device-identity";
@@ -1947,33 +1948,7 @@ export class AdminService {
       }
     }
     if (key === "say_ring_map") {
-      const webServiceKey = String(body.webServiceKey ?? "").trim();
-      if (webServiceKey && !/^[A-Za-z0-9]{16,128}$/.test(webServiceKey)) {
-        throw new BadRequestException("高德 Web 服务 Key 格式无效");
-      }
-      value = {
-        provider: "amap",
-        enabled: value.enabled === true,
-        configured: Boolean(webServiceKey || value.configured === true),
-      };
-      const saveSetting = () =>
-        this.prisma.appSetting.upsert({
-          where: { key },
-          create: {
-            key,
-            value: value as Prisma.InputJsonValue,
-            public: body.public === true,
-          },
-          update: {
-            value: value as Prisma.InputJsonValue,
-            public: body.public === true,
-          },
-        });
-      return webServiceKey
-        ? this.integrationSecrets
-            .save("say_ring_amap", { webServiceKey })
-            .then(saveSetting)
-        : saveSetting();
+      return writeSayRingMapSetting(this.prisma, this.integrationSecrets, body);
     }
     if (
       key === "app_update" ||
