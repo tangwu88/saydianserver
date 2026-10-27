@@ -238,6 +238,9 @@ importers:
       '@dcloudio/uni-ui':
         specifier: 1.5.12
         version: 1.5.12
+      '@saydian/app-contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@vant/area-data':
         specifier: 2.2.0
         version: 2.2.0

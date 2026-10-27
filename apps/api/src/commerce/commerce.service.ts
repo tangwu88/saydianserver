@@ -182,6 +182,9 @@ export class CommerceService {
     if (order?.[1] && method === "GET") {
       return this.orderDetail(userId, decodeURIComponent(order[1]));
     }
+    const processing = /^\/orders\/([^/]+)\/processing$/.exec(pathname);
+    if (processing?.[1] && ["GET", "POST"].includes(method))
+      return this.store.orderProcessing(userId, decodeURIComponent(processing[1]), method === "POST");
     const receipt = /^\/orders\/([^/]+)\/receipt$/.exec(pathname);
     if (receipt?.[1] && method === "POST") {
       return this.store.confirmReceipt(userId, decodeURIComponent(receipt[1]));

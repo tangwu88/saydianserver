@@ -1,3 +1,5 @@
+import { erpCancelledPaidOrder } from "@saydian/app-contracts";
+import { customerOrderErp, customerShipment, orderErpSnapshot, queueMemberOrderSync } from "./order-erp-snapshot";
 import {
   BadRequestException,
   ConflictException,
@@ -689,7 +691,7 @@ export class CommerceStoreService {
 
   async listOrders(userId: string, statusInput?: string, groupInput?: string, kind?: string) {
     const filter = commerceOrderListFilter(statusInput, groupInput);
-    return this.prisma.commerceOrder.findMany({
+    const orders = await this.prisma.commerceOrder.findMany({
       where: { userId, ...filter, ...commerceOrderKindFilter(kind) },
       include: {
         items: true,
@@ -699,6 +701,14 @@ export class CommerceStoreService {
       },
       orderBy: { createdAt: "desc" },
     });
+    const pending = await queueMemberOrderSync(this.prisma, orders);
+    return orders.map(order => ({ ...customerOrderErp(order), erpSyncPending: pending.has(order.id) }));
+  }
+
+  async orderProcessing(userId: string, id: string, refresh = false) {
+    const snapshot = await orderErpSnapshot(this.prisma, id, refresh ? "stale" : false, { userId });
+    // Member responses never include ERP operators or internal remarks.
+    return { ...snapshot, items: snapshot.items.map(({ id, name, time }) => ({ id, name, time })) };
   }
 
   async order(userId: string, id: string) {
@@ -745,20 +755,20 @@ export class CommerceStoreService {
       }
       if (order.status === "SHIPPED") allowedActions.push("CONFIRM_RECEIPT");
       if (
-        [
+        ([
           "PAID",
           "WAITING_FULFILLMENT",
           "SHIPPED",
           "RECEIVED",
           "COMPLETED",
           "AFTER_SALE",
-        ].includes(order.status) &&
+        ].includes(order.status) || erpCancelledPaidOrder(order)) &&
         afterSaleEligibleItems.some((item) => item.quantityRemaining > 0)
       )
         allowedActions.push("APPLY_AFTER_SALE");
     } else unavailableReason = "订单尚未完成新系统接管";
     return {
-      ...order,
+      ...customerOrderErp(order),
       afterSaleEligibleItems,
       allowedActions,
       ...(unavailableReason ? { unavailableReason } : {}),
@@ -827,7 +837,7 @@ export class CommerceStoreService {
         "RECEIVED",
         "COMPLETED",
         "AFTER_SALE",
-      ].includes(order.status)
+      ].includes(order.status) && !erpCancelledPaidOrder(order)
     )
       throw new ConflictException("当前订单不可申请售后");
     const type = parseEnum(
@@ -1005,11 +1015,10 @@ export class CommerceStoreService {
 
   async logistics(userId: string, orderId: string) {
     await this.order(userId, orderId);
-    return this.prisma.commerceShipment.findMany({
-      where: { orderId },
-      include: { items: true },
-      orderBy: { createdAt: "desc" },
+    const shipments = await this.prisma.commerceShipment.findMany({
+      where: { orderId }, include: { items: true }, orderBy: { createdAt: "desc" },
     });
+    return shipments.map(customerShipment);
   }
 
   async favorite(userId: string, productId: string, enabled: boolean) {

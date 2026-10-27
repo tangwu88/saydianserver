@@ -1,7 +1,7 @@
 <template>
   <DesktopHeader /><view class="page"
     ><view class="container"
-      ><button class="browse-link" @click="browse">继续逛逛</button><view class="tabs" role="tablist" aria-label="订单状态"
+      ><view class="list-actions"><button class="browse-link" :disabled="loading" @click="load()">刷新订单</button><button class="browse-link" @click="browse">继续逛逛</button></view><view class="tabs" role="tablist" aria-label="订单状态"
         ><button
           v-for="tab in tabs"
           :key="tab.value"
@@ -11,7 +11,7 @@
           @click="select(tab.value)"
           >{{ tab.label }}</button
         ></view
-      ><view class="order-source"><button :class="!kind && 'active'" @click="kind='';load()">全部来源</button><button :class="kind==='gift' && 'active'" @click="kind='gift';load()">礼品兑换</button></view><view v-if="error" class="error-state" role="alert">{{ error }}<button @click="load">重新加载</button></view
+      ><view class="order-source"><button :class="!kind && 'active'" @click="kind='';load()">全部来源</button><button :class="kind==='gift' && 'active'" @click="kind='gift';load()">礼品兑换</button></view><view v-if="error" class="error-state" role="alert">{{ error }}<button @click="load()">重新加载</button></view
       ><view v-if="orders.length" class="orders"
         ><view
           v-for="order in orders"
@@ -20,7 +20,7 @@
           @click="open(order.id)"
           ><view class="row between"
             ><text class="order-no">{{ order.orderNo }}</text
-            ><text class="status">{{ order.giftCardSerial && order.status==='PAID' ? '待发货' : label(order.status) }}</text></view
+            ><text class="status">{{ commerceOrderStatus(order) }}</text></view
           ><text v-if="order.giftCardSerial" class="small gift-label">礼品兑换 · {{ order.giftCardSerial }}</text><text v-if="order.readOnly" class="small">历史订单 · 只读</text
           ><view v-for="item in orderItemSummary(order).items" :key="item.id" class="order-item"
             ><image v-if="item.imageSnapshot" class="product-link"
@@ -34,6 +34,8 @@
               ></view
             ></view
           ><view v-if="orderItemSummary(order).quantity === null" class="small">商品明细未获取</view
+          ><view v-if="order.shipments?.length" class="shipping-summary"><text v-for="ship in order.shipments" :key="ship.id">{{ ship.logisticsCompany || '快递' }} · {{ ship.trackingNo }}</text></view
+          ><text v-if="order.erpSyncPending" class="small muted">正在同步发货进度…</text
           ><view class="order-total"
             >{{ orderItemSummary(order).quantity === null ? '商品数量未获取' : '共 ' + orderItemSummary(order).quantity + ' 件' }}，
             {{ order.giftCardSerial ? '实付' : order.readOnly ? '订单金额' : order.paidAt ? '支付金额' : '应付' }} <b>{{ money(order.payableCents) }}</b></view
@@ -47,7 +49,8 @@
 import { onLoad, onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
-import { api, money } from "../../api";
+import { commerceOrderStatus } from "@saydian/app-contracts/commerce-erp";
+import { api, money, mallSessionStamp } from "../../api";
 import { orderItemSummary } from "../../commerce-model";
 const tabs = [
     { label: "全部", value: "" },
@@ -58,26 +61,33 @@ const tabs = [
   ],
   status = ref(""), kind = ref(""),
   orders = ref<any[]>([]), error = ref(""), loading = ref(false);
-let revision = 0;
+let revision = 0, refreshTimer: ReturnType<typeof setTimeout> | undefined;
+function stopRefresh(){ clearTimeout(refreshTimer); refreshTimer=undefined; }
 onLoad(o=>{kind.value=o?.kind==='gift'?'gift':'';status.value=o?.group==='pending_shipment'?'WAITING_FULFILLMENT':o?.group==='after_sales'?'AFTER_SALE':String(o?.status || '');});
 onShow(load);
-onHide(() => { revision++; });
-onUnload(() => { revision++; });
-async function load() {
-  const request = ++revision;
-  orders.value=[];
+onHide(() => { revision++; stopRefresh(); });
+onUnload(() => { revision++; stopRefresh(); });
+async function load(quiet = false, attempt = 0) {
+  stopRefresh();
+  const request = ++revision, session=mallSessionStamp?.() || "";
+  const current = () => request === revision && session === (mallSessionStamp?.() || "");
+  if (!quiet) orders.value=[];
   error.value=""; loading.value=true;
   try {
     const group = status.value === "WAITING_FULFILLMENT" ? "pending_shipment" : status.value === "AFTER_SALE" ? "after_sales" : "";
     const query = group ? `group=${group}` : `status=${encodeURIComponent(status.value)}`;
     const rows = await api<any[]>(`/storefront/orders?${query}${kind.value ? '&kind=gift' : ''}`, {
-      auth: true,
+      auth: true, sessionStamp: session,
     });
-    if (request === revision) orders.value = rows;
+    if (current()) {
+      orders.value = rows;
+      if (rows.some(row => row.erpSyncPending) && attempt < 12)
+        refreshTimer=setTimeout(() => { if(current()) void load(true,attempt+1); },2500);
+    }
   } catch (e) {
-    if (request === revision) error.value = e instanceof Error ? e.message : "订单暂时无法读取，请重试";
+    if (current()) error.value = e instanceof Error ? e.message : "订单暂时无法读取，请重试";
   } finally {
-    if (request === revision) loading.value=false;
+    if (current()) loading.value=false;
   }
 }
 function select(v: string) {
@@ -111,6 +121,7 @@ function label(v: string) {
 }
 </script>
 <style scoped lang="scss">
+.list-actions{display:flex;justify-content:flex-end;gap:10px}.shipping-summary{display:grid;gap:6px;font-size:13px;margin-top:12px;overflow-wrap:anywhere}
 .tabs {
   display: flex;
   white-space: nowrap;

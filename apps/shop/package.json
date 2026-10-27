@@ -23,7 +23,8 @@
     "libphonenumber-js": "1.12.31",
     "pinia": "^2.3.1",
     "qrcode": "^1.5.4",
-    "vue": "3.4.21"
+    "vue": "3.4.21",
+    "@saydian/app-contracts": "workspace:*"
   },
   "devDependencies": {
     "@dcloudio/types": "3.4.31",

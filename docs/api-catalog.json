@@ -13655,6 +13655,436 @@
       }
     },
     {
+      "key": "CommerceCompatibilityController.orderProcessing",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/storefront/orders/:id/processing",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "读取本会员订单ERP履约快照",
+      "request": "id为订单UUID；已验证会员会话",
+      "response": "{state,orderStatus,erpStatus,shipments,items,syncedAt,logisticsUnavailable}；事件仅id/name/time，无内部备注和操作人",
+      "dependency": "仅本人订单；只读缓存和任务状态，不直接调用供应商",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "WAITING_ORDER",
+                "UNAVAILABLE",
+                "PENDING",
+                "READY",
+                "ERROR"
+              ]
+            },
+            "orderStatus": {
+              "type": "string"
+            },
+            "erpStatus": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "syncedAt": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "shipments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                  },
+                  "orderId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                  },
+                  "logisticsCompany": {
+                    "type": "string"
+                  },
+                  "logisticsCode": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "trackingNo": {
+                    "type": "string"
+                  },
+                  "shippedAt": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "deliveredAt": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "traces": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "description": {
+                          "type": "string"
+                        },
+                        "time": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "description",
+                        "time"
+                      ],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "orderId",
+                  "logisticsCompany",
+                  "trackingNo",
+                  "traces"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "time"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "logisticsUnavailable": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "state",
+            "orderStatus",
+            "erpStatus",
+            "syncedAt",
+            "shipments",
+            "items",
+            "truncated",
+            "logisticsUnavailable"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "state": "READY",
+          "orderStatus": "SHIPPED",
+          "erpStatus": "Sent",
+          "syncedAt": "2026-09-08T01:00:00.000Z",
+          "shipments": [
+            {
+              "id": "00000000-0000-4000-8000-000000000090",
+              "orderId": "00000000-0000-4000-8000-000000000007",
+              "logisticsCompany": "合成快递",
+              "trackingNo": "H5-CONTRACT-SYNTHETIC",
+              "traces": []
+            }
+          ],
+          "items": [
+            {
+              "id": "1",
+              "name": "发货",
+              "time": "2026-10-27 10:00:00"
+            }
+          ],
+          "truncated": false,
+          "logisticsUnavailable": false
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/commerce/commerce.service.ts; apps/api/src/commerce/commerce-store.service.ts; apps/api/src/commerce/commerce-quote.ts; packages/commerce-domain/src/pricing.ts; apps/api/src/commerce/order-erp-snapshot.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅本人订单。GET不排队；POST仅在快照过期时同单同分钟排队一次；响应不含ERP内部备注/操作人或供应商原始数据。物流运输轨迹仅实际返回，ERP取消不代表退款成功。"
+      }
+    },
+    {
+      "key": "CommerceCompatibilityController.refreshOrderProcessing",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/orders/:id/processing",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-compat.controller.ts",
+      "summary": "刷新本会员订单ERP履约",
+      "request": "id为订单UUID；空对象",
+      "response": "同读取快照；缓存过期时每单每分钟幂等排队，轮询GET读取结果",
+      "dependency": "仅本人且NEW_SYSTEM且已关联ERP；不修改资金/库存/礼品核销；未配置明确返回",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "WAITING_ORDER",
+                "UNAVAILABLE",
+                "PENDING",
+                "READY",
+                "ERROR"
+              ]
+            },
+            "orderStatus": {
+              "type": "string"
+            },
+            "erpStatus": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "syncedAt": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "shipments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                  },
+                  "orderId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "当前统一系统 UUID，不是旧商城数字ID。"
+                  },
+                  "logisticsCompany": {
+                    "type": "string"
+                  },
+                  "logisticsCode": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "trackingNo": {
+                    "type": "string"
+                  },
+                  "shippedAt": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "deliveredAt": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "traces": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "description": {
+                          "type": "string"
+                        },
+                        "time": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "description",
+                        "time"
+                      ],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "orderId",
+                  "logisticsCompany",
+                  "trackingNo",
+                  "traces"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "time"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "logisticsUnavailable": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "state",
+            "orderStatus",
+            "erpStatus",
+            "syncedAt",
+            "shipments",
+            "items",
+            "truncated",
+            "logisticsUnavailable"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": {
+          "state": "READY",
+          "orderStatus": "SHIPPED",
+          "erpStatus": "Sent",
+          "syncedAt": "2026-09-08T01:00:00.000Z",
+          "shipments": [
+            {
+              "id": "00000000-0000-4000-8000-000000000090",
+              "orderId": "00000000-0000-4000-8000-000000000007",
+              "logisticsCompany": "合成快递",
+              "trackingNo": "H5-CONTRACT-SYNTHETIC",
+              "traces": []
+            }
+          ],
+          "items": [
+            {
+              "id": "1",
+              "name": "发货",
+              "time": "2026-10-27 10:00:00"
+            }
+          ],
+          "truncated": false,
+          "logisticsUnavailable": false
+        },
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-compat.controller.ts; apps/api/src/commerce/commerce.service.ts; apps/api/src/commerce/commerce-store.service.ts; apps/api/src/commerce/commerce-quote.ts; packages/commerce-domain/src/pricing.ts; apps/api/src/commerce/order-erp-snapshot.ts",
+        "note": "源码复核的字段/最小响应契约，允许返回未列出的向后兼容字段。所有编号、会话、签名及金额均为 H5-CONTRACT 合成示例，不是生产凭据或渠道成功回执。 仅本人订单。GET不排队；POST仅在快照过期时同单同分钟排队一次；响应不含ERP内部备注/操作人或供应商原始数据。物流运输轨迹仅实际返回，ERP取消不代表退款成功。"
+      }
+    },
+    {
       "key": "CommerceCompatibilityController.cancelOrder",
       "method": "POST",
       "path": "/api/saidian-mall/v1/storefront/orders/:id/cancel",

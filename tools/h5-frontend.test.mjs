@@ -174,7 +174,7 @@ function shoppingPage(page, handles) {
     "../../api": { api: (path, input) => new Promise((resolve, reject) => requests.push({ path, input, resolve, reject })), toast: value => messages.push(String(value)), money: String },
   };
   const module = { exports: {} };
-  vm.runInNewContext(js, { module, exports: module.exports, Error, uni, require: name => { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
+  vm.runInNewContext(js, { module, exports: module.exports, Error, uni, clearTimeout, setTimeout, require: name => { assert.ok(Object.hasOwn(imports, name), name); return imports[name]; } });
   return { ...module.exports.handles, requests, messages, hooks };
 }
 

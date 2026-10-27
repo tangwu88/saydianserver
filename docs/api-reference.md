@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **476 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **478 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -88,7 +88,7 @@
 | `POST /api/v1/site/refresh` | 旧版刷新 | public | 表单 refresh_token | LegacySession | 核心服务 |
 | `POST /api/v1/site/logout` | 旧版退出 | member | 无请求体 | {logged_out:true} | 核心服务 |
 
-## 商城 H5/小程序兼容接口（83）
+## 商城 H5/小程序兼容接口（85）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -129,6 +129,8 @@
 | `POST /api/saidian-mall/v1/storefront/orders` | 商城创建订单 | member | header:idempotency-key；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key；expectedQuote可选，取preview.quote.fingerprint | 单个真实主库订单；未付款不扣库存，付款成功后扣；报价变化409 quote_changed且无资产写入，同键原参已创建优先返回原订单；global保存显式CN/CNY，市场与收货限制在积分/库存/券写入之前核验 | 核心服务 |
 | `GET /api/saidian-mall/v1/storefront/orders` | 商城订单列表 | member | query:status?，query:group?，query:kind?；status可选 | 当前订单与旧订单只读投影 | 核心服务 |
 | `GET /api/saidian-mall/v1/storefront/orders/:id` | 商城订单详情 | member | path:id；id=订单UUID或旧订单映射 | 订单详情；旧投影只读 | 核心服务 |
+| `GET /api/saidian-mall/v1/storefront/orders/:id/processing` | 读取本会员订单ERP履约快照 | member | path:id；id为订单UUID；已验证会员会话 | {state,orderStatus,erpStatus,shipments,items,syncedAt,logisticsUnavailable}；事件仅id/name/time，无内部备注和操作人 | 仅本人订单；只读缓存和任务状态，不直接调用供应商 |
+| `POST /api/saidian-mall/v1/storefront/orders/:id/processing` | 刷新本会员订单ERP履约 | member | path:id；id为订单UUID；空对象 | 同读取快照；缓存过期时每单每分钟幂等排队，轮询GET读取结果 | 仅本人且NEW_SYSTEM且已关联ERP；不修改资金/库存/礼品核销；未配置明确返回 |
 | `POST /api/saidian-mall/v1/storefront/orders/:id/cancel` | 取消待付款订单 | member | path:id；id=订单UUID | {ok:true} | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/orders/:id/receipt` | 确认收货 | member | path:id；id=订单UUID | {ok:true} | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/orders/:id/after-sales` | 提交商城商品售后 | member | path:id；id=订单UUID；{type,reason,items:[{orderItemId,quantity}],orderVersion?,requestedCents?,description?,evidenceFileIds?:UUID[],evidenceImages?,idempotencyKey?}；新上传图片最多9个不同本人ID；global禁止非空外部evidenceImages | 售后记录占用可退数量，图片存file:UUID私有引用；同键同完整原请求优先恢复，换内容409；积分订单金额不能任意修改，现金确认后按行返积分；纯积分行审核后内部结算 | 核心服务 |

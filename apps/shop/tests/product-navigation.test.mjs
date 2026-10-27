@@ -193,6 +193,8 @@ function orderPage(name, apiHandler, paymentOverrides = {}) {
   const component = evaluate(script.content, {
     vue, "../../realm": realm, "../../components/DesktopHeader.vue": { default: { render: () => null } },
     "@dcloudio/uni-app": { onLoad() {}, onShow() {}, onHide() {}, onUnload() {} },
+    "@saydian/app-contracts/commerce-erp": require("@saydian/app-contracts/commerce-erp"),
+    "../../order-processing": evaluate(readFileSync(new URL("../src/order-processing.ts",import.meta.url),"utf8"), {}, {setTimeout,clearTimeout}),
     "../../commerce-model": model,
     "../../components/ImageEvidencePicker.vue": { default: { render: () => null } },
     "../../api": { api: async (...args) => { requests.push(args); if (apiHandler) return apiHandler(...args); throw new Error("Unexpected API call"); }, money: cents => `¥${(cents ?? 0) / 100}`,

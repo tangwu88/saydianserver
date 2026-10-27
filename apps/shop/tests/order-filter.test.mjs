@@ -4,14 +4,15 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 
-const ts = createRequire(import.meta.url)("typescript");
+const require = createRequire(import.meta.url), ts = require("typescript");
 function page() {
   const requests = [], hooks = {}, navigations = [];
   const fullSource = readFileSync(new URL("../src/pages/orders/index.vue", import.meta.url), "utf8");
   const source = fullSource.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1];
   const module = { exports: {} };
   const code = ts.transpileModule(source + "\nmodule.exports={load,select,status,orders,label,openProduct};", { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { module, exports: module.exports, Error, uni: { navigateTo: value => navigations.push(value.url) }, require(name) {
+  vm.runInNewContext(code, { module, exports: module.exports, Error, clearTimeout(){}, setTimeout(){return 1;}, uni: { navigateTo: value => navigations.push(value.url) }, require(name) {
+    if (name === "@saydian/app-contracts/commerce-erp") return require("@saydian/app-contracts/commerce-erp");
     if (name === "vue") return { ref: value => ({ value }) };
     if (name === "@dcloudio/uni-app") return Object.fromEntries(["onLoad", "onShow", "onHide", "onUnload"].map(event => [event, fn => hooks[event] = fn]));
     if (name === "../../api") return { api: async path => { requests.push(path); return [{ id: "returned-by-server" }]; } };

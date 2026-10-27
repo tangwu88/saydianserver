@@ -62,20 +62,6 @@ export function measurements(values: unknown) {
   );
 }
 
-export const erpStatuses: Record<string, string> = {
-  WaitPay: "待付款", Delivering: "发货中", Merged: "已合并", Question: "异常",
-  Split: "已拆分", WaitOuterSent: "等待外仓发货", WaitConfirm: "已付款待审核",
-  WaitFConfirm: "待财务审核", Sent: "已发货", Cancelled: "已取消",
-  WAIT_SELLER_SEND_GOODS: "等待发货",
-  WAIT_BUYER_CONFIRM_GOODS: "已发货，等待收货",
-  TRADE_FINISHED: "交易完成",
-  TRADE_CLOSED: "交易关闭",
-  SENT: "已发货",
-};
-
-export function partnerOrderStatus(order: { status?: string; erpOrderId?: string | null; erpStatus?: string | null }) {
-  if (["AFTER_SALE", "REFUNDED", "CANCELLED", "CLOSED", "RECEIVED", "COMPLETED"].includes(order.status || ""))
-    return statuses[order.status!] || order.status;
-  if (order.erpOrderId && order.erpStatus) return erpStatuses[order.erpStatus] || order.erpStatus;
-  return statuses[order.status || ""] || order.status || "状态未获取";
-}
+export { commerceOrderStatus as partnerOrderStatus } from "@saydian/app-contracts/commerce-erp";
+export { commerceErpStatus as erpOrderStatus } from "@saydian/app-contracts/commerce-erp";
+export { erpStatuses } from "@saydian/app-contracts/commerce-erp";

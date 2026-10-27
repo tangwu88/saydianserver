@@ -4,7 +4,9 @@
   "private": true,
   "type": "commonjs",
   "main": "dist/index.js",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
@@ -14,6 +16,10 @@
     "./download": {
       "types": "./dist/download.d.ts",
       "default": "./dist/download.js"
+    },
+    "./commerce-erp": {
+      "types": "./dist/commerce-erp.d.ts",
+      "default": "./dist/commerce-erp.js"
     }
   },
   "scripts": {

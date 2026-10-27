@@ -1,6 +1,9 @@
+import { CommerceStoreService } from "./commerce-store.service";
+import { CommerceCompatibilityController } from "./commerce-compat.controller";
+import { UserAuthGuard } from "../common/user-auth.guard";
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { orderErpSnapshot } from "./order-erp-snapshot";
+import { customerOrderErp, orderErpSnapshot, queueMemberOrderSync } from "./order-erp-snapshot";
 import { AdminService } from "../admin/admin.service";
 import { AdminController } from "../admin/admin.controller";
 
@@ -81,4 +84,35 @@ describe("shared ERP order snapshots", () => {
     expect(Reflect.getMetadata("saydian.admin-roles", AdminController.prototype.syncCommerceOrderErp)).toEqual(["SUPER_ADMIN", "COMMERCE_OPERATIONS"]);
     expect(Reflect.getMetadata("saydian.admin-roles", AdminController.prototype.commerceOrderErp)).toContain("READ_ONLY");
   });
+});
+
+describe("member ERP ownership and public tracking data", () => {
+  it("scopes member access before queueing and strips internal ERP notes", async () => {
+    const h=fixture(), member=randomUUID();
+    const result=await orderErpSnapshot(h.prisma,h.order.id,"stale",{userId:member});
+    expect(h.prisma.commerceOrder.findFirst.mock.calls[0][0].where).toEqual({id:h.order.id,userId:member});
+    expect(result.state).toBe("PENDING");
+    h.prisma.commerceOrder.findFirst.mockResolvedValue(null);h.prisma.commerceIntegrationJob.upsert.mockClear();
+    await expect(orderErpSnapshot(h.prisma,h.order.id,true,{userId:randomUUID()})).rejects.toThrow("订单不存在");
+    expect(h.prisma.commerceIntegrationJob.upsert).not.toHaveBeenCalled();
+  });
+  it("public orders retain carrier events while omitting raw ERP data", () => {
+    const result=customerOrderErp({erpProcessLogJson:{operator:"private"},shipments:[{traceJson:{secret:"private",data:[{context:"已揽收",time:"2026-10-27 10:00:00",token:"private"}]}}]});
+    expect(result).toEqual({shipments:[{traces:[{description:"已揽收",time:"2026-10-27 10:00:00"}],traceJson:[{description:"已揽收",time:"2026-10-27 10:00:00"}]}]});
+  });
+  it("caps queued member orders, skips unsupported orders, and deduplicates refreshes by minute", async () => {
+    const h=fixture();h.prisma.commerceIntegrationJob.upsert.mockResolvedValue({status:"PENDING"});
+    const orders=Array.from({length:30},()=>({...h.order,id:randomUUID()}));
+    const pending=await queueMemberOrderSync(h.prisma,[{...h.order,executionOwner:"LEGACY"},{...h.order,erpOrderId:null},{...h.order,status:"PENDING_PAYMENT"},...orders]);
+    expect(pending.size).toBe(20);expect(h.prisma.commerceIntegrationJob.upsert).toHaveBeenCalledTimes(20);
+    expect(h.prisma.commerceIntegrationJob.upsert.mock.calls[0][0].create.payload).toEqual({orderId:orders[0]!.id});
+  });
+});
+
+it("member processing endpoint requires a member guard and omits internal operator and remark fields",async()=>{
+ const h=fixture(),service=new CommerceStoreService(h.prisma);
+ const result=await service.orderProcessing(randomUUID(),h.order.id,true);
+ expect(result.items).toEqual([{id:"a",name:"审核",time:"2026-10-20 10:00:00"}]);
+ for(const handler of [CommerceCompatibilityController.prototype.orderProcessing,CommerceCompatibilityController.prototype.refreshOrderProcessing])
+   expect(Reflect.getMetadata("__guards__",handler)).toContain(UserAuthGuard);
 });

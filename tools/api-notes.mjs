@@ -456,6 +456,8 @@ export const notes = {
   "CommerceCompatibilityController.previewOrder": entry("商城统一订单报价", order + "；couponClaimId、pointCents、buyerRemark、invoice可选", "兼容products/preview加整数分quote及fingerprint；券后分摊积分，不抵运费；现金至少1分；global仅CN收货/CNY，非CN地址400 delivery_country_unsupported，市场停用503 market_checkout_unavailable"),
   "CommerceCompatibilityController.createOrder": entry("商城创建订单", order + "；expectedQuote可选，取preview.quote.fingerprint", "单个真实主库订单；未付款不扣库存，付款成功后扣；报价变化409 quote_changed且无资产写入，同键原参已创建优先返回原订单；global保存显式CN/CNY，市场与收货限制在积分/库存/券写入之前核验"),
   "CommerceCompatibilityController.orders": entry("商城订单列表", "status可选", "当前订单与旧订单只读投影"),
+  "CommerceCompatibilityController.orderProcessing": entry("读取本会员订单ERP履约快照", "id为订单UUID；已验证会员会话", "{state,orderStatus,erpStatus,shipments,items,syncedAt,logisticsUnavailable}；事件仅id/name/time，无内部备注和操作人", "仅本人订单；只读缓存和任务状态，不直接调用供应商"),
+  "CommerceCompatibilityController.refreshOrderProcessing": entry("刷新本会员订单ERP履约", "id为订单UUID；空对象", "同读取快照；缓存过期时每单每分钟幂等排队，轮询GET读取结果", "仅本人且NEW_SYSTEM且已关联ERP；不修改资金/库存/礼品核销；未配置明确返回"),
   "CommerceCompatibilityController.order": entry("商城订单详情", "id=订单UUID或旧订单映射", "订单详情；旧投影只读"),
   "CommerceCompatibilityController.cancelOrder": entry("取消待付款订单", "id=订单UUID", "{ok:true}"),
   "CommerceCompatibilityController.receiveOrder": entry("确认收货", "id=订单UUID", "{ok:true}"),

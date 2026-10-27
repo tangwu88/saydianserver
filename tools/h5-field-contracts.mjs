@@ -436,3 +436,9 @@ h5FieldContracts['CommerceCompatibilityController.order'].note+=' items[].review
 // Named fixtures support pure tests and let delivery docs reuse the exact values.
 export const h5ContractExamples = { session: sessionExample, capabilities: capabilitiesExample, globalCapabilities: globalCapabilitiesExample, quote: quoteExample,
   order: orderExample, afterSale: saleQuoteExample, shipping: shippingExample };
+
+const processingTrace = obj({description:text,time:text});
+const processingShipment = obj({id,orderId:id,logisticsCompany:text,logisticsCode:nullable(text),trackingNo:text,shippedAt:nullable(date),deliveredAt:nullable(date),traces:array(processingTrace)},['id','orderId','logisticsCompany','trackingNo','traces']);
+const processingSchema=obj({state:{enum:['WAITING_ORDER','UNAVAILABLE','PENDING','READY','ERROR']},orderStatus:text,erpStatus:nullable(text),syncedAt:nullable(date),shipments:array(processingShipment),items:array(obj({id:text,name:text,time:text})),truncated:bool,logisticsUnavailable:bool});
+const processingExample={state:'READY',orderStatus:'SHIPPED',erpStatus:'Sent',syncedAt:at,shipments:[{id:sid(90),orderId:sid(7),logisticsCompany:'合成快递',trackingNo:'H5-CONTRACT-SYNTHETIC',traces:[]}],items:[{id:'1',name:'发货',time:'2026-10-27 10:00:00'}],truncated:false,logisticsUnavailable:false};
+for(const key of ['orderProcessing','refreshOrderProcessing'])h5FieldContracts['CommerceCompatibilityController.'+key]=record(null,null,processingSchema,processingExample,source.store+'; apps/api/src/commerce/order-erp-snapshot.ts','仅本人订单。GET不排队；POST仅在快照过期时同单同分钟排队一次；响应不含ERP内部备注/操作人或供应商原始数据。物流运输轨迹仅实际返回，ERP取消不代表退款成功。');

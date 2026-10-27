@@ -8,7 +8,7 @@ import {
 } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { settleCommerceCommission } from "@saydian/commerce-domain";
-import { jushuitanWorkerEnabled, shouldPauseWorkers } from "@saydian/app-contracts";
+import { commerceLogisticsTraces, erpOrderTransition, jushuitanWorkerEnabled, shouldPauseWorkers } from "@saydian/app-contracts";
 import {
   markWorkerIntegrationVerified,
   resolveWorkerSecrets,
@@ -368,56 +368,13 @@ export class CommerceJobWorker {
   }
 
   private async syncFulfillment() {
-    const settings = await this.settings();
+    // Query the order as well as its carrier data: logistics alone cannot discover cancellations.
     const orders = await this.prisma.commerceOrder.findMany({
-      where: {
-        executionOwner: "NEW_SYSTEM",
-        status: {
-          in: [
-            CommerceOrderStatus.WAITING_FULFILLMENT,
-            CommerceOrderStatus.SHIPPED,
-            CommerceOrderStatus.AFTER_SALE,
-          ],
-        },
-      },
-      orderBy: { updatedAt: "asc" },
-      take: 100,
+      where: { executionOwner: "NEW_SYSTEM", erpOrderId: { not: null },
+        status: { in: ["PAID", "WAITING_FULFILLMENT", "SHIPPED", "AFTER_SALE", "CANCELLED"] } },
+      orderBy: { erpProcessLogSyncedAt: { sort: "asc", nulls: "first" } }, take: 20,
     });
-    if (!orders.length) return;
-    const result = await this.call(settings, settings.paths.fulfillment!, {
-      shop_id: Number(settings.shopId),
-      so_ids: orders.map((order) => order.orderNo),
-    });
-    for (const item of rows(result)) {
-      const orderNo = String(item.so_id ?? item.order_no ?? "").trim();
-      const trackingNo = String(item.l_id ?? item.tracking_no ?? "").trim();
-      if (!orderNo || !trackingNo) continue;
-      const order = await this.prisma.commerceOrder.findUnique({ where: { orderNo } });
-      if (!order) continue;
-      await this.prisma.$transaction([
-        this.prisma.commerceShipment.upsert({
-          where: { orderId_trackingNo: { orderId: order.id, trackingNo } },
-          create: {
-            orderId: order.id,
-            logisticsCompany: String(item.lc_name ?? item.logistics_company ?? "物流公司"),
-            logisticsCode: item.lc_id ? String(item.lc_id) : null,
-            trackingNo,
-            shippedAt: new Date(),
-            traceJson: item as Prisma.InputJsonValue,
-          },
-          update: { traceJson: item as Prisma.InputJsonValue },
-        }),
-        this.prisma.commerceOrder.updateMany({
-          where: { id: order.id, executionOwner: "NEW_SYSTEM", status: { in: [CommerceOrderStatus.WAITING_FULFILLMENT, CommerceOrderStatus.SHIPPED] } },
-          data: {
-            status: CommerceOrderStatus.SHIPPED,
-            version: { increment: 1 },
-            shippedAt: order.shippedAt ?? new Date(),
-            erpStatus: "SENT",
-          },
-        }),
-      ]);
-    }
+    for (const order of orders) await this.syncOrderLogs(order.id, true);
   }
 
   private async syncOrderLogs(orderId: string, syncStatus = false) {
@@ -456,6 +413,38 @@ export class CommerceJobWorker {
           logisticsCode: matched.lc_id ? String(matched.lc_id).slice(0, 80) : null, shippedAt: parseDate(timestamp) };
       }
     }
+    const shipments = new Map<string, NonNullable<typeof shipment>>();
+    if (shipment) shipments.set(shipment.trackingNo, shipment);
+    const carrierTraces = new Map<string, ReturnType<typeof commerceLogisticsTraces>>();
+    let logisticsUnavailable = false;
+    if (erpStatus === "Sent" && settings.paths.fulfillment) {
+      try {
+        for (let page = 1; page <= 20; page++) {
+          const result = await this.call(settings, settings.paths.fulfillment, {
+            shop_id: jstShopId(order.erpShopId ?? settings.shopId), so_ids: [order.orderNo], page_index: page, page_size: 50,
+          });
+          for (const row of rows(result)) {
+            if (String(row.so_id ?? row.order_no ?? "") !== order.orderNo ||
+              (row.o_id != null && String(row.o_id) !== order.erpOrderId) ||
+              (row.shop_id != null && String(row.shop_id) !== String(jstShopId(order.erpShopId ?? settings.shopId)))) continue;
+            const trackingNo = String(row.l_id ?? row.tracking_no ?? "").trim();
+            if (!trackingNo || trackingNo.length > 200 || /^0+$/.test(trackingNo) || /[\x00-\x1f\x7f]/.test(trackingNo)) continue;
+            const sent = typeof row.send_date === "string" ? row.send_date.trim() : "";
+            const timestamp = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(sent) ? sent.replace(" ", "T") + "+08:00" : sent;
+            shipments.set(trackingNo, { trackingNo,
+              logisticsCompany: String(row.logistics_company || row.lc_name || shipments.get(trackingNo)?.logisticsCompany || "物流公司未返回").slice(0, 160),
+              logisticsCode: row.lc_id ? String(row.lc_id).slice(0, 80) : shipments.get(trackingNo)?.logisticsCode ?? null,
+              shippedAt: parseDate(timestamp) ?? shipments.get(trackingNo)?.shippedAt ?? null,
+            });
+            const traces = commerceLogisticsTraces(row);
+            if (traces.length) carrierTraces.set(trackingNo, traces);
+          }
+          const next = [true, 1, "true", "1"].includes(result.has_next as any) || Number(result.page_count) > page;
+          if (!next) break;
+          if (page === 20) logisticsUnavailable = true;
+        }
+      } catch { logisticsUnavailable = true; }
+    }
     let truncated = false;
     for (let page = 1; page <= 20; page++) {
       const result = await this.call(settings, settings.paths.orderLogs!, { o_id: erpId, page_index: page, page_size: 300 });
@@ -478,21 +467,25 @@ export class CommerceJobWorker {
       id: order.id, erpOrderId: order.erpOrderId, executionOwner: "NEW_SYSTEM",
       ...(syncStatus ? { version: order.version, erpStatus: order.erpStatus, updatedAt: order.updatedAt } : {}),
     };
-    const data = { erpProcessLogJson: { items, truncated, ...(syncStatus ? { statusVerified: true } : {}) } as Prisma.InputJsonValue,
+    const data = { erpProcessLogJson: { items, truncated, logisticsUnavailable, ...(syncStatus ? { statusVerified: true } : {}) } as Prisma.InputJsonValue,
       erpProcessLogSyncedAt: new Date(), ...(erpStatus ? { erpStatus } : {}) };
     if (!syncStatus) { await this.prisma.commerceOrder.updateMany({ where, data }); return; }
     await this.prisma.$transaction(async tx => {
-      const fulfill = shipment && [CommerceOrderStatus.PAID, CommerceOrderStatus.WAITING_FULFILLMENT, CommerceOrderStatus.SHIPPED].some(status => status === order.status);
+      const nextStatus = erpOrderTransition(order.status, erpStatus!, shipments.size > 0);
       const changed = await tx.commerceOrder.updateMany({ where, data: { ...data,
-        ...(fulfill ? { status: CommerceOrderStatus.SHIPPED, shippedAt: order.shippedAt ?? shipment!.shippedAt,
-          version: { increment: 1 } } : {}),
+        ...(nextStatus ? { status: nextStatus, version: { increment: 1 },
+          ...(nextStatus === "SHIPPED" ? { shippedAt: order.shippedAt ?? [...shipments.values()][0]!.shippedAt } : {}) } : {}),
       } });
       if (changed.count !== 1) throw new Error("Order changed during ERP query; retry required");
-      if (shipment) await tx.commerceShipment.upsert({ where: { orderId_trackingNo: { orderId: order.id, trackingNo: shipment.trackingNo } },
-        create: { orderId: order.id, ...shipment, traceJson: { source: "ERP_ORDER_QUERY", erpOrderId: order.erpOrderId, status: erpStatus! } },
+      for (const shipment of shipments.values()) {
+        const traces = carrierTraces.get(shipment.trackingNo) || [];
+        await tx.commerceShipment.upsert({ where: { orderId_trackingNo: { orderId: order.id, trackingNo: shipment.trackingNo } },
+        create: { orderId: order.id, ...shipment, traceJson: traces.length ? traces : { source: "ERP_ORDER_QUERY", status: erpStatus! } },
         update: { logisticsCompany: shipment.logisticsCompany, logisticsCode: shipment.logisticsCode,
+          ...(traces.length ? { traceJson: traces } : {}),
           ...(shipment.shippedAt ? { shippedAt: shipment.shippedAt } : {}) },
       });
+      }
     });
   }
 
@@ -680,7 +673,7 @@ export function mapJstProduct(row: Record<string, unknown>) {
 }
 
 function rows(result: Record<string, unknown>): Record<string, unknown>[] {
-  const candidates = [result.datas, result.inventorys, result.data];
+  const candidates = [result.datas, result.orders, result.inventorys, result.data];
   const selected = candidates.find(Array.isArray);
   return Array.isArray(selected) ? selected.map(asObject) : [];
 }

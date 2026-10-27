@@ -82,21 +82,15 @@ describe("integrated Jushuitan adapter", () => {
       .toMatchObject({ erpItemId: "I1", erpSkuId: "S1", salePriceCents: 9990 });
   });
 
-  it("keeps an after-sale order in after-sale when logistics updates arrive", async () => {
-    const order = { id: "o", orderNo: "SD1", status: "AFTER_SALE", executionOwner: "NEW_SYSTEM", shippedAt: null };
-    const prisma: any = { commerceOrder: {
-      findMany: vi.fn().mockResolvedValue([order]), findUnique: vi.fn().mockResolvedValue(order),
-      updateMany: vi.fn().mockImplementation(async ({ where, data }) => {
-        if (!where.status.in.includes(order.status)) return { count: 0 };
-        Object.assign(order, data); return { count: 1 };
-      }),
-    }, commerceShipment: { upsert: vi.fn().mockResolvedValue({}) }, $transaction: vi.fn().mockImplementation(async (operations) => Promise.all(operations)) };
+  it("refreshes a bounded set of owned ERP orders using verified status queries", async () => {
+    const prisma: any = { commerceOrder: { findMany: vi.fn().mockResolvedValue([{ id: "own-order" }]) } };
     const worker = new CommerceJobWorker(prisma) as any;
-    worker.settings = vi.fn().mockResolvedValue({ shopId: "1", paths: { fulfillment: "/logistics" } });
-    worker.call = vi.fn().mockResolvedValue({ datas: [{ so_id: "SD1", tracking_no: "T1" }] });
+    worker.syncOrderLogs = vi.fn();
     await worker.syncFulfillment();
-    expect(order.status).toBe("AFTER_SALE");
-    expect(prisma.commerceShipment.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.commerceOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ executionOwner: "NEW_SYSTEM", erpOrderId: { not: null } }), take: 20,
+    }));
+    expect(worker.syncOrderLogs).toHaveBeenCalledWith("own-order", true);
   });
 
   it("submits only reviewed after-sale lines instead of the whole original order", async () => {

@@ -6,7 +6,8 @@ function fixture() {
   const prisma: any = { commerceOrder: { findUnique: vi.fn(async () => order), updateMany: vi.fn(async () => ({ count: 1 })) }, commerceShipment: { upsert: vi.fn(async () => ({})) } };
   prisma.$transaction = vi.fn(async (run: any) => run(prisma));
   const worker = new CommerceJobWorker(prisma) as any;
-  worker.settings = vi.fn(async () => ({ shopId: "77", paths: { orderQuery: "orders.single.query", orderLogs: "order.action.query" } }));
+  const settings = { shopId: "77", paths: { orderQuery: "orders.single.query", orderLogs: "order.action.query" } };
+  worker.settings = vi.fn(async () => settings);
   const row = { o_id: 123, so_id: "VP-001", shop_id: 77, status: "Sent", l_id: "SF-SYNTHETIC-001", logistics_company: "合成快递", lc_id: "SF", send_date: "2026-10-20 10:30:00" };
   const logs = { datas: [{ o_id: 123, oa_id: 1, name: "发货", created: "2026-10-20 10:30:00", private_secret: "omit" }] };
   worker.call = vi.fn(async (_settings: unknown, method: string) => method === "orders.single.query" ? { orders: [row] } : logs);
@@ -61,4 +62,50 @@ describe("ERP order status, logs and shipment snapshot", () => {
     const h = fixture();await h.worker.syncOrderLogs(h.order.id, true);
     expect(h.prisma.commerceShipment.upsert.mock.calls[0][0].update).not.toHaveProperty("traceJson");
   });
+});
+
+describe("ERP cancellation and carrier traces", () => {
+  it("syncs an ERP cancellation without touching funds, stock or gift redemption", async () => {
+    const h = fixture(); h.row.status = "Cancelled";
+    await h.worker.syncOrderLogs(h.order.id, true);
+    expect(h.prisma.commerceOrder.updateMany.mock.calls[0][0].data).toMatchObject({ status: "CANCELLED", erpStatus: "Cancelled", version: { increment: 1 } });
+    const data = h.prisma.commerceOrder.updateMany.mock.calls[0][0].data;
+    for (const field of ["paidAt", "cancelledAt", "payableCents", "giftCardSerial", "shippedAt"]) expect(data).not.toHaveProperty(field);
+    expect(h.prisma.commerceShipment.upsert).not.toHaveBeenCalled();
+  });
+  it.each(["AFTER_SALE", "REFUNDED", "COMPLETED", "RECEIVED", "CLOSED", "PENDING_PAYMENT"])("does not replace %s with ERP cancellation", async status => {
+    const h = fixture(); h.row.status = "Cancelled"; h.order.status = status;
+    await h.worker.syncOrderLogs(h.order.id, true);
+    expect(h.prisma.commerceOrder.updateMany.mock.calls[0][0].data).not.toHaveProperty("status");
+  });
+  it("imports only matching carrier traces and discards raw provider secrets", async () => {
+    const h = fixture(); const settings = await h.worker.settings(); settings.paths.fulfillment = "logistic.query";
+    h.worker.call.mockImplementation(async (_:unknown, method:string) => method === "orders.single.query" ? { orders: [h.row] } : method === "order.action.query" ? h.logs : { datas: [
+      { so_id: "foreign", l_id: h.row.l_id, data: [{ context: "别人的轨迹" }] },
+      { so_id: h.order.orderNo, o_id: 999, l_id: h.row.l_id, data: [{ context: "别人的ERP订单" }] },
+      { so_id: h.order.orderNo, shop_id: 999, l_id: h.row.l_id, data: [{ context: "别人的店铺" }] },
+      { so_id: h.order.orderNo, l_id: h.row.l_id, secret: "private", data: [{ context: "快递已揽收", ftime: "2026-10-20 11:00:00", token: "private" }] },
+    ] });
+    await h.worker.syncOrderLogs(h.order.id, true);
+    expect(h.prisma.commerceShipment.upsert.mock.calls[0][0].update.traceJson).toEqual([{ description: "快递已揽收", time: "2026-10-20 11:00:00" }]);
+  });
+  it("keeps the confirmed shipment and existing traces when carrier lookup is unavailable", async () => {
+    const h = fixture(); (await h.worker.settings()).paths.fulfillment = "logistic.query";
+    h.worker.call.mockImplementation(async (_:unknown, method:string) => { if (method === "logistic.query") throw Error("provider failure"); return method === "orders.single.query" ? { orders:[h.row] } : h.logs; });
+    await h.worker.syncOrderLogs(h.order.id, true);
+    expect(h.prisma.commerceOrder.updateMany.mock.calls[0][0].data).toMatchObject({ status:"SHIPPED", erpProcessLogJson:{ logisticsUnavailable:true } });
+    expect(h.prisma.commerceShipment.upsert.mock.calls[0][0].update).not.toHaveProperty("traceJson");
+  });
+});
+
+it("imports official orders pagination and multiple confirmed packages without accepting foreign orders", async () => {
+  const h=fixture(); (await h.worker.settings()).paths.fulfillment="logistic.query";
+  let page=0;
+  h.worker.call.mockImplementation(async (_:unknown, method:string) => method==="orders.single.query"?{orders:[h.row]}:method==="order.action.query"?h.logs:++page===1?
+    {orders:[{...h.row,l_id:"PACKAGE-A",traces:[{context:"包裹A已揽收",time:"2026-10-27 10:00:00"}]},{...h.row,so_id:"foreign",l_id:"FOREIGN"}],has_next:true}:
+    {orders:[{...h.row,l_id:"PACKAGE-B",data:[{context:"包裹B运输中",time:"2026-10-27 11:00:00"}]}],has_next:false});
+  await h.worker.syncOrderLogs(h.order.id,true);
+  expect(page).toBe(2);
+  expect(h.prisma.commerceShipment.upsert.mock.calls.map((call:any[])=>call[0].create.trackingNo)).toEqual([h.row.l_id,"PACKAGE-A","PACKAGE-B"]);
+  expect(h.prisma.commerceShipment.upsert.mock.calls[2][0].create.traceJson).toEqual([{description:"包裹B运输中",time:"2026-10-27 11:00:00"}]);
 });

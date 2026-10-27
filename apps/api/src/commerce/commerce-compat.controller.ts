@@ -393,6 +393,18 @@ export class CommerceCompatibilityController {
     return this.commerce.orderDetail(user.id, id);
   }
 
+  @Get("storefront/orders/:id/processing")
+  @UseGuards(UserAuthGuard)
+  orderProcessing(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.commerce.forUser(user.id, "GET", `/orders/${encodeURIComponent(id)}/processing`);
+  }
+
+  @Post("storefront/orders/:id/processing")
+  @UseGuards(UserAuthGuard)
+  refreshOrderProcessing(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.commerce.forUser(user.id, "POST", `/orders/${encodeURIComponent(id)}/processing`);
+  }
+
   @Post("storefront/orders/:id/cancel")
   @UseGuards(UserAuthGuard)
   async cancelOrder(
