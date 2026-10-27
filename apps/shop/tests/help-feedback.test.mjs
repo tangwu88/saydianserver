@@ -25,7 +25,7 @@ async function harness() {
     bindingMetadata: script.bindings, isCustomElement: tag => tag === tag.toLowerCase(),
   } });
   assert.deepEqual(template.errors, []);
-  const hooks = {}, requests = [], notices = [], logins = [];
+  const hooks = {}, requests = [], notices = [], logins = [], calls = [], copies = [];
   let rows = [{
     id: "feedback-1", category: "shopping", content: "测试订单未能付款", status: "resolved",
     replyContent: "已经为您核对，请重新发起付款", repliedAt: "2026-09-12T02:00:00.000Z", createdAt: "2026-09-12T01:00:00.000Z",
@@ -51,10 +51,10 @@ async function harness() {
       requireLogin: returnTo => { logins.push(returnTo); return true; },
       toast: value => notices.push(String(value)),
     },
-  }, { uni: { navigateTo() {}, makePhoneCall() {}, setClipboardData() {} }, location: { assign() {} } }).default;
+  }, { uni: { navigateTo() {}, makePhoneCall(value) { calls.push(value.phoneNumber); }, setClipboardData(value) { copies.push(value.data); } }, location: { assign() {} } }).default;
   const state = component.setup({}, { expose() {} });
   await hooks.load({ section: "feedback" });
-  return { state, requests, notices, logins };
+  return { state, requests, notices, logins, calls, copies };
 }
 
 test("H5 customer center shows only the member feedback history and administrator reply", async () => {
@@ -78,4 +78,19 @@ test("H5 customer center submits a concise issue and refreshes the visible histo
   assert.equal(h.state.feedbackRows.value[0].id, "feedback-2");
   assert.equal(h.state.feedbackContent.value, "");
   assert.equal(h.notices.at(-1), "反馈已提交");
+});
+
+test("customer phone actions use the configured number and reject invalid values", async () => {
+  const h = await harness();
+  h.state.service.phone = '020-12345678';
+  h.state.callService();
+  h.state.copyPhone();
+  assert.deepEqual(h.calls, ['020-12345678']);
+  assert.deepEqual(h.copies, ['020-12345678']);
+  h.state.service.phone = 'javascript:invalid';
+  h.state.callService();
+  h.state.copyPhone();
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.copies.length, 1);
+  assert.match(h.notices.at(-1), /在线客服/);
 });
