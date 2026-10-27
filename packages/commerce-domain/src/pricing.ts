@@ -53,13 +53,23 @@ export function priceOrder(input: {
   return { pricingVersion: PRICING_VERSION, subtotalCents, couponDiscountCents, pointDiscountCents, shippingCents, payableCents, availablePointCents, maxPointCents, lines };
 }
 export type FinancialItem = { id: string; quantity: number; totalCents: number; couponDiscountCentsSnapshot?: number | null;
-  pointDiscountCentsSnapshot?: number | null; cashPaidCentsSnapshot?: number | null };
+  pointDiscountCentsSnapshot?: number | null; cashPaidCentsSnapshot?: number | null; giftDiscountCentsSnapshot?: number };
 export type FinancialOrder = { sourceSystem: string; pricingVersion: number | null; pricingVerifiedAt: Date | null;
-  subtotalCents: number; discountCents: number; pointDiscountCents: number; shippingCents: number; payableCents: number; items: FinancialItem[] };
+  subtotalCents: number; discountCents: number; giftDiscountCents?: number; giftCardSerial?: string | null; pointDiscountCents: number; shippingCents: number; payableCents: number; items: FinancialItem[] };
 export type FinancialSnapshot = { pricingVersion: number; items: Array<FinancialItem & { couponDiscountCentsSnapshot: number;
   pointDiscountCentsSnapshot: number; cashPaidCentsSnapshot: number }> };
 export function financialSnapshot(order: FinancialOrder): FinancialSnapshot {
   const original = sum(order.items.map(item => item.totalCents));
+  if (order.giftCardSerial) {
+    if (order.pricingVersion !== PRICING_VERSION || !order.pricingVerifiedAt || order.discountCents !== 0 || order.pointDiscountCents !== 0 || order.shippingCents !== 0 || order.payableCents !== 0 || original !== order.subtotalCents || original !== cents(order.giftDiscountCents)) throw new ConflictException("礼品兑换订单金额不守恒");
+    const items = order.items.map(item => {
+      if (!Number.isInteger(item.quantity) || item.quantity !== 1 || cents(item.giftDiscountCentsSnapshot) !== item.totalCents || item.cashPaidCentsSnapshot !== 0 || item.couponDiscountCentsSnapshot !== 0 || item.pointDiscountCentsSnapshot !== 0) throw new ConflictException("礼品兑换商品快照不守恒");
+      return { ...item, couponDiscountCentsSnapshot: 0, pointDiscountCentsSnapshot: 0, cashPaidCentsSnapshot: 0 };
+    });
+    if (items.length !== 1) throw new ConflictException("礼品兑换订单只能包含一件商品");
+    return { pricingVersion: PRICING_VERSION, items };
+  }
+  if (order.giftDiscountCents) throw new ConflictException("缺少礼品兑换凭证");
   if (order.discountCents + order.pointDiscountCents > original || original !== cents(order.subtotalCents) || original - cents(order.discountCents) - cents(order.pointDiscountCents) + cents(order.shippingCents) !== cents(order.payableCents)) {
     throw new ConflictException("订单原始金额不守恒，请先核验");
   }

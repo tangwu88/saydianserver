@@ -596,12 +596,14 @@ export class AdminController {
     @Query("status") status?: string,
     @Query("page") page?: string,
     @Query("search") search?: string,
+    @Query("kind") kind?: string,
   ) {
     return this.admin.commerceOrders(
       status,
       Number(page ?? 1),
       search ?? "",
       current,
+      kind,
     );
   }
 

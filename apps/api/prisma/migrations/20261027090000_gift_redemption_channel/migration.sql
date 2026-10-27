@@ -1,0 +1,1 @@
+ALTER TYPE "PaymentChannel" ADD VALUE 'GIFT_REDEMPTION';

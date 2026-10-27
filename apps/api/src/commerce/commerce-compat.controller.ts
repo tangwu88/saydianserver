@@ -382,8 +382,9 @@ export class CommerceCompatibilityController {
     @CurrentUser() user: AuthenticatedUser,
     @Query("status") status?: string,
     @Query("group") group?: string,
+    @Query("kind") kind?: string,
   ) {
-    return this.commerce.orders(user.id, status, group);
+    return kind ? this.commerce.orders(user.id, status, group, kind) : this.commerce.orders(user.id, status, group);
   }
 
   @Get("storefront/orders/:id")

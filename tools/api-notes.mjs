@@ -15,6 +15,24 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+  "GiftController.capabilities": entry("礼品兑换是否开放","无","{enabled}；中国站，默认关闭","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftController.validate": entry("验证礼品卡","{cardNo:8位数字且8开头,checkCode:6位数字}","短时token、商品、可兑规格；不返回校验码或哈希","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftController.view": entry("恢复未完成兑换","{token}","卡片与商品摘要；仅校验卡片，不授予订单或地址权限","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftController.sms": entry("发送礼品兑换专用短信","{token,mobile:中国大陆手机号}","有效期300秒，重发间隔60秒；生产不回显验证码","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftController.verify": entry("验证手机号并登录或注册会员","{token,mobile,code,consentAccepted:true,consentVersion:当前商城已审已发布版本}","商城会话；证明绑定本次兑换卡、会员和会话，15分钟有效","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftController.preview": entry("预览免费礼品兑换","{token,skuId,addressId}","商品和地址快照、fingerprint、数量1、实付和运费0","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftController.submit": entry("核销礼品卡并生成订单","{token,skuId,addressId,fingerprint,requestKey:8至128字符}","{orderId,orderNo}；一卡一单；事务内核销、结算、扣库存及ERP排队","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftController.result": entry("查询本人原兑换结果","{token}","{completed,orderId?,orderNo?}；仅本次验证会员可查","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.batches": entry("查询礼品卡生成批次","q/page","分页元数据；不补导明文","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.cards": entry("查询礼品卡","q/page/batchId/status","编号、卡号、当前商品、允许规格、状态及关联订单；无哈希","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.records": entry("查询礼品兑换记录","q/page","会员ID、验证手机号及时间、兑换时间、可信IP、订单号和商品地址快照","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.products": entry("查询可配置的礼品商品","无","已上架商品和启用规格，最多1000款","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.settings": entry("查看礼品兑换开放状态","无","{enabled}","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.qr": entry("查看礼品卡二维码","id为兑换卡UUID","{serialNo,cardNo,link,qrDataUrl}；二维码不含校验码","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.generate": entry("生成礼品卡并首次导出明文","{name,quantity:1至100,productId,allowedSkuIds,expiresAt?,requestKey}","{batchId,batchNo,alreadyGenerated,filename,csv}；明文仅首次响应，重试csv=null；只存bcrypt哈希；新卡未启用","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.change": entry("启用、改绑或作废礼品卡","{action:ACTIVATE/BIND/VOID,ids或batchId,reason,version?,downloadConfirmed?,productId?,allowedSkuIds?,expiresAt?}","{changed}；仅未启用卡可改绑，跨商品改绑保留最初发卡商品编号","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.configure": entry("开放或暂停礼品兑换","{enabled:boolean}","{enabled}；默认关闭，审计记录；不改变原维护状态","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+
   "FilesController.image": entry("公开商品图片轻量版本", "id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选", "WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404", "只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界"),
   "AdminController.commerceOrderErp": entry("读取订单ERP状态、包裹与操作日志缓存", "id为订单UUID", "{erpStatus,orderStatus,shipments,items,state,syncedAt,truncated}；最多最近300日志；GET不调供应商、不排队", "订单查看权限；无关联或未配置明确返回；不返回供应商原始响应"),
   "AdminController.syncCommerceOrderErp": entry("获取当前订单ERP状态、包裹与操作日志", "id为订单UUID；空对象", "同一订单每分钟幂等排队；轮询GET获取结果", "SUPER_ADMIN/COMMERCE_OPERATIONS；审计；不更改付款/退款或供应商订单"),

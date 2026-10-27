@@ -23,6 +23,6 @@ import { GlobalWechatAppService } from "./global-wechat-app.service";
     WechatAppAuthService,
     WechatH5AuthService,
   ],
-  exports: [AuthService, GlobalAuthService, GlobalVerificationDeliveryService, UserAuthGuard, WechatH5AuthService],
+  exports: [AuthService, GlobalAuthService, GlobalVerificationDeliveryService, UserAuthGuard, WechatH5AuthService, SmsAdapterService],
 })
 export class AuthModule {}

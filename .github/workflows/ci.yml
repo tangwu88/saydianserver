@@ -93,6 +93,10 @@ jobs:
           pnpm db:seed
       - name: Real PostgreSQL order and refund concurrency tests
         run: RUN_LOCAL_DATABASE_TESTS=1 pnpm --filter @saydian/app-api exec vitest run src/commerce/commerce-database.test.ts src/reports/sleep-consent-database.test.ts src/partners/partner-database.test.ts src/partners/partner-onboarding-database.test.ts src/admin/say-ring-map-database.test.ts --maxWorkers=1 --testTimeout=15000
+      - name: Rehearse gift schema upgrade with existing orders
+        run: pnpm test:gifts:upgrade
+      - name: Isolated gift redemption transaction tests
+        run: pnpm test:gifts:database
       - name: API smoke test
         run: |
           node apps/api/dist/main.js > api-smoke.log 2>&1 &

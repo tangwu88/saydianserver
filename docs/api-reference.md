@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **459 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **476 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -88,7 +88,7 @@
 | `POST /api/v1/site/refresh` | 旧版刷新 | public | 表单 refresh_token | LegacySession | 核心服务 |
 | `POST /api/v1/site/logout` | 旧版退出 | member | 无请求体 | {logged_out:true} | 核心服务 |
 
-## 商城 H5/小程序兼容接口（75）
+## 商城 H5/小程序兼容接口（83）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -127,7 +127,7 @@
 | `DELETE /api/saidian-mall/v1/storefront/addresses/:id` | 删除收货地址 | member | path:id；id=地址UUID | 空响应 | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/orders/preview` | 商城统一订单报价 | member | Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key；couponClaimId、pointCents、buyerRemark、invoice可选 | 兼容products/preview加整数分quote及fingerprint；券后分摊积分，不抵运费；现金至少1分；global仅CN收货/CNY，非CN地址400 delivery_country_unsupported，市场停用503 market_checkout_unavailable | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/orders` | 商城创建订单 | member | header:idempotency-key；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key；expectedQuote可选，取preview.quote.fingerprint | 单个真实主库订单；未付款不扣库存，付款成功后扣；报价变化409 quote_changed且无资产写入，同键原参已创建优先返回原订单；global保存显式CN/CNY，市场与收货限制在积分/库存/券写入之前核验 | 核心服务 |
-| `GET /api/saidian-mall/v1/storefront/orders` | 商城订单列表 | member | query:status?，query:group?；status可选 | 当前订单与旧订单只读投影 | 核心服务 |
+| `GET /api/saidian-mall/v1/storefront/orders` | 商城订单列表 | member | query:status?，query:group?，query:kind?；status可选 | 当前订单与旧订单只读投影 | 核心服务 |
 | `GET /api/saidian-mall/v1/storefront/orders/:id` | 商城订单详情 | member | path:id；id=订单UUID或旧订单映射 | 订单详情；旧投影只读 | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/orders/:id/cancel` | 取消待付款订单 | member | path:id；id=订单UUID | {ok:true} | 核心服务 |
 | `POST /api/saidian-mall/v1/storefront/orders/:id/receipt` | 确认收货 | member | path:id；id=订单UUID | {ok:true} | 核心服务 |
@@ -164,6 +164,14 @@
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/capabilities` | 检查售后图片上传配置 | member | 需会员Bearer会话；global须真实验证邮箱或手机号，临时手机登记会话不可用 | raw JSON {enabled,maxFiles:9,maxBytes:10485760,contentTypes,reason?}；配置缺失返回enabled=false；只检查配置，不代表真实存储回执 | 私有object_storage配置；不返回密钥、桶名或公开链接 |
 | `POST /api/saidian-mall/v1/storefront/after-sale-images` | 上传本人售后图片 | member | file:file；multipart/form-data字段file；每请求1张JPEG/PNG/WebP，实际大小≤10MiB；每分钟12次；会员Bearer认证，global临时会话拒绝 | HTTP201 raw JSON {id,byteSize,contentType,sha256}；只返回FileObject UUID，不返回公开URL；无文件/类型伪装400，超限413，过频429，未配置或存储失败503 | 私有object_storage；成功上传不是售后申请，申请另传evidenceFileIds |
 | `GET /api/saidian-mall/v1/storefront/after-sale-images/:id` | 读取本人私有售后图片 | member | path:id；id=本人ACTIVE、commerce_after_sale用途文件UUID；会员Bearer放请求头，不放URL | HTTP200原始二进制image/jpeg、image/png或image/webp，不含JSON包裹；private,no-store及nosniff；他人文件/不存在404，未登录或global临时会话401，存储失败503 | 私有object_storage；不能通过公开头像地址读取 |
+| `GET /api/saidian-mall/v1/storefront/gift-redemptions/capabilities` | 礼品兑换是否开放 | public | 无 | {enabled}；中国站，默认关闭 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saidian-mall/v1/storefront/gift-redemptions/validate` | 验证礼品卡 | public | {cardNo:8位数字且8开头,checkCode:6位数字} | 短时token、商品、可兑规格；不返回校验码或哈希 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saidian-mall/v1/storefront/gift-redemptions/session` | 恢复未完成兑换 | public | {token} | 卡片与商品摘要；仅校验卡片，不授予订单或地址权限 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saidian-mall/v1/storefront/gift-redemptions/sms/request` | 发送礼品兑换专用短信 | public | {token,mobile:中国大陆手机号} | 有效期300秒，重发间隔60秒；生产不回显验证码 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saidian-mall/v1/storefront/gift-redemptions/sms/verify` | 验证手机号并登录或注册会员 | public | {token,mobile,code,consentAccepted:true,consentVersion:当前商城已审已发布版本} | 商城会话；证明绑定本次兑换卡、会员和会话，15分钟有效 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saidian-mall/v1/storefront/gift-redemptions/preview` | 预览免费礼品兑换 | member | {token,skuId,addressId} | 商品和地址快照、fingerprint、数量1、实付和运费0 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saidian-mall/v1/storefront/gift-redemptions/submit` | 核销礼品卡并生成订单 | member | {token,skuId,addressId,fingerprint,requestKey:8至128字符} | {orderId,orderNo}；一卡一单；事务内核销、结算、扣库存及ERP排队 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saidian-mall/v1/storefront/gift-redemptions/result` | 查询本人原兑换结果 | member | {token} | {completed,orderId?,orderNo?}；仅本次验证会员可查 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
 | `GET /api/saidian-mall/v1/partner/status` | 当前会员合作申请与账户状态 | member | 已验证商城会员会话 | {partner,application}；仅该会员数据 | 主库；会员绑定独立于推广归属 |
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
@@ -224,7 +232,7 @@
 | `POST /api/saydian-app/v2/commerce/addresses` | 新增地址 | member | Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | Address | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `PATCH /api/saydian-app/v2/commerce/addresses/:id` | 更新地址 | member | path:id；Address：name/realname、mobile、province/city/district、detail/address_details、isDefault/is_default；旧地区码字段见调用手册 | Address | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `DELETE /api/saydian-app/v2/commerce/addresses/:id` | 删除地址 | member | path:id；id=商城地址 ID | {deleted:true} | 主库商城；支付操作还依赖已验收的支付渠道配置 |
-| `GET /api/saydian-app/v2/commerce/orders` | 当前订单与历史投影 | member | query:status?，query:group?；status=商城订单枚举；或group=pending_shipment\|after_sales，互斥可选 | Order[]；按服务端完整数据筛选，待发货含已付款，售后包含已处理记录；历史投影只读 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
+| `GET /api/saydian-app/v2/commerce/orders` | 当前订单与历史投影 | member | query:status?，query:group?，query:kind?；status=商城订单枚举；或group=pending_shipment\|after_sales，互斥可选 | Order[]；按服务端完整数据筛选，待发货含已付款，售后包含已处理记录；历史投影只读 | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `POST /api/saydian-app/v2/commerce/orders/preview` | 预览商城订单 | member | Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key | 收货地址、商品和服务端金额及quote.fingerprint；不创建订单；global非CN地址400 delivery_country_unsupported，已停用市场503 market_checkout_unavailable | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `GET /api/saydian-app/v2/commerce/orders/:id` | 订单详情 | member | path:id；id=主库订单UUID或旧投影ID | Order | 主库商城；支付操作还依赖已验收的支付渠道配置 |
 | `POST /api/saydian-app/v2/commerce/orders` | 多商品创建单个商城订单 | member | header:idempotency-key；Order：addressId/address_id、items:[{skuId/sku_id,quantity/num}]；旧单品可用 data=JSON 字符串；每次新购买使用新的 Idempotency-Key；expectedQuote可选，取preview.quote.fingerprint | Order；下单不扣库存，验证付款成功后扣一次，允许已付款超卖；报价变化409 quote_changed且无资产写入，同键原参已创建优先返回原订单；global仅CN收货且currency=CNY | 主库商城；支付操作还依赖已验收的支付渠道配置 |
@@ -300,7 +308,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（147）
+## 管理后台接口（156）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -375,7 +383,7 @@
 | `PATCH /api/saydian-app/admin/v1/commerce-business-configs/:key` | 保存商城业务设置 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:key；key=配置键；{label?,value?,enabled?} | 商城配置；支付、ERP等密钥仍由集成中心管理 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/commerce-reviews` | 商城评价管理 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, CUSTOMER_SERVICE, READ_ONLY | 无请求体 | 真实订单评价、脱敏会员和商品摘要 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/commerce-reviews/:id` | 设置评价展示状态 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, CUSTOMER_SERVICE | path:id；id=评价UUID；{published:boolean} | 评价；不能改写评分或正文 | 核心服务 |
-| `GET /api/saydian-app/admin/v1/commerce-orders` | 总后台订单 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:status?，query:page?，query:search?；status可选；page默认1 | 订单、商品、支付、物流、售后、完整地址和推广上级；仅SUPER_ADMIN返回收货原手机号，其他角色脱敏 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/commerce-orders` | 总后台订单 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | query:status?，query:page?，query:search?，query:kind?；status可选；page默认1 | 订单、商品、支付、物流、售后、完整地址和推广上级；仅SUPER_ADMIN返回收货原手机号，其他角色脱敏 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/commerce-orders/:id` | 维护订单备注 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id=订单UUID；{adminRemark?}；订单状态不能手工改写 | 订单 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/commerce-orders/:id/erp` | 读取订单ERP状态、包裹与操作日志缓存 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS, FINANCE, CUSTOMER_SERVICE, READ_ONLY | path:id；id为订单UUID | {erpStatus,orderStatus,shipments,items,state,syncedAt,truncated}；最多最近300日志；GET不调供应商、不排队 | 订单查看权限；无关联或未配置明确返回；不返回供应商原始响应 |
 | `POST /api/saydian-app/admin/v1/commerce-orders/:id/erp-sync` | 获取当前订单ERP状态、包裹与操作日志 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | path:id；id为订单UUID；空对象 | 同一订单每分钟幂等排队；轮询GET获取结果 | SUPER_ADMIN/COMMERCE_OPERATIONS；审计；不更改付款/退款或供应商订单 |
@@ -424,6 +432,15 @@
 | `POST /api/saydian-app/admin/v1/commerce/withdrawals/:id/review` | 审批提现申请 | admin: SUPER_ADMIN, FINANCE | path:id；{version,idempotencyKey,decision:APPROVE/REJECT,note}；拒绝同事务释放冻结 | 提现记录；重复同键幂等，异参或旧版本409 | 主库资金账本 |
 | `POST /api/saydian-app/admin/v1/commerce/withdrawals/:id/manual-receipt` | 登记真实人工转账回执 | admin: SUPER_ADMIN, FINANCE | path:id；{version,idempotencyKey,providerTransferId,amountCents,recipientOpenId,receiptReference,evidence,completedAt,confirmedExternalResult:true}；核验金额及收款身份 | 提现记录；仅登记已完成的真实转账，不发起任何第三方付款 | 财务人工核验凭证 |
 | `POST /api/saydian-app/admin/v1/commerce/withdrawals/:id/verify-original-transfer` | 核验迁入在途原转账结果 | admin: SUPER_ADMIN, FINANCE | path:id；回执字段同manual-receipt，另result=SUCCEEDED/FAILED；必须原转账号一致、已接管且PROCESSING/WAIT_USER_CONFIRM | 成功结账或失败释放冻结；不得创建新转账单 | 原渠道回执 |
+| `GET /api/saydian-app/admin/v1/commerce-gift-batches` | 查询礼品卡生成批次 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | query:*；q/page | 分页元数据；不补导明文 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `GET /api/saydian-app/admin/v1/commerce-gift-cards` | 查询礼品卡 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | query:*；q/page/batchId/status | 编号、卡号、当前商品、允许规格、状态及关联订单；无哈希 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `GET /api/saydian-app/admin/v1/commerce-gift-redemptions` | 查询礼品兑换记录 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | query:*；q/page | 会员ID、验证手机号及时间、兑换时间、可信IP、订单号和商品地址快照 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `GET /api/saydian-app/admin/v1/commerce-gift-products` | 查询可配置的礼品商品 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 无 | 已上架商品和启用规格，最多1000款 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `GET /api/saydian-app/admin/v1/commerce-gift-settings` | 查看礼品兑换开放状态 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | 无 | {enabled} | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `GET /api/saydian-app/admin/v1/commerce-gift-cards/:id/qr` | 查看礼品卡二维码 | admin: SUPER_ADMIN | path:id；id为兑换卡UUID | {serialNo,cardNo,link,qrDataUrl}；二维码不含校验码 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saydian-app/admin/v1/commerce-gift-batches` | 生成礼品卡并首次导出明文 | admin: SUPER_ADMIN | {name,quantity:1至100,productId,allowedSkuIds,expiresAt?,requestKey} | {batchId,batchNo,alreadyGenerated,filename,csv}；明文仅首次响应，重试csv=null；只存bcrypt哈希；新卡未启用 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saydian-app/admin/v1/commerce-gift-cards/actions` | 启用、改绑或作废礼品卡 | admin: SUPER_ADMIN | {action:ACTIVATE/BIND/VOID,ids或batchId,reason,version?,downloadConfirmed?,productId?,allowedSkuIds?,expiresAt?} | {changed}；仅未启用卡可改绑，跨商品改绑保留最初发卡商品编号 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `PUT /api/saydian-app/admin/v1/commerce-gift-settings` | 开放或暂停礼品兑换 | admin: SUPER_ADMIN | {enabled:boolean} | {enabled}；默认关闭，审计记录；不改变原维护状态 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
 | `GET /api/saydian-app/admin/v1/partners` | 总后台品牌伙伴列表 | admin | query:search?，query:page?；search?、page? | 伙伴资料、等级、钱包及会员/订单数量；不返回密码或会话 | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/admin/v1/partners` | 开通品牌伙伴账户 | admin: SUPER_ADMIN | {username,name,mobile?,password,levelId}；密码10至128字符 | 新伙伴及零余额/零保证金钱包；事务内留审计 | 主库；伙伴身份与会员/员工推广隔离 |
 | `PATCH /api/saydian-app/admin/v1/partners/:id` | 编辑或停用品牌伙伴 | admin: SUPER_ADMIN | path:id；{updatedAt,name?,mobile?,levelId?,active?}；CAS防覆盖 | 更新后伙伴；停用立即吊销全部伙伴会话 | 主库；伙伴身份与会员/员工推广隔离 |

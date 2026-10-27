@@ -38,7 +38,7 @@ import {
   commerceQuoteFingerprint,
   optionalExpectedQuote,
 } from "./commerce-quote";
-import { commerceOrderListFilter } from "./commerce-order-filter";
+import { commerceOrderListFilter, commerceOrderKindFilter } from "./commerce-order-filter";
 import { afterSaleEvidenceReferences } from "./commerce-evidence";
 import { cancelCommerceOrderInTransaction } from "./commerce-order-cancellation";
 import { markPaymentStockItems } from "./commerce-payment-stock";
@@ -687,10 +687,10 @@ export class CommerceStoreService {
     }
   }
 
-  async listOrders(userId: string, statusInput?: string, groupInput?: string) {
+  async listOrders(userId: string, statusInput?: string, groupInput?: string, kind?: string) {
     const filter = commerceOrderListFilter(statusInput, groupInput);
     return this.prisma.commerceOrder.findMany({
-      where: { userId, ...filter },
+      where: { userId, ...filter, ...commerceOrderKindFilter(kind) },
       include: {
         items: true,
         paymentIntents: { select: customerPaymentIntentSelect },
@@ -835,6 +835,7 @@ export class CommerceStoreService {
       body.type ?? "REFUND_ONLY",
       "售后类型",
     );
+    if (order.giftCardSerial && type !== AfterSaleType.EXCHANGE) throw new BadRequestException("礼品兑换订单支持换货，请联系客服处理其他售后，不支持现金退款");
     const raw = Array.isArray(body.items)
       ? body.items.map(safeObject)
       : body.orderItemId

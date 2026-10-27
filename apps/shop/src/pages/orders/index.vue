@@ -11,7 +11,7 @@
           @click="select(tab.value)"
           >{{ tab.label }}</button
         ></view
-      ><view v-if="error" class="error-state" role="alert">{{ error }}<button @click="load">重新加载</button></view
+      ><view class="order-source"><button :class="!kind && 'active'" @click="kind='';load()">全部来源</button><button :class="kind==='gift' && 'active'" @click="kind='gift';load()">礼品兑换</button></view><view v-if="error" class="error-state" role="alert">{{ error }}<button @click="load">重新加载</button></view
       ><view v-if="orders.length" class="orders"
         ><view
           v-for="order in orders"
@@ -20,8 +20,8 @@
           @click="open(order.id)"
           ><view class="row between"
             ><text class="order-no">{{ order.orderNo }}</text
-            ><text class="status">{{ label(order.status) }}</text></view
-          ><text v-if="order.readOnly" class="small">历史订单 · 只读</text
+            ><text class="status">{{ order.giftCardSerial && order.status==='PAID' ? '待发货' : label(order.status) }}</text></view
+          ><text v-if="order.giftCardSerial" class="small gift-label">礼品兑换 · {{ order.giftCardSerial }}</text><text v-if="order.readOnly" class="small">历史订单 · 只读</text
           ><view v-for="item in orderItemSummary(order).items" :key="item.id" class="order-item"
             ><image v-if="item.imageSnapshot" class="product-link"
               :src="item.imageSnapshot"
@@ -36,7 +36,7 @@
           ><view v-if="orderItemSummary(order).quantity === null" class="small">商品明细未获取</view
           ><view class="order-total"
             >{{ orderItemSummary(order).quantity === null ? '商品数量未获取' : '共 ' + orderItemSummary(order).quantity + ' 件' }}，
-            {{ order.readOnly ? '订单金额' : order.paidAt ? '支付金额' : '应付' }} <b>{{ money(order.payableCents) }}</b></view
+            {{ order.giftCardSerial ? '实付' : order.readOnly ? '订单金额' : order.paidAt ? '支付金额' : '应付' }} <b>{{ money(order.payableCents) }}</b></view
           ></view
         ></view
       ><view v-else-if="!error" class="empty card">{{ loading ? '正在读取订单…' : '当前没有订单' }}</view></view
@@ -56,10 +56,10 @@ const tabs = [
     { label: "待收货", value: "SHIPPED" },
     { label: "售后", value: "AFTER_SALE" },
   ],
-  status = ref(""),
+  status = ref(""), kind = ref(""),
   orders = ref<any[]>([]), error = ref(""), loading = ref(false);
 let revision = 0;
-onLoad(o=>{status.value=o?.group==='pending_shipment'?'WAITING_FULFILLMENT':o?.group==='after_sales'?'AFTER_SALE':String(o?.status || '');});
+onLoad(o=>{kind.value=o?.kind==='gift'?'gift':'';status.value=o?.group==='pending_shipment'?'WAITING_FULFILLMENT':o?.group==='after_sales'?'AFTER_SALE':String(o?.status || '');});
 onShow(load);
 onHide(() => { revision++; });
 onUnload(() => { revision++; });
@@ -70,7 +70,7 @@ async function load() {
   try {
     const group = status.value === "WAITING_FULFILLMENT" ? "pending_shipment" : status.value === "AFTER_SALE" ? "after_sales" : "";
     const query = group ? `group=${group}` : `status=${encodeURIComponent(status.value)}`;
-    const rows = await api<any[]>(`/storefront/orders?${query}`, {
+    const rows = await api<any[]>(`/storefront/orders?${query}${kind.value ? '&kind=gift' : ''}`, {
       auth: true,
     });
     if (request === revision) orders.value = rows;
@@ -195,3 +195,5 @@ function label(v: string) {
   }
 }
 </style>
+
+<style scoped>.order-source{display:flex;gap:8px;margin:12px 0}.order-source button{font-size:13px;min-height:40px;width:auto;margin:0;padding:8px 14px;background:white;border:1px solid var(--line);color:var(--ink)}.order-source button.active{color:var(--green);border-color:var(--green)}.gift-label{color:var(--green);display:block;margin-top:8px}</style>

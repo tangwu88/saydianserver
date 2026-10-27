@@ -19,7 +19,7 @@ const groups = [
     ["/commerce-banners", "首页轮播"], ["/commerce-business-configs", "商城设置"],
     ["/commerce-orders", "订单"], ["/commerce-after-sales", "售后退款"],
     ["/commerce-reviews", "商品评价"],
-    ["/commerce-coupons", "优惠券"], ["/commerce-employees", "员工推广"],
+    ["/commerce-coupons", "优惠券"], ["/commerce-gifts", "礼品兑换"], ["/commerce-employees", "员工推广"],
     ["/commerce-commissions", "奖金明细"], ["/commerce-jobs", "ERP任务"],
     ["/payments", "支付流水"],
     ["/commerce-withdrawals", "提现审核"],

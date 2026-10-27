@@ -1,3 +1,4 @@
+import { commerceOrderKindFilter } from "../commerce/commerce-order-filter";
 import { productPage, productCategoryFilter } from "../commerce/product-list-query";
 import { writeCnDisplaySetting } from "./cn-display-setting";
 import { writeSayRingMapSetting } from "./say-ring-map-setting";
@@ -2479,6 +2480,7 @@ export class AdminService {
     pageInput: number,
     searchInput: string,
     current: { role: string; roles?: string[] },
+    kind?: string,
   ) {
     const page = Math.max(Number(pageInput) || 1, 1);
     const status = statusInput
@@ -2486,6 +2488,7 @@ export class AdminService {
       : undefined;
     const search = searchInput.trim().slice(0, 200);
     const where: Prisma.CommerceOrderWhereInput = {
+      ...commerceOrderKindFilter(kind),
       ...(status ? { status } : {}),
       ...(search
         ? {

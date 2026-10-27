@@ -2683,6 +2683,12 @@ export const apiCatalog = {
           "name": "search",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "kind",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -12660,6 +12666,12 @@ export const apiCatalog = {
           "name": "group",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "kind",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "raw-or-legacy",
@@ -18797,6 +18809,12 @@ export const apiCatalog = {
           "name": "group",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "kind",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -21144,6 +21162,1268 @@ export const apiCatalog = {
         "contentType": "application/json",
         "source": "apps/api/src/devices/devices.controller.ts",
         "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "GiftController.capabilities",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/storefront/gift-redemptions/capabilities",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "礼品兑换是否开放",
+      "request": "无",
+      "response": "{enabled}；中国站，默认关闭",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftController.validate",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/gift-redemptions/validate",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "验证礼品卡",
+      "request": "{cardNo:8位数字且8开头,checkCode:6位数字}",
+      "response": "短时token、商品、可兑规格；不返回校验码或哈希",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "cardNo": {
+              "type": "string",
+              "pattern": "^8[0-9]{7}$"
+            },
+            "checkCode": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            }
+          },
+          "required": [
+            "cardNo",
+            "checkCode"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "card": {
+              "type": "object",
+              "properties": {
+                "serialNo": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$",
+                  "description": "数据库自动生成的兑换卡管理序号，如1、2、3"
+                },
+                "expiresAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            },
+            "product": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "skus": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "specification": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "stock": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            },
+            "phoneVerified": {
+              "type": "boolean"
+            },
+            "consentVersion": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "token",
+            "expiresAt",
+            "card",
+            "product",
+            "consentVersion"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftController.view",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/gift-redemptions/session",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "{ token?: unknown }",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "恢复未完成兑换",
+      "request": "{token}",
+      "response": "卡片与商品摘要；仅校验卡片，不授予订单或地址权限",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          "required": [
+            "token"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "card": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "product": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "phoneVerified": {
+              "type": "boolean"
+            },
+            "consentVersion": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "card",
+            "product",
+            "phoneVerified",
+            "consentVersion"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftController.sms",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/gift-redemptions/sms/request",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "发送礼品兑换专用短信",
+      "request": "{token,mobile:中国大陆手机号}",
+      "response": "有效期300秒，重发间隔60秒；生产不回显验证码",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "mobile": {
+              "type": "string",
+              "pattern": "^(?:\\+86)?1[3-9][0-9]{9}$"
+            }
+          },
+          "required": [
+            "token",
+            "mobile"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "expiresIn": {
+              "const": 300
+            },
+            "retryAfter": {
+              "const": 60
+            }
+          },
+          "required": [
+            "expiresIn",
+            "retryAfter"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftController.verify",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/gift-redemptions/sms/verify",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "验证手机号并登录或注册会员",
+      "request": "{token,mobile,code,consentAccepted:true,consentVersion:当前商城已审已发布版本}",
+      "response": "商城会话；证明绑定本次兑换卡、会员和会话，15分钟有效",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "mobile": {
+              "type": "string"
+            },
+            "code": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            },
+            "consentAccepted": {
+              "const": true
+            },
+            "consentVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "required": [
+            "token",
+            "mobile",
+            "code",
+            "consentAccepted",
+            "consentVersion"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string"
+            },
+            "refreshToken": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "user": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "token",
+            "refreshToken",
+            "expiresAt",
+            "user"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftController.preview",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/gift-redemptions/preview",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "预览免费礼品兑换",
+      "request": "{token,skuId,addressId}",
+      "response": "商品和地址快照、fingerprint、数量1、实付和运费0",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "skuId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "addressId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "token",
+            "skuId",
+            "addressId"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "sku": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "address": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            },
+            "quantity": {
+              "const": 1
+            },
+            "giftDiscountCents": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "shippingCents": {
+              "const": 0
+            },
+            "payableCents": {
+              "const": 0
+            },
+            "fingerprint": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sku",
+            "address",
+            "quantity",
+            "giftDiscountCents",
+            "shippingCents",
+            "payableCents",
+            "fingerprint"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftController.submit",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/gift-redemptions/submit",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "核销礼品卡并生成订单",
+      "request": "{token,skuId,addressId,fingerprint,requestKey:8至128字符}",
+      "response": "{orderId,orderNo}；一卡一单；事务内核销、结算、扣库存及ERP排队",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "skuId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "addressId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "requestKey": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,128}$"
+            }
+          },
+          "required": [
+            "token",
+            "skuId",
+            "addressId",
+            "fingerprint",
+            "requestKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderNo": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "orderId",
+            "orderNo"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftController.result",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/gift-redemptions/result",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "查询本人原兑换结果",
+      "request": "{token}",
+      "response": "{completed,orderId?,orderNo?}；仅本次验证会员可查",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          "required": [
+            "token"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "completed": {
+              "type": "boolean"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderNo": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "completed"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftAdminController.batches",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-batches",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "*",
+          "type": "Record<string, string>",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "查询礼品卡生成批次",
+      "request": "q/page",
+      "response": "分页元数据；不补导明文",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "page"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftAdminController.cards",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-cards",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "*",
+          "type": "Record<string, string>",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "查询礼品卡",
+      "request": "q/page/batchId/status",
+      "response": "编号、卡号、当前商品、允许规格、状态及关联订单；无哈希",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "page"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftAdminController.records",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-redemptions",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "*",
+          "type": "Record<string, string>",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "查询礼品兑换记录",
+      "request": "q/page",
+      "response": "会员ID、验证手机号及时间、兑换时间、可信IP、订单号和商品地址快照",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "page"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftAdminController.products",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-products",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "查询可配置的礼品商品",
+      "request": "无",
+      "response": "已上架商品和启用规格，最多1000款",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "skus": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "specification": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "stock": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": true
+                }
+              }
+            },
+            "required": [],
+            "additionalProperties": true
+          }
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftAdminController.settings",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-settings",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "COMMERCE_OPERATIONS"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "查看礼品兑换开放状态",
+      "request": "无",
+      "response": "{enabled}",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftAdminController.qr",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-cards/:id/qr",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "查看礼品卡二维码",
+      "request": "id为兑换卡UUID",
+      "response": "{serialNo,cardNo,link,qrDataUrl}；二维码不含校验码",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "serialNo": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$",
+              "description": "数据库自动生成的兑换卡管理序号，如1、2、3"
+            },
+            "cardNo": {
+              "type": "string"
+            },
+            "link": {
+              "type": "string"
+            },
+            "qrDataUrl": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "serialNo",
+            "cardNo",
+            "link",
+            "qrDataUrl"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftAdminController.generate",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-batches",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "生成礼品卡并首次导出明文",
+      "request": "{name,quantity:1至100,productId,allowedSkuIds,expiresAt?,requestKey}",
+      "response": "{batchId,batchNo,alreadyGenerated,filename,csv}；明文仅首次响应，重试csv=null；只存bcrypt哈希；新卡未启用",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "productId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "allowedSkuIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "minItems": 1,
+              "maxItems": 200,
+              "uniqueItems": true
+            },
+            "expiresAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "requestKey": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,128}$"
+            }
+          },
+          "required": [
+            "name",
+            "quantity",
+            "productId",
+            "allowedSkuIds",
+            "requestKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "batchId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "batchNo": {
+              "type": "string"
+            },
+            "alreadyGenerated": {
+              "type": "boolean"
+            },
+            "filename": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "csv": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "batchId",
+            "batchNo",
+            "alreadyGenerated",
+            "filename",
+            "csv"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftAdminController.change",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-cards/actions",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "启用、改绑或作废礼品卡",
+      "request": "{action:ACTIVATE/BIND/VOID,ids或batchId,reason,version?,downloadConfirmed?,productId?,allowedSkuIds?,expiresAt?}",
+      "response": "{changed}；仅未启用卡可改绑，跨商品改绑保留最初发卡商品编号",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "productId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "allowedSkuIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "minItems": 1,
+              "maxItems": 200,
+              "uniqueItems": true
+            },
+            "expiresAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "action": {
+              "enum": [
+                "ACTIVATE",
+                "BIND",
+                "VOID"
+              ]
+            },
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "batchId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "downloadConfirmed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "action",
+            "reason"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "changed": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "changed"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
+      }
+    },
+    {
+      "key": "GiftAdminController.configure",
+      "method": "PUT",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-settings",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift.controller.ts",
+      "summary": "开放或暂停礼品兑换",
+      "request": "{enabled:boolean}",
+      "response": "{enabled}；默认关闭，审计记录；不改变原维护状态",
+      "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift.controller.ts; apps/api/src/gifts/gift.service.ts; apps/api/src/gifts/gift-policy.ts; apps/api/src/gifts/gift-database.test.ts",
+        "note": "一款一件；商品及运费全免；后台写操作仅总管理员；真实短信和ERP须独立验收。"
       }
     },
     {

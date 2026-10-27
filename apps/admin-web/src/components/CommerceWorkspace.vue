@@ -20,10 +20,12 @@ const props = defineProps<{
   createable: boolean;
   search: string;
   categoryId?: string;
+  orderKind?: string;
 }>();
 
 const emit = defineEmits<{
   "update:search": [value: string];
+  "kind-change": [value: string];
   refresh: [];
   create: [];
   edit: [row: Row];
@@ -295,7 +297,7 @@ function onErpSynced(orderId: string, snapshot: Row): void {
 
 function paymentChannelLabel(channel: unknown): string {
   const labels: Record<string, string> = {
-    OFFLINE_MANUAL: "线下收款", WECHAT_MINI: "微信小程序", WECHAT_JSAPI: "微信公众号",
+    GIFT_REDEMPTION: "礼品兑换", PARTNER_BALANCE: "品牌伙伴余额", OFFLINE_MANUAL: "线下收款", WECHAT_MINI: "微信小程序", WECHAT_JSAPI: "微信公众号",
     WECHAT_H5: "微信 H5", WECHAT_NATIVE: "微信扫码", WECHAT_APP: "微信 App",
     ALIPAY_WAP: "支付宝手机网页", ALIPAY_PAGE: "支付宝电脑网页", ALIPAY_APP: "支付宝 App", APPLE_IAP: "Apple 内购",
   };
@@ -466,7 +468,7 @@ function changeStatus(value: unknown): void {
 
     <div class="commerce-toolbar">
       <el-input :model-value="search" :placeholder="filterPlaceholder" clearable class="search-input" @update:model-value="emit('update:search', String($event))" @keyup.enter="emit('refresh')" />
-      <el-select v-if="filterOptions.length" :model-value="statusFilter" clearable placeholder="全部状态" class="status-select" @change="changeStatus">
+      <el-select v-if="resource==='commerce-orders'" :model-value="orderKind || ''" clearable placeholder="全部来源" class="status-select" @change="emit('kind-change',String($event || ''))"><el-option label="会员下单" value="member"/><el-option label="品牌伙伴下单" value="partner"/><el-option label="礼品兑换" value="gift"/></el-select><el-select v-if="filterOptions.length" :model-value="statusFilter" clearable placeholder="全部状态" class="status-select" @change="changeStatus">
         <el-option v-for="option in filterOptions" :key="option[0]" :label="option[1]" :value="option[0]" />
       </el-select>
       <el-select v-if="resource === 'commerce-products'" :model-value="categoryId || ''" clearable filterable placeholder="全部分类" aria-label="商品分类" class="status-select" @change="emit('category-change', String($event || ''))">
@@ -537,7 +539,7 @@ function changeStatus(value: unknown): void {
     </el-table>
 
     <el-table v-else-if="resource === 'commerce-orders'" v-loading="loading" :data="visibleRows" border stripe empty-text="暂无订单">
-      <el-table-column label="订单信息" min-width="220"><template #default="scope"><strong>{{ scope.row.orderNo }}</strong><small>{{ dateTime(scope.row.createdAt) }}</small></template></el-table-column>
+      <el-table-column label="订单信息" min-width="220"><template #default="scope"><strong>{{ scope.row.orderNo }}</strong><el-tag v-if="scope.row.giftCardSerial" size="small" type="success">礼品兑换</el-tag><small v-if="scope.row.giftCardSerial">{{ scope.row.giftCardSerial }}</small><small>{{ dateTime(scope.row.createdAt) }}</small></template></el-table-column>
       <el-table-column label="商品清单" min-width="240"><template #default="scope"><a v-if="storefrontProductUrl(scope.row.items?.[0]?.productId)" class="product-link" :href="storefrontProductUrl(scope.row.items[0].productId)" target="_blank" rel="noopener noreferrer">{{ orderItemsSummary(scope.row) }}</a><template v-else>{{ orderItemsSummary(scope.row) }}</template></template></el-table-column>
       <el-table-column label="金额" width="145"><template #default="scope"><strong>{{ money(scope.row.payableCents, scope.row.currency) }}</strong><small>运费 {{ money(scope.row.shippingCents, scope.row.currency) }}</small></template></el-table-column>
       <el-table-column label="收货信息" min-width="190"><template #default="scope"><strong>{{ scope.row.recipientName }}</strong><small>{{ scope.row.recipientMobile }}</small><small>{{ scope.row.province }} {{ scope.row.city }} {{ scope.row.district }}</small></template></el-table-column>
@@ -653,7 +655,7 @@ function changeStatus(value: unknown): void {
       <el-descriptions :column="1" border>
         <el-descriptions-item label="编号">{{ detailRow.id || "—" }}</el-descriptions-item>
         <el-descriptions-item v-if="detailRow.orderNo" label="订单号">{{ detailRow.orderNo }}</el-descriptions-item>
-        <el-descriptions-item v-if="resource === 'commerce-orders'" label="下单人"><el-tag size="small" :type="orderPurchaser(detailRow).tag">{{ orderPurchaser(detailRow).label }}</el-tag> {{ orderPurchaser(detailRow).name }}<small v-if="orderPurchaser(detailRow).reference">{{ orderPurchaser(detailRow).kind === 'partner' ? '伙伴编号' : '会员 ID' }}：{{ orderPurchaser(detailRow).reference }}</small><small v-if="orderPurchaser(detailRow).contact">{{ orderPurchaser(detailRow).contact }}</small></el-descriptions-item>
+        <el-descriptions-item v-if="resource === 'commerce-orders' && detailRow.giftCardSerial" label="礼品兑换">{{ detailRow.giftCardSerial }} · 抵扣 {{ money(detailRow.giftDiscountCents) }}</el-descriptions-item><el-descriptions-item v-if="resource === 'commerce-orders'" label="下单人"><el-tag size="small" :type="orderPurchaser(detailRow).tag">{{ orderPurchaser(detailRow).label }}</el-tag> {{ orderPurchaser(detailRow).name }}<small v-if="orderPurchaser(detailRow).reference">{{ orderPurchaser(detailRow).kind === 'partner' ? '伙伴编号' : '会员 ID' }}：{{ orderPurchaser(detailRow).reference }}</small><small v-if="orderPurchaser(detailRow).contact">{{ orderPurchaser(detailRow).contact }}</small></el-descriptions-item>
         <el-descriptions-item v-if="detailRow.afterSaleNo" label="售后单号">{{ detailRow.afterSaleNo }}</el-descriptions-item>
         <el-descriptions-item v-if="detailRow.paymentNo" label="支付单号">{{ detailRow.paymentNo }}</el-descriptions-item>
         <el-descriptions-item v-if="detailRow.status" label="状态"><template v-if="resource === 'commerce-orders'"><OrderErpPanel v-if="detailVisible" :key="detailRow.id" :order="detailRow" :can-sync="canEdit" @synced="onErpSynced" /><small>商城：{{ statusLabel(detailRow.status) }}</small></template><template v-else>{{ statusLabel(detailRow.status) }}</template></el-descriptions-item>

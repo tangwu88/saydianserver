@@ -84,6 +84,7 @@ const paymentChannelMap: Record<PaymentChannelContract, PaymentChannel> = {
   alipay_app: PaymentChannel.ALIPAY_APP,
   apple_iap: PaymentChannel.APPLE_IAP,
   partner_balance: PaymentChannel.PARTNER_BALANCE,
+  gift_redemption: PaymentChannel.GIFT_REDEMPTION,
 };
 
 @Injectable()
@@ -191,6 +192,7 @@ export class BillingService {
     if (idempotencyKey.length < 8 || idempotencyKey.length > 160) {
       throw new BadRequestException("支付请求编号不正确");
     }
+    if (channelInput === "gift_redemption") throw new BadRequestException("礼品兑换仅允许在兑换流程中结算");
     if (businessTypeInput === "partner_recharge" || channelInput === "partner_balance")
       throw new BadRequestException("此支付业务须从品牌伙伴平台发起");
     const existing = await this.prisma.paymentIntent.findUnique({
@@ -927,6 +929,7 @@ export class BillingService {
       if (!intent) throw new NotFoundException("支付记录不存在");
       assertNewExecutionOwner(intent);
       if (intent.commerceOrder) assertNewExecutionOwner(intent.commerceOrder);
+      if (intent.channel === PaymentChannel.GIFT_REDEMPTION || intent.commerceOrder?.giftCardSerial) throw new BadRequestException("礼品兑换不支持现金退款");
       if (intent.businessType === BusinessType.PARTNER_RECHARGE) throw new ConflictException("充值退款尚未开放，请联系财务处理资金对账");
       const existing = await tx.paymentRefund.findUnique({
         where: { idempotencyKey },
@@ -1335,7 +1338,7 @@ export class BillingService {
     });
     if (!intent) throw new NotFoundException("支付记录不存在");
     assertNewExecutionOwner(intent);
-    if (intent.channel === PaymentChannel.PARTNER_BALANCE) throw new BadRequestException("余额支付不接受外部支付回执");
+    if ([PaymentChannel.PARTNER_BALANCE, PaymentChannel.GIFT_REDEMPTION].includes(intent.channel as "PARTNER_BALANCE" | "GIFT_REDEMPTION")) throw new BadRequestException("内部结算不接受外部支付回执");
     if (verification.integrationKey !== undefined) {
       assertPaymentIntegrationBinding(intent, verification.integrationKey);
     }
@@ -1444,6 +1447,7 @@ export class BillingService {
         where: { id: businessId, userId },
       });
       if (!order) throw new NotFoundException("订单不存在");
+      if (order.giftCardSerial) throw new BadRequestException("礼品兑换订单无需付款");
       assertNewExecutionOwner(order);
       if (order.status !== CommerceOrderStatus.PENDING_PAYMENT) {
         throw new ConflictException("当前订单不可支付");

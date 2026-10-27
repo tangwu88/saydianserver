@@ -56,6 +56,8 @@ describe("account deletion anonymization", () => {
     expect(fileDeletion.delete).toHaveBeenCalledWith([file.objectKey]);
     expect(tx.fileObject.deleteMany).toHaveBeenCalledWith({ where: { ownerUserId: userId, status: "DELETION_PENDING", id: { in: [file.id] } } });
     expect(tx.wechatOfficialIdentity.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+    expect(tx.commerceGiftSession.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+    expect(tx.commerceGiftRedemption.updateMany).toHaveBeenCalledWith({ where: { userId }, data: { verifiedMobile: "用户已注销", clientIp: null, addressSnapshot: { redacted: true, reason: "account_deleted" } } });
     expect(tx.user.update).toHaveBeenCalledWith({ where: { id: userId }, data: expect.objectContaining({ email: null, wechatAppOpenId: null, avatarUrl: null, status: UserStatus.DELETED }) });
   });
 

@@ -34,17 +34,21 @@
   </view></view>
 </template>
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, onMounted } from "vue";
+import { api } from "../api";
 import DesktopHeader from "./DesktopHeader.vue";
 const props = defineProps<{ user: any; error?: string; loading?: boolean; recentOrders?: any[]; recentOrdersLoading?: boolean; recentOrdersError?: string; miniProgram?: boolean }>(); defineEmits<{ logout: []; refresh: [] }>();
 const memberNumber = computed(() => /^\d+$/.test(String(props.user?.memberNo || '')) ? String(props.user.memberNo) : '未获取');
 const orderShortcuts = [{label:'待付款',url:'/pages/orders/index?status=PENDING_PAYMENT'},{label:'待发货',url:'/pages/orders/index?group=pending_shipment'},{label:'待收货',url:'/pages/orders/index?status=SHIPPED'},{label:'售后',url:'/pages/orders/index?group=after_sales'}];
-const shoppingMenus = [
+const giftEnabled = ref(false);
+onMounted(async () => { if (!props.miniProgram) try { giftEnabled.value = (await api("/storefront/gift-redemptions/capabilities")).enabled === true; } catch { giftEnabled.value = false; } });
+const shoppingMenus = computed(() => [
   { label: '推广与奖金', url: '/pages/employee/index' }, { label: '收货地址', url: '/pages/addresses/index' },
   { label: '我的收藏', url: '/pages/favorites/index' },
   { label: '优惠券', url: '/pages/coupons/index' }, { label: '积分与流水', url: '/pages/points/index' },
+  ...(giftEnabled.value ? [{ label: '礼品兑换', url: '/pages/gift-redemption/index' }] : []),
   { label: '帮助与客服', url: '/pages/help/index?section=service' },
-];
+]);
 function go(url: string) { uni.navigateTo({ url }); }
 function openOrder(id: string) { if (id) go('/pages/order-detail/index?id=' + encodeURIComponent(id)); }
 function login() { uni.navigateTo({ url: "/pages/login/index" }); }

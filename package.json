@@ -14,6 +14,8 @@
     "tools:test": "node --test tools/tooling.test.mjs && pnpm test:h5:flows && pnpm test:h5:contracts",
     "test:h5:flows": "node --test --test-concurrency=1 tools/h5-checkout-recovery.test.mjs tools/h5-cross-tab.test.mjs tools/h5-frontend.test.mjs",
     "test:h5:contracts": "node tools/build-global-h5.mjs && node --test --test-concurrency=1 tools/api-global-commerce-contracts.test.mjs tools/h5-field-contracts.test.mjs tools/h5-global-commerce-integration.test.mjs tools/h5-isolated-integration.test.mjs tools/h5-browser-fixture.test.mjs tools/h5-catalog-ui-fixture.test.mjs tools/h5-demo-network-guard.test.cjs",
+    "test:gifts:upgrade": "node tools/test-gift-upgrade.mjs",
+    "test:gifts:database": "node tools/test-gift-database.mjs",
     "test:http": "node tools/http-contract-smoke.mjs",
     "test:http:unified": "node tools/unified-http-smoke.mjs",
     "test:restore:local": "node tools/test-local-backup-restore.mjs",

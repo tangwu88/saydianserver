@@ -2,6 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import { CommerceJobWorker, jstGatewaySign, jstSign, mapJstProduct } from "./commerce-job-worker";
 
 describe("integrated Jushuitan adapter", () => {
+  it("uploads a gift as zero cash with the original SKU and a stable gift remark", async () => {
+    const order = { id: "gift-order", orderNo: "GD1", userId: "gift-member", executionOwner: "NEW_SYSTEM", status: "PAID", giftCardSerial: "GN001", createdAt: new Date(), province: "广东省", city: "深圳市", district: "南山区", addressDetail: "合成地址", recipientName: "合成会员", recipientMobile: "13800138000", payableCents: 0, shippingCents: 0, adminRemark: "仓库备注", items: [{ id: "gift-line", skuId: "system-sku", erpSkuIdSnapshot: "ERP-SKU", nameSnapshot: "礼品", specificationSnapshot: "8号", quantity: 1, unitPriceCents: 68000, totalCents: 68000 }], paymentIntents: [{ paymentNo: "GP1", paidAt: new Date(), channel: "GIFT_REDEMPTION", amountCents: 0 }] };
+    const worker = new CommerceJobWorker({ commerceOrder: { findUnique: vi.fn().mockResolvedValue(order), update: vi.fn() } } as any) as any;
+    worker.settings = vi.fn().mockResolvedValue({ shopId: "21842919", paths: { orderUpload: "jushuitan.orders.upload" } });
+    worker.call = vi.fn().mockResolvedValue({ datas: [{ o_id: 123, issuccess: true }] });
+    await worker.uploadOrder(order.id);
+    const payload = worker.call.mock.calls[0][2][0];
+    expect(payload).toMatchObject({ pay_amount: 0, freight: 0, remark: "礼品兑换：GN001\n仓库备注", pay: { payment: "礼品兑换", amount: 0 }, items: [{ sku_id: "ERP-SKU", shop_sku_id: "system-sku", base_price: 680, amount: 0, qty: 1 }] });
+    expect(JSON.stringify(payload)).not.toContain("secret");
+    order.paymentIntents[0]!.amountCents = 1;
+    await expect(worker.uploadOrder(order.id)).rejects.toThrow("redemption evidence");
+    expect(worker.call).toHaveBeenCalledTimes(1);
+  });
   it("uses the migrated deterministic signature algorithm", () => {
     expect(jstSign({ app_key: "app", timestamp: "1", biz: "{}" }, "secret"))
       .toMatch(/^[0-9a-f]{32}$/);

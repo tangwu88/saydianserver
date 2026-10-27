@@ -141,6 +141,9 @@ export class CommerceJobWorker {
       throw new PermanentCommerceJobError("Commerce order has multiple successful payments and requires reconciliation before ERP upload");
     }
     const payment = order.paymentIntents[0]!;
+    if (order.giftCardSerial ? payment.channel !== PaymentChannel.GIFT_REDEMPTION || payment.amountCents !== 0 || order.payableCents !== 0 : payment.channel === PaymentChannel.GIFT_REDEMPTION) {
+      throw new PermanentCommerceJobError("Gift order settlement does not match its redemption evidence");
+    }
     if (payment.amountCents !== order.payableCents) {
       throw new PermanentCommerceJobError("Commerce order payment amount does not match the payable amount");
     }
@@ -149,6 +152,10 @@ export class CommerceJobWorker {
     }
     const cleanIdentity = (value: string) => value.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
     let remark = order.adminRemark ?? undefined;
+    if (order.giftCardSerial) {
+      const identity = `礼品兑换：${cleanIdentity(order.giftCardSerial)}`;
+      remark = [identity, order.adminRemark === identity ? "" : order.adminRemark].filter(Boolean).join("\n").slice(0,150);
+    }
     if (order.partnerId) {
       // Keep the partner name and operational remarks; UUIDs/account numbers stay out of remarks.
       const identity = `品牌伙伴名称：${cleanIdentity(order.partner!.name)}`;
@@ -192,12 +199,12 @@ export class CommerceJobWorker {
           properties_value: item.specificationSnapshot,
           qty: item.quantity,
           base_price: item.unitPriceCents / 100,
-          amount: item.totalCents / 100,
+          amount: order.giftCardSerial ? 0 : item.totalCents / 100,
         })),
         pay: {
           outer_pay_id: payment.paymentNo,
           pay_date: formatJstDate(payment.paidAt ?? new Date()),
-          payment: payment.channel === PaymentChannel.PARTNER_BALANCE ? "品牌伙伴余额" : payment.channel,
+          payment: payment.channel === PaymentChannel.GIFT_REDEMPTION ? "礼品兑换" : payment.channel === PaymentChannel.PARTNER_BALANCE ? "品牌伙伴余额" : payment.channel,
           seller_account: payment.providerMerchantId ?? settings.shopId,
           buyer_account: order.partnerId ? `partner:${order.partnerId}` : order.userId,
           amount: payment.amountCents / 100,

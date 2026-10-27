@@ -68,6 +68,7 @@ export const paymentChannels = [
   "alipay_app",
   "apple_iap",
   "partner_balance",
+  "gift_redemption",
 ] as const;
 
 export type PaymentChannel = (typeof paymentChannels)[number];

@@ -288,12 +288,12 @@ export class CommerceService {
     };
   }
 
-  async orders(userId: string, status?: string, group?: string) {
+  async orders(userId: string, status?: string, group?: string, kind?: string) {
     const filter = commerceOrderListFilter(status, group);
     const [current, legacy] = await Promise.all([
-      this.store.listOrders(userId, status, group),
+      kind ? this.store.listOrders(userId, status, group, kind) : this.store.listOrders(userId, status, group),
       // A projection status is not evidence of a real after-sale relationship.
-      group === "after_sales"
+      (group === "after_sales" || kind === "gift" || kind === "partner")
         ? []
         : this.prisma.legacyOrderProjection.findMany({
             where: {

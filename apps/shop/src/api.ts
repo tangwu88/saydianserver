@@ -300,9 +300,9 @@ export async function refreshGlobalMallAccount(): Promise<any> {
   mallStorage.set("saidian-user", user);
   return user;
 }
-export function saveMallSession(session: any): void | Promise<void> {
+export function saveMallSession(session: any, expectedStamp?: string): void | Promise<void> {
   if (!session?.token || !session?.user?.id) throw new Error("登录响应不完整");
-  const expected = loginSnapshots.get(session) ?? mallSessionStamp();
+  const expected = expectedStamp ?? loginSnapshots.get(session) ?? mallSessionStamp();
   return withSessionLock(() => {
     if (!currentSession(expected)) throw changedSession();
     const previous = mallStorage.get("saidian-user");

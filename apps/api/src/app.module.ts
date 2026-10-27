@@ -23,6 +23,7 @@ import { StatusController } from "./status.controller";
 import { SupportModule } from "./support/support.module";
 import { UniversalLinksController } from "./universal-links.controller";
 import { PartnerModule } from "./partners/partner.module";
+import { GiftModule } from "./gifts/gift.module";
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { PartnerModule } from "./partners/partner.module";
     AuthModule,
     BillingModule,
     PartnerModule,
+    GiftModule,
     MembersModule,
     HealthModule,
     HealthReportsModule,

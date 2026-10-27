@@ -388,7 +388,7 @@ export class AuthService {
     return this.mallSession(session);
   }
 
-  async issueMallSession(userId: string) {
+  async issueMallSession(userId: string, sessionId?: string) {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
     });
@@ -398,7 +398,7 @@ export class AuthService {
     ) {
       throw new UnauthorizedException("请先完成手机号或邮箱验证");
     }
-    return this.mallSession(await this.issueSession(userId));
+    return this.mallSession(await this.issueSession(userId, sessionId));
   }
 
   consumeMobileBindingCode(mobile: string, code: string) {
@@ -742,8 +742,7 @@ export class AuthService {
     return this.toProfile(user);
   }
 
-  async issueSession(userId: string): Promise<SessionContract> {
-    const sessionId = randomUUID();
+  async issueSession(userId: string, sessionId: string = randomUUID()): Promise<SessionContract> {
     const accessJti = randomUUID();
     const refreshToken = randomToken();
     await this.prisma.userSession.create({
@@ -849,6 +848,20 @@ export class AuthService {
     if (!version.trim() || version.length > 80) {
       throw new BadRequestException("请先阅读并同意用户协议与隐私政策");
     }
+  }
+
+  /** Internal caller has atomically consumed a gift-only SMS challenge. */
+  async memberForVerifiedGiftMobile(tx: Prisma.TransactionClient, mobile: string, version: string) {
+    const legal = await globalLegalBundle(tx, "en", "saydian-global");
+    if (!legal || version !== legal.consentVersion) throw new ConflictException("商城协议已更新或暂不可用，请重新阅读并同意");
+    const existing = await tx.user.findUnique({ where: { mobile } });
+    if (existing && existing.status !== UserStatus.ACTIVE) throw new UnauthorizedException("账号不可用，请联系客服");
+    if (existing && !existing.mobileVerifiedAt) await tx.userSession.updateMany({ where: { userId: existing.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    const user = existing
+      ? await tx.user.update({ where: { id: existing.id }, data: { mobileVerifiedAt: new Date() } })
+      : await tx.user.create({ data: { mobile, mobileVerifiedAt: new Date(), nickname: `用户${mobile.slice(-4)}` } });
+    await this.recordLegalConsent(tx, user.id, version, "commerce_gift_sms");
+    return user;
   }
 
   private async recordLegalConsent(

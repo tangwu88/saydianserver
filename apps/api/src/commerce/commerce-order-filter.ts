@@ -14,3 +14,11 @@ export function commerceOrderListFilter(statusInput?: string, groupInput?: strin
   if (!Object.values(CommerceOrderStatus).some(value => value === status)) throw new BadRequestException("订单状态不正确");
   return { status: status as CommerceOrderStatus };
 }
+
+export function commerceOrderKindFilter(kind?: string) {
+  if (!kind) return {};
+  if (kind === "gift") return { giftCardSerial: { not: null } };
+  if (kind === "member") return { giftCardSerial: null, partnerId: null };
+  if (kind === "partner") return { partnerId: { not: null } };
+  throw new BadRequestException("订单来源不正确");
+}

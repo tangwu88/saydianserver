@@ -45,6 +45,7 @@ const search = ref("");
 const memberPartnerFilter = ref("");
 const partnerAssignment = ref<Row | null>(null);
 const commerceStatus = ref("");
+const orderKind = ref("");
 const reportType = ref("");
 const appProductFilter = ref("");
 const currentPage = ref(1);
@@ -355,6 +356,7 @@ async function load(): Promise<void> {
       ...(requestedResource === "health-reports" && reportType.value ? { reportType: reportType.value } : {}),
       ...(searchable.value && search.value ? { search: search.value } : {}),
       ...(paginatedResources.includes(requestedResource) ? { page: currentPage.value } : {}),
+      ...(requestedResource === "commerce-orders" && orderKind.value ? { kind: orderKind.value } : {}),
       ...(requestedResource === "commerce-products" ? { pageSize: productPageSize.value, categoryId: productCategoryId.value } : {}),
       ...(requestedResource === "members" ? { pageSize: memberPageSize, ...(memberPartnerFilter.value ? { partnerId: memberPartnerFilter.value } : {}) } : {}),
       ...(serverStatusResources.includes(requestedResource) && commerceStatus.value ? { status: commerceStatus.value } : {}),
@@ -1462,10 +1464,11 @@ function resetResourceView(): void {
   loadError.value = "";
   rows.value = [];
   resourceMeta.value = {};
-  search.value = "";
+  search.value = resource.value === "commerce-orders" ? String(route.query.search || "").slice(0,200) : "";
   memberPartnerFilter.value = "";
   partnerAssignment.value = null;
   commerceStatus.value = "";
+  orderKind.value = "";
   productCategoryId.value = "";
   productPageSize.value = 10;
   appProductFilter.value = "";
@@ -1504,7 +1507,7 @@ onBeforeUnmount(() => {
   <section class="page">
     <h1 class="page-title">{{ title }}</h1>
     <div class="resource-content">
-      <CommerceWorkspace v-if="isCommerceResource" v-model:search="search" :resource="resource" :rows="rows" :meta="resourceMeta" :category-id="productCategoryId" :loading="loading" :createable="createable" @refresh="refreshCommerce" @product-pagination="changeProductPagination" @category-change="changeProductCategory" @page-change="changeCommercePage" @status-change="changeCommerceStatus" @create="openCreate" @edit="openEdit" @delete-product="deleteCommerceProduct" @refund="refundAfterSale" @ship="openShipment" @shipping-refund="requestShippingRefund" @run-action="runAction" @batch-products="batchProducts" />
+      <CommerceWorkspace v-if="isCommerceResource" v-model:search="search" :resource="resource" :rows="rows" :meta="resourceMeta" :category-id="productCategoryId" :order-kind="orderKind" @kind-change="orderKind=$event;currentPage=1;load()" :loading="loading" :createable="createable" @refresh="refreshCommerce" @product-pagination="changeProductPagination" @category-change="changeProductCategory" @page-change="changeCommercePage" @status-change="changeCommerceStatus" @create="openCreate" @edit="openEdit" @delete-product="deleteCommerceProduct" @refund="refundAfterSale" @ship="openShipment" @shipping-refund="requestShippingRefund" @run-action="runAction" @batch-products="batchProducts" />
       <template v-else>
         <div class="toolbar">
           <el-select v-if="resource === 'health-reports'" v-model="reportType" placeholder="全部报告" clearable style="width: 180px" @change="load"><el-option label="健康报告" value="health" /><el-option label="睡眠报告" value="sleep" /></el-select>

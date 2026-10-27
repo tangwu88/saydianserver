@@ -40,6 +40,11 @@ export class AccountDeletionWorker {
         await tx.userNotificationPreference.deleteMany({ where: { userId } });
         await tx.pushInstallation.deleteMany({ where: { userId } });
         await tx.userSession.deleteMany({ where: { userId } });
+        await tx.commerceGiftSession.deleteMany({ where: { userId } });
+        await tx.commerceGiftRedemption.updateMany({
+          where: { userId },
+          data: { verifiedMobile: "用户已注销", clientIp: null, addressSnapshot: { redacted: true, reason: "account_deleted" } },
+        });
         await tx.consentRecord.deleteMany({ where: { userId } });
         await tx.activityGoal.deleteMany({ where: { userId } });
         await tx.deviceBinding.deleteMany({ where: { userId } });
