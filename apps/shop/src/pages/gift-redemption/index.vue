@@ -39,7 +39,10 @@
               maxlength="6"
               autocomplete="off"
               placeholder="请输入6位校验码"
-              :disabled="busy" /></label
+              :disabled="busy"
+            /><text class="muted"
+              >请输入兑换卡上的6位数字，不是手机短信验证码。</text
+            ></label
           ><button
             role="button"
             class="primary-btn"

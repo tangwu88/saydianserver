@@ -97,18 +97,34 @@ export class SafeHttpExceptionFilter implements ExceptionFilter {
     const legacy = isLegacyPath(path);
     const partner =
       /^\/(?:global\/)?api\/saydian-app\/vip\/v1(?:\/|\?|$)/.test(path) ||
-      /^\/(?:global\/)?api\/saydian-app\/admin\/v1\/(?:partners|partner-levels|partner-prices|partner-finance|partner-applications|partner-agreements)(?:\/|\?|$)/.test(path);
-    const partnerMember = /^\/(?:global\/)?api\/saidian-mall\/v1\/partner(?:\/|\?|$)/.test(path);
+      /^\/(?:global\/)?api\/saydian-app\/admin\/v1\/(?:partners|partner-levels|partner-prices|partner-finance|partner-applications|partner-agreements)(?:\/|\?|$)/.test(
+        path,
+      );
+    const partnerMember =
+      /^\/(?:global\/)?api\/saidian-mall\/v1\/partner(?:\/|\?|$)/.test(path);
+    const gift =
+      /^\/(?:global\/)?api\/saidian-mall\/v1\/storefront\/gift-redemptions(?:\/|\?|$)/.test(
+        path,
+      ) ||
+      /^\/(?:global\/)?api\/saydian-app\/admin\/v1\/commerce-gift-(?:batches|cards|redemptions|products|settings)(?:\/|\?|$)/.test(
+        path,
+      );
     response.status(legacy ? HttpStatus.OK : status).json({
       code: status,
       message:
-        !partner && !partnerMember && !errorKey && /[\u3400-\u9fff]/.test(details.message)
-          ? status === 401
-            ? "Please sign in again."
-            : status === 503
-              ? "This service is temporarily unavailable. Please try again later."
-              : "The request could not be completed. Please check and try again."
-          : details.message,
+        gift && status === 429
+          ? "操作过于频繁，请稍后再试"
+          : !partner &&
+              !partnerMember &&
+              !gift &&
+              !errorKey &&
+              /[\u3400-\u9fff]/.test(details.message)
+            ? status === 401
+              ? "Please sign in again."
+              : status === 503
+                ? "This service is temporarily unavailable. Please try again later."
+                : "The request could not be completed. Please check and try again."
+            : details.message,
       ...(errorKey ? { errorKey } : {}),
       data: details.data,
       timestamp: Math.floor(Date.now() / 1000),
