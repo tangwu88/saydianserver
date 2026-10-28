@@ -287,7 +287,16 @@ try {
 
   const vip = "/api/saydian-app/vip/v1";
   check(partnerLevels.filter(level => level.code.startsWith("distribution-")).map(level => level.name), ["战略合作", "核心合作", "优选合作"]);
-  const partnerToken = (await request(vip + "/auth/login", {method:"POST",body:{username:partnerInput.username,password}})).json.data.token;
+  const initialPartnerLogin = (await request(vip + "/auth/login", {method:"POST",body:{username:partnerInput.username,password}})).json.data;
+  check(initialPartnerLogin.mustChangePassword, true);
+  const initialPartnerToken = initialPartnerLogin.token;
+  check((await request(vip + "/products", {token:initialPartnerToken})).json.errorKey, "PARTNER_PASSWORD_CHANGE_REQUIRED");
+  const partnerPassword = password + "-partner-personal";
+  const passwordChange = await request(vip + "/auth/change-password", {method:"POST", token:initialPartnerToken, body:{currentPassword:password,newPassword:partnerPassword,confirmPassword:partnerPassword}});
+  check(passwordChange.status, 201);
+  check(passwordChange.json.data.mustChangePassword, false);
+  const partnerToken = passwordChange.json.data.token;
+  check((await request(vip + "/auth/me", {token:initialPartnerToken})).status, 401);
   check((await request(vip + "/auth/me",{token:partnerToken})).json.data.canViewMemberHealth,true);
   check((await request(admin + "/partners/members/" + a.data.member.id + "/assignment",{method:"POST",token:adminToken,body:{partnerId:fixturePartner.id,expectedPartnerId:null,reason:"Synthetic cooperation HTTP acceptance"}})).status,201);
   check((await request(vip + "/members/" + a.data.member.id + "/health-summary",{token:partnerToken})).status,200);
@@ -298,7 +307,11 @@ try {
   check((await request(manualRoute + "/orders",{token:financeToken})).status,200);
   check((await request(admin + "/partners",{token:financeToken})).json.data.items.some(partner=>partner.id===fixturePartner.id),true);
   const coreLevel=partnerLevels.find(level=>level.code==="distribution-2");
-  const changed=(await request(admin + "/partners/"+fixturePartner.id,{method:"PATCH",token:adminToken,body:{updatedAt:fixturePartner.updatedAt,levelId:coreLevel.id}})).json.data;
+  // Password replacement updates the account version; edit against the fresh admin record.
+  const refreshedPartner=(await request(admin + "/partners",{token:adminToken})).json.data.items.find(partner=>partner.id===fixturePartner.id);
+  const changedResponse=await request(admin + "/partners/"+fixturePartner.id,{method:"PATCH",token:adminToken,body:{updatedAt:refreshedPartner.updatedAt,levelId:coreLevel.id}});
+  check(changedResponse.status,200);
+  const changed=changedResponse.json.data;
   check((await request(vip + "/auth/me",{token:partnerToken})).json.data.canViewMemberHealth,false);
   const coreProfile=(await request(vip + "/members/"+a.data.member.id+"/profile",{token:partnerToken})).json.data;
   for(const field of ["birthday","heightCm","weightKg","healthProfile"])check(Object.hasOwn(coreProfile,field),false);

@@ -6,6 +6,8 @@ import { api, data, errorMessage, partnerTokenKey } from "../api";
 import { ElMessage } from "element-plus";
 import { menu, activeMenu, activeShortcut } from "../navigation";
 import AgreementGate from "../components/AgreementGate.vue";
+import PasswordGate from "../components/PasswordGate.vue";
+const passwordReady = ref(false);
 const agreementReady = ref(false);
 const route = useRoute(),
   router = useRouter(),
@@ -150,7 +152,7 @@ async function logout() {
           <el-icon><Menu /></el-icon>更多
         </button>
       </nav>
-      <main id="main-content"><AgreementGate @ready="agreementReady = $event" @logout="logout" /><router-view v-if="agreementReady" /></main>
+      <main id="main-content"><PasswordGate @ready="passwordReady = $event; agreementReady = false" @logout="logout" /><AgreementGate v-if="passwordReady" @ready="agreementReady = $event" @logout="logout" /><router-view v-if="passwordReady && agreementReady" /></main>
     </div>
   </div>
 </template>

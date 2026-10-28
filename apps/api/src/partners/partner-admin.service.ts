@@ -177,6 +177,7 @@ export class PartnerAdminService {
             partnerNo: partnerNumber("VIP"),
             username,
             passwordHash,
+            mustChangePassword: true,
             name,
             mobile: mobile || null,
             levelId: level.id,
@@ -276,7 +277,7 @@ export class PartnerAdminService {
       await tx.$queryRaw`SELECT id FROM "BrandPartner" WHERE id = ${id}::uuid FOR UPDATE`;
       if (!(await tx.brandPartner.findUnique({ where: { id } })))
         throw new NotFoundException("品牌伙伴不存在");
-      await tx.brandPartner.update({ where: { id }, data: { passwordHash } });
+      await tx.brandPartner.update({ where: { id }, data: { passwordHash, mustChangePassword: true } });
       await tx.partnerSession.updateMany({
         where: { partnerId: id, revokedAt: null },
         data: { revokedAt: new Date() },

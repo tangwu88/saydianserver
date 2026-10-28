@@ -6,7 +6,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from "@nestjs/common";
-import { compare } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
 import { PrismaService } from "../common/prisma.service";
 import { randomToken, safeObject, sha256 } from "../common/crypto";
 import type { RequestWithContext } from "../common/request-context";
@@ -31,7 +31,7 @@ export class PartnerAuthService {
       throw new UnauthorizedException("账号或密码错误");
     const token = randomToken(),
       expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
-    await this.prisma.$transaction(async (tx) => {
+    const mustChangePassword = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "BrandPartner" WHERE id = ${partner.id}::uuid FOR SHARE`;
       const current = await tx.brandPartner.findUniqueOrThrow({
         where: { id: partner.id },
@@ -41,10 +41,12 @@ export class PartnerAuthService {
       await tx.partnerSession.create({
         data: { partnerId: partner.id, tokenHash: sha256(token), expiresAt },
       });
+      return current.mustChangePassword;
     });
     return {
       token,
       expiresAt,
+      mustChangePassword,
       user: {
         id: partner.id,
         partnerNo: partner.partnerNo,
@@ -53,6 +55,82 @@ export class PartnerAuthService {
         level: partner.level.name,
       },
     };
+  }
+
+  async changePassword(
+    partnerId: string,
+    sessionId: string,
+    input: unknown,
+    requestId: string,
+  ) {
+    const body = safeObject(input);
+    const currentPassword =
+      typeof body.currentPassword === "string" ? body.currentPassword : "";
+    const newPassword =
+      typeof body.newPassword === "string" ? body.newPassword : "";
+    if (
+      !currentPassword ||
+      currentPassword.length > 128 ||
+      newPassword.length < 10 ||
+      Buffer.byteLength(newPassword, "utf8") > 72
+    )
+      throw new BadRequestException(
+        "新密码至少10个字符，最多72个字节（中文通常占3个字节）",
+      );
+    if (newPassword !== body.confirmPassword)
+      throw new BadRequestException("两次输入的新密码不一致");
+    const passwordHash = await hash(newPassword, 12);
+    const token = randomToken(),
+      expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "BrandPartner" WHERE id = ${partnerId}::uuid FOR UPDATE`;
+      const partner = await tx.brandPartner.findUnique({
+        where: { id: partnerId },
+      });
+      const session = await tx.partnerSession.findUnique({
+        where: { id: sessionId },
+      });
+      if (
+        !partner?.active ||
+        !session ||
+        session.partnerId !== partnerId ||
+        session.revokedAt ||
+        session.expiresAt <= new Date()
+      )
+        throw new UnauthorizedException("品牌伙伴登录已失效");
+      if (!(await compare(currentPassword, partner.passwordHash)))
+        throw new BadRequestException("当前密码不正确");
+      if (await compare(newPassword, partner.passwordHash))
+        throw new BadRequestException("新密码不能与当前密码相同");
+      await tx.brandPartner.update({
+        where: { id: partnerId },
+        data: { passwordHash, mustChangePassword: false },
+      });
+      await tx.partnerSession.updateMany({
+        where: { partnerId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await tx.partnerSession.create({
+        data: {
+          partnerId,
+          memberSessionId: session.memberSessionId,
+          tokenHash: sha256(token),
+          expiresAt,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorType: "PARTNER",
+          actorId: partnerId,
+          action: "PARTNER_PASSWORD_CHANGED",
+          entityType: "BRAND_PARTNER",
+          entityId: partnerId,
+          afterJson: { sessionsRevoked: true },
+          requestId,
+        },
+      });
+    });
+    return { token, expiresAt, mustChangePassword: false };
   }
 
   async logout(sessionId: string) {
@@ -101,7 +179,17 @@ export class PartnerAuthGuard implements CanActivate {
       (request.originalUrl || request.path || "").split("?")[0] ?? ""
     ).replace(/\/$/, "");
     if (
-      !/\/vip\/v1\/(?:auth\/(?:me|logout)|agreement(?:\/accept)?)$/.test(path)
+      session.partner.mustChangePassword &&
+      !/\/vip\/v1\/auth\/(?:me|logout|change-password)$/.test(path)
+    )
+      throw new ForbiddenException({
+        errorKey: "PARTNER_PASSWORD_CHANGE_REQUIRED",
+        message: "请先修改初始密码后继续使用",
+      });
+    if (
+      !/\/vip\/v1\/(?:auth\/(?:me|logout|change-password)|agreement(?:\/accept)?)$/.test(
+        path,
+      )
     ) {
       const agreement = await this.prisma.partnerAgreement.findFirst({
         where: { active: true, status: "PUBLISHED" },

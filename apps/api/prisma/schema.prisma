@@ -350,6 +350,7 @@ model BrandPartner {
   partnerNo            String                       @unique
   username             String                       @unique
   passwordHash         String
+  mustChangePassword   Boolean                      @default(false)
   name                 String
   mobile               String?
   active               Boolean                      @default(true)
