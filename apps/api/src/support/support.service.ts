@@ -28,6 +28,7 @@ import { parseGlobalDownloadManifest } from "./global-download-manifest";
 import { PublicImageVariants, publicImageWidth } from "./public-image-variants";
 import { normalizePublishedGlobalSupport } from "./global-support-config";
 import { canAdminResource } from "@saydian/app-contracts";
+import { validatePartnerCustomerImage } from "../partners/partner-customer-image";
 import { parseSportRoute, renderAmapSportRoute } from "./sport-route-map";
 import {
   evidenceId,
@@ -853,7 +854,7 @@ export class SupportService implements OnModuleInit {
 
   async uploadPartnerCustomerImage(adminId: string, partnerId: string, file: Express.Multer.File, requestId: string) {
     await this.customerPartner(partnerId);
-    const contentType = validateEvidenceImage(file);
+    const contentType = await validatePartnerCustomerImage(file);
     const purpose = `partner-customer:${partnerId}`;
     if (await this.prisma.fileObject.count({ where: { purpose, status: "ACTIVE" } }) >= 200)
       throw new BadRequestException("每个伙伴最多保存200张客户资料图片");

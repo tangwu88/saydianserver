@@ -18,11 +18,31 @@ const rows = ref<Picture[]>([]),
   error = ref("");
 const pending = ref<File[]>([]),
   uploadResults = ref<Array<{ name: string; error?: string }>>([]);
+const pendingPictures = ref<
+  Array<{ file: File; url: string; failed: boolean }>
+>([]);
 const controller = new AbortController();
 let request = 0,
   disposed = false;
 function release() {
   for (const row of rows.value) if (row.url) URL.revokeObjectURL(row.url);
+}
+function updatePending(files: File[]) {
+  const existing = new Map(
+    pendingPictures.value.map((picture) => [picture.file, picture]),
+  );
+  const kept = new Set(files);
+  for (const picture of pendingPictures.value)
+    if (!kept.has(picture.file)) URL.revokeObjectURL(picture.url);
+  pending.value = files;
+  pendingPictures.value = files.map(
+    (file) =>
+      existing.get(file) || {
+        file,
+        url: URL.createObjectURL(file),
+        failed: false,
+      },
+  );
 }
 async function preview(row: Picture, version = request) {
   try {
@@ -82,7 +102,10 @@ function choose(event: Event) {
   if (
     files.some(
       (file) =>
-        !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+        (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(
+          file.type.toLowerCase(),
+        ) &&
+          !/\.(jpe?g|png|webp)$/i.test(file.name)) ||
         file.size <= 0 ||
         file.size > 10 * 1024 * 1024,
     )
@@ -90,7 +113,7 @@ function choose(event: Event) {
     error.value = "请选择JPG、PNG或WebP图片，每张不超过10MB";
     return;
   }
-  pending.value = files;
+  updatePending(files);
   uploadResults.value = [];
 }
 async function upload() {
@@ -115,7 +138,7 @@ async function upload() {
         });
       }
     }
-    pending.value = failed;
+    updatePending(failed);
     page.value = 1;
     await load();
   } finally {
@@ -128,6 +151,7 @@ onBeforeUnmount(() => {
   request++;
   controller.abort();
   release();
+  updatePending([]);
 });
 </script>
 <template>
@@ -148,7 +172,7 @@ onBeforeUnmount(() => {
         >选择多张图片<input
           type="file"
           multiple
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
           :disabled="uploading"
           @change="choose"
       /></label>
@@ -163,6 +187,33 @@ onBeforeUnmount(() => {
     <p v-if="pending.length">
       待上传：{{ pending.map((file) => file.name).join("、") }}
     </p>
+    <div
+      v-if="pendingPictures.length"
+      class="pictures"
+      aria-label="待上传图片预览"
+    >
+      <article v-for="(picture, index) in pendingPictures" :key="picture.url">
+        <el-image
+          v-if="!picture.failed"
+          :src="picture.url"
+          fit="contain"
+          :alt="picture.file.name"
+          :preview-src-list="
+            pendingPictures
+              .filter((item) => !item.failed)
+              .map((item) => item.url)
+          "
+          :initial-index="
+            pendingPictures.slice(0, index).filter((item) => !item.failed)
+              .length
+          "
+          preview-teleported
+          @error="picture.failed = true"
+        />
+        <div v-else class="placeholder">图片暂时无法预览</div>
+        <p>{{ picture.file.name }}</p>
+      </article>
+    </div>
     <ul v-if="uploadResults.length" aria-live="polite">
       <li v-for="(result, index) in uploadResults" :key="index">
         {{ result.name }}：{{ result.error || "已保存" }}
@@ -170,7 +221,8 @@ onBeforeUnmount(() => {
     </ul>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-button v-if="error" @click="load">重新加载</el-button>
-    <div v-loading="loading" class="pictures">
+    <h3>已保存图片（{{ total }}张）</h3>
+    <div v-loading="loading" class="pictures" aria-label="已保存客户资料图片">
       <article v-for="(row, index) in rows" :key="row.id">
         <el-image
           v-if="row.url"
