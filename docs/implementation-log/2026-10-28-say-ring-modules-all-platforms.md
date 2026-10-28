@@ -52,3 +52,13 @@
 - 恢复同artifact12790974683的HTTPS导入40634814047，私有staging全新，不重放旧请求。12:56接收29360128/369618649字节，线上仍f338000；实际完成前不标已导入。旧暂存文件没有跨目录删除或替换数据。
 - 已将同SHA的离线正式发布40635080045排在当前导入之后。现有生产并发锁、latest-main/原成功verify/原manifest/三镜像ID与revision检查仍生效；未就绪会在切换前失败。此时仍pending，最终上线/公开三端/手机验收待续。
 - 用户再次解锁后，按此前调试授权临时保持USB连接时亮屏，用于后续模块入口验证；结束需恢复原stay_on_while_plugged_in=0。
+
+## 最终生产与手机验收（已完成）
+
+- 同artifact的HTTPS导入40634814047最终success；原始归档/镜像校验成功后，离线发布40635080045终态success。未重新构建、未绕过原生产发布门禁，未改显示值/供应商凭证/维护或业务停写配置，未执行首次切换或新迁移。
+- 13:25起root与/global readiness均ready、revision=a5994ee1ab60b0cc66300adb440c64b897843cae；13:29实际API/worker/admin三个容器的OCI revision全部相同，磁盘仍有15GB可用。
+- 两个API别名分别实查ios/android/harmonyos：product/platform匹配，moduleVisibility schemaVersion=1、health_library=true、mall=false、no-store；百科分类200，商城markets404，非iOS未附带readOnlyHealth。既有iOS五项只读设置与AI字段保持原协议，未替用户改开关。
+- 实际公开/admin/引用index-Dd0yc6l5.js，包含“Say Ring 三端百科与商城显示”，排除仅API更新、后台资源仍旧的情况。
+- Android1154仍为原证书保留数据覆盖安装版本；一次正常后台/前台切换后首页显示健康百科且可打开，个人中心商城/订单入口不可见，设备页商城入口不可见，返回首页仍百科可见。无卸载、清数据、解绑、实付或测量；私有UI XML仅留Git外。原USB亮屏设置已恢复0。
+- 新版安卓手机实际验证完成；既有iOS协议兼容且iOS构建CI成功，不代表新增iPhone实测；原生鸿蒙1154双签APP/HAP已交付、两时区契约和实际ArkTS构建通过，但无原生鸿蒙设备实测，旧客户端须安装支持该读取协议的新包。
+- 最终公开响应/容器回执在Git外检查目录。源码main维持已上线a5994ee，文档回执仍只推当前功能分支，避免无意义重新发布；原脏工作树保持不动。前一次文档push连接重置后正常重试成功，未强推。
