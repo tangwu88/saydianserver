@@ -92,7 +92,12 @@ async function page(skus) {
     local = new Map(),
     draft = new Map();
   local.set("saidian-user", { id: "member" });
-  const product = { id: "product", name: "合成礼品", skus };
+  const product = {
+    id: "product",
+    name: "合成礼品",
+    coverImage: "/synthetic.webp",
+    skus,
+  };
   const quote = {
     sku: {
       id: skus[0].id,
@@ -180,14 +185,23 @@ test("ERP backorder remains selectable and single available zero-stock gift adva
     },
   ]);
   assert.equal(h.state.skuId.value, "erp");
-  const option = button(h.tree(), "未来银");
+  const tree = h.tree(),
+    option = button(tree, "未来银");
   assert.equal(option.props.disabled, false);
-  assert.match(text(option), /预计7天发货/);
+  assert.match(text(option), /✓ 已选/);
+  assert.doesNotMatch(text(option), /预计/);
+  const rendered = nodes(tree);
+  const dispatch = rendered.find((node) => node.props?.role === "status");
+  assert.equal(text(dispatch), "预计7天发货");
+  assert.ok(rendered.indexOf(dispatch) > rendered.indexOf(option));
+  assert.ok(
+    rendered.indexOf(dispatch) < rendered.indexOf(button(tree, "下一步")),
+  );
   assert.doesNotMatch(text(h.tree()), /当前规格暂时缺货/);
   await button(h.tree(), "下一步").props.onClick();
   assert.equal(h.state.stage.value, "phone");
 });
-test("per-spec estimates do not enable a LOCAL shortage or change a separate in-stock estimate", async () => {
+test("one dispatch estimate follows the selected SKU without enabling a LOCAL shortage", async () => {
   const h = await page([
     {
       id: "erp",
@@ -212,37 +226,54 @@ test("per-spec estimates do not enable a LOCAL shortage or change a separate in-
     },
   ]);
   assert.equal(button(h.tree(), "ERP预订").props.disabled, false);
-  assert.match(text(button(h.tree(), "现货")), /预计2天发货/);
+  assert.doesNotMatch(text(h.tree()), /预计[27]天发货/);
+  await button(h.tree(), "ERP预订").props.onClick();
+  assert.equal(
+    text(nodes(h.tree()).find((node) => node.props?.role === "status")),
+    "预计7天发货",
+  );
+  await button(h.tree(), "现货").props.onClick();
+  assert.equal(
+    text(nodes(h.tree()).find((node) => node.props?.role === "status")),
+    "预计2天发货",
+  );
+  assert.doesNotMatch(text(h.tree()), /预计7天发货/);
+  assert.doesNotMatch(text(button(h.tree(), "现货")), /预计/);
   assert.equal(button(h.tree(), "本地缺货").props.disabled, true);
 });
-test("confirmation uses server dispatch time and customization notice before any redemption submission", async () => {
-  const h = await page([
-    {
-      id: "stock",
-      specification: "现货",
-      stock: 2,
-      redeemable: true,
-      estimatedDispatchDays: 2,
-    },
-  ]);
-  h.state.verified.value = true;
-  h.state.ownerId.value = "member";
-  h.state.addressId.value = "address";
-  await h.state.prepare();
-  assert.equal(h.state.stage.value, "confirm");
-  assert.match(text(h.tree()), /预计7天发货/);
-  assert.match(text(h.tree()), /个性定制产品，发货时长稍长，请耐心等待。/);
-  assert.equal(
-    h.requests.filter((row) => row.path.endsWith("/submit")).length,
-    0,
-  );
-  await button(h.tree(), "确认兑换 · 免费包邮").props.onClick();
-  assert.equal(
-    h.requests.filter((row) => row.path.endsWith("/submit")).length,
-    1,
-  );
-});
-test("product title opens an inline detail dialog without resetting the redemption or submitting", async () => {
+for (const dispatchDays of [2, 7])
+  test(`confirmation uses server ${dispatchDays}-day estimate and only warns for a backorder`, async () => {
+    const h = await page([
+      {
+        id: "stock",
+        specification: "现货",
+        stock: 2,
+        redeemable: true,
+        estimatedDispatchDays: 2,
+      },
+    ]);
+    h.quote.sku.estimatedDispatchDays = dispatchDays;
+    h.state.verified.value = true;
+    h.state.ownerId.value = "member";
+    h.state.addressId.value = "address";
+    await h.state.prepare();
+    assert.equal(h.state.stage.value, "confirm");
+    assert.ok(text(h.tree()).includes(`预计${dispatchDays}天发货`));
+    assert.equal(
+      text(h.tree()).includes("个性定制产品，发货时长稍长，请耐心等待。"),
+      dispatchDays === 7,
+    );
+    assert.equal(
+      h.requests.filter((row) => row.path.endsWith("/submit")).length,
+      0,
+    );
+    await button(h.tree(), "确认兑换 · 免费包邮").props.onClick();
+    assert.equal(
+      h.requests.filter((row) => row.path.endsWith("/submit")).length,
+      1,
+    );
+  });
+test("product title and image open the same detail dialog without resetting or submitting", async () => {
   const h = await page([
     {
       id: "erp",
@@ -256,6 +287,13 @@ test("product title opens an inline detail dialog without resetting the redempti
   const popup = nodes(h.tree()).find((node) => node.type === detailStub);
   assert.equal(popup.props["product-id"], "product");
   popup.props.onClose();
+  const image = nodes(h.tree()).find((node) => node.type === imageStub);
+  assert.equal(image.props.role, "button");
+  image.props.onClick();
+  assert.equal(h.state.productDetailsVisible.value, true);
+  const imagePopup = nodes(h.tree()).find((node) => node.type === detailStub);
+  assert.equal(imagePopup.props["product-id"], "product");
+  imagePopup.props.onClose();
   assert.equal(h.state.productDetailsVisible.value, false);
   assert.equal(h.state.skuId.value, "erp");
   assert.equal(h.state.token.value, token);

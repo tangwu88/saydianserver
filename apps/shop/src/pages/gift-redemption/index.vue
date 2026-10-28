@@ -70,6 +70,13 @@
               :width="480"
               sizes="120px"
               priority
+              role="button"
+              tabindex="0"
+              aria-label="查看商品详情"
+              aria-haspopup="dialog"
+              @click="productDetailsVisible = true"
+              @keydown.enter.prevent="productDetailsVisible = true"
+              @keydown.space.prevent="productDetailsVisible = true"
             /><view
               ><button
                 role="button"
@@ -80,8 +87,7 @@
                 @keydown.enter.prevent="productDetailsVisible = true"
                 @keydown.space.prevent="productDetailsVisible = true"
               >
-                <b>{{ product.displayName || product.name }}</b
-                ><text>查看商品详情 ›</text></button
+                <b>{{ product.displayName || product.name }}</b></button
               ><text>兑换 1 件 · 包邮</text
               ><text v-if="card?.expiresAt"
                 >有效期至 {{ date(card.expiresAt) }}</text
@@ -105,13 +111,17 @@
               >
                 {{ sku.specification || "默认规格"
                 }}<text v-if="!giftSkuRedeemable(sku)">暂时缺货</text
-                ><text v-else
-                  >{{ giftDispatchText(sku)
-                  }}{{ skuId === sku.id ? " · ✓ 已选" : "" }}</text
-                >
+                ><text v-else-if="skuId === sku.id">✓ 已选</text>
               </button></view
             ><text v-if="!product?.skus?.some(giftSkuRedeemable)" class="muted"
               >当前规格暂时缺货，兑换卡尚未使用，可稍后再来。</text
+            ><view
+              v-if="giftSkuRedeemable(selectedSku)"
+              class="gift-dispatch-notice"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              ><b>{{ giftDispatchText(selectedSku) }}</b></view
             ><button
               role="button"
               class="primary-btn"
@@ -255,7 +265,9 @@
               ><view class="review-line"><text>数量</text><b>1 件</b></view
               ><view class="gift-dispatch-notice" role="note"
                 ><b>{{ giftDispatchText(quote.sku) }}</b
-                ><text>个性定制产品，发货时长稍长，请耐心等待。</text></view
+                ><text v-if="quote.sku.estimatedDispatchDays === 7"
+                  >个性定制产品，发货时长稍长，请耐心等待。</text
+                ></view
               ><view class="review-address"
                 ><b>{{ quote.address.name }} {{ quote.address.mobile }}</b
                 ><text
@@ -399,6 +411,9 @@ let alive = true,
   ticking: ReturnType<typeof setInterval> | undefined;
 const proofOwner = computed(
   () => verified.value && ownerId.value === currentOwner(),
+);
+const selectedSku = computed(() =>
+  product.value?.skus?.find((sku: { id: string }) => sku.id === skuId.value),
 );
 function persist() {
   saveGiftDraft(
@@ -862,6 +877,11 @@ onBeforeUnmount(() => {
   height: 100px;
   flex: none;
   border-radius: 12px;
+  cursor: pointer;
+}
+.gift-product .catalog-image:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
 }
 .gift-product > view {
   display: grid;
@@ -885,9 +905,6 @@ onBeforeUnmount(() => {
 }
 .gift-product-title::after {
   border: 0;
-}
-.gift-product .gift-product-title text {
-  color: var(--green);
 }
 .gift-product text {
   font-size: 13px;
