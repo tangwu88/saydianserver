@@ -43,3 +43,12 @@
 - 首轮多行交互请求被伪终端输入刷新打断，随后以单行bash -c执行完整只读请求，未通过重放不明确请求操作服务。未取消运行中的receiver、修改Docker设置、维护状态、生产开关或数据库。
 - 原镜像备用导出首次及第二次GitHub身份读取超时；确认无新workflow后重试，第三次成功。Export runtime images 40632153118成功，原始artifact12790974683为369618649字节、digest sha256:815b486a1dac2396fb0deedf190a00924186de5644ee5a19bdec10feddd352c2，未重新构建。随后40632331371请求现有artifact的受控HTTPS导入，只暂存/导入镜像、不切服务；同一production并发锁下等待原部署结束，尚不能记导入或上线完成。
 - SayRing mobile-ci40627341857的quality、Android、iOS及鸿蒙两个时区均已终态success。Windows本机无iPhone/鸿蒙实物的限制不因云端编译通过而消除。
+
+## 下载路径实测与继续发布（仍待线上验收）
+
+- 原CI40626718918的verify成功保留，auto-deploy在约60分钟后超时取消；现有API仍f338000且healthy。没有手工终止原发布receiver。
+- 备用HTTPS导入40632331371于12:39实际开始；12:42只读采样38MB/370MB，下载持续增长但较慢。尝试现有SSH分块路径40634151709前，按进程ID、完整命令、精确暂存路径及原API revision匹配，仅向该HTTPS暂存下载的timeout父进程发送TERM；不作用于API/worker/admin。
+- SSH分块实测更慢，12:51首块仅3436544字节、没有已验收块，切换判断没有带来改善；随后按精确timeout head命令、release锁FD及原API revision核对，仅停止该暂存接收。两个备用导入的failure为本轮有范围的暂存传输终止，不是源码/镜像验证失败；没有绕过哈希、镜像ID、迁移或维护门禁。
+- 恢复同artifact12790974683的HTTPS导入40634814047，私有staging全新，不重放旧请求。12:56接收29360128/369618649字节，线上仍f338000；实际完成前不标已导入。旧暂存文件没有跨目录删除或替换数据。
+- 已将同SHA的离线正式发布40635080045排在当前导入之后。现有生产并发锁、latest-main/原成功verify/原manifest/三镜像ID与revision检查仍生效；未就绪会在切换前失败。此时仍pending，最终上线/公开三端/手机验收待续。
+- 用户再次解锁后，按此前调试授权临时保持USB连接时亮屏，用于后续模块入口验证；结束需恢复原stay_on_while_plugged_in=0。
