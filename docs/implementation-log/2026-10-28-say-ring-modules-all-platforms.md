@@ -28,3 +28,10 @@
 - b3f4895已通过正常非强推更新main；CI40625602829的类型/全量测试/构建、真实PostgreSQL并发、礼品事务及API smoke均成功，但HTTP兼容授权检查失败，部署被跳过，生产仍旧版，未把源码推送写成已部署。
 - 定位`tools/http-contract-smoke.mjs`仍要求显式Say Ring Android商城在默认隐藏时返回200、Android模块对象为undefined，属于旧iOS-only契约。更新为canonical与/global两别名、ios/android/harmonyos三端完整关闭/百科独显/商城独显/回滚状态；每种状态继续校验未登录和两账号一致性、no-store、无身份401、陈旧409、非法400、其它App/未声明scope不变及五项iOS健康授权隔离。
 - 只有HTTP测试脚本和本日志改变，运行源码与本机/首轮CI已成功的类型/单元/构建逐blob一致；`node --check tools/http-contract-smoke.mjs`及git diff --check通过。此脚本仅在隔离合成数据库运行，不以生产环境执行真实配置写入；完整真实HTTP结果以重新触发的CI终态为准。
+
+## 发布状态回执（尚未线上完成）
+
+- 最终运行版本a5994ee1ab60b0cc66300adb440c64b897843cae已正常推送main。CI40626718918的verify成功，包括新三端HTTP、真实数据库、备份恢复与三个镜像；auto-deploy/resolve成功，独立US按范围跳过。本项目auto-deploy/deploy仍在受限SSH receiver步骤，不能记为已上线。
+- 12:01线上/global/health/ready仍旧f338000；暂未执行成功后“三端公开配置+模块404/200”的验收。客户端安卓1154已原证书覆盖安装，鸿蒙双签包已生成，源码0163ec7已推独立SayRing仓库。
+- 为只读定位服务器部署进度，按既有授权启动用户输入密码的全新SSH窗口；当前尚未认证，准备的请求仅ps/lslocks/docker inspect/df，不修改服务器或数据库。待用户在窗口输入，不在聊天收集密码。
+- 本段回执只推功能分支，不推进main，以免使仍在部署的a5994ee被新文档SHA判定为过期；运行源码与main完全相同。待上线后继续补最终版本/三端响应和手机验收。
