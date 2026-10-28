@@ -60,7 +60,7 @@ export const notes = {
   "PartnerController.me": entry("当前品牌伙伴账户", "本人伙伴会话", "身份、账号、等级及mustChangePassword；不返回资金账户或密码哈希", "主库；伙伴身份与会员/员工推广隔离"),
   "PartnerController.changePassword": entry("修改品牌伙伴密码", "{currentPassword,newPassword,confirmPassword}；新密码至少10字符且UTF-8不超过72字节，不得与旧密码相同；每分钟5次", "{token,expiresAt,mustChangePassword:false}；原密码验证、行锁、更新密码与撤销旧会话及创建新会话同事务；新token替换本地会话", "本人伙伴会话；未改初始密码时仅开放me/logout/change-password，其余业务403 PARTNER_PASSWORD_CHANGE_REQUIRED；旧账户默认不强制改密"),
   "PartnerAdminController.customerImages": entry("查看伙伴客户资料图片列表", "id为伙伴UUID、page?；每页10张", "{items,total,page,pageSize}；仅文件元数据，不返回公开URL或对象存储键", "总管理员；包括停用伙伴资料；私有文件不进入伙伴端"),
-  "PartnerAdminController.uploadCustomerImage": entry("上传保存伙伴客户资料图片", "id为伙伴UUID；multipart file；JPG/PNG/WebP单张不超过10MB；客户端每批最多20张逐张上传", "保存的文件元数据；每伙伴最多200张；记录上传审计", "总管理员；文件头与大小校验，私有对象存储，按伙伴绑定，不改变客户或伙伴账号资料"),
+  "PartnerAdminController.uploadCustomerImage": entry("上传保存伙伴客户资料图片", "id为伙伴UUID；multipart file；JPG/PNG/WebP单张不超过10MB；客户端每批最多20张逐张上传", "保存的文件元数据；内容类型以完整解码结果为准，保留原始图片字节；每伙伴最多200张；记录上传审计", "总管理员；大小/格式/解码/像素限制，兼容JPEG结束标记后的附加数据；私有对象存储，按伙伴绑定，不改变客户或伙伴账号资料"),
   "PartnerAdminController.customerImage": entry("读取伙伴客户资料私有图片", "id为伙伴UUID、fileId为其资料文件UUID；后台Bearer会话", "原始图片流；Cache-Control:private,no-store；读取审计；公共文件接口不可读取", "仅总管理员；严格验证文件属于该伙伴；无公开签名链接"),
   "PartnerController.logout": entry("退出品牌伙伴平台", "本人伙伴会话", "{loggedOut:true}；吊销当前会话", "主库；伙伴身份与会员/员工推广隔离"),
   "PartnerController.dashboard": entry("品牌伙伴平台概览", "本人伙伴会话", "账户、可消费余额、保证金、会员数量、订单数量、累计采购金额", "主库；伙伴身份与会员/员工推广隔离"),

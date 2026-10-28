@@ -9,7 +9,7 @@ function harness() {
   const partnerId = randomUUID(),
     fileId = randomUUID();
   const bytes = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWNYffb96rPvGSAUAEJCCZ0WY1CJAAAAAElFTkSuQmCC",
     "base64",
   );
   const file = {
@@ -44,7 +44,14 @@ describe("private customer images for partners", () => {
   it("rejects the partner limit before writing another object", async () => {
     const h = harness();
     h.db.fileObject.count.mockResolvedValue(200);
-    await expect(h.service.uploadPartnerCustomerImage("admin", h.partnerId, h.file, "request")).rejects.toThrow("最多保存200张");
+    await expect(
+      h.service.uploadPartnerCustomerImage(
+        "admin",
+        h.partnerId,
+        h.file,
+        "request",
+      ),
+    ).rejects.toThrow("最多保存200张");
     expect(h.send).not.toHaveBeenCalled();
   });
   it("saves a validated image under its partner and audits only its ID", async () => {
