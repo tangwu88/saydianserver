@@ -35,3 +35,11 @@
 - 12:01线上/global/health/ready仍旧f338000；暂未执行成功后“三端公开配置+模块404/200”的验收。客户端安卓1154已原证书覆盖安装，鸿蒙双签包已生成，源码0163ec7已推独立SayRing仓库。
 - 为只读定位服务器部署进度，按既有授权启动用户输入密码的全新SSH窗口；当前尚未认证，准备的请求仅ps/lslocks/docker inspect/df，不修改服务器或数据库。待用户在窗口输入，不在聊天收集密码。
 - 本段回执只推功能分支，不推进main，以免使仍在部署的a5994ee被新文档SHA判定为过期；运行源码与main完全相同。待上线后继续补最终版本/三端响应和手机验收。
+
+## SSH重连与原镜像传输排查
+
+- 用户要求重新打开SSH窗口后，创建全新诊断目录，不复用旧请求；已建立StrictHostKeyChecking=yes的会话，密码仅由用户在SSH窗口输入，没有记录、导出或在聊天获取。诊断仅读取进程、镜像revision、磁盘及下载暂存文件大小。
+- 12:13确认部署停在精确digest的API镜像docker pull，已持续约35分钟；12:20仍旧revision=f338000，可用空间16GB，既有API/admin/worker保持运行。下载暂存合计从约93MB增至95MB，不能写成完全无进度或数据库故障。
+- 首轮多行交互请求被伪终端输入刷新打断，随后以单行bash -c执行完整只读请求，未通过重放不明确请求操作服务。未取消运行中的receiver、修改Docker设置、维护状态、生产开关或数据库。
+- 原镜像备用导出首次及第二次GitHub身份读取超时；确认无新workflow后重试，第三次成功。Export runtime images 40632153118成功，原始artifact12790974683为369618649字节、digest sha256:815b486a1dac2396fb0deedf190a00924186de5644ee5a19bdec10feddd352c2，未重新构建。随后40632331371请求现有artifact的受控HTTPS导入，只暂存/导入镜像、不切服务；同一production并发锁下等待原部署结束，尚不能记导入或上线完成。
+- SayRing mobile-ci40627341857的quality、Android、iOS及鸿蒙两个时区均已终态success。Windows本机无iPhone/鸿蒙实物的限制不因云端编译通过而消除。
