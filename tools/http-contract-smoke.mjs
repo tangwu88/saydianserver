@@ -307,7 +307,11 @@ try {
   check((await request(manualRoute + "/orders",{token:financeToken})).status,200);
   check((await request(admin + "/partners",{token:financeToken})).json.data.items.some(partner=>partner.id===fixturePartner.id),true);
   const coreLevel=partnerLevels.find(level=>level.code==="distribution-2");
-  const changed=(await request(admin + "/partners/"+fixturePartner.id,{method:"PATCH",token:adminToken,body:{updatedAt:fixturePartner.updatedAt,levelId:coreLevel.id}})).json.data;
+  // Password replacement updates the account version; edit against the fresh admin record.
+  const refreshedPartner=(await request(admin + "/partners",{token:adminToken})).json.data.items.find(partner=>partner.id===fixturePartner.id);
+  const changedResponse=await request(admin + "/partners/"+fixturePartner.id,{method:"PATCH",token:adminToken,body:{updatedAt:refreshedPartner.updatedAt,levelId:coreLevel.id}});
+  check(changedResponse.status,200);
+  const changed=changedResponse.json.data;
   check((await request(vip + "/auth/me",{token:partnerToken})).json.data.canViewMemberHealth,false);
   const coreProfile=(await request(vip + "/members/"+a.data.member.id+"/profile",{token:partnerToken})).json.data;
   for(const field of ["birthday","heightCm","weightKg","healthProfile"])check(Object.hasOwn(coreProfile,field),false);

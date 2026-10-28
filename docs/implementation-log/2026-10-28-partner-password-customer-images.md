@@ -24,3 +24,11 @@
 - Windows的python3是无输出别名；改用现有Python3.12.14运行部署测试。US bootstrap测试3项中1项因其子进程仍调用Windows python3别名而失败（预期合成stderr为空），没有改动测试或生产US脚本；该项须以Linux CI真实Python复验结果为准。
 - 增加真实PostgreSQL新建/首次改密、双请求竞争、旧会话/旧密码失效、管理员重置再次要求改密及临时旧表新增列事务回滚演练。当前无本地PostgreSQL监听，不把默认跳过写成实库通过；这些测试已接入现有CI实库步骤，兼容迁移登记等待该验收。
 - HTTP兼容验收合成伙伴先验证业务403、完成初始改密并验证旧token401，再继续原健康/证书/资金边界。无真实账号或供应商数据操作。
+
+## CI验收与独立兼容迁移审阅
+
+- PR #61，候选42e935fae9ceb57c1b87368ddf6eda6c75d0bdaa；CI 40656022212 的完整类型/测试/构建、Linux部署Python检查、迁移、真实PostgreSQL并发、旧表新增列/回滚演练及礼品升级均通过。新密码双请求竞争仅成功一次，初始业务403、改密后旧会话失效、管理员重置再次要求改密均已实库验证。
+- 同轮HTTP在改密后的合作等级编辑失败：改密正确更新了BrandPartner.updatedAt，旧HTTP夹具仍使用创建时的版本，编辑409后后续健康权限断言失败。更新夹具为读取最新后台资料版本，并先断言PATCH成功；业务并发保护及权限逻辑不变。
+- 独立SQL兼容审阅：20261028160000_partner_initial_password仅在BrandPartner新增非空Boolean列，默认false。没有UPDATE/DELETE/TRUNCATE、密码重写、旧字段/关系/索引/枚举变更。既有行新增标记false，新代码仅在管理员新建/重置时显式true。真实PostgreSQL临时旧表演练保留原id/密码hash/active并确认false默认值，事务强制回滚后原表和真实fixture不变。
+- 按Git规范LF字节登记SQL SHA256：7682f60471fe845401bece327b2cda4545b210003e72c01c6d4233314c1ef8f9。回退仅回原应用镜像并保留新增列，不删列、不恢复旧库覆盖新交易。DDL可能短暂等待伙伴表锁，仍走既有当前库备份、隔离恢复、精确摘要白名单与保持原业务开关的自动发布门禁。
+- Windows US bootstrap子进程别名问题已在同轮Linux CI完整部署检查通过，未改US脚本。当前尚未合并或部署；修正后完整CI/HTTP结果待验收。
