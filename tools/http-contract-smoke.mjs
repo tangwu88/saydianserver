@@ -200,15 +200,19 @@ try {
   const mallOnly = { schemaVersion: 1, modules: { health_library: false, mall: true } };
   const modulePayload = { value: libraryOnly, expectedUpdatedAt: null, public: true };
   for (const prefix of ["", "/global"]) {
-    const config = await request(prefix + v2 + "/support/app-display" + iosScope);
-    check(config.json.data.moduleVisibility, { ...closedModules, validForSeconds: 300 });
-    check(config.json.data.readOnlyHealth, { ...iosEnabled, validForSeconds: 300 });
-    check(config.headers.get("cache-control"), "no-store");
-    for (const path of ["/content/categories", "/content/articles", "/content/articles/81002", "/commerce/home", "/commerce/markets", "/commerce/products", "/commerce/products/unavailable"])
-      check((await request(prefix + v2 + path + iosScope)).status, 404);
+    for (const platform of ["ios", "android", "harmonyos"]) {
+      const scope = `?product=say-ring&platform=${platform}`;
+      const config = await request(prefix + v2 + "/support/app-display" + scope);
+      check(config.json.data.platform, platform);
+      check(config.json.data.moduleVisibility, { ...closedModules, validForSeconds: 300 });
+      check(config.json.data.readOnlyHealth, platform === "ios" ? { ...iosEnabled, validForSeconds: 300 } : undefined);
+      check(config.headers.get("cache-control"), "no-store");
+      for (const path of ["/content/categories", "/content/articles", "/content/articles/81002", "/commerce/home", "/commerce/markets", "/commerce/products", "/commerce/products/unavailable"])
+        check((await request(prefix + v2 + path + scope)).status, 404);
+    }
     check((await request(prefix + v2 + "/content/articles/81002?product=say-ring")).status, 200);
     check((await request(prefix + v2 + "/content/articles/81002?product=saydian-global&platform=ios")).status, 200);
-    check((await request(prefix + v2 + "/commerce/markets?product=say-ring&platform=android")).status, 200);
+    check((await request(prefix + v2 + "/commerce/markets?product=saydian-global&platform=android")).status, 200);
   }
   check((await request(modulePath, { method: "PATCH", body: modulePayload })).status, 401);
   check((await request(modulePath, { method: "PATCH", token: tokenA, body: modulePayload })).status, 401);
@@ -217,20 +221,33 @@ try {
   check((await request(modulePath, { method: "PATCH", token: adminToken, body: modulePayload })).status, 409);
   check((await request(modulePath, { method: "PATCH", token: adminToken, body: { ...modulePayload, expectedUpdatedAt: moduleSaved.json.data.updatedAt, value: { ...libraryOnly, reviewer: true } } })).status, 400);
   for (const prefix of ["", "/global"]) {
-    for (const token of [undefined, tokenA, tokenB])
-      check((await request(prefix + v2 + "/support/app-display" + iosScope, token ? { token } : {})).json.data.moduleVisibility, { ...libraryOnly, validForSeconds: 300 });
-    check((await request(prefix + v2 + "/content/articles/81002" + iosScope)).status, 200);
-    check((await request(prefix + v2 + "/commerce/markets" + iosScope)).status, 404);
-    check((await request(prefix + v2 + "/support/app-display?product=say-ring&platform=android")).json.data.moduleVisibility, undefined);
+    for (const platform of ["ios", "android", "harmonyos"]) {
+      const scope = `?product=say-ring&platform=${platform}`;
+      for (const token of [undefined, tokenA, tokenB])
+        check((await request(prefix + v2 + "/support/app-display" + scope, token ? { token } : {})).json.data.moduleVisibility, { ...libraryOnly, validForSeconds: 300 });
+      check((await request(prefix + v2 + "/content/articles/81002" + scope)).status, 200);
+      check((await request(prefix + v2 + "/commerce/markets" + scope)).status, 404);
+    }
   }
   const moduleSecond = await request(modulePath, { method: "PATCH", token: adminToken, body: { ...modulePayload, value: mallOnly, expectedUpdatedAt: moduleSaved.json.data.updatedAt } });
   check(moduleSecond.status, 200);
   for (const prefix of ["", "/global"]) {
-    check((await request(prefix + v2 + "/content/articles/81002" + iosScope)).status, 404);
-    check((await request(prefix + v2 + "/commerce/markets" + iosScope)).status, 200);
+    for (const platform of ["ios", "android", "harmonyos"]) {
+      const scope = `?product=say-ring&platform=${platform}`;
+      check((await request(prefix + v2 + "/content/articles/81002" + scope)).status, 404);
+      check((await request(prefix + v2 + "/commerce/markets" + scope)).status, 200);
+    }
   }
   const moduleRestored = await request(modulePath + "/rollback", { method: "POST", token: adminToken, body: { expectedUpdatedAt: moduleSecond.json.data.updatedAt } });
   check(moduleRestored.status, 201); check(moduleRestored.json.data.value, libraryOnly);
+  for (const prefix of ["", "/global"]) {
+    for (const platform of ["ios", "android", "harmonyos"]) {
+      const scope = `?product=say-ring&platform=${platform}`;
+      check((await request(prefix + v2 + "/support/app-display" + scope)).json.data.moduleVisibility, { ...libraryOnly, validForSeconds: 300 });
+      check((await request(prefix + v2 + "/content/articles/81002" + scope)).status, 200);
+      check((await request(prefix + v2 + "/commerce/markets" + scope)).status, 404);
+    }
+  }
   const moduleAudits = await prisma.auditLog.findMany({ where: { entityType: "APP_SETTING", entityId: moduleKey }, orderBy: { createdAt: "asc" } });
   check(moduleAudits.map(row => row.action), ["SAY_RING_IOS_MODULE_DISPLAY_UPDATED", "SAY_RING_IOS_MODULE_DISPLAY_UPDATED", "SAY_RING_IOS_MODULE_DISPLAY_ROLLED_BACK"]);
   check(moduleAudits[0].beforeJson, closedModules); check(moduleAudits[2].afterJson, libraryOnly);

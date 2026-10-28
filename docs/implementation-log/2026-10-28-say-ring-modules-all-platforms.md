@@ -22,3 +22,9 @@
 - 实际根检查：typecheck通过（23.9秒），全量test第二轮通过（79.5秒，API1373通过/65项可选实库跳过），build通过（49.1秒），api:docs:check通过（478路由）。首次test的后台文案契约要求保留“不开放购买、支付”，明确为“显示开关本身不开放…”后通过，未放宽支付授权测试。
 - 首次tools:test因当前进程缺少便携jq出现127；核对既有jq-1.8.2的SHA256为`a6fc67fedaf9128a3309a1e2ebb8b986aeccf70122ee46d2cb4849e423f0c627`，仅本次进程设置SAYDIAN_JQ/Git Bash PATH/独立TEMP，不改系统或部署脚本。重跑工具58/58、H5流程62/62、H5契约38/38全部通过，最终typecheck和git diff --check再验通过。
 - Git外完整日志`E:\say-ring-modules-checks-20261028`；既有国内/国际统一app.saydian.cn生产双地址当前revision=f338000。身份经现有GCM只在进程内核对tangwu88后读取CI，原主CI的verify和本项目auto-deploy成功，失败来自独立US部署，本轮以`[deploy cn only]`发布当前app.saydian.cn，不改变独立美国环境。
+
+## 首轮CI HTTP契约失败及修正
+
+- b3f4895已通过正常非强推更新main；CI40625602829的类型/全量测试/构建、真实PostgreSQL并发、礼品事务及API smoke均成功，但HTTP兼容授权检查失败，部署被跳过，生产仍旧版，未把源码推送写成已部署。
+- 定位`tools/http-contract-smoke.mjs`仍要求显式Say Ring Android商城在默认隐藏时返回200、Android模块对象为undefined，属于旧iOS-only契约。更新为canonical与/global两别名、ios/android/harmonyos三端完整关闭/百科独显/商城独显/回滚状态；每种状态继续校验未登录和两账号一致性、no-store、无身份401、陈旧409、非法400、其它App/未声明scope不变及五项iOS健康授权隔离。
+- 只有HTTP测试脚本和本日志改变，运行源码与本机/首轮CI已成功的类型/单元/构建逐blob一致；`node --check tools/http-contract-smoke.mjs`及git diff --check通过。此脚本仅在隔离合成数据库运行，不以生产环境执行真实配置写入；完整真实HTTP结果以重新触发的CI终态为准。
