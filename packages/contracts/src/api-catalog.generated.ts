@@ -21727,14 +21727,34 @@ export const apiCatalog = {
                       },
                       "stock": {
                         "type": "integer"
+                      },
+                      "redeemable": {
+                        "type": "boolean"
+                      },
+                      "estimatedDispatchDays": {
+                        "type": "integer",
+                        "enum": [
+                          2,
+                          7
+                        ],
+                        "description": "所选规格库存大于零预计2天发货，否则预计7天发货；仅ERP缺货允许预订兑换"
                       }
                     },
-                    "required": [],
+                    "required": [
+                      "id",
+                      "stock",
+                      "redeemable",
+                      "estimatedDispatchDays"
+                    ],
                     "additionalProperties": true
                   }
                 }
               },
-              "required": [],
+              "required": [
+                "id",
+                "name",
+                "skus"
+              ],
               "additionalProperties": true
             },
             "phoneVerified": {
@@ -21807,8 +21827,59 @@ export const apiCatalog = {
             },
             "product": {
               "type": "object",
-              "properties": {},
-              "required": [],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "skus": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "specification": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "stock": {
+                        "type": "integer"
+                      },
+                      "redeemable": {
+                        "type": "boolean"
+                      },
+                      "estimatedDispatchDays": {
+                        "type": "integer",
+                        "enum": [
+                          2,
+                          7
+                        ],
+                        "description": "所选规格库存大于零预计2天发货，否则预计7天发货；仅ERP缺货允许预订兑换"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "stock",
+                      "redeemable",
+                      "estimatedDispatchDays"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "skus"
+              ],
               "additionalProperties": true
             },
             "phoneVerified": {
@@ -22042,8 +22113,19 @@ export const apiCatalog = {
           "properties": {
             "sku": {
               "type": "object",
-              "properties": {},
-              "required": [],
+              "properties": {
+                "estimatedDispatchDays": {
+                  "type": "integer",
+                  "enum": [
+                    2,
+                    7
+                  ],
+                  "description": "所选规格库存大于零预计2天发货，否则预计7天发货；仅ERP缺货允许预订兑换"
+                }
+              },
+              "required": [
+                "estimatedDispatchDays"
+              ],
               "additionalProperties": true
             },
             "address": {

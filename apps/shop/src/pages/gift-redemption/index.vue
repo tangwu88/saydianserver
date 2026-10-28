@@ -71,7 +71,17 @@
               sizes="120px"
               priority
             /><view
-              ><b>{{ product.displayName || product.name }}</b
+              ><button
+                role="button"
+                class="gift-product-title"
+                tabindex="0"
+                aria-haspopup="dialog"
+                @click="productDetailsVisible = true"
+                @keydown.enter.prevent="productDetailsVisible = true"
+                @keydown.space.prevent="productDetailsVisible = true"
+              >
+                <b>{{ product.displayName || product.name }}</b
+                ><text>查看商品详情 ›</text></button
               ><text>兑换 1 件 · 包邮</text
               ><text v-if="card?.expiresAt"
                 >有效期至 {{ date(card.expiresAt) }}</text
@@ -86,19 +96,21 @@
                 v-for="sku in product?.skus || []"
                 :key="sku.id"
                 :class="['sku-option', skuId === sku.id && 'selected']"
-                :disabled="sku.stock < 1 || busy"
+                :disabled="!giftSkuRedeemable(sku) || busy"
+                :aria-pressed="skuId === sku.id"
                 @click="
                   skuId = sku.id;
                   persist();
                 "
               >
                 {{ sku.specification || "默认规格"
-                }}<text v-if="sku.stock < 1">暂时缺货</text
-                ><text v-else-if="skuId === sku.id">✓ 已选</text>
+                }}<text v-if="!giftSkuRedeemable(sku)">暂时缺货</text
+                ><text v-else
+                  >{{ giftDispatchText(sku)
+                  }}{{ skuId === sku.id ? " · ✓ 已选" : "" }}</text
+                >
               </button></view
-            ><text
-              v-if="!product?.skus?.some((sku: any) => sku.stock > 0)"
-              class="muted"
+            ><text v-if="!product?.skus?.some(giftSkuRedeemable)" class="muted"
               >当前规格暂时缺货，兑换卡尚未使用，可稍后再来。</text
             ><button
               role="button"
@@ -241,6 +253,9 @@
                 ><text>商品规格</text
                 ><b>{{ quote.sku.specification || "默认规格" }}</b></view
               ><view class="review-line"><text>数量</text><b>1 件</b></view
+              ><view class="gift-dispatch-notice" role="note"
+                ><b>{{ giftDispatchText(quote.sku) }}</b
+                ><text>个性定制产品，发货时长稍长，请耐心等待。</text></view
               ><view class="review-address"
                 ><b>{{ quote.address.name }} {{ quote.address.mobile }}</b
                 ><text
@@ -322,12 +337,19 @@
       </button>
     </view></view
   >
+  <GiftProductDetails
+    v-if="productDetailsVisible && product"
+    :product-id="product.id"
+    :title="product.displayName || product.name"
+    @close="productDetailsVisible = false"
+  />
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import DesktopHeader from "../../components/DesktopHeader.vue";
 import CatalogImage from "../../components/CatalogImage.vue";
+import GiftProductDetails from "../../components/GiftProductDetails.vue";
 import {
   api,
   mallSessionStamp,
@@ -339,6 +361,8 @@ import { mallStorage } from "../../realm";
 import {
   readGiftDraft,
   saveGiftDraft,
+  giftSkuRedeemable,
+  giftDispatchText,
   type GiftDraft,
 } from "../../gift-redemption";
 const endpoint = "/storefront/gift-redemptions",
@@ -355,6 +379,7 @@ const endpoint = "/storefront/gift-redemptions",
   consentVersion = ref(""),
   cooldown = ref(0),
   product = ref<any>(null),
+  productDetailsVisible = ref(false),
   card = ref<any>(null),
   quote = ref<any>(null),
   addresses = ref<any[]>([]),
@@ -398,6 +423,7 @@ function reset() {
   cardNo.value = "";
   ownerId.value = "";
   product.value = null;
+  productDetailsVisible.value = false;
   card.value = null;
   completed.value = null;
   frozen.value = undefined;
@@ -491,7 +517,8 @@ async function validateCard() {
     consentVersion.value = value.consentVersion;
     checkCode.value = "";
     skuId.value =
-      value.product.skus.length === 1 && value.product.skus[0].stock > 0
+      value.product.skus.length === 1 &&
+      giftSkuRedeemable(value.product.skus[0])
         ? value.product.skus[0].id
         : "";
     stage.value = "spec";
@@ -843,6 +870,25 @@ onBeforeUnmount(() => {
 .gift-product b {
   font-size: 16px;
 }
+.gift-product .gift-product-title {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 0;
+  min-height: 44px;
+  background: transparent;
+  text-align: left;
+  color: var(--ink);
+  font-size: inherit;
+  line-height: 1.5;
+  white-space: normal;
+}
+.gift-product-title::after {
+  border: 0;
+}
+.gift-product .gift-product-title text {
+  color: var(--green);
+}
 .gift-product text {
   font-size: 13px;
   color: var(--muted);
@@ -869,7 +915,8 @@ onBeforeUnmount(() => {
   background: #f2f7ee;
 }
 .sku-option text {
-  margin-left: 10px;
+  display: block;
+  margin-top: 6px;
   font-size: 12px;
   color: var(--green);
 }
@@ -936,6 +983,20 @@ onBeforeUnmount(() => {
   font-size: 14px;
   line-height: 1.8;
   overflow-wrap: anywhere;
+}
+.gift-dispatch-notice {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f2f7ee;
+  color: var(--green);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.gift-dispatch-notice text {
+  color: var(--muted);
+  font-size: 13px;
 }
 .review-total {
   border-top: 1px solid var(--line);

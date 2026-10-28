@@ -4,6 +4,13 @@ import { safeObject, sha256 } from "../common/crypto";
 
 export const giftSessionMs = 30 * 60_000;
 export const giftVerificationMs = 15 * 60_000;
+// Only ERP-backed gifts may reserve replenishment stock. LOCAL stock stays bounded.
+export function giftAvailability(source: string, stock: number) {
+  return {
+    redeemable: source === "ERP" || stock > 0,
+    estimatedDispatchDays: stock > 0 ? 2 : 7,
+  };
+}
 export const giftSecret = () => String(randomInt(100000, 1000000));
 export function formatGiftCardNo(productCode: number, serial: number) {
   if (

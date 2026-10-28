@@ -52,6 +52,31 @@ const memberOrder = object({ orderId: id, orderNo: text }, [
     "orderNo",
   ]),
   request = { token, skuId: id, addressId: id };
+const dispatchDays = {
+  type: "integer",
+  enum: [2, 7],
+  description:
+    "所选规格库存大于零预计2天发货，否则预计7天发货；仅ERP缺货允许预订兑换",
+};
+const giftProduct = object(
+  {
+    id,
+    name: text,
+    skus: list(
+      object(
+        {
+          id,
+          specification: { type: ["string", "null"] },
+          stock: { type: "integer" },
+          redeemable: flag,
+          estimatedDispatchDays: dispatchDays,
+        },
+        ["id", "stock", "redeemable", "estimatedDispatchDays"],
+      ),
+    ),
+  },
+  ["id", "name", "skus"],
+);
 const pagination = object(
   {
     items: list(object({})),
@@ -75,17 +100,7 @@ export const giftFieldContracts = {
           serialNo: managementNumber,
           expiresAt: { type: ["string", "null"] },
         }),
-        product: object({
-          id,
-          name: text,
-          skus: list(
-            object({
-              id,
-              specification: { type: ["string", "null"] },
-              stock: { type: "integer" },
-            }),
-          ),
-        }),
+        product: giftProduct,
         phoneVerified: flag,
         consentVersion: text,
       },
@@ -97,7 +112,7 @@ export const giftFieldContracts = {
     object(
       {
         card: object({}),
-        product: object({}),
+        product: giftProduct,
         phoneVerified: flag,
         consentVersion: text,
       },
@@ -142,7 +157,9 @@ export const giftFieldContracts = {
     object(request, Object.keys(request)),
     object(
       {
-        sku: object({}),
+        sku: object({ estimatedDispatchDays: dispatchDays }, [
+          "estimatedDispatchDays",
+        ]),
         address: object({}),
         quantity: { const: 1 },
         giftDiscountCents: { type: "integer", minimum: 0 },

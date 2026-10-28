@@ -8,9 +8,23 @@ import {
   giftCsv,
   giftSecret,
   assertGiftAvailable,
+  giftAvailability,
 } from "./gift-policy";
 import { GiftAdminController } from "./gift.controller";
 describe("gift credentials and authorization", () => {
+  it("allows ERP replenishment while keeping local stock bounded and estimates dispatch per SKU", () => {
+    for (const source of ["ERP", "LOCAL"]) {
+      expect(giftAvailability(source, 1)).toEqual({
+        redeemable: true,
+        estimatedDispatchDays: 2,
+      });
+      for (const stock of [0, -3])
+        expect(giftAvailability(source, stock)).toEqual({
+          redeemable: source === "ERP",
+          estimatedDispatchDays: 7,
+        });
+    }
+  });
   it("formats fixed eight-digit numbers and refuses silent overflow", () => {
     expect(formatGiftCardNo(12, 35)).toBe("81200035");
     expect(formatGiftCardNo(1, 1)).toBe("80100001");

@@ -44,6 +44,7 @@ import {
   giftSessionMs,
   giftVerificationMs,
   formatGiftCardNo,
+  giftAvailability,
 } from "./gift-policy";
 
 type Actor = { id: string; sessionId: string };
@@ -686,6 +687,7 @@ export class GiftService {
         name: true,
         displayName: true,
         coverImage: true,
+        source: true,
         skus: {
           where: { id: { in: session.card.allowedSkuIds }, enabled: true },
           select: { id: true, specification: true, image: true, stock: true },
@@ -703,7 +705,16 @@ export class GiftService {
         serialNo: String(session.card.number),
         expiresAt: session.card.expiresAt,
       },
-      product,
+      product: {
+        id: product.id,
+        name: product.name,
+        displayName: product.displayName,
+        coverImage: product.coverImage,
+        skus: product.skus.map((sku) => ({
+          ...sku,
+          ...giftAvailability(product.source, sku.stock),
+        })),
+      },
       phoneVerified:
         !!session.verifiedAt &&
         session.verifiedAt.valueOf() > Date.now() - giftVerificationMs,
@@ -868,7 +879,10 @@ export class GiftService {
       }),
       db.commerceAddress.findFirst({ where: { id: addressId, userId } }),
     ]);
-    if (!sku || sku.stock < 1)
+    if (!sku)
+      throw new ConflictException("该规格暂不可兑换，请重新选择，卡片尚未使用");
+    const availability = giftAvailability(sku.product.source, sku.stock);
+    if (!availability.redeemable)
       throw new ConflictException(
         "该规格暂时缺货，请选择其他规格或稍后兑换，卡片尚未使用",
       );
@@ -882,6 +896,7 @@ export class GiftService {
       sku.specification,
       sku.product.displayName || sku.product.name,
       sku.salePriceCents,
+      availability.estimatedDispatchDays,
       address.id,
       address.name,
       address.mobile,
@@ -900,6 +915,7 @@ export class GiftService {
         image: sku.image || sku.product.coverImage,
         priceCents: sku.salePriceCents,
         erpSkuId: sku.erpSkuId,
+        estimatedDispatchDays: availability.estimatedDispatchDays,
       },
       address,
       quantity: 1,
@@ -984,7 +1000,9 @@ export class GiftService {
           await tx.$queryRaw`SELECT id FROM "CommerceSku" WHERE id = ${String(body.skuId)}::uuid FOR UPDATE`;
           const quote = await this.quote(tx, session.card, actor.id, body);
           if (body.fingerprint !== quote.fingerprint)
-            throw new ConflictException("商品或地址信息已变化，请重新确认");
+            throw new ConflictException(
+              "商品、地址或预计发货时间信息已变化，请重新确认",
+            );
           const now = new Date(),
             address = quote.address,
             sku = quote.sku;

@@ -12,6 +12,21 @@ export type GiftDraft = {
     requestKey: string;
   };
 };
+export function giftSkuRedeemable(
+  sku: { redeemable?: boolean; stock?: number } | null | undefined,
+) {
+  if (!sku) return false;
+  return sku.redeemable ?? (Number.isSafeInteger(sku.stock) && sku.stock! > 0);
+}
+export function giftDispatchText(
+  sku: { estimatedDispatchDays?: number; stock?: number } | null | undefined,
+) {
+  if (!sku) return "";
+  const days =
+    sku.estimatedDispatchDays ??
+    (Number.isSafeInteger(sku.stock) ? (sku.stock! > 0 ? 2 : 7) : undefined);
+  return days === 2 || days === 7 ? `预计${days}天发货` : "";
+}
 const key = "saydian:gift-redemption:v1";
 export function readGiftDraft(
   storage?: Pick<Storage, "getItem">,

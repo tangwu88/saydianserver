@@ -197,6 +197,7 @@ describe.runIf(process.env.RUN_GIFT_DATABASE_TESTS === "1")(
         login,
         address,
         mobile,
+        quote,
       };
     }
     it("exports once, stores only salted hashes and preserves 8+2+5 numbering across batches", async () => {
@@ -609,7 +610,11 @@ describe.runIf(process.env.RUN_GIFT_DATABASE_TESTS === "1")(
         gifts.result(loser.actor, { token: loser.request.token }),
       ).rejects.toThrow("该卡已兑换");
     });
-    it("serializes competing gifts for the last SKU and retains the losing card", async () => {
+    it("serializes competing LOCAL gifts for the last SKU and retains the losing card", async () => {
+      await prisma.commerceProduct.update({
+        where: { id: product.id },
+        data: { source: "LOCAL" },
+      });
       const a = await ready(),
         b = await ready(),
         one = await member(a.card, a.checkCode),
@@ -637,6 +642,163 @@ describe.runIf(process.env.RUN_GIFT_DATABASE_TESTS === "1")(
           where: { id: { in: [a.card.id, b.card.id] }, status: "ACTIVE" },
         }),
       ).toBe(1);
+    });
+    it.each([0, -3])(
+      "redeems an ERP gift at stock %i with a seven-day estimate, one stock debit and an ERP job",
+      async (stock) => {
+        await prisma.commerceSku.update({
+          where: { id: product.skus[0].id },
+          data: { stock },
+        });
+        const a = await ready(),
+          m = await member(a.card, a.checkCode);
+        const view = await gifts.view(m.request.token);
+        expect(view.product.skus[0]).toMatchObject({
+          redeemable: true,
+          estimatedDispatchDays: 7,
+        });
+        expect(m.quote.sku.estimatedDispatchDays).toBe(7);
+        const order = await gifts.redeem(m.actor, m.request, context());
+        expect(await gifts.redeem(m.actor, m.request, context())).toEqual(
+          order,
+        );
+        expect(
+          (
+            await prisma.commerceSku.findUniqueOrThrow({
+              where: { id: product.skus[0].id },
+            })
+          ).stock,
+        ).toBe(stock - 1);
+        expect(
+          await prisma.commerceIntegrationJob.count({
+            where: { aggregateId: order.orderId, type: "JUSHUITAN_ORDER_PUSH" },
+          }),
+        ).toBe(1);
+        expect(
+          await prisma.paymentIntent.count({
+            where: {
+              businessId: order.orderId,
+              channel: "GIFT_REDEMPTION",
+              amountCents: 0,
+              status: "SUCCEEDED",
+            },
+          }),
+        ).toBe(1);
+        expect(
+          await prisma.auditLog.count({
+            where: {
+              entityId: order.orderId,
+              action: "COMMERCE_PAID_BACKORDER",
+            },
+          }),
+        ).toBe(1);
+        expect(
+          (
+            await prisma.commerceGiftCard.findUniqueOrThrow({
+              where: { id: a.card.id },
+            })
+          ).status,
+        ).toBe("REDEEMED");
+      },
+    );
+    it("serializes two ERP backorders without blocking replenishment or duplicating stock debits", async () => {
+      await prisma.commerceSku.update({
+        where: { id: product.skus[0].id },
+        data: { stock: 0 },
+      });
+      const a = await ready(),
+        b = await ready(),
+        one = await member(a.card, a.checkCode),
+        two = await member(b.card, b.checkCode);
+      const results = await Promise.all([
+        gifts.redeem(one.actor, one.request, context()),
+        gifts.redeem(two.actor, two.request, context()),
+      ]);
+      expect(new Set(results.map((row) => row.orderId)).size).toBe(2);
+      expect(
+        (
+          await prisma.commerceSku.findUniqueOrThrow({
+            where: { id: product.skus[0].id },
+          })
+        ).stock,
+      ).toBe(-2);
+      expect(
+        await prisma.commerceIntegrationJob.count({
+          where: {
+            aggregateId: { in: results.map((row) => row.orderId) },
+            type: "JUSHUITAN_ORDER_PUSH",
+          },
+        }),
+      ).toBe(2);
+    });
+    it("requires renewed confirmation when ERP availability changes the dispatch estimate", async () => {
+      await prisma.commerceSku.update({
+        where: { id: product.skus[0].id },
+        data: { stock: 1 },
+      });
+      const a = await ready(),
+        m = await member(a.card, a.checkCode);
+      expect(m.quote.sku.estimatedDispatchDays).toBe(2);
+      await prisma.commerceSku.update({
+        where: { id: product.skus[0].id },
+        data: { stock: 0 },
+      });
+      await expect(gifts.redeem(m.actor, m.request, context())).rejects.toThrow(
+        "预计发货时间信息已变化",
+      );
+      expect(
+        await prisma.commerceOrder.count({ where: { userId: m.actor.id } }),
+      ).toBe(0);
+      expect(
+        (
+          await prisma.commerceGiftCard.findUniqueOrThrow({
+            where: { id: a.card.id },
+          })
+        ).status,
+      ).toBe("ACTIVE");
+      const quote = await gifts.preview(m.actor, m.request);
+      expect(quote.sku.estimatedDispatchDays).toBe(7);
+      expect(quote.fingerprint).not.toBe(m.request.fingerprint);
+      await gifts.redeem(
+        m.actor,
+        { ...m.request, fingerprint: quote.fingerprint },
+        context(),
+      );
+      expect(
+        (
+          await prisma.commerceSku.findUniqueOrThrow({
+            where: { id: product.skus[0].id },
+          })
+        ).stock,
+      ).toBe(-1);
+    });
+    it("does not allow a missing LOCAL SKU to redeem and keeps the card available", async () => {
+      await prisma.commerceProduct.update({
+        where: { id: product.id },
+        data: { source: "LOCAL" },
+      });
+      const a = await ready(),
+        m = await member(a.card, a.checkCode);
+      await prisma.commerceSku.update({
+        where: { id: product.skus[0].id },
+        data: { stock: 0 },
+      });
+      expect((await gifts.view(m.request.token)).product.skus[0]).toMatchObject(
+        { redeemable: false },
+      );
+      await expect(gifts.preview(m.actor, m.request)).rejects.toThrow(
+        "暂时缺货",
+      );
+      await expect(gifts.redeem(m.actor, m.request, context())).rejects.toThrow(
+        "暂时缺货",
+      );
+      expect(
+        (
+          await prisma.commerceGiftCard.findUniqueOrThrow({
+            where: { id: a.card.id },
+          })
+        ).status,
+      ).toBe("ACTIVE");
     });
     it("rolls back order, settlement, stock and ERP job if redemption persistence fails", async () => {
       const a = await ready(),
