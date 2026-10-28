@@ -15,7 +15,7 @@ export async function sayRingIosModuleVisibility(prisma: PrismaService) {
 
 export async function assertSayRingModuleVisible(prisma: PrismaService, module: SayRingModule, product?: string, platform?: string) {
   // Caller-declared scope is not a trusted app identity or account permission.
-  if (product !== "say-ring" || platform !== "ios") return;
+  if (product !== "say-ring" || !["ios", "android", "harmonyos"].includes(platform ?? "")) return;
   if (!(await sayRingIosModuleVisibility(prisma)).modules[module])
     throw new NotFoundException("功能暂未开放");
 }

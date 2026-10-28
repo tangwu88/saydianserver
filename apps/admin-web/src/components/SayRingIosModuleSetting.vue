@@ -28,12 +28,12 @@ async function save(rollback = false) {
 </script>
 
 <template>
-  <section aria-label="Say Ring iOS 模块显示设置">
-    <el-alert title="所有用户使用同一配置；默认隐藏，最多 5 分钟刷新。仅支持此配置的 Say Ring iOS 生效。" type="info" :closable="false" />
+  <section aria-label="Say Ring 三端模块显示设置">
+    <el-alert title="iOS、安卓、鸿蒙共用此配置，所有用户一致；默认隐藏，最多 5 分钟刷新。客户端须升级至支持三端配置的版本。" type="info" :closable="false" />
     <el-form-item v-for="key in sayRingModuleKeys" :key="key" :label="labels[key]">
       <el-switch v-model="value.modules[key]" :disabled="busy" active-text="显示" inactive-text="隐藏" />
     </el-form-item>
-    <p>复用现有百科与商城页面，仅控制入口和只读浏览。不开放购买、支付、医疗或一般 AI，不改变五项指标及手动测量授权。</p>
+    <p>控制三端百科与商城的入口和浏览。显示开关本身不开放购买、支付、医疗、AI或测量权限；各端已具备的能力与服务端授权继续独立校验。</p>
     <el-button type="primary" :loading="busy" @click="save(false)">保存模块配置</el-button>
     <el-button :disabled="busy || !setting.updatedAt" @click="save(true)">恢复上次配置</el-button>
   </section>

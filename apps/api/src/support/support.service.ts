@@ -161,8 +161,8 @@ export class SupportService implements OnModuleInit {
       product: productInput,
       hideAi: value.hideAi,
       ...(productInput === "saydian-app-cn" ? { ...(await cnDisplaySections(this.prisma)), sleepAiEnabled: value.sleepAiEnabled === true } : {}),
-      ...(productInput === "say-ring" && platformInput === "ios"
-        ? { platform: "ios", readOnlyHealth: await this.sayRingIosReadOnlyHealth(), moduleVisibility: await sayRingIosModuleVisibility(this.prisma) }
+      ...(productInput === "say-ring" && ["ios", "android", "harmonyos"].includes(platformInput ?? "")
+        ? { platform: platformInput, ...(platformInput === "ios" ? { readOnlyHealth: await this.sayRingIosReadOnlyHealth() } : {}), moduleVisibility: await sayRingIosModuleVisibility(this.prisma) }
         : {}),
       ...(productInput === "say-ring" &&
       typeof value.sleepAiEnabled === "boolean"

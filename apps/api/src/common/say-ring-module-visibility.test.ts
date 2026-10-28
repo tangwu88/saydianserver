@@ -12,10 +12,19 @@ function harness(config: unknown = undefined) {
   return prisma;
 }
 describe("explicit product/platform module read visibility", () => {
-  it.each([[undefined, undefined], ["say-ring", undefined], ["say-ring", "android"], ["saydian-global", "ios"], ["saydian-app-cn", "ios"]])("never reads settings for old or other scope %s/%s", async (product, platform) => {
+  it.each([[undefined, undefined], ["say-ring", undefined], ["say-ring", "web"], ["saydian-global", "ios"], ["saydian-app-cn", "ios"]])("never reads settings for old or other scope %s/%s", async (product, platform) => {
     const p = harness();
     await assertSayRingModuleVisible(p, "mall", product, platform);
     expect(p.appSetting.findFirst).not.toHaveBeenCalled();
+  });
+  it.each(["ios", "android", "harmonyos"])("uses the same published flags and rejects hidden reads on %s", async platform => {
+    const p = harness(value);
+    await assertSayRingModuleVisible(p, "health_library", "say-ring", platform);
+    await expect(assertSayRingModuleVisible(p, "mall", "say-ring", platform)).rejects.toMatchObject({ status: 404 });
+    const service = new ContentService(p, {} as any);
+    p.appSetting.findFirst.mockResolvedValue({ value: { ...value, modules: { health_library: false, mall: true } } });
+    await expect(service.categories(undefined, "en", "say-ring", platform)).rejects.toMatchObject({ status: 404 });
+    expect(p.articleCategory.findMany).not.toHaveBeenCalled();
   });
   it("fails closed for absent/malformed/query errors and keeps independent flags", async () => {
     for (const data of [undefined, { schemaVersion: 2 }, { ...value, modules: { health_library: true, mall: "true" } }]) {

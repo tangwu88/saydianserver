@@ -433,7 +433,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
     { key: "cn_app_update", name: "赛电健康（简体中文版）App 更新" },
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
     { key: "say_ring_ios_health_display", name: "Say Ring iOS 只读健康指标" },
-    { key: "say_ring_ios_module_display", name: "Say Ring iOS 百科与商城显示" },
+    { key: "say_ring_ios_module_display", name: "Say Ring 三端百科与商城显示" },
     { key: "cn_app_display", name: "赛电健康 AI 显示设置" },
     { key: "cn_health_display", name: "赛电健康只读健康指标" },
     { key: "cn_module_display", name: "赛电健康百科与商城" },

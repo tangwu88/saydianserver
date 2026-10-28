@@ -256,7 +256,7 @@ describe("Say Ring iOS public read-only lease", () => {
     const h = harness([{ key: sayRingIosHealthSettingKey, public: false, get value() { throw new Error("private read"); } }]);
     expect((await h.service.appDisplayConfig("say-ring", "ios")).readOnlyHealth?.metrics.heart_rate).toBe(false);
   });
-  it.each([["say-ring", "android"], ["say-ring", undefined]])("keeps %s/%s responses unchanged", async (product, platform) => {
+  it.each([["say-ring", "web"], ["say-ring", undefined]])("keeps %s/%s responses unchanged", async (product, platform) => {
     const h = harness([]);
     expect(await h.service.appDisplayConfig(product, platform)).toEqual({ product, hideAi: false });
     expect(h.findFirst).toHaveBeenCalledTimes(1);
@@ -264,6 +264,17 @@ describe("Say Ring iOS public read-only lease", () => {
 });
 
 describe("independent Say Ring iOS module visibility", () => {
+  it.each(["ios", "android", "harmonyos"])("shares published module flags on %s without granting another platform's health lease", async platform => {
+    const value = { schemaVersion: 1, modules: { health_library: true, mall: false } };
+    const h = harness([{ key: "say_ring_ios_module_display", public: true, value }]);
+    const result = await h.service.appDisplayConfig("say-ring", platform);
+    expect(result.platform).toBe(platform);
+    expect(result.moduleVisibility).toEqual({ ...value, validForSeconds: 300 });
+    if (platform !== "ios") {
+      expect(result).not.toHaveProperty("readOnlyHealth");
+      expect(h.findFirst.mock.calls.map(([input]: any[]) => input.where.key)).not.toContain(sayRingIosHealthSettingKey);
+    }
+  });
   const closed = { schemaVersion: 1, modules: { health_library: false, mall: false }, validForSeconds: 300 };
   it("adds a closed sibling without expanding the five physiological keys", async () => {
     const h = harness([]);
