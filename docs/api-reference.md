@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **478 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **482 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -310,7 +310,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（156）
+## 管理后台接口（159）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -443,6 +443,9 @@
 | `POST /api/saydian-app/admin/v1/commerce-gift-batches` | 生成礼品卡并首次导出明文 | admin: SUPER_ADMIN | {name,quantity:1至100,productId,allowedSkuIds,expiresAt?,requestKey} | {batchId,batchNo,alreadyGenerated,filename,csv}；明文仅首次响应，重试csv=null；只存bcrypt哈希；新卡未启用 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
 | `POST /api/saydian-app/admin/v1/commerce-gift-cards/actions` | 启用、改绑或作废礼品卡 | admin: SUPER_ADMIN | {action:ACTIVATE/BIND/VOID,ids或batchId,reason,version?,downloadConfirmed?,productId?,allowedSkuIds?,expiresAt?} | {changed}；仅未启用卡可改绑，跨商品改绑保留最初发卡商品编号 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
 | `PUT /api/saydian-app/admin/v1/commerce-gift-settings` | 开放或暂停礼品兑换 | admin: SUPER_ADMIN | {enabled:boolean} | {enabled}；默认关闭，审计记录；不改变原维护状态 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `GET /api/saydian-app/admin/v1/partners/:id/customer-images` | 查看伙伴客户资料图片列表 | admin: SUPER_ADMIN | path:id，query:page?；id为伙伴UUID、page?；每页10张 | {items,total,page,pageSize}；仅文件元数据，不返回公开URL或对象存储键 | 总管理员；包括停用伙伴资料；私有文件不进入伙伴端 |
+| `POST /api/saydian-app/admin/v1/partners/:id/customer-images` | 上传保存伙伴客户资料图片 | admin: SUPER_ADMIN | path:id，file:file；id为伙伴UUID；multipart file；JPG/PNG/WebP单张不超过10MB；客户端每批最多20张逐张上传 | 保存的文件元数据；每伙伴最多200张；记录上传审计 | 总管理员；文件头与大小校验，私有对象存储，按伙伴绑定，不改变客户或伙伴账号资料 |
+| `GET /api/saydian-app/admin/v1/partners/:id/customer-images/:fileId` | 读取伙伴客户资料私有图片 | admin: SUPER_ADMIN | path:id，path:fileId；id为伙伴UUID、fileId为其资料文件UUID；后台Bearer会话 | 原始图片流；Cache-Control:private,no-store；读取审计；公共文件接口不可读取 | 仅总管理员；严格验证文件属于该伙伴；无公开签名链接 |
 | `GET /api/saydian-app/admin/v1/partners` | 总后台品牌伙伴列表 | admin | query:search?，query:page?；search?、page? | 伙伴资料、等级、钱包及会员/订单数量；不返回密码或会话 | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/admin/v1/partners` | 开通品牌伙伴账户 | admin: SUPER_ADMIN | {username,name,mobile?,password,levelId}；密码10至128字符 | 新伙伴及零余额/零保证金钱包；事务内留审计 | 主库；伙伴身份与会员/员工推广隔离 |
 | `PATCH /api/saydian-app/admin/v1/partners/:id` | 编辑或停用品牌伙伴 | admin: SUPER_ADMIN | path:id；{updatedAt,name?,mobile?,levelId?,active?}；CAS防覆盖 | 更新后伙伴；停用立即吊销全部伙伴会话 | 主库；伙伴身份与会员/员工推广隔离 |
@@ -471,18 +474,19 @@
 | `POST /api/saydian-app/admin/v1/partner-agreements/:id/publish` | 发布合作协议版本 | admin: SUPER_ADMIN | path:id；id为协议UUID；{contentSha256} | 当前已发布版本；其他版本停用 | 仅SUPER_ADMIN；所有伙伴后续业务须同意当前已发布版本 |
 | `GET /api/saydian-app/admin/v1/partner-agreements/:id/acceptances` | 查看协议阅读与签署记录 | admin: SUPER_ADMIN | path:id；id为协议UUID | {items}；账户、首次阅读/同意时间、会话、IP、客户端；最多1000 | 仅SUPER_ADMIN |
 
-## 品牌伙伴平台接口（35）
+## 品牌伙伴平台接口（36）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
 | `POST /api/saydian-app/vip/v1/auth/member-login` | 兑换会员一次性伙伴登录凭证 | public | {ticket,codeVerifier} | {token,expiresAt}；同一凭证只成功一次；浏览器PKCE验证防止他人转发链接切换账户 | 核对原会员会话、账户绑定、有效期及账户版本；支持微信H5授权后进入 |
 | `GET /api/saydian-app/vip/v1/agreement` | 查看当前已发布合作协议 | partner | 伙伴会话 | {agreement,accepted,viewedAt?,acceptedAt?}；首次阅读登记；草稿不返回 | 无已发布版本时不阻断现有使用 |
 | `POST /api/saydian-app/vip/v1/agreement/accept` | 同意当前合作协议 | partner | {agreementId,contentSha256,agreed:true} | {accepted,acceptedAt}；版本/hash匹配并已读取；重复不新增签署 | 发布版本锁；不可变签署记录与审计 |
-| `POST /api/saydian-app/vip/v1/auth/login` | 品牌伙伴登录 | public | {username,password}；每IP每分钟10次；独立伙伴会话 | {token,expiresAt,user}；停用或改密后旧会话失效 | 品牌伙伴已开通 |
+| `POST /api/saydian-app/vip/v1/auth/login` | 品牌伙伴登录 | public | {username,password}；每IP每分钟10次；独立伙伴会话 | {token,expiresAt,user,mustChangePassword}；后台新建及重置密码后必须先改密；停用或改密后旧会话失效 | 品牌伙伴已开通 |
 | `GET /api/saydian-app/vip/v1/public/certificate/:code` | 核验赛电电子授权证书 | public | path:code；code为公开推广码；公开只读 | 授权方、伙伴名称/编号、当前合作等级、启用状态、登记日期；不返回联系方式、账号、余额或内部ID | 主库当前状态；停用即时失效 |
 | `GET /api/saydian-app/vip/v1/public/promotion/:code` | 验证品牌伙伴推广来源 | public | path:code；code为伙伴推广码；公开只读 | {name,partnerCode,noticeVersion,notice}；失效返回404 | 品牌伙伴启用 |
-| `GET /api/saydian-app/vip/v1/auth/me` | 当前品牌伙伴账户 | partner | 本人伙伴会话 | 身份、账号和等级；不返回资金账户或密码哈希 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/vip/v1/auth/me` | 当前品牌伙伴账户 | partner | 本人伙伴会话 | 身份、账号、等级及mustChangePassword；不返回资金账户或密码哈希 | 主库；伙伴身份与会员/员工推广隔离 |
 | `POST /api/saydian-app/vip/v1/auth/logout` | 退出品牌伙伴平台 | partner | 本人伙伴会话 | {loggedOut:true}；吊销当前会话 | 主库；伙伴身份与会员/员工推广隔离 |
+| `POST /api/saydian-app/vip/v1/auth/change-password` | 修改品牌伙伴密码 | partner | {currentPassword,newPassword,confirmPassword}；新密码至少10字符且UTF-8不超过72字节，不得与旧密码相同；每分钟5次 | {token,expiresAt,mustChangePassword:false}；原密码验证、行锁、更新密码与撤销旧会话及创建新会话同事务；新token替换本地会话 | 本人伙伴会话；未改初始密码时仅开放me/logout/change-password，其余业务403 PARTNER_PASSWORD_CHANGE_REQUIRED；旧账户默认不强制改密 |
 | `GET /api/saydian-app/vip/v1/dashboard` | 品牌伙伴平台概览 | partner | 本人伙伴会话 | 账户、可消费余额、保证金、会员数量、订单数量、累计采购金额 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/promotion` | 品牌伙伴专属推广二维码 | partner | 本人伙伴会话 | {name,partnerNo,promotionCode,linkUrl,qrDataUrl,active}；链接指向H5注册 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/certificate` | 查看与打印电子授权证书 | partner | 本人伙伴会话 | 赛电授权数据、当前等级/状态、核验链接和二维码；随账户启用状态有效 | 主库当前伙伴账户 |

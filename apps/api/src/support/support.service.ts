@@ -835,6 +835,56 @@ export class SupportService implements OnModuleInit {
     };
   }
 
+  private async customerPartner(id: string) {
+    if (!isUuid(id) || !(await this.prisma.brandPartner.findUnique({ where: { id }, select: { id: true } })))
+      throw new NotFoundException("品牌伙伴不存在");
+  }
+
+  async partnerCustomerImages(partnerId: string, pageInput: unknown) {
+    await this.customerPartner(partnerId);
+    const page = Math.max(1, Math.min(100000, Math.floor(Number(pageInput) || 1)));
+    const where = { purpose: `partner-customer:${partnerId}`, status: "ACTIVE" };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.fileObject.findMany({ where, select: { id: true, originalName: true, byteSize: true, contentType: true, createdAt: true }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * 10, take: 10 }),
+      this.prisma.fileObject.count({ where }),
+    ]);
+    return { items, total, page, pageSize: 10 };
+  }
+
+  async uploadPartnerCustomerImage(adminId: string, partnerId: string, file: Express.Multer.File, requestId: string) {
+    await this.customerPartner(partnerId);
+    const contentType = validateEvidenceImage(file);
+    const purpose = `partner-customer:${partnerId}`;
+    if (await this.prisma.fileObject.count({ where: { purpose, status: "ACTIVE" } }) >= 200)
+      throw new BadRequestException("每个伙伴最多保存200张客户资料图片");
+    const objectKey = `partner-customer/${partnerId}/${randomUUID()}`;
+    const digest = sha256(file.buffer);
+    const storage = await this.storage();
+    try {
+      await storage.s3.send(new PutObjectCommand({ Bucket: storage.bucket, Key: objectKey, Body: file.buffer, ContentType: contentType, Metadata: { sha256: digest, purpose: "partner-customer" } }), { abortSignal: AbortSignal.timeout(30_000) });
+    } catch { throw new ServiceUnavailableException("客户资料图片暂时无法上传，请稍后再试"); }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "BrandPartner" WHERE id = ${partnerId}::uuid FOR UPDATE`;
+      if (await tx.fileObject.count({ where: { purpose, status: "ACTIVE" } }) >= 200)
+        throw new BadRequestException("每个伙伴最多保存200张客户资料图片");
+      const stored = await tx.fileObject.create({ data: { objectKey, originalName: String(file.originalname || "customer-image").slice(0, 255), contentType, byteSize: file.buffer.length, sha256: digest, purpose }, select: { id: true, originalName: true, byteSize: true, contentType: true, createdAt: true } });
+      await tx.auditLog.create({ data: { actorType: "ADMIN", actorId: adminId, action: "PARTNER_CUSTOMER_IMAGE_UPLOADED", entityType: "BRAND_PARTNER", entityId: partnerId, afterJson: { fileId: stored.id }, requestId } });
+      return stored;
+    });
+  }
+
+  async partnerCustomerImage(adminId: string, partnerId: string, id: string, requestId: string) {
+    await this.customerPartner(partnerId);
+    if (!isUuid(id)) throw new NotFoundException("客户资料图片不存在");
+    const file = await this.prisma.fileObject.findFirst({ where: { id, purpose: `partner-customer:${partnerId}`, status: "ACTIVE" } });
+    if (!file || !allowedImageTypes.has(file.contentType)) throw new NotFoundException("客户资料图片不存在");
+    await this.prisma.auditLog.create({ data: { actorType: "ADMIN", actorId: adminId, action: "PARTNER_CUSTOMER_IMAGE_READ", entityType: "BRAND_PARTNER", entityId: partnerId, afterJson: { fileId: id }, requestId } });
+    const storage = await this.storage();
+    const result = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: file.objectKey }), { abortSignal: AbortSignal.timeout(10_000) });
+    if (!result.Body) throw new NotFoundException("客户资料图片不存在");
+    return { body: result.Body as NodeJS.ReadableStream, contentType: file.contentType, byteSize: file.byteSize };
+  }
+
   private async storage() {
     const integration = await this.prisma.integrationConfig.findUnique({
       where: { key: "object_storage" },

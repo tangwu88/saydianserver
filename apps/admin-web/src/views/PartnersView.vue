@@ -10,6 +10,8 @@ import {
   partnerAccountErrors,
   partnerAccountFields,
 } from "../partner-account-form";
+import PartnerCustomerImages from "../components/PartnerCustomerImages.vue";
+const customerPartner = ref<{ id: string; name: string }>();
 const route = useRoute(),
   resource = computed(() => route.path.slice(1)),
   levels = ref<any[]>([]),
@@ -707,6 +709,7 @@ async function copyPromotion() {
               >编辑</el-button
             ><el-button v-if="canManage" text @click="reset(scope.row)"
               >重置密码</el-button
+            ><el-button v-if="canManage" text @click="customerPartner = scope.row">客户资料</el-button
             ><el-button
               v-if="canManage"
               text
@@ -1428,6 +1431,7 @@ async function copyPromotion() {
       ></template
     >
   </el-dialog>
+  <PartnerCustomerImages v-if="customerPartner" :partner="customerPartner" @close="customerPartner = undefined" />
 </template>
 <style scoped>
 .page {

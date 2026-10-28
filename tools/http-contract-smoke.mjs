@@ -287,7 +287,16 @@ try {
 
   const vip = "/api/saydian-app/vip/v1";
   check(partnerLevels.filter(level => level.code.startsWith("distribution-")).map(level => level.name), ["战略合作", "核心合作", "优选合作"]);
-  const partnerToken = (await request(vip + "/auth/login", {method:"POST",body:{username:partnerInput.username,password}})).json.data.token;
+  const initialPartnerLogin = (await request(vip + "/auth/login", {method:"POST",body:{username:partnerInput.username,password}})).json.data;
+  check(initialPartnerLogin.mustChangePassword, true);
+  const initialPartnerToken = initialPartnerLogin.token;
+  check((await request(vip + "/products", {token:initialPartnerToken})).json.errorKey, "PARTNER_PASSWORD_CHANGE_REQUIRED");
+  const partnerPassword = password + "-partner-personal";
+  const passwordChange = await request(vip + "/auth/change-password", {method:"POST", token:initialPartnerToken, body:{currentPassword:password,newPassword:partnerPassword,confirmPassword:partnerPassword}});
+  check(passwordChange.status, 201);
+  check(passwordChange.json.data.mustChangePassword, false);
+  const partnerToken = passwordChange.json.data.token;
+  check((await request(vip + "/auth/me", {token:initialPartnerToken})).status, 401);
   check((await request(vip + "/auth/me",{token:partnerToken})).json.data.canViewMemberHealth,true);
   check((await request(admin + "/partners/members/" + a.data.member.id + "/assignment",{method:"POST",token:adminToken,body:{partnerId:fixturePartner.id,expectedPartnerId:null,reason:"Synthetic cooperation HTTP acceptance"}})).status,201);
   check((await request(vip + "/members/" + a.data.member.id + "/health-summary",{token:partnerToken})).status,200);

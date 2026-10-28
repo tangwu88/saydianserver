@@ -36,6 +36,7 @@ export class PartnerService {
         name: true,
         mobile: true,
         active: true,
+        mustChangePassword: true,
         level: { select: { id: true, name: true, code: true, active: true } },
         wallet: true,
       },

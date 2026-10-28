@@ -26496,6 +26496,126 @@
       }
     },
     {
+      "key": "PartnerAdminController.customerImages",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partners/:id/customer-images",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "查看伙伴客户资料图片列表",
+      "request": "id为伙伴UUID、page?；每页10张",
+      "response": "{items,total,page,pageSize}；仅文件元数据，不返回公开URL或对象存储键",
+      "dependency": "总管理员；包括停用伙伴资料；私有文件不进入伙伴端",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.uploadCustomerImage",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/partners/:id/customer-images",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "上传保存伙伴客户资料图片",
+      "request": "id为伙伴UUID；multipart file；JPG/PNG/WebP单张不超过10MB；客户端每批最多20张逐张上传",
+      "response": "保存的文件元数据；每伙伴最多200张；记录上传审计",
+      "dependency": "总管理员；文件头与大小校验，私有对象存储，按伙伴绑定，不改变客户或伙伴账号资料",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerAdminController.customerImage",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/partners/:id/customer-images/:fileId",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "fileId",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/partners/partner-admin.controller.ts",
+      "summary": "读取伙伴客户资料私有图片",
+      "request": "id为伙伴UUID、fileId为其资料文件UUID；后台Bearer会话",
+      "response": "原始图片流；Cache-Control:private,no-store；读取审计；公共文件接口不可读取",
+      "dependency": "仅总管理员；严格验证文件属于该伙伴；无公开签名链接",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner-admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "PartnerAdminController.list",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/partners",
@@ -29112,7 +29232,7 @@
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "品牌伙伴登录",
       "request": "{username,password}；每IP每分钟10次；独立伙伴会话",
-      "response": "{token,expiresAt,user}；停用或改密后旧会话失效",
+      "response": "{token,expiresAt,user,mustChangePassword}；后台新建及重置密码后必须先改密；停用或改密后旧会话失效",
       "dependency": "品牌伙伴已开通",
       "successStatus": 201,
       "contract": {
@@ -29295,7 +29415,7 @@
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "当前品牌伙伴账户",
       "request": "本人伙伴会话",
-      "response": "身份、账号和等级；不返回资金账户或密码哈希",
+      "response": "身份、账号、等级及mustChangePassword；不返回资金账户或密码哈希",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
       "successStatus": 200,
       "contract": {
@@ -29322,6 +29442,38 @@
       "request": "本人伙伴会话",
       "response": "{loggedOut:true}；吊销当前会话",
       "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/partners/partner.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "PartnerController.changePassword",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/auth/change-password",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner.controller.ts",
+      "summary": "修改品牌伙伴密码",
+      "request": "{currentPassword,newPassword,confirmPassword}；新密码至少10字符且UTF-8不超过72字节，不得与旧密码相同；每分钟5次",
+      "response": "{token,expiresAt,mustChangePassword:false}；原密码验证、行锁、更新密码与撤销旧会话及创建新会话同事务；新token替换本地会话",
+      "dependency": "本人伙伴会话；未改初始密码时仅开放me/logout/change-password，其余业务403 PARTNER_PASSWORD_CHANGE_REQUIRED；旧账户默认不强制改密",
       "successStatus": 201,
       "contract": {
         "status": "unreviewed",

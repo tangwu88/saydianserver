@@ -693,6 +693,42 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
       "订单不存在",
     );
   });
+  it("requires a new admin-created partner to change password and serializes competing changes", async () => {
+    const account = await admin.create(actorId, { username: `qa-initial-${randomUUID()}`, name: "合成首次改密", password: "synthetic-initial-password", levelId: a.levelId }, suffix);
+    const auth = new PartnerAuthService(prisma as any), guard = new PartnerAuthGuard(prisma as any);
+    const login = await auth.login({ username: account.username, password: "synthetic-initial-password" });
+    expect(login.mustChangePassword).toBe(true);
+    expect((await partners.me(account.id)).mustChangePassword).toBe(true);
+    const request: any = { header: () => `Bearer ${login.token}`, originalUrl: "/api/saydian-app/vip/v1/products" };
+    const ctx: any = { switchToHttp: () => ({ getRequest: () => request }) };
+    await expect(guard.canActivate(ctx)).rejects.toThrow("请先修改初始密码");
+    const session = await prisma.partnerSession.findUniqueOrThrow({ where: { tokenHash: sha256(login.token) } });
+    const input = { currentPassword: "synthetic-initial-password", newPassword: "synthetic-new-password", confirmPassword: "synthetic-new-password" };
+    const attempts = await Promise.allSettled([auth.changePassword(account.id, session.id, input, suffix), auth.changePassword(account.id, session.id, input, suffix)]);
+    expect(attempts.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    await expect(guard.canActivate(ctx)).rejects.toThrow("登录已失效");
+    const next = await auth.login({ username: account.username, password: input.newPassword });
+    expect(next.mustChangePassword).toBe(false);
+    await expect(auth.login({ username: account.username, password: input.currentPassword })).rejects.toThrow("账号或密码错误");
+    await admin.resetPassword(actorId, account.id, { password: "synthetic-admin-reset" }, suffix);
+    expect((await auth.login({ username: account.username, password: "synthetic-admin-reset" })).mustChangePassword).toBe(true);
+    expect((await prisma.partnerSession.findUniqueOrThrow({ where: { tokenHash: sha256(next.token) } })).revokedAt).not.toBeNull();
+  });
+  it("rehearses the additive initial-password migration on a private old-table copy", async () => {
+    const rollback = new Error("synthetic rollback");
+    await expect(prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('CREATE TEMP TABLE "BrandPartner" (id uuid PRIMARY KEY, "passwordHash" text NOT NULL, active boolean NOT NULL) ON COMMIT DROP');
+      await tx.$executeRaw`INSERT INTO "BrandPartner" (id, "passwordHash", active) VALUES (${randomUUID()}::uuid, 'synthetic-old-hash', true)`;
+      const before: any[] = await tx.$queryRawUnsafe('SELECT id, "passwordHash", active FROM "BrandPartner"');
+      const sql = readFileSync(resolve(process.cwd(), 'prisma/migrations/20261028160000_partner_initial_password/migration.sql'), 'utf8');
+      await tx.$executeRawUnsafe(sql);
+      const after: any[] = await tx.$queryRawUnsafe('SELECT id, "passwordHash", active, "mustChangePassword" FROM "BrandPartner"');
+      expect(after).toEqual(before.map((row) => ({ ...row, mustChangePassword: false })));
+      throw rollback;
+    })).rejects.toBe(rollback);
+    // The transaction must leave the real partner and its password state untouched.
+    expect((await prisma.brandPartner.findUniqueOrThrow({ where: { id: a.id } })).username).toBe(a.username);
+  });
   it("revokes sessions on password reset/disable, yet credits an already created recharge", async () => {
     const auth = new PartnerAuthService(prisma as any),
       guard = new PartnerAuthGuard(prisma as any);
@@ -700,7 +736,7 @@ describe.runIf(enabled)("brand partner PostgreSQL acceptance", () => {
       username: a.username,
       password: "synthetic-partner-test-password",
     });
-    const request: any = { header: () => `Bearer ${session.token}` },
+    const request: any = { header: () => `Bearer ${session.token}`, originalUrl: "/api/saydian-app/vip/v1/auth/me" },
       context: any = { switchToHttp: () => ({ getRequest: () => request }) };
     expect(await guard.canActivate(context)).toBe(true);
     await admin.resetPassword(

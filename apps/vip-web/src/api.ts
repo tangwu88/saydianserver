@@ -12,6 +12,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 403 && error.response.data?.errorKey === "PARTNER_PASSWORD_CHANGE_REQUIRED") window.dispatchEvent(new Event("partner-password-change-required"));
     if (axios.isAxiosError(error) && error.response?.status === 403 && error.response.data?.errorKey === "PARTNER_AGREEMENT_REQUIRED") window.dispatchEvent(new Event("partner-agreement-required"));
     if (axios.isAxiosError(error) && error.response?.status === 401 && !String(error.config?.url).includes("/auth/member-login")) {
       sessionStorage.removeItem(partnerTokenKey);

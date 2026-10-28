@@ -64,6 +64,11 @@ export class PartnerController {
   logout(@CurrentPartner() partner: Partner) {
     return this.auth.logout(partner.sessionId);
   }
+  @Post("auth/change-password")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  changePassword(@CurrentPartner() partner: Partner, @Body() body: unknown, @Req() request: RequestWithContext) {
+    return this.auth.changePassword(partner.id, partner.sessionId, body, request.requestId);
+  }
   @Get("dashboard")
   dashboard(@CurrentPartner() partner: Partner) {
     return this.partners.overview(partner.id);

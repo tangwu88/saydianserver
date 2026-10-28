@@ -7,9 +7,16 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  UploadedFile,
+  UseInterceptors,
   UseGuards,
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Response } from "express";
+import { RawResponse } from "../common/raw-response.decorator";
+import { SupportService } from "../support/support.service";
 import { AdminRole } from "@prisma/client";
 import { CurrentAdmin, RequestWithContext } from "../common/request-context";
 import { AdminAuthGuard, AdminRoles } from "../admin/admin-auth";
@@ -20,7 +27,62 @@ type Admin = { id: string };
 @Controller("api/saydian-app/admin/v1")
 @UseGuards(AdminAuthGuard)
 export class PartnerAdminController {
-  constructor(private readonly admin: PartnerAdminService) {}
+  constructor(
+    private readonly admin: PartnerAdminService,
+    private readonly support: SupportService,
+  ) {}
+
+  @Get("partners/:id/customer-images")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  customerImages(@Param("id") id: string, @Query("page") page?: string) {
+    return this.support.partnerCustomerImages(id, page);
+  }
+
+  @Post("partners/:id/customer-images")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    }),
+  )
+  uploadCustomerImage(
+    @CurrentAdmin() actor: Admin,
+    @Param("id") id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() request: RequestWithContext,
+  ) {
+    return this.support.uploadPartnerCustomerImage(
+      actor.id,
+      id,
+      file,
+      request.requestId,
+    );
+  }
+
+  @Get("partners/:id/customer-images/:fileId")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  @RawResponse()
+  async customerImage(
+    @CurrentAdmin() actor: Admin,
+    @Param("id") id: string,
+    @Param("fileId") fileId: string,
+    @Req() request: RequestWithContext,
+    @Res() response: Response,
+  ) {
+    const file = await this.support.partnerCustomerImage(
+      actor.id,
+      id,
+      fileId,
+      request.requestId,
+    );
+    response.setHeader("Cache-Control", "private, no-store");
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.setHeader("Content-Type", file.contentType);
+    response.setHeader("Content-Length", file.byteSize);
+    response.setHeader("Content-Disposition", "inline");
+    file.body.on("error", () => response.destroy());
+    file.body.pipe(response);
+  }
 
   @Get("partners")
   list(@Query("search") search = "", @Query("page") page?: string) {

@@ -91,6 +91,7 @@ async function login() {
           >登录平台</el-button
         >
         <el-button class="login-button" size="large" :disabled="busy" @click="mallLogin">商城会员登录 / 申请合作</el-button>
+        <p class="help">如忘记密码，请联系管理员重置。</p>
         <p class="help">已开通的伙伴可使用账号密码登录。已绑定商城会员的伙伴，也可选择商城会员登录。</p>
       </form>
       <small class="copyright">赛电 SAYDIAN · 品牌伙伴平台</small>
