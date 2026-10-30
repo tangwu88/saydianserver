@@ -351,7 +351,7 @@ describe("global registration challenges", () => {
     await expect(h.service.registerWithoutVerification({ product: "say-ring", channel: "email", identifier: "new@example.net", password: "Synthetic-password!" })).rejects.toThrow("verification code");
     expect(h.users().size).toBe(0);
   });
-  for (const [channel, identifier] of [["email", "new-ring@example.net"], ["sms", "+12025550123"]]) {
+  for (const [channel, identifier] of [["email", "new-ring@example.net"]]) {
     it(`Say Ring ${channel} code login cannot create a passwordless member`, async () => {
       const h = harness();
       const challenge = await h.service.requestLoginCode({ channel, identifier, locale: "en", product: "say-ring" });
@@ -364,6 +364,90 @@ describe("global registration challenges", () => {
       expect(h.users().size).toBe(1);
     });
   }
+  it("advertises automatic phone registration only for the available Say Ring service", async () => {
+    const h = harness();
+    expect((await h.service.capabilities("en", "say-ring")).login.smsAutoRegistration).toBe(true);
+    expect((await h.service.capabilities("en")).login).not.toHaveProperty("smsAutoRegistration");
+    h.delivery.capabilities.mockResolvedValueOnce({ email: true, sms: false, smsCountries: [] });
+    expect((await h.service.capabilities("en", "say-ring")).login.smsAutoRegistration).toBe(false);
+    h.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
+    expect((await h.service.capabilities("en", "say-ring")).login.smsAutoRegistration).toBe(false);
+    vi.stubEnv("BUSINESS_WRITES_PAUSED", "true");
+    expect((await h.service.capabilities("en", "say-ring")).login.smsAutoRegistration).toBe(false);
+  });
+  it("registers a Say Ring phone only after valid OTP, current consent and age confirmation", async () => {
+    const h = harness();
+    const challenge = await h.service.requestLoginCode({ channel: "sms", identifier: "+12025550123", product: "say-ring", locale: "en" });
+    const input = { channel: "sms", identifier: "+1 202 555 0123", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1" };
+    await expect(h.service.loginWithCode(input)).rejects.toThrow("14 or older");
+    expect(h.users().size).toBe(0);
+    expect(h.records().get(challenge.challengeId).consumedAt).toBeNull();
+    await expect(h.service.loginWithCode({ ...input, ageConfirmed: true, consentVersion: "old" })).rejects.toThrow("terms have changed");
+    expect(h.users().size).toBe(0);
+    const session = await h.service.loginWithCode({ ...input, ageConfirmed: true });
+    const user = h.users().get(session.user.id);
+    expect(user).toMatchObject({ mobile: "+12025550123", passwordHash: null, status: "ACTIVE" });
+    expect(user.mobileVerifiedAt).toBeInstanceOf(Date);
+    expect(h.tx.consentRecord.upsert.mock.calls.map(([call]: any[]) => call.create.documentType)).toEqual(["say_ring_user_agreement", "say_ring_privacy_policy", "say_ring_minimum_age"]);
+    expect(h.records().get(challenge.challengeId).consumedAt).toBeInstanceOf(Date);
+    await expect(h.service.loginWithCode({ ...input, ageConfirmed: true })).rejects.toThrow("expired");
+    expect(h.users().size).toBe(1);
+    expect(h.auth.issueMallSession).toHaveBeenCalledOnce();
+  });
+  it.each(["wrong-code", "expired", "undelivered", "wrong-phone", "wrong-purpose", "attempts-exhausted"])("does not create a Say Ring phone account for %s", async (failure) => {
+    const h = harness();
+    const challenge = await h.service.requestLoginCode({ channel: "sms", identifier: "+12025550123", product: "say-ring", locale: "en" });
+    const input = { channel: "sms", identifier: "+12025550123", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true };
+    const row = h.records().get(challenge.challengeId);
+    if (failure === "wrong-code") input.code = input.code === "100000" ? "100001" : "100000";
+    if (failure === "expired") row.expiresAt = new Date(0);
+    if (failure === "undelivered") row.sentAt = null;
+    if (failure === "wrong-phone") input.identifier = "+12025550124";
+    if (failure === "wrong-purpose") row.purpose = "register";
+    if (failure === "attempts-exhausted") row.attempts = 5;
+    await expect(h.service.loginWithCode(input)).rejects.toThrow("expired");
+    expect(h.users().size).toBe(0);
+    expect(h.auth.issueMallSession).not.toHaveBeenCalled();
+    expect(h.tx.consentRecord.upsert).not.toHaveBeenCalled();
+  });
+  it("signs an existing verified phone into its original account without changing its password or profile", async () => {
+    const h = harness();
+    h.users().set("existing", { id: "existing", status: "ACTIVE", mobile: "+12025550123", mobileVerifiedAt: new Date(), passwordHash: "existing-hash", nickname: "Existing member" });
+    const challenge = await h.service.requestLoginCode({ channel: "sms", identifier: "+12025550123", product: "say-ring", locale: "en" });
+    const session = await h.service.loginWithCode({ channel: "sms", identifier: "+12025550123", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true });
+    expect(session.user.id).toBe("existing");
+    expect(h.users().size).toBe(1);
+    expect(h.tx.user.create).not.toHaveBeenCalled();
+    expect(h.users().get("existing")).toMatchObject({ passwordHash: "existing-hash", nickname: "Existing member" });
+    expect(h.tx.userSession.updateMany).not.toHaveBeenCalled();
+  });
+  it.each(["DISABLED", "DELETION_PENDING", "DELETED"])("does not recreate an unavailable Say Ring phone account: %s", async (status) => {
+    const h = harness();
+    h.users().set("existing", { id: "existing", status, mobile: "+12025550123" });
+    const challenge = await h.service.requestLoginCode({ channel: "sms", identifier: "+12025550123", product: "say-ring", locale: "en" });
+    await expect(h.service.loginWithCode({ channel: "sms", identifier: "+12025550123", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true })).rejects.toThrow("cannot sign in");
+    expect(h.users().size).toBe(1);
+    expect(h.tx.user.create).not.toHaveBeenCalled();
+    expect(h.auth.issueMallSession).not.toHaveBeenCalled();
+  });
+  it("does not create a Say Ring phone from an outstanding challenge while writes are paused", async () => {
+    const h = harness();
+    const challenge = await h.service.requestLoginCode({ channel: "sms", identifier: "+12025550123", product: "say-ring", locale: "en" });
+    vi.stubEnv("BUSINESS_WRITES_PAUSED", "true");
+    await expect(h.service.loginWithCode({ channel: "sms", identifier: "+12025550123", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true })).rejects.toThrow("temporarily unavailable");
+    expect(h.users().size).toBe(0);
+    expect(h.records().get(challenge.challengeId).consumedAt).toBeNull();
+    expect(h.auth.issueMallSession).not.toHaveBeenCalled();
+  });
+  it("rolls a new Say Ring phone and challenge back when consent persistence fails", async () => {
+    const h = harness();
+    const challenge = await h.service.requestLoginCode({ channel: "sms", identifier: "+12025550123", product: "say-ring", locale: "en" });
+    h.tx.consentRecord.upsert.mockRejectedValueOnce(new Error("synthetic consent write failure"));
+    await expect(h.service.loginWithCode({ channel: "sms", identifier: "+12025550123", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true })).rejects.toThrow("consent write failure");
+    expect(h.users().size).toBe(0);
+    expect(h.records().get(challenge.challengeId).consumedAt).toBeNull();
+    expect(h.auth.issueMallSession).not.toHaveBeenCalled();
+  });
   it("allows reset delivery without registration legal documents, but never without a verified channel", async () => {
     const h = harness();
     h.tx.globalLegalDocument.findMany.mockResolvedValue([]);
