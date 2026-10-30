@@ -6,6 +6,7 @@ import { orderErpSnapshot } from "../commerce/order-erp-snapshot";
 import { usCandidateInventory } from "./us-candidate-inventory";
 import { adminDeviceIdentifier, legacyNativeDeviceKey } from "../common/device-identity";
 import { deductCommercePaymentStock } from "../commerce/commerce-payment-stock";
+import { STORE_DOWNLOAD_KEY, parseStoreDownload } from "@saydian/app-contracts";
 import {
   BadRequestException,
   ConflictException,
@@ -2426,6 +2427,10 @@ export class AdminService {
 
   async updateCommerceBusinessConfig(key: string, input: unknown) {
     const body = safeObject(input);
+    if (key === STORE_DOWNLOAD_KEY && body.value !== undefined) {
+      try { body.value = parseStoreDownload(body.value); }
+      catch (error) { throw new BadRequestException(error instanceof Error ? error.message : "下载入口配置不正确"); }
+    }
     const label = String(body.label ?? key).trim();
     if (!key.trim() || !label) throw new BadRequestException("配置项不正确");
     const value =
