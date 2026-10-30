@@ -9,6 +9,7 @@ import { orderPurchaser } from "../commerce-order-purchaser";
 import OrderErpPanel from "./OrderErpPanel.vue";
 import { commerceOrderStatus, commerceLogisticsTraces } from "@saydian/app-contracts/commerce-erp";
 import { erpOrderStatus } from "../commerce-order-erp";
+import { STORE_DOWNLOAD_KEY, defaultStoreDownload } from "@saydian/app-contracts";
 
 type Row = Record<string, any>;
 type TagType = "primary" | "success" | "warning" | "info" | "danger";
@@ -478,6 +479,7 @@ function changeStatus(value: unknown): void {
       </el-select>
       <el-button type="primary" @click="emit('refresh')">刷新</el-button>
       <el-button v-if="createable" @click="emit('create')">新增</el-button>
+      <el-button v-if="canEdit && resource === 'commerce-business-configs'" type="primary" plain @click="emit('edit', rows.find(row => row.key === STORE_DOWNLOAD_KEY) || { key: STORE_DOWNLOAD_KEY, label: '首页 APP 下载入口', enabled: true, value: { ...defaultStoreDownload } })">首页 APP 下载入口</el-button>
       <el-button v-if="resource === 'commerce-products' && canEdit" type="primary" plain :loading="inventorySyncing" @click="syncInventory">聚水潭库存同步</el-button>
       <el-button v-if="canEdit && resource === 'commerce-commissions'" @click="emit('edit', { enabled: false, rateBps: 0, settlementDays: 7, withdrawalEnabled: false, minimumWithdrawCents: null, dailyWithdrawLimitCents: null, ...meta.plan, reviewRequired: true })">推广奖金与提现规则</el-button>
       <template v-if="canEdit && resource === 'commerce-products' && selectedProductIds.length">

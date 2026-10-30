@@ -109,6 +109,7 @@ export class CommerceStoreService {
               in: [
                 "store.name",
                 "store.notice",
+                "store.appDownload",
                 "customer.service",
                 "policies",
               ],

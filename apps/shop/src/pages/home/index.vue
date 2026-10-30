@@ -5,6 +5,7 @@
   <view class="page home-page"><view class="container">
     <view class="shop-intro"><view><text class="shop-heading">赛电商城</text></view><button class="guide-link" @click="openOfficial(officialSupport.compare)">型号对比 <UniIcons type="arrow-up" size="16" /></button></view>
     <button class="home-search" @click="go('/pages/search/index')"><UniIcons type="search" size="21"/><text class="search-placeholder">搜索型号、商品或配件</text><text class="search-action">搜索</text></button>
+    <!-- #ifdef H5 --><AppDownload /><!-- #endif -->
     <view v-if="notice" class="store-notice">{{ notice }}</view>
     <view v-if="error" class="error-state"><text>{{ error }}</text><button class="outline-btn" @click="load">重新加载</button></view>
     <swiper v-if="state.banners.length" class="store-banners" indicator-dots autoplay :interval="6000">
@@ -36,6 +37,9 @@ import { miniPosterEnvironment } from '../../mini-poster';
 import { toast } from '../../api';
 import { computed, ref } from "vue";
 import DesktopHeader from "../../components/DesktopHeader.vue";
+// #ifdef H5
+import AppDownload from "../../components/AppDownload.vue";
+// #endif
 import ProductCard from "../../components/ProductCard.vue";
 import StoreFooter from "../../components/StoreFooter.vue";
 import { storefront, loadStorefront, configValue, brandLogo } from "../../storefront";

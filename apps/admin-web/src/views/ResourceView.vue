@@ -8,6 +8,7 @@ import { api, getAdminRoles, readableError, responseData } from "../api";
 import { canAdminResource } from "@saydian/app-contracts";
 import PartnerAssignmentDialog from "../components/PartnerAssignmentDialog.vue";
 import CommerceWorkspace from "../components/CommerceWorkspace.vue";
+import StoreDownloadEditor from "../components/StoreDownloadEditor.vue";
 import RichTextEditor from "../components/RichTextEditor.vue";
 import MemberHealthData from "../components/MemberHealthData.vue";
 import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
@@ -1937,7 +1938,8 @@ onBeforeUnmount(() => {
           <el-form-item label="配置项"><el-input v-model="form.key" :disabled="!form._isNew" placeholder="如 shipping.default" /></el-form-item>
           <el-form-item label="名称"><el-input v-model="form.label" /></el-form-item>
           <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
-          <el-form-item label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="10" /></el-form-item>
+          <StoreDownloadEditor v-if="form.key === 'store.appDownload'" v-model="form.valueText" />
+          <el-form-item v-else label="配置内容"><el-input v-model="form.valueText" type="textarea" :rows="10" /></el-form-item>
         </template>
         <template v-else-if="resource === 'commerce-reviews'">
           <el-alert title="评价正文和评分来自真实订单，后台只控制是否在商城公开展示。" type="info" :closable="false" show-icon />
