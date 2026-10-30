@@ -27,6 +27,27 @@ function fixture(rows = [terms, privacy, sleep]) {
 }
 
 describe("current Say Ring public legal pages", () => {
+  it("explains the new manual and personal-reference scope without changing the legal pair or accepting consent", async () => {
+    const original = JSON.stringify([terms, privacy, sleep]);
+    const { service } = fixture();
+    const html = await service.sayRingLegalPage("privacy");
+    expect(html).toContain('id="ios-personal-reminder-scope" data-product="say-ring" data-platform="ios" data-min-build="1181"');
+    expect(html).toContain("同一戒指和固件");
+    expect(html).toContain("HRV 仅供恢复与疲劳变化参考，不是疲劳诊断");
+    expect(html).toContain("皮温不等于核心体温");
+    expect(html).toContain("历史回补、缓存、预览和未知值不生成真实提醒");
+    expect(html).toContain("不新增 iOS 生理数据云上传");
+    expect(html).toContain("经系统允许后");
+    expect(html).toContain("声音遵循系统静音和音量");
+    expect(html).toContain(`<article data-document-type="${privacy.documentType}" data-version="${privacy.version}">${privacy.contentHtml}</article>`);
+    expect(JSON.stringify([terms, privacy, sleep])).toBe(original);
+    const en = renderSayRingLegalPage({ ...privacy, locale: "en" });
+    expect(en).toContain("Manual readings and personal reminders from iOS build 1181");
+    expect(en).toContain("separate manual-measurement permission has native acknowledgement");
+    expect(en).toContain("not a fatigue diagnosis");
+    expect(en).toContain("creates no health record, inbox message or system notification");
+    expect(en).toContain("does not claim review approval or store availability");
+  });
   it.each(["privacy", "terms"])("renders %s directly as HTML using only the current matching product pair", async type => {
     const { service, findMany, findFirst } = fixture();
     const html = await service.sayRingLegalPage(type);
