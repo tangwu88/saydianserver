@@ -6,6 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
   type OnModuleInit,
+  type OnModuleDestroy,
 } from "@nestjs/common";
 import {
   GetObjectCommand,
@@ -16,6 +17,7 @@ import { IntegrationState, Prisma } from "@prisma/client";
 import { parseDownloadManifest, sayRingIosHealthDisplayOrClosed, sayRingIosHealthSettingKey } from "@saydian/app-contracts";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
+import { finished } from "node:stream/promises";
 import { gzipSync } from "node:zlib";
 import { PrismaService } from "../common/prisma.service";
 import { env, envBoolean } from "../common/environment";
@@ -29,6 +31,8 @@ import { PublicImageVariants, publicImageWidth } from "./public-image-variants";
 import { normalizePublishedGlobalSupport } from "./global-support-config";
 import { canAdminResource } from "@saydian/app-contracts";
 import { validatePartnerCustomerImage } from "../partners/partner-customer-image";
+import { AppPackageUploads, packageTarget, type StagedPackage } from "./app-package-uploads";
+import { createReadStream } from "node:fs";
 import { parseSportRoute, renderAmapSportRoute } from "./sport-route-map";
 import {
   evidenceId,
@@ -48,8 +52,9 @@ import {
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 @Injectable()
-export class SupportService implements OnModuleInit {
+export class SupportService implements OnModuleInit, OnModuleDestroy {
   private readonly publicImageVariants = new PublicImageVariants();
+  readonly appPackageUploads = new AppPackageUploads((admin, file, platform, product, name) => this.uploadStagedAppPackage(admin, file, platform, product, name));
   constructor(
     private readonly prisma: PrismaService,
     private readonly integrationSecrets: IntegrationSecretsService,
@@ -59,6 +64,8 @@ export class SupportService implements OnModuleInit {
     if (envBoolean("SAY_RING_LOCAL_AVATAR_WRITE_ENABLED"))
       await assertSayRingAvatarDirectory();
   }
+
+  async onModuleDestroy(): Promise<void> { await this.appPackageUploads.destroy(); }
 
   async createFeedback(userId: string, input: unknown) {
     const body = safeObject(input);
@@ -387,81 +394,42 @@ export class SupportService implements OnModuleInit {
     };
   }
 
-  async uploadAdminAppPackage(
-    adminId: string,
-    file: Express.Multer.File,
-    platformInput: string,
-    productInput: string = "say-ring",
-  ) {
-    const product = String(productInput ?? "say-ring");
-    if (!["saidian", "saydian-global", "say-ring", "saydian-app-cn"].includes(product)) {
-      throw new BadRequestException("请选择有效的 App");
-    }
-    const platform = String(platformInput ?? "")
-      .trim()
-      .toLowerCase();
-    if (product === "saydian-app-cn" && platform !== "android") throw new BadRequestException("中文版目前仅发布安卓安装包");
-    const extension =
-      platform === "android" ? "apk" : platform === "harmonyos" ? "hap" : "";
-    if (
-      !file ||
-      !extension ||
-      !String(file.originalname ?? "")
-        .toLowerCase()
-        .endsWith(`.${extension}`)
-    ) {
-      throw new BadRequestException("请选择与平台匹配的 APK 或 HAP 安装包");
-    }
-    if (
-      file.size <= 0 ||
-      file.size > 128 * 1024 * 1024 ||
-      file.buffer.length !== file.size
-    ) {
-      throw new BadRequestException("安装包大小必须在 128MB 以内");
-    }
-    if (file.buffer[0] !== 0x50 || file.buffer[1] !== 0x4b) {
-      throw new BadRequestException("安装包格式不正确");
-    }
-    const digest = sha256(file.buffer);
-    const fileName = `${product}-${platform}-${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
+  async uploadAdminAppPackage(adminId: string, file: Express.Multer.File, platformInput: string, productInput = "say-ring", stableName?: string) {
+    const target = packageTarget(file?.originalname, platformInput, productInput);
+    if (file.size <= 0 || file.size > 128 * 1024 * 1024 || file.buffer.length !== file.size) throw new BadRequestException("安装包大小必须在 128MB 以内");
+    if (file.buffer[0] !== 0x50 || file.buffer[1] !== 0x4b) throw new BadRequestException("安装包格式不正确");
+    return this.storeAppPackage(adminId, target, file.buffer, file.size, sha256(file.buffer), stableName);
+  }
+
+  private async uploadStagedAppPackage(adminId: string, file: StagedPackage, platform: string, product: string, name: string) {
+    const target = packageTarget(name, platform, product), stream = createReadStream(file.path);
+    stream.on("error", () => {}); // Storage/finished promises own errors, including early stream open failures.
+    try { return await this.storeAppPackage(adminId, target, stream, file.size, file.sha256, name); }
+    finally { stream.destroy(); await finished(stream, { cleanup: true }).catch(() => {}); }
+  }
+
+  private async storeAppPackage(adminId: string, target: ReturnType<typeof packageTarget>, body: Buffer | Readable, size: number, digest: string, stableName?: string) {
+    const { product, platform, extension } = target;
+    const fileName = stableName ?? `${product}-${platform}-${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
+    if (stableName && (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.(apk|hap)$/.test(stableName) || stableName.includes("..") || !stableName.startsWith(`${product}-${platform}-`) || !stableName.endsWith(`.${extension}`))) throw new BadRequestException("安装包存储标识不正确");
     const purpose = `app-package:${product}`;
-    const contentType =
-      extension === "apk"
-        ? "application/vnd.android.package-archive"
-        : "application/octet-stream";
+    const contentType = extension === "apk" ? "application/vnd.android.package-archive" : "application/octet-stream";
     const objectKey = `app-packages/${product}/${platform}/${fileName}`;
     const storage = await this.storage();
     try {
-      await storage.s3.send(
-        new PutObjectCommand({
-          Bucket: storage.bucket,
-          Key: objectKey,
-          Body: file.buffer,
-          ContentType: contentType,
-          Metadata: { sha256: digest, purpose, adminId },
-        }),
-      );
+      const command = new PutObjectCommand({
+        Bucket: storage.bucket, Key: objectKey, Body: body, ContentLength: size,
+        ...(Buffer.isBuffer(body) ? {} : { ChecksumAlgorithm: "SHA256" as const, ChecksumSHA256: Buffer.from(digest, "hex").toString("base64") }),
+        ContentType: contentType, Metadata: { sha256: digest, purpose, adminId },
+      });
+      if (Buffer.isBuffer(body)) await storage.s3.send(command);
+      else await storage.s3.send(command, { abortSignal: AbortSignal.timeout(120_000) });
       await markIntegrationVerified(this.prisma, "object_storage");
-    } catch {
-      throw new ServiceUnavailableException("安装包暂时无法上传，请稍后重试");
-    }
-    await this.prisma.fileObject.create({
-      data: {
-        ownerUserId: null,
-        objectKey,
-        originalName: fileName,
-        contentType,
-        byteSize: file.size,
-        sha256: digest,
-        purpose,
-      },
-    });
-    return {
-      fileName,
-      url: `${product === "saidian" ? "" : "/global"}/api/saydian-app/v2/support/app-package/${fileName}`,
-      sizeBytes: file.size,
-      sha256: digest,
-    };
+    } catch { throw new ServiceUnavailableException("安装包暂时无法上传，请稍后重试"); }
+    const record = { ownerUserId: null, objectKey, originalName: fileName, contentType, byteSize: size, sha256: digest, purpose };
+    if (stableName) await this.prisma.fileObject.upsert({ where: { objectKey }, create: record, update: {} });
+    else await this.prisma.fileObject.create({ data: record });
+    return { fileName, url: `${product === "saidian" ? "" : "/global"}/api/saydian-app/v2/support/app-package/${fileName}`, sizeBytes: size, sha256: digest };
   }
 
   async publicAppPackage(fileNameInput: string) {
