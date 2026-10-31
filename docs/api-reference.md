@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **482 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **486 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -310,7 +310,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（159）
+## 管理后台接口（163）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -324,6 +324,10 @@
 | `POST /api/saydian-app/admin/v1/content-images` | 上传后台文章或协议图片 | admin: SUPER_ADMIN, CONTENT_EDITOR | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR | {id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/commerce-images` | 上传商城商品或SKU图片 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/COMMERCE_OPERATIONS | {id,url,sha256,byteSize}；url可保存到商品封面、相册或SKU图片字段，不返回对象存储密钥 | 已配置对象存储 |
 | `POST /api/saydian-app/admin/v1/app-packages` | 上传赛电、Health 或 Say Ring 安装包 | admin: SUPER_ADMIN, APP_OPERATIONS | file:file，query:platform，query:product?；platform=android/harmonyos；product=saidian/saydian-global/say-ring，省略时兼容默认say-ring；multipart/form-data字段file；APK/HAP 不超过128MB；仅SUPER_ADMIN/APP_OPERATIONS | {fileName,url,sizeBytes,sha256}；按产品保存，赛电返回/api/地址，Health和Say Ring返回/global/api/地址；上传成功后仍需保存版本配置才发布 | 已配置对象存储 |
+| `POST /api/saydian-app/admin/v1/app-packages/uploads` | 开始可重试的安装包上传 | admin: SUPER_ADMIN, APP_OPERATIONS | query:platform，query:product?；platform=android/harmonyos；product=saidian/saydian-global/say-ring/saydian-app-cn；JSON {requestId:UUIDv4,fileName,sizeBytes,sha256}；最大128MiB，同一管理员最多2个会话，全局最多4个，暂存总量限128MiB | {uploadId,chunkBytes:1048576,receivedBytes}；绑定管理员及产品，开始请求可幂等重试；未保存版本设置不发布 | SUPER_ADMIN/APP_OPERATIONS；单API实例临时会话，空闲15分钟失效 |
+| `PUT /api/saydian-app/admin/v1/app-packages/uploads/:uploadId/parts/:offset` | 上传安装包片段 | admin: SUPER_ADMIN, APP_OPERATIONS | path:uploadId，path:offset，file:file；uploadId；offset为字节偏移；multipart字段file不超过1MiB；顺序上传，最后一个片段可较小 | {uploadId,chunkBytes,receivedBytes}；同一最近片段相同内容可幂等重试，乱序/越界拒绝 | SUPER_ADMIN/APP_OPERATIONS；仅原管理员可访问 |
+| `POST /api/saydian-app/admin/v1/app-packages/uploads/:uploadId/complete` | 校验并完成安装包上传 | admin: SUPER_ADMIN, APP_OPERATIONS | path:uploadId；uploadId；全部片段到齐后合并，验证大小、ZIP头及原始SHA-256 | {fileName,url,sizeBytes,sha256}；10分钟内重复完成返回相同结果；上传完成仍需保存设置才发布 | SUPER_ADMIN/APP_OPERATIONS；复用原对象存储及文件用途，不改变下载清单 |
+| `DELETE /api/saydian-app/admin/v1/app-packages/uploads/:uploadId` | 取消临时安装包上传 | admin: SUPER_ADMIN, APP_OPERATIONS | path:uploadId；uploadId；只能由原管理员取消 | {cancelled:true}；仅清理本功能的临时片段，不删除已经保存的安装包或版本 | SUPER_ADMIN/APP_OPERATIONS |
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量；外部收款排除PARTNER_BALANCE，伙伴充值与商城成交额独立统计 | 核心服务 |

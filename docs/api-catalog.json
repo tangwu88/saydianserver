@@ -365,6 +365,170 @@
       }
     },
     {
+      "key": "AdminController.startAppPackageUpload",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/app-packages/uploads",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "platform",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "开始可重试的安装包上传",
+      "request": "platform=android/harmonyos；product=saidian/saydian-global/say-ring/saydian-app-cn；JSON {requestId:UUIDv4,fileName,sizeBytes,sha256}；最大128MiB，同一管理员最多2个会话，全局最多4个，暂存总量限128MiB",
+      "response": "{uploadId,chunkBytes:1048576,receivedBytes}；绑定管理员及产品，开始请求可幂等重试；未保存版本设置不发布",
+      "dependency": "SUPER_ADMIN/APP_OPERATIONS；单API实例临时会话，空闲15分钟失效",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.uploadAppPackagePart",
+      "method": "PUT",
+      "path": "/api/saydian-app/admin/v1/app-packages/uploads/:uploadId/parts/:offset",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "uploadId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "offset",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "上传安装包片段",
+      "request": "uploadId；offset为字节偏移；multipart字段file不超过1MiB；顺序上传，最后一个片段可较小",
+      "response": "{uploadId,chunkBytes,receivedBytes}；同一最近片段相同内容可幂等重试，乱序/越界拒绝",
+      "dependency": "SUPER_ADMIN/APP_OPERATIONS；仅原管理员可访问",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.completeAppPackageUpload",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/app-packages/uploads/:uploadId/complete",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "uploadId",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "校验并完成安装包上传",
+      "request": "uploadId；全部片段到齐后合并，验证大小、ZIP头及原始SHA-256",
+      "response": "{fileName,url,sizeBytes,sha256}；10分钟内重复完成返回相同结果；上传完成仍需保存设置才发布",
+      "dependency": "SUPER_ADMIN/APP_OPERATIONS；复用原对象存储及文件用途，不改变下载清单",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminController.cancelAppPackageUpload",
+      "method": "DELETE",
+      "path": "/api/saydian-app/admin/v1/app-packages/uploads/:uploadId",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "uploadId",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "取消临时安装包上传",
+      "request": "uploadId；只能由原管理员取消",
+      "response": "{cancelled:true}；仅清理本功能的临时片段，不删除已经保存的安装包或版本",
+      "dependency": "SUPER_ADMIN/APP_OPERATIONS",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.logout",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/auth/logout",

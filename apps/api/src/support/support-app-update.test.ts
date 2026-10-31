@@ -426,6 +426,23 @@ describe("Say Ring package upload and download", () => {
     expect(h.db.fileObject.create).not.toHaveBeenCalled();
   });
 
+  it("persists repeated completion using the same immutable key without duplicate file records", async () => {
+    const h = packageFixture();
+    const upsert = vi.fn(async ({ where, create }: any) => {
+      const found = h.rows.find(row => row.objectKey === where.objectKey);
+      if (found) return found;
+      const row = { id: "stable-package", status: "ACTIVE", createdAt: new Date(), ...create }; h.rows.push(row); return row;
+    });
+    (h.db.fileObject as any).upsert = upsert;
+    const name = "say-ring-harmonyos-123-abcd1234.hap", file = { ...h.file, originalname: "client.hap" };
+    const one = await h.service.uploadAdminAppPackage("admin-1", file, "harmonyos", "say-ring", name);
+    const two = await h.service.uploadAdminAppPackage("admin-1", file, "harmonyos", "say-ring", name);
+    expect(two).toEqual(one); expect(h.rows).toHaveLength(1); expect(upsert).toHaveBeenCalledTimes(2);
+    expect(h.send.mock.calls[0]![0].input.Key).toBe(h.send.mock.calls[1]![0].input.Key);
+    for (const invalid of ["../other.hap", "saidian-harmonyos-123.hap", "say-ring-harmonyos-123.apk"]) await expect(h.service.uploadAdminAppPackage("admin-1", file, "harmonyos", "say-ring", invalid)).rejects.toThrow();
+    expect(h.send).toHaveBeenCalledTimes(2);
+  });
+
   it("does not expose unknown or unsafe package names", async () => {
     const h = packageFixture();
     await expect(

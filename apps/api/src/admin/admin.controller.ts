@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UploadedFile,
@@ -24,6 +25,7 @@ import { AdminAuthGuard, AdminAuthService, AdminRoles } from "./admin-auth";
 import { AdminService } from "./admin.service";
 import { AdminAuditInterceptor } from "./admin-audit.interceptor";
 import { SupportService } from "../support/support.service";
+import { packageChunkBytes } from "../support/app-package-uploads";
 
 @ApiTags("admin-auth")
 @Controller("api/saydian-app/admin/v1/auth")
@@ -99,6 +101,31 @@ export class AdminController {
     @Query("product") product?: string,
   ) {
     return this.support.uploadAdminAppPackage(current.id, file, platform, product);
+  }
+
+  @Post("app-packages/uploads")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  startAppPackageUpload(@CurrentAdmin() current: { id: string }, @Body() input: unknown, @Query("platform") platform: string, @Query("product") product?: string) {
+    return this.support.appPackageUploads.start(current.id, safeObject(input), platform, product ?? "say-ring");
+  }
+
+  @Put("app-packages/uploads/:uploadId/parts/:offset")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: packageChunkBytes, files: 1, fields: 0 } }))
+  uploadAppPackagePart(@CurrentAdmin() current: { id: string }, @Param("uploadId") id: string, @Param("offset") offset: string, @UploadedFile() file: Express.Multer.File) {
+    return this.support.appPackageUploads.part(current.id, id, offset, file);
+  }
+
+  @Post("app-packages/uploads/:uploadId/complete")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  completeAppPackageUpload(@CurrentAdmin() current: { id: string }, @Param("uploadId") id: string) {
+    return this.support.appPackageUploads.complete(current.id, id);
+  }
+
+  @Delete("app-packages/uploads/:uploadId")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  cancelAppPackageUpload(@CurrentAdmin() current: { id: string }, @Param("uploadId") id: string) {
+    return this.support.appPackageUploads.cancel(current.id, id);
   }
 
   @Post("auth/logout")

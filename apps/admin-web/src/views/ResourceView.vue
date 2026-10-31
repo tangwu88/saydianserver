@@ -9,6 +9,7 @@ import { canAdminResource } from "@saydian/app-contracts";
 import PartnerAssignmentDialog from "../components/PartnerAssignmentDialog.vue";
 import CommerceWorkspace from "../components/CommerceWorkspace.vue";
 import StoreDownloadEditor from "../components/StoreDownloadEditor.vue";
+import { uploadAppPackageChunks, PackageUploadError } from "../app-package-upload";
 import RichTextEditor from "../components/RichTextEditor.vue";
 import MemberHealthData from "../components/MemberHealthData.vue";
 import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
@@ -89,6 +90,12 @@ const memberDevicesLoading = ref(false);
 const memberDeviceMember = ref<Row>({});
 const memberDevices = ref<Row[]>([]);
 const packageUploading = ref<Record<string, boolean>>({});
+const appPackageBusy = computed(() => Object.values(packageUploading.value).some(Boolean));
+const packageUploadStatus = ref<Record<string, string>>({});
+const packageUploadErrors = ref<Record<string, string>>({});
+const packageUploadControllers = new Map<string, AbortController>();
+function cancelPackageUploads() { for (const controller of packageUploadControllers.values()) controller.abort(); }
+watch(dialogVisible, visible => { if (!visible) { cancelPackageUploads(); packageUploadErrors.value = {}; } });
 const downloadPlatformOptions = [
   { key: "android", label: "Android", packageLabel: "APK" },
   { key: "ios", label: "iPhone", packageLabel: "TestFlight / App Store" },
@@ -952,6 +959,7 @@ async function deleteCommerceProduct(row: Row): Promise<void> {
 
 async function save(): Promise<void> {
   if (saving.value) return;
+  if (appPackageBusy.value) { ElMessage.error("安装包正在上传，请完成后保存"); return; }
   if (resource.value === "settings" && (form.value._sayRingGroup || form.value._cnGroup)) return;
   if (needsArticleCategories.value && (!articleCategoriesReady.value || articleCategoryEditorResource.value !== resource.value)) {
     ElMessage.error("请重新打开编辑窗口，等待分类加载成功后保存");
@@ -1144,12 +1152,16 @@ async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event
     return;
   }
   packageUploading.value = { ...packageUploading.value, [platform]: true };
+  packageUploadErrors.value[platform] = "";
+  const controller = new AbortController(); packageUploadControllers.set(platform, controller);
+  const settingKey = form.value.key;
   const editor = form.value.downloadEditor as DownloadManifestEditor;
   try {
-    const body = new FormData();
-    body.append("file", file);
     const product = form.value.key === "cn_app_update" ? "saydian-app-cn" : form.value.key === "app_update" ? "saidian" : form.value.key === "global_app_update" ? "saydian-global" : "say-ring";
-    const uploaded = responseData<Row>(await api.post(`/app-packages?platform=${encodeURIComponent(platform)}&product=${encodeURIComponent(product)}`, body, { timeout: 5 * 60_000 }));
+    const uploaded = await uploadAppPackageChunks(file, platform, product, progress => {
+      packageUploadStatus.value[platform] = progress.stage === "hashing" ? "正在计算文件校验值…" : progress.stage === "verifying" ? "上传完成，正在校验并保存…" : progress.stage === "retrying" ? `已上传 ${progress.percent}%，连接中断后正在重试（${progress.attempt}/3）…` : `正在上传 ${progress.percent}%…`;
+    }, controller.signal);
+    if (controller.signal.aborted || form.value.key !== settingKey || form.value.downloadEditor !== editor || !dialogVisible.value) return;
     const release = editor.releases[platform];
     release.destinationKind = "direct";
     release.fileName = String(uploaded.fileName ?? "");
@@ -1158,9 +1170,12 @@ async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event
     release.sha256 = String(uploaded.sha256 ?? "");
     ElMessage.success("安装包上传成功，保存设置后正式发布");
   } catch (error) {
-    ElMessage.error(readableError(error));
+    if (!controller.signal.aborted) {
+      const message = error instanceof PackageUploadError ? error.message : readableError(error);
+      packageUploadErrors.value[platform] = message; ElMessage.error(message);
+    }
   } finally {
-    packageUploading.value = { ...packageUploading.value, [platform]: false };
+    if (packageUploadControllers.get(platform) === controller) { packageUploadControllers.delete(platform); packageUploading.value = { ...packageUploading.value, [platform]: false }; packageUploadStatus.value[platform] = ""; }
     input.value = "";
   }
 }
@@ -1498,6 +1513,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  cancelPackageUploads();
   ++loadRequestId;
   ++healthRequestId;
   ++editorRequestId;
@@ -2119,8 +2135,9 @@ onBeforeUnmount(() => {
                   <template v-else>
                     <el-form-item label="上传安装包">
                       <input :accept="platform.key === 'android' ? '.apk' : '.hap'" type="file" :disabled="packageUploading[platform.key]" @change="uploadAppPackage(platform.key, $event)" />
-                      <span v-if="packageUploading[platform.key]">正在上传并计算校验值…</span>
-                      <span v-else>最大 128MB；上传后自动填写文件信息，保存设置后发布。</span>
+                      <span v-if="packageUploading[platform.key]" role="status">{{ packageUploadStatus[platform.key] || '正在准备上传…' }} <el-button link type="danger" @click="packageUploadControllers.get(platform.key)?.abort()">取消上传</el-button></span>
+                      <span v-if="packageUploadErrors[platform.key]" role="alert" style="color:var(--el-color-danger)">{{ packageUploadErrors[platform.key] }}</span>
+                      <span v-if="!packageUploading[platform.key]">最大 128MB；支持分片自动重试，上传后自动填写文件信息，保存设置后发布。</span>
                     </el-form-item>
                     <el-form-item label="文件名">
                       <el-input v-model="form.downloadEditor.releases[platform.key].fileName" :placeholder="platform.packageLabel + ' 版本化文件名'" />
@@ -2162,7 +2179,7 @@ onBeforeUnmount(() => {
           <el-form-item label="启用"><el-switch v-model="form.active" /></el-form-item>
         </template>
       </el-form>
-      <template #footer><el-button :disabled="productImagesUploading > 0" @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit' && !form._sayRingGroup && !form._cnGroup && !['say_ring_ios_health_display', 'say_ring_ios_module_display'].includes(form.key)" type="primary" :loading="saving" :disabled="productImagesUploading > 0 || (needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
+      <template #footer><el-button :disabled="productImagesUploading > 0" @click="dialogVisible = false">关闭</el-button><el-button v-if="dialogMode === 'edit' && !form._sayRingGroup && !form._cnGroup && !['say_ring_ios_health_display', 'say_ring_ios_module_display'].includes(form.key)" type="primary" :loading="saving" :disabled="appPackageBusy || productImagesUploading > 0 || (needsArticleCategories && !articleCategoriesReady) || (resource === 'commerce-products' && form._erpLookupPending)" @click="save">保存</el-button></template>
     </el-dialog>
   </section>
 </template>
