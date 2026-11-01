@@ -111,7 +111,9 @@ export class AdminController {
 
   @Put("app-packages/uploads/:uploadId/parts/:offset")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: packageChunkBytes, files: 1, fields: 0 } }))
+  // Nest's Multer rejects at fileSize; allow exactly the negotiated chunk,
+  // while the first byte above it still triggers the multipart limit.
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: packageChunkBytes + 1, files: 1, fields: 0 } }))
   uploadAppPackagePart(@CurrentAdmin() current: { id: string }, @Param("uploadId") id: string, @Param("offset") offset: string, @UploadedFile() file: Express.Multer.File) {
     return this.support.appPackageUploads.part(current.id, id, offset, file);
   }
