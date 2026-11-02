@@ -1,6 +1,9 @@
 import type { Prisma } from "@prisma/client";
-import { SLEEP_ANALYSIS_NOTICE } from "@saydian/app-contracts";
-import { globalLegalReference } from "../auth/global-legal";
+import {
+  currentSleepAnalysisNotice,
+  SLEEP_ANALYSIS_NOTICE,
+} from "@saydian/app-contracts";
+import { globalLocale } from "../auth/global-identity";
 
 type ConsentDatabase = Pick<
   Prisma.TransactionClient,
@@ -12,18 +15,33 @@ export async function readSleepAnalysisConsent(
   db: ConsentDatabase,
   userId: string,
 ) {
-  const [user, record] = await Promise.all([
+  const [user, record, documents] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { locale: true } }),
     db.consentRecord.findFirst({
       where: { userId, documentType: SLEEP_ANALYSIS_NOTICE },
       orderBy: { acceptedAt: "desc" },
     }),
+    db.globalLegalDocument.findMany({
+      where: {
+        documentType: SLEEP_ANALYSIS_NOTICE,
+        active: true,
+        reviewed: true,
+        publishedAt: { lte: new Date() },
+      },
+      orderBy: { publishedAt: "desc" },
+    }),
   ]);
-  const document = await globalLegalReference(
-    db,
-    SLEEP_ANALYSIS_NOTICE,
-    user?.locale,
+  const selected = currentSleepAnalysisNotice(
+    documents,
+    globalLocale(user?.locale),
   );
+  const document = selected
+    ? {
+        version: selected.version,
+        locale: selected.locale,
+        path: `/api/saydian-app/v2/content/legal/${encodeURIComponent(SLEEP_ANALYSIS_NOTICE)}?version=${encodeURIComponent(selected.version)}&locale=${encodeURIComponent(selected.locale)}`,
+      }
+    : null;
   return {
     availableVersion: document?.version ?? null,
     document,

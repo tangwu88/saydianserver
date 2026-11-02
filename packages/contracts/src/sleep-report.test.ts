@@ -1,30 +1,178 @@
 import { describe, expect, it } from "vitest";
-import { canonicalSleepInput, normalizeSleepReportInput, sleepAiProviderMatchesNotice, SLEEP_QWEN_NOTICE_VERSION } from "./sleep-report";
+import {
+  canonicalSleepInput,
+  currentSleepAnalysisNotice,
+  normalizeSleepReportInput,
+  sleepAiProviderMatchesNotice,
+  SLEEP_QWEN_NOTICE_VERSION,
+} from "./sleep-report";
 import { createHash } from "node:crypto";
 
 // Synthetic input only. Not actual wearable evidence or a provider response.
-export const sleepFixture = () => ({ sdkDate: "2026-08-04", timezone: "+08:00", sourceKey: "a".repeat(64), totalSeconds: 25200, deepSeconds: 7200, lightSeconds: 14400, remSeconds: 3600, awakeSeconds: 1200, sessions: [{ kind: "night", startAt: "2026-08-03T16:00:00.000Z", endAt: "2026-08-04T00:00:00.000Z", asleepSeconds: 25200 }] });
+export const sleepFixture = () => ({
+  sdkDate: "2026-08-04",
+  timezone: "+08:00",
+  sourceKey: "a".repeat(64),
+  totalSeconds: 25200,
+  deepSeconds: 7200,
+  lightSeconds: 14400,
+  remSeconds: 3600,
+  awakeSeconds: 1200,
+  sessions: [
+    {
+      kind: "night",
+      startAt: "2026-08-03T16:00:00.000Z",
+      endAt: "2026-08-04T00:00:00.000Z",
+      asleepSeconds: 25200,
+    },
+  ],
+});
 
 describe("sleep upload aggregate contract", () => {
+  it("never lets an older preferred-language notice select the previous recipient", () => {
+    const current = {
+      locale: "zh-Hans",
+      version: SLEEP_QWEN_NOTICE_VERSION,
+      contentHtml: "Reviewed current notice",
+    };
+    const old = {
+      locale: "en",
+      version: "old-bigmodel",
+      contentHtml: "Older notice",
+    };
+    for (const preferred of ["en", "zh-Hant", "de", "zh-Hans"]) {
+      expect(currentSleepAnalysisNotice([current, old], preferred)).toBe(
+        current,
+      );
+    }
+  });
+  it("prefers translations only within the current published version", () => {
+    const zh = {
+      locale: "zh-Hans",
+      version: "current",
+      contentHtml: "Current zh",
+    };
+    const en = { locale: "en", version: "current", contentHtml: "Current en" };
+    const old = { locale: "de", version: "old", contentHtml: "Old de" };
+    expect(currentSleepAnalysisNotice([zh, en, old], "en")).toBe(en);
+    expect(currentSleepAnalysisNotice([zh, en, old], "de")).toBe(en);
+    expect(currentSleepAnalysisNotice([zh, en, old], "zh-Hans")).toBe(zh);
+  });
+  it("fails closed for an empty current notice instead of falling back to an old version", () => {
+    const empty = { locale: "zh-Hans", version: "current", contentHtml: " " };
+    const old = { locale: "en", version: "old", contentHtml: "Old notice" };
+    expect(currentSleepAnalysisNotice([empty, old], "en")).toBeUndefined();
+    expect(currentSleepAnalysisNotice([], "en")).toBeUndefined();
+  });
   it("binds Qwen to its separately published notice instead of adopting old BigModel agreement", () => {
     const qwen = "https://maas.qianwenaiapi.com/compatible-mode/v1";
-    expect(sleepAiProviderMatchesNotice(qwen, SLEEP_QWEN_NOTICE_VERSION)).toBe(true);
-    expect(sleepAiProviderMatchesNotice(qwen + "/", SLEEP_QWEN_NOTICE_VERSION)).toBe(true);
-    for (const version of [undefined, "say-ring-sleep-ai-2026-10-03-v1", "health_ai_analysis", "unreviewed-qwen-v2"])
+    expect(sleepAiProviderMatchesNotice(qwen, SLEEP_QWEN_NOTICE_VERSION)).toBe(
+      true,
+    );
+    expect(
+      sleepAiProviderMatchesNotice(qwen + "/", SLEEP_QWEN_NOTICE_VERSION),
+    ).toBe(true);
+    for (const version of [
+      undefined,
+      "say-ring-sleep-ai-2026-10-03-v1",
+      "health_ai_analysis",
+      "unreviewed-qwen-v2",
+    ])
       expect(sleepAiProviderMatchesNotice(qwen, version)).toBe(false);
-    for (const url of ["https://open.bigmodel.cn/api/paas/v4", "http://maas.qianwenaiapi.com/compatible-mode/v1", qwen + "?redirect=1", qwen + "#fragment", "https://maas.qianwenaiapi.com.evil.invalid/compatible-mode/v1", "https://secret@maas.qianwenaiapi.com/compatible-mode/v1", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "https://maas.qianwenaiapi.com/other"])
-      expect(sleepAiProviderMatchesNotice(url, SLEEP_QWEN_NOTICE_VERSION)).toBe(false);
+    for (const url of [
+      "https://open.bigmodel.cn/api/paas/v4",
+      "http://maas.qianwenaiapi.com/compatible-mode/v1",
+      qwen + "?redirect=1",
+      qwen + "#fragment",
+      "https://maas.qianwenaiapi.com.evil.invalid/compatible-mode/v1",
+      "https://secret@maas.qianwenaiapi.com/compatible-mode/v1",
+      "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "https://maas.qianwenaiapi.com/other",
+    ])
+      expect(sleepAiProviderMatchesNotice(url, SLEEP_QWEN_NOTICE_VERSION)).toBe(
+        false,
+      );
   });
   it("only sends sleep data to the recipient named in the published notice", () => {
-    expect(sleepAiProviderMatchesNotice("https://open.bigmodel.cn/api/paas/v4/")).toBe(true);
-    for (const url of [undefined, "http://open.bigmodel.cn/api/paas/v4", "https://open.bigmodel.cn.evil.invalid/api/paas/v4", "https://other.example.invalid/api/paas/v4", "https://secret@open.bigmodel.cn/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4?redirect=1", "https://open.bigmodel.cn/other"]) expect(sleepAiProviderMatchesNotice(url)).toBe(false);
+    expect(
+      sleepAiProviderMatchesNotice("https://open.bigmodel.cn/api/paas/v4/"),
+    ).toBe(true);
+    for (const url of [
+      undefined,
+      "http://open.bigmodel.cn/api/paas/v4",
+      "https://open.bigmodel.cn.evil.invalid/api/paas/v4",
+      "https://other.example.invalid/api/paas/v4",
+      "https://secret@open.bigmodel.cn/api/paas/v4",
+      "https://open.bigmodel.cn/api/paas/v4?redirect=1",
+      "https://open.bigmodel.cn/other",
+    ])
+      expect(sleepAiProviderMatchesNotice(url)).toBe(false);
   });
-  it("matches Flutter's cross-language snapshot digest", () => expect(createHash("sha256").update(canonicalSleepInput(normalizeSleepReportInput(sleepFixture()))).digest("hex")).toBe("5a84ec3eff249db62cbf543968d138bbaa2f0452e03f81bbbb00847066356dce"));
-  it("keeps cross-midnight absolute times and exact seconds", () => expect(normalizeSleepReportInput(sleepFixture())).toEqual(sleepFixture()));
-  it("does not fill missing stages or score with zero", () => { const input = { sdkDate: "2026-08-04", timezone: "+08:00", sourceKey: "a".repeat(64), totalSeconds: 25200, sessions: [] }; expect(normalizeSleepReportInput(input)).toEqual(input); });
+  it("matches Flutter's cross-language snapshot digest", () =>
+    expect(
+      createHash("sha256")
+        .update(canonicalSleepInput(normalizeSleepReportInput(sleepFixture())))
+        .digest("hex"),
+    ).toBe("5a84ec3eff249db62cbf543968d138bbaa2f0452e03f81bbbb00847066356dce"));
+  it("keeps cross-midnight absolute times and exact seconds", () =>
+    expect(normalizeSleepReportInput(sleepFixture())).toEqual(sleepFixture()));
+  it("does not fill missing stages or score with zero", () => {
+    const input = {
+      sdkDate: "2026-08-04",
+      timezone: "+08:00",
+      sourceKey: "a".repeat(64),
+      totalSeconds: 25200,
+      sessions: [],
+    };
+    expect(normalizeSleepReportInput(input)).toEqual(input);
+  });
   it.each([
-    { totalSeconds: 0 }, { totalSeconds: 1.5 }, { totalSeconds: 86401 }, { totalSeconds: "25200" }, { sdkDate: "2026-02-30" }, { timezone: "+14:20" }, { sourceKey: "actual-device-address" }, { deviceScore: 101 }, { deepSeconds: -1 }, { remSeconds: 5000 }, { email: "test@example.invalid" }, { segments: [] }, { sessions: [{ kind: "night", startAt: "2026-08-03T16:00:00", endAt: "2026-08-04T00:00:00Z", asleepSeconds: 25200 }] },
-  ])("rejects malformed, inconsistent and identifying uploads: %j", patch => expect(() => normalizeSleepReportInput({ ...sleepFixture(), ...patch })).toThrow());
-  it("rejects overlap and sessions whose totals do not match", () => { const input = sleepFixture(); expect(() => normalizeSleepReportInput({ ...input, sessions: [...input.sessions, ...input.sessions] })).toThrow(); expect(() => normalizeSleepReportInput({ ...input, sessions: [{ ...input.sessions[0], asleepSeconds: 25000 }] })).toThrow(); });
-  it("has stable canonical hashes independent of field order", () => { const input = sleepFixture(); expect(canonicalSleepInput(input)).toBe(canonicalSleepInput(Object.fromEntries(Object.entries(input).reverse()))); });
+    { totalSeconds: 0 },
+    { totalSeconds: 1.5 },
+    { totalSeconds: 86401 },
+    { totalSeconds: "25200" },
+    { sdkDate: "2026-02-30" },
+    { timezone: "+14:20" },
+    { sourceKey: "actual-device-address" },
+    { deviceScore: 101 },
+    { deepSeconds: -1 },
+    { remSeconds: 5000 },
+    { email: "test@example.invalid" },
+    { segments: [] },
+    {
+      sessions: [
+        {
+          kind: "night",
+          startAt: "2026-08-03T16:00:00",
+          endAt: "2026-08-04T00:00:00Z",
+          asleepSeconds: 25200,
+        },
+      ],
+    },
+  ])("rejects malformed, inconsistent and identifying uploads: %j", (patch) =>
+    expect(() =>
+      normalizeSleepReportInput({ ...sleepFixture(), ...patch }),
+    ).toThrow(),
+  );
+  it("rejects overlap and sessions whose totals do not match", () => {
+    const input = sleepFixture();
+    expect(() =>
+      normalizeSleepReportInput({
+        ...input,
+        sessions: [...input.sessions, ...input.sessions],
+      }),
+    ).toThrow();
+    expect(() =>
+      normalizeSleepReportInput({
+        ...input,
+        sessions: [{ ...input.sessions[0], asleepSeconds: 25000 }],
+      }),
+    ).toThrow();
+  });
+  it("has stable canonical hashes independent of field order", () => {
+    const input = sleepFixture();
+    expect(canonicalSleepInput(input)).toBe(
+      canonicalSleepInput(Object.fromEntries(Object.entries(input).reverse())),
+    );
+  });
 });

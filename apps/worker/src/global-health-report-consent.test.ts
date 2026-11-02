@@ -233,34 +233,108 @@ describe("global health report execution consent", () => {
 
   function qwenSleepHarness() {
     const h = sleepHarness();
-    h.prisma.integrationConfig.findUnique.mockResolvedValue({ state: "CONFIGURED", publicConfig: { provider: "openai-compatible", baseUrl: "https://maas.qianwenaiapi.com/compatible-mode/v1", model: "qwen3.8-flash" } });
+    h.prisma.integrationConfig.findUnique.mockResolvedValue({
+      state: "CONFIGURED",
+      publicConfig: {
+        provider: "openai-compatible",
+        baseUrl: "https://maas.qianwenaiapi.com/compatible-mode/v1",
+        model: "qwen3.8-flash",
+      },
+    });
     h.state.documents[0].version = SLEEP_QWEN_NOTICE_VERSION;
     h.state.sleepConsent.version = SLEEP_QWEN_NOTICE_VERSION;
     return h;
   }
 
+  it("uses the same current notice as the API when an old English translation remains active", async () => {
+    const h = qwenSleepHarness();
+    h.state.documents = [
+      {
+        locale: "zh-Hans",
+        version: SLEEP_QWEN_NOTICE_VERSION,
+        contentHtml: "Reviewed current Qwen notice",
+      },
+      {
+        locale: "en",
+        version: "reviewed-v1",
+        contentHtml: "Older BigModel notice",
+      },
+    ];
+    await h.worker.generate(h.state.report.id);
+    expect(h.state.report.status).toBe("READY");
+    expect(
+      h.prisma.globalLegalDocument.findMany.mock.calls[0][0].where,
+    ).not.toHaveProperty("locale");
+  });
+
+  it("does not adopt an old English agreement when the current sleep notice names Qwen", async () => {
+    const h = qwenSleepHarness();
+    h.state.documents = [
+      {
+        locale: "zh-Hans",
+        version: SLEEP_QWEN_NOTICE_VERSION,
+        contentHtml: "Reviewed current Qwen notice",
+      },
+      {
+        locale: "en",
+        version: "reviewed-v1",
+        contentHtml: "Older BigModel notice",
+      },
+    ];
+    h.state.sleepConsent.version = "reviewed-v1";
+    await expect(h.worker.generate(h.state.report.id)).rejects.toBeInstanceOf(
+      PermanentTaskError,
+    );
+    expect(h.fetch).not.toHaveBeenCalled();
+    expect(h.state.report.fullContent).toBeNull();
+  });
+
   it("generates a Qwen sleep report only after matching the new notice and member agreement", async () => {
     const h = qwenSleepHarness();
     await h.worker.generate(h.state.report.id);
-    const [url, init] = h.fetch.mock.calls[0] as unknown as [string, { body: string }];
-    expect(url).toBe("https://maas.qianwenaiapi.com/compatible-mode/v1/chat/completions");
-    expect(JSON.parse(init.body)).toMatchObject({ model: "qwen3.8-flash", enable_thinking: false, max_tokens: 4096, response_format: { type: "json_object" } });
+    const [url, init] = h.fetch.mock.calls[0] as unknown as [
+      string,
+      { body: string },
+    ];
+    expect(url).toBe(
+      "https://maas.qianwenaiapi.com/compatible-mode/v1/chat/completions",
+    );
+    expect(JSON.parse(init.body)).toMatchObject({
+      model: "qwen3.8-flash",
+      enable_thinking: false,
+      max_tokens: 4096,
+      response_format: { type: "json_object" },
+    });
     expect(init.body).not.toContain("synthetic-member");
     expect(init.body).not.toContain("synthetic-private-source");
-    expect(h.state.report).toMatchObject({ status: "READY", fullContent: { sleepScore: { value: 78 } } });
+    expect(h.state.report).toMatchObject({
+      status: "READY",
+      fullContent: { sleepScore: { value: 78 } },
+    });
   });
-  it.each(["old agreement", "old published notice"])("never sends sleep data to Qwen using %s", async scenario => {
-    const h = qwenSleepHarness();
-    h.state.sleepConsent.version = "reviewed-v1";
-    if (scenario === "old published notice") h.state.documents[0].version = "reviewed-v1";
-    await expect(h.worker.generate(h.state.report.id)).rejects.toBeInstanceOf(PermanentTaskError);
-    expect(h.fetch).not.toHaveBeenCalled();
-    expect(h.prisma.notification.upsert).not.toHaveBeenCalled();
-  });
+  it.each(["old agreement", "old published notice"])(
+    "never sends sleep data to Qwen using %s",
+    async (scenario) => {
+      const h = qwenSleepHarness();
+      h.state.sleepConsent.version = "reviewed-v1";
+      if (scenario === "old published notice")
+        h.state.documents[0].version = "reviewed-v1";
+      await expect(h.worker.generate(h.state.report.id)).rejects.toBeInstanceOf(
+        PermanentTaskError,
+      );
+      expect(h.fetch).not.toHaveBeenCalled();
+      expect(h.prisma.notification.upsert).not.toHaveBeenCalled();
+    },
+  );
   it("does not publish a Qwen result when its notice is replaced during generation", async () => {
     const h = qwenSleepHarness();
-    h.beforeResponse.mockImplementation(() => { h.state.documents[0].version = "reviewed-v1"; h.state.sleepConsent.version = "reviewed-v1"; });
-    await expect(h.worker.generate(h.state.report.id)).rejects.toBeInstanceOf(PermanentTaskError);
+    h.beforeResponse.mockImplementation(() => {
+      h.state.documents[0].version = "reviewed-v1";
+      h.state.sleepConsent.version = "reviewed-v1";
+    });
+    await expect(h.worker.generate(h.state.report.id)).rejects.toBeInstanceOf(
+      PermanentTaskError,
+    );
     expect(h.state.report.fullContent).toBeNull();
     expect(h.prisma.notification.upsert).not.toHaveBeenCalled();
   });

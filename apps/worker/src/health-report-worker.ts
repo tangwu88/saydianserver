@@ -18,6 +18,7 @@ import {
   SLEEP_REPORT_TEMPLATE,
   sleepAiProviderMatchesNotice,
   sleepAiProviderForEndpoint,
+  currentSleepAnalysisNotice,
 } from "@saydian/app-contracts";
 
 export class PermanentTaskError extends Error {}
@@ -457,7 +458,7 @@ async function assertGlobalAnalysisAllowed(
       "Health AI analysis consent is missing or withdrawn",
     );
   }
-  // Same language normalization and English fallback as the API's globalLegalReference.
+  // Health retains locale fallback; sleep selects the current version before its language.
   const raw = String(user.locale ?? "en")
     .split(",")[0]!
     .split(";")[0]!
@@ -479,26 +480,32 @@ async function assertGlobalAnalysisAllowed(
   const documents = await prisma.globalLegalDocument.findMany({
     where: {
       documentType: sleep ? SLEEP_ANALYSIS_NOTICE : "health_ai_analysis",
-      locale: { in: locales },
+      ...(sleep ? {} : { locale: { in: locales } }),
       active: true,
       reviewed: true,
       publishedAt: { lte: new Date() },
     },
     orderBy: { publishedAt: "desc" },
   });
-  const current = locales
-    .map((locale) =>
-      documents.find(
-        (document) => document.locale === locale && document.contentHtml.trim(),
-      ),
-    )
-    .find(Boolean);
+  const current = sleep
+    ? currentSleepAnalysisNotice(documents, preferred)
+    : locales
+        .map((locale) =>
+          documents.find(
+            (document) =>
+              document.locale === locale && document.contentHtml.trim(),
+          ),
+        )
+        .find(Boolean);
   if (!current || current.version !== profile.analysisConsentVersion) {
     throw new PermanentTaskError(
       "Health AI analysis consent is outdated or notice is unavailable",
     );
   }
-  if (sleep && !sleepAiProviderMatchesNotice(sleepProviderBaseUrl, current.version)) {
+  if (
+    sleep &&
+    !sleepAiProviderMatchesNotice(sleepProviderBaseUrl, current.version)
+  ) {
     throw new PermanentTaskError(
       "Sleep AI provider does not match the published analysis notice",
     );
@@ -555,7 +562,8 @@ export async function callAiProvider(
         model: settings.model,
         temperature: 0.2,
         response_format: { type: "json_object" },
-        ...(sleepAiProviderForEndpoint(settings.baseUrl) === "qwen" && /^qwen3(?:\.|-)/i.test(settings.model.trim())
+        ...(sleepAiProviderForEndpoint(settings.baseUrl) === "qwen" &&
+        /^qwen3(?:\.|-)/i.test(settings.model.trim())
           ? { enable_thinking: false, max_tokens: 4096 }
           : {}),
         ...(sleep && /^glm-5\.3(?:-flashx?)?$/i.test(settings.model.trim())
