@@ -27,3 +27,13 @@
 
 - 需要现有CI及正常CN自动部署后，核对两条ready的准确revision、Actions状态与实际手机availability。接口签名未改，不要求重打App。
 - 修复代码/本机测试/生产部署/真实报告生成分别记录；未完成不写已恢复。用户需要在App阅读当前实际说明并主动同意本次睡眠汇总上传，之后才能验收真实报告生成。
+
+## 生产发布跟进（2026-11-02）
+
+- 功能提交1b0fca6c724132b0fccd409c9f0fa990cc512670已推送main；CI41420381603的verify成功，包括Linux构建、测试、迁移/备份恢复检查。自动发布job125200025441最终cancelled，日志最后仅Pulling runtime image api；不能把该CI整体记为部署成功。23:29两条公开ready仍为7f3e816，原服务正常。
+- 用户本人两次在可见SSH窗口输入密码，只读检查确认API docker pull运行约17分钟、Docker近30分钟日志无错误/完成记录。后续汇总窗口和简化透明只读窗口均被自动审批拒绝，未执行或绕过，改由用户现有终端提供回执。36:36截图显示拉取仍在；根盘剩9.7G、镜像35.4GB/可回收8.479GB；未清理镜像、删除锁或重启Docker。curl HEAD /v2/返回405仅证明入口有响应，不证明层下载正常。
+- 仓库已有Export runtime images工作流41427466713只导出原始已验收镜像成功，artifact13131434977为369767961字节，不重新编译。原清单只读核验三镜像大小合计1752639778字节。后续只读probe41427890592成功，8MiB耗时71.717秒、0.112MiB/s、imported=false；测速不是全量导入/部署成功。
+- 23:27按已有受限receiver分块恢复流程启动41471735052：同SHA、同CI原镜像，upload_to_server=true，逐块/整包/原清单及OCI ID校验，并保留5GiB余量。23:29处于Transfer verified images without rebuilding or switching services，未切换服务；导入结果、同SHA离线发布和真实App可用性仍待核对。
+- 未修改生产凭据/模型/开关/已发布说明/维护状态/数据库/业务记录，未重打App或代替用户同意真实睡眠汇总上传。SSH密码从未读取或存盘。- 23:39读取41471735052实际日志：首个SSH bundle传输约600秒后接收端超时，cat Broken pipe、exit124，未出现整包/OCI校验通过。受保护后续发布器正确停止，没有在导入失败后部署。GitHub runner的fsverity/nftables警告属于其Docker环境初始化，不能误记为生产失败原因。
+- 23:42启动已测速的原artifact HTTPS导入41474145938，复用13131434977、artifact_action=import，不重新构建，不调整原3300秒传输预算/5GiB余量/整包hash与OCI校验。恢复辅助脚本仅在导入workflow成功、main仍为1b0fca6、原CI verify依旧成功时，才发起同SHA offline_images=true的正常Deploy production，并读取两条公开ready。失败、main变化或校验不符均停止，不重复发布、不清理业务或修改凭据。
+- 辅助脚本、临时日志和状态文件均位于Git外E:\SayRing-sleep-ai-audit-20261102。导入/生产验收仍未完成；实施日志仅推独立修复分支，不为进度文档再次发布main。App仅新增诊断文档，未改运行代码或换包。
