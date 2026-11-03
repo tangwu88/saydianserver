@@ -30,6 +30,8 @@ describe.runIf(process.env.RUN_LOCAL_DATABASE_TESTS === "1")("first ring binding
     const results = await Promise.all([service.bind(id, ring("fixture:a")), service.bind(id, ring("fixture:b"))]);
     expect(results.filter(x => x.firstBindingInitialization?.shouldClear)).toHaveLength(1);
     expect((await service.bind(id, ring("fixture:a"))).firstBindingInitialization?.shouldClear).toBe(false);
+    expect((await service.bindingHistoryStatus(id, "say-ring", "fixture:a")).priorBindingConfirmed).toBe(false);
+    expect((await service.bindingHistoryStatus(id, "say-ring", "fixture:b")).priorBindingConfirmed).toBe(false);
   });
   it("unbound lifetime history and a new model still prevent clearing", async () => {
     const id = await member(); const old = await service.bind(id, ring("fixture:old", false));
@@ -40,5 +42,24 @@ describe.runIf(process.env.RUN_LOCAL_DATABASE_TESTS === "1")("first ring binding
     const id = await member(); await service.bind(id, ring("fixture:legacy", false));
     expect((await service.bind(id, ring("fixture:new"))).firstBindingInitialization?.shouldClear).toBe(false);
     expect((await service.bind(await member(), ring("fixture:other-member"))).firstBindingInitialization?.shouldClear).toBe(true);
+  });
+
+  it("recovers prior history read-only while a first, equal-time or foreign history stays unconfirmed", async () => {
+    const id = await member();
+    const old = await service.bind(id, ring("fixture:prior", false));
+    const current = await service.bind(id, ring("fixture:current"));
+    const before = new Date("2026-01-01T00:00:00.000Z");
+    const after = new Date("2026-01-02T00:00:00.000Z");
+    await prisma.deviceBinding.update({ where: { id: old.id }, data: { createdAt: before, unboundAt: before } });
+    await prisma.deviceBinding.update({ where: { id: current.id }, data: { createdAt: after } });
+    const events = await prisma.deviceConnectionEvent.count({ where: { deviceBindingId: current.id } });
+    expect((await service.bindingHistoryStatus(id, "say-ring", "fixture:current")).priorBindingConfirmed).toBe(true);
+    expect(await prisma.deviceConnectionEvent.count({ where: { deviceBindingId: current.id } })).toBe(events);
+    await prisma.deviceBinding.update({ where: { id: old.id }, data: { createdAt: after } });
+    expect((await service.bindingHistoryStatus(id, "say-ring", "fixture:current")).priorBindingConfirmed).toBe(false);
+    const other = await member();
+    await service.bind(other, ring("fixture:current"));
+    expect((await service.bindingHistoryStatus(other, "say-ring", "fixture:current")).priorBindingConfirmed).toBe(false);
+    expect((await service.bindingHistoryStatus(id, "say-ring", "fixture:missing")).priorBindingConfirmed).toBe(false);
   });
 });

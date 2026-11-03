@@ -42,6 +42,41 @@ function serializedRawPayload(body: Record<string, unknown>): string {
 export class DevicesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * 只读确认：此会员在这枚戒指首次入库前是否已有其他终生绑定。
+   * 不能重放首次清空授权，也不靠最近连接、名字或当前绑定数量推断。
+   * 找不到精确目标或时间无法严格排序时，继续保持未确认。
+   */
+  async bindingHistoryStatus(userId: string, product: string, deviceId: string) {
+    const sourceId = String(deviceId ?? "").trim();
+    if (product !== "say-ring" || !sourceId || sourceId.length > 512) {
+      throw new BadRequestException("请提供明确的 Say Ring 设备标识");
+    }
+    const hardwareKey = sha256(`${userId}:${sourceId}`);
+    const target = await this.prisma.deviceBinding.findFirst({
+      where: { userId, hardwareKey },
+      select: { id: true, createdAt: true },
+    });
+    // PostgreSQL 的事务时间可能早于等待会员行锁的时间。
+    // 只接受早于目标 30 秒的既有记录，覆盖下面显式限制的 2 秒排队+
+    // 5 秒事务窗口，避免并发首绑的写入顺序与时间顺序不同而误确认。
+    const before = target?.createdAt instanceof Date
+      ? new Date(target.createdAt.getTime() - 30_000)
+      : undefined;
+    const earlier = before instanceof Date && Number.isFinite(before.getTime())
+      ? await this.prisma.deviceBinding.findFirst({
+        where: {
+          userId,
+          id: { not: target!.id },
+          createdAt: { lt: before },
+        },
+        select: { id: true },
+      })
+      : null;
+    // 不过滤 unboundAt：解绑不应让老会员重新获得清空戒指的资格。
+    return { product: "say-ring", deviceId: sourceId, priorBindingConfirmed: !!earlier };
+  }
+
   async bind(userId: string, input: unknown) {
     const body = safeObject(input);
     const sourceId = String(body.deviceId ?? body.hardwareId ?? "").trim();
@@ -110,7 +145,7 @@ export class DevicesService {
         },
       });
       return { binding, firstBinding };
-    });
+    }, { maxWait: 2_000, timeout: 5_000 });
     return {
       ...this.contract(result.binding),
       ...(initializeFirstBinding ? {

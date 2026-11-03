@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
@@ -18,6 +19,15 @@ import { DevicesService } from "./devices.service";
 @UseGuards(UserAuthGuard)
 export class DevicesController {
   constructor(private readonly devices: DevicesService) {}
+
+  @Get("binding-history-status")
+  bindingHistoryStatus(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("product") product: string,
+    @Query("deviceId") deviceId: string,
+  ) {
+    return this.devices.bindingHistoryStatus(user.id, product, deviceId);
+  }
 
   @Get()
   list(@CurrentUser() user: AuthenticatedUser) {
