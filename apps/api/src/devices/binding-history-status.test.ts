@@ -18,7 +18,9 @@ function fixture(rows: Row[]) {
     (!where.id?.not || row.id !== where.id.not) &&
     (!where.createdAt?.lt || row.createdAt < where.createdAt.lt)
   ) ?? null);
-  return { service: new DevicesService({ deviceBinding: { findFirst } } as any), findFirst };
+  const lock = vi.fn(async () => []);
+  const tx = { deviceBinding: { findFirst }, $queryRaw: lock };
+  return { service: new DevicesService({ $transaction: async (fn: any) => fn(tx) } as any), findFirst, lock };
 }
 
 describe("Say Ring read-only binding history recovery", () => {
@@ -40,8 +42,8 @@ describe("Say Ring read-only binding history recovery", () => {
     ["equal timestamps", [{ ...prior, createdAt: targetDate }, target]],
     ["overlapping first-binding transaction window", [{ ...prior, createdAt: new Date(targetDate.getTime() - 4_000) }, target]],
     ["confirmation window boundary", [{ ...prior, createdAt: new Date(targetDate.getTime() - 30_000) }, target]],
-    ["missing exact target", [prior]],
-    ["a differently scoped target", [{ ...target, hardwareKey: "another-owner-target" }, prior]],
+    ["no target or lifetime history", []],
+    ["missing target and only another member history", [{ ...prior, userId: "member-two" }]],
   ])("keeps %s unconfirmed", async (_name, rows) => {
     const f = fixture(rows as Row[]);
     expect((await f.service.bindingHistoryStatus(owner, "say-ring", deviceId)).priorBindingConfirmed).toBe(false);
@@ -55,4 +57,11 @@ describe("Say Ring read-only binding history recovery", () => {
       expect(f.findFirst).not.toHaveBeenCalled();
     },
   );
+
+  it("recovers an old member whose exact target report was never committed", async () => {
+    const f = fixture([{ ...prior, unboundAt: new Date() }]);
+    expect((await f.service.bindingHistoryStatus(owner, "say-ring", deviceId)).priorBindingConfirmed).toBe(true);
+    expect(f.lock.mock.invocationCallOrder[0]!).toBeLessThan(f.findFirst.mock.invocationCallOrder[0]!);
+    expect(f.findFirst).toHaveBeenCalledTimes(2);
+  });
 });

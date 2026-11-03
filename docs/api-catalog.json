@@ -21654,7 +21654,7 @@
       "source": "apps/api/src/devices/devices.controller.ts",
       "summary": "只读确认旧会员绑定历史",
       "request": "product=say-ring；deviceId=当前精确 SDK 标识",
-      "response": "{product:say-ring,deviceId,priorBindingConfirmed:boolean}；仅同会员其他设备首次入库早于精确目标30秒以上时确认，包含已解绑记录；缺失、并发时间窗或新会员保持false，不写绑定、不重新授权清空",
+      "response": "{product:say-ring,deviceId,priorBindingConfirmed:boolean}；会员行锁内确认，目标存在时要求同会员其他设备首次入库早于目标30秒以上，目标不存在时要求已有任一终生绑定；包含已解绑记录，无历史或不可证明时false，不写绑定、不重新授权清空",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -21682,6 +21682,82 @@
       "response": "Device[]；只含未解绑设备",
       "dependency": "核心服务",
       "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/devices/devices.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "DevicesController.bindingInitializationStatus",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/devices/binding-initialization-status",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "deviceId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "operationId",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/devices/devices.controller.ts",
+      "summary": "只读查询精确首次绑定决定",
+      "request": "product=say-ring；deviceId=当前精确SDK标识；operationId=已持久化的小写UUIDv4",
+      "response": "{product:say-ring,deviceId,operationId,decision:preserve|clear-issued|not-found}；按同会员、目标、操作号读原业务回执，不返回清空授权；preserve可恢复同步，clear-issued不可重放，not-found可用同操作号请求首次决定；操作冲突或损坏409",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/devices/devices.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "DevicesController.firstBindingDecision",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/devices/first-binding-decision",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/devices/devices.controller.ts",
+      "summary": "可追溯的首次绑定决定",
+      "request": "原设备绑定参数加product:say-ring,initializeFirstBinding:true,initializationOperationId:小写UUIDv4；操作号须在网络请求前按owner/target持久化",
+      "response": "Device附firstBindingInitialization:{product,deviceId,operationId,shouldClear}；账号锁下绑定与IdempotencyRecord同事务提交；已有preserve只读重返false，已有clear-issued报409且不重发true，跨目标复用409；业务回执不因expiresAt到期重算，账号注销时删除；不兼容旧服务端时拒绝而非降级普通POST",
+      "dependency": "核心服务",
+      "successStatus": 201,
       "contract": {
         "status": "unreviewed",
         "requestSchema": null,

@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **487 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **489 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -178,7 +178,7 @@
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
 
-## V2 App 接口（128）
+## V2 App 接口（130）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -260,8 +260,10 @@
 | `GET /api/saydian-app/v2/content/legal-page/say-ring/:type` | Say Ring 当前已发布法律 HTML 页面 | public | path:type；type=privacy\|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖 | text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意 | GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口 |
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
 | `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503；语言指令不改变健康安全边界 |
-| `GET /api/saydian-app/v2/devices/binding-history-status` | 只读确认旧会员绑定历史 | member | query:product，query:deviceId；product=say-ring；deviceId=当前精确 SDK 标识 | {product:say-ring,deviceId,priorBindingConfirmed:boolean}；仅同会员其他设备首次入库早于精确目标30秒以上时确认，包含已解绑记录；缺失、并发时间窗或新会员保持false，不写绑定、不重新授权清空 | 核心服务 |
+| `GET /api/saydian-app/v2/devices/binding-history-status` | 只读确认旧会员绑定历史 | member | query:product，query:deviceId；product=say-ring；deviceId=当前精确 SDK 标识 | {product:say-ring,deviceId,priorBindingConfirmed:boolean}；会员行锁内确认，目标存在时要求同会员其他设备首次入库早于目标30秒以上，目标不存在时要求已有任一终生绑定；包含已解绑记录，无历史或不可证明时false，不写绑定、不重新授权清空 | 核心服务 |
 | `GET /api/saydian-app/v2/devices` | 已绑定设备 | member | 无请求体 | Device[]；只含未解绑设备 | 核心服务 |
+| `GET /api/saydian-app/v2/devices/binding-initialization-status` | 只读查询精确首次绑定决定 | member | query:product，query:deviceId，query:operationId；product=say-ring；deviceId=当前精确SDK标识；operationId=已持久化的小写UUIDv4 | {product:say-ring,deviceId,operationId,decision:preserve\|clear-issued\|not-found}；按同会员、目标、操作号读原业务回执，不返回清空授权；preserve可恢复同步，clear-issued不可重放，not-found可用同操作号请求首次决定；操作冲突或损坏409 | 核心服务 |
+| `POST /api/saydian-app/v2/devices/first-binding-decision` | 可追溯的首次绑定决定 | member | 原设备绑定参数加product:say-ring,initializeFirstBinding:true,initializationOperationId:小写UUIDv4；操作号须在网络请求前按owner/target持久化 | Device附firstBindingInitialization:{product,deviceId,operationId,shouldClear}；账号锁下绑定与IdempotencyRecord同事务提交；已有preserve只读重返false，已有clear-issued报409且不重发true，跨目标复用409；业务回执不因expiresAt到期重算，账号注销时删除；不兼容旧服务端时拒绝而非降级普通POST | 核心服务 |
 | `POST /api/saydian-app/v2/devices` | 上报设备连接 | member | {deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?,product?:say-ring,initializeFirstBinding?:boolean}；macAddress仅接受标准 MAC，iOS UUID 不可冒充 | Device；仅say-ring且显式initializeFirstBinding=true时附firstBindingInitialization:{product,deviceId,shouldClear}，账号行锁后检查含已解绑的全部绑定历史，仅首次事务返回true，丢失响应/重复上报不重新授权；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 \| 字段=值` 字符串；不是服务端蓝牙连接 | 核心服务 |
 | `PATCH /api/saydian-app/v2/devices/:id/capabilities` | 更新设备能力及游标 | member | path:id；{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID | Device | 核心服务 |
 | `DELETE /api/saydian-app/v2/devices/:id` | 解绑设备 | member | path:id；id=绑定记录 UUID | {unbound:true}；保留历史健康数据 | 核心服务 |

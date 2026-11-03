@@ -34,6 +34,22 @@ export class DevicesController {
     return this.devices.list(user.id);
   }
 
+  @Get("binding-initialization-status")
+  bindingInitializationStatus(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("product") product: string,
+    @Query("deviceId") deviceId: string,
+    @Query("operationId") operationId: string,
+  ) {
+    return this.devices.bindingInitializationStatus(user.id, product, deviceId, operationId);
+  }
+
+  @Post("first-binding-decision")
+  firstBindingDecision(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    // 专用路由确保旧服务端拒绝新协议，而不是忽略操作号后消耗一次性授权。
+    return this.devices.firstBindingDecision(user.id, input);
+  }
+
   @Post()
   bind(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
     return this.devices.bind(user.id, input);
