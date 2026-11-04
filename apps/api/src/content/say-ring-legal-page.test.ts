@@ -27,6 +27,23 @@ function fixture(rows = [terms, privacy, sleep]) {
 }
 
 describe("current Say Ring public legal pages", () => {
+  it("adds the new automatic cloud scope without changing published documents or their consent version", () => {
+    const before = JSON.stringify([terms, privacy, sleep]);
+    const html = renderSayRingLegalPage(privacy, sleep);
+    expect(html).toContain('id="ios-physiological-cloud-scope"');
+    expect(html).toContain('data-min-build="1236" data-notice-version="2026-11-04"');
+    expect(html).toContain("有效血压（收缩压、舒张压）、心率、血氧、心率变异性（HRV）和皮肤温度");
+    expect(html).toContain("不设置额外的生理数据云同步开关");
+    expect(html).toContain("游客记录仍仅保存在本机");
+    expect(html).toContain("无效或异常未来历史保留隔离");
+    expect(html).toContain("不扩展第三方 AI 传输或远程关爱授权");
+    expect(html).toContain(`<article data-document-type="${privacy.documentType}" data-version="${privacy.version}">${privacy.contentHtml}</article>`);
+    const english = renderSayRingLegalPage({ ...privacy, locale: "en" });
+    expect(english).toContain("without an additional physiological-cloud-sync switch");
+    expect(english).toContain("Guest records stay local");
+    expect(english).toContain("does not claim Apple review approval");
+    expect(JSON.stringify([terms, privacy, sleep])).toBe(before);
+  });
   it("explains the new manual and personal-reference scope without changing the legal pair or accepting consent", async () => {
     const original = JSON.stringify([terms, privacy, sleep]);
     const { service } = fixture();
