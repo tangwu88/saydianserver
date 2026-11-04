@@ -29,6 +29,10 @@ export class AccountDeletionWorker {
       await this.fileDeletion.delete(files.map(file => file.objectKey));
       await this.prisma.$transaction(async (tx) => {
         const userId = request.userId;
+        await tx.cycleArtifact.deleteMany({where:{userId}});
+        await tx.cycleMutation.deleteMany({where:{userId}});
+        await tx.cycleRecord.deleteMany({where:{userId}});
+        await tx.cycleState.deleteMany({where:{userId}});
         await tx.healthRecord.deleteMany({ where: { userId } });
         await tx.healthWarningEvent.deleteMany({ where: { userId } });
         await tx.healthWarningRule.deleteMany({ where: { userId } });

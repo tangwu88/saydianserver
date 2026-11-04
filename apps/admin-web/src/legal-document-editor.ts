@@ -16,6 +16,7 @@ const documentTypes: Record<LegalProduct, string[]> = {
     "say_ring_user_agreement",
     "say_ring_privacy_policy",
     "say_ring_sleep_analysis",
+    "say_ring_cycle_ai_analysis",
   ],
 };
 const ringTypes = new Set(documentTypes["say-ring"]);
@@ -43,6 +44,7 @@ export function legalDocumentTypeLabel(documentType: unknown): string {
         say_ring_user_agreement: "Say Ring 用户协议",
         say_ring_privacy_policy: "Say Ring 隐私政策",
         say_ring_sleep_analysis: "Say Ring 睡眠 AI 分析说明",
+        say_ring_cycle_ai_analysis: "Say Ring 生理周期 AI 分析说明",
       } as Record<string, string>
     )[String(documentType)] ?? String(documentType || "—")
   );
@@ -111,7 +113,7 @@ export function legalDocumentPayload(
   }
   if (editor.active && !editor.reviewed)
     throw new Error(
-      editor.documentType === "say_ring_sleep_analysis"
+      ["say_ring_sleep_analysis","say_ring_cycle_ai_analysis"].includes(editor.documentType)
         ? "说明内容核对完成后才能启用"
         : "法律审核完成后才能启用协议",
     );

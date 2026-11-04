@@ -165,6 +165,8 @@ export class HealthService {
           ? { aggregation: healthAggregationContract(record) }
           : {}),
         source: {
+          ...safeObject(record.sourceMetadata),
+          ...(record.sourceDeviceKey ? {deviceKey:record.sourceDeviceKey} : {}),
           platform: record.sourcePlatform,
           model: record.sourceModel,
           firmware: record.sourceFirmware,
@@ -337,6 +339,13 @@ export class HealthService {
       sourceOrigin: record.source.origin ?? null,
       sourceMeasurementSource: record.source.measurementSource ?? null,
       sourceRawVersion: record.source.rawVersion ?? null,
+      sourceMetadata: JSON.parse(JSON.stringify({
+        ...(record.source.vendor ? {vendor:record.source.vendor} : {}),
+        ...(record.source.deviceCategory ? {deviceCategory:record.source.deviceCategory} : {}),
+        ...(record.source.sourceApp ? {sourceApp:record.source.sourceApp} : {}),
+        ...(record.source.provenance ? {provenance:record.source.provenance} : {}),
+        ...(record.source.sleepWindows ? {sleepWindows:record.source.sleepWindows} : {}),
+      })),
       deviceBindingId: deviceBinding?.id ?? null,
       sourceDeviceKey,
       aggregationKind: record.aggregation?.kind ?? null,
@@ -351,6 +360,7 @@ export class HealthService {
         // Binding may legitimately be created after the first upload. The scoped
         // fingerprint is the durable identity, not the optional binding row.
         (key === "deviceBindingId" && data.sourceDeviceKey !== null)
+        || (key === "sourceMetadata" && Object.keys(safeObject(value)).length===0 && Object.keys(safeObject(existing.sourceMetadata)).length===0)
         || stableHealthValue(existing[key as keyof typeof existing]) === stableHealthValue(value),
       );
       const artifact = existing.ecgArtifact;

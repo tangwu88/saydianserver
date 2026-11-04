@@ -1838,7 +1838,7 @@ onBeforeUnmount(() => {
           <el-form-item label="所属 App"><el-select :model-value="form.legalProduct" :disabled="Boolean(form._reviewedSnapshot)" @change="changeLegalDocumentProduct"><el-option label="Saydian Health" value="saydian-global" /><el-option label="Say Ring" value="say-ring" /></el-select></el-form-item>
           <el-form-item label="协议类型">
             <el-select :model-value="form.documentType" :disabled="Boolean(form._reviewedSnapshot)" @change="changeLegalDocumentType">
-              <template v-if="form.legalProduct === 'say-ring'"><el-option label="Say Ring 用户协议" value="say_ring_user_agreement" /><el-option label="Say Ring 隐私政策" value="say_ring_privacy_policy" /><el-option label="Say Ring 睡眠 AI 分析说明" value="say_ring_sleep_analysis" /></template>
+              <template v-if="form.legalProduct === 'say-ring'"><el-option label="Say Ring 用户协议" value="say_ring_user_agreement" /><el-option label="Say Ring 隐私政策" value="say_ring_privacy_policy" /><el-option label="Say Ring 睡眠 AI 分析说明" value="say_ring_sleep_analysis" /><el-option label="Say Ring 生理周期 AI 分析说明" value="say_ring_cycle_ai_analysis" /></template>
               <template v-else><el-option label="用户协议" value="user_agreement" /><el-option label="隐私政策" value="privacy_policy" /><el-option label="健康 AI 分析说明" value="health_ai_analysis" /></template>
             </el-select>
           </el-form-item>

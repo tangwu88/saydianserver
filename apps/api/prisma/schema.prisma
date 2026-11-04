@@ -287,6 +287,10 @@ model User {
   consents                 ConsentRecord[]
   activityGoal             ActivityGoal?
   devices                  DeviceBinding[]
+  cycleState               CycleState?
+  cycleRecords             CycleRecord[]
+  cycleMutations           CycleMutation[]
+  cycleArtifacts           CycleArtifact[]
   healthRecords            HealthRecord[]
   warningRules             HealthWarningRule[]
   warningEvents            HealthWarningEvent[]
@@ -709,6 +713,7 @@ model HealthRecord {
   sourceOrigin            String?
   sourceMeasurementSource String?
   sourceRawVersion        Int?
+  sourceMetadata          Json?
   deviceBindingId         String?        @db.Uuid
   // Scoped device fingerprint also preserves identity before a device is bound.
   sourceDeviceKey         String?
@@ -2232,4 +2237,46 @@ model CommerceGiftProductCode {
   code       Int             @unique
   lastSerial Int             @default(0)
   product    CommerceProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+}
+
+// 独立周期记录；仅新增，不修改既有健康读数或设备设置。
+model CycleState {
+  userId String @id @db.Uuid
+  sequence Int @default(0)
+  epoch Int @default(0)
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model CycleRecord {
+  userId String @db.Uuid
+  clientId String @db.VarChar(80)
+  kind String @db.VarChar(16)
+  data Json
+  revision Int @default(1)
+  deleted Boolean @default(false)
+  changeSeq Int
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([userId, clientId])
+  @@index([userId, changeSeq])
+}
+model CycleMutation {
+  userId String @db.Uuid
+  mutationId String @db.VarChar(80)
+  inputHash String @db.VarChar(64)
+  result Json
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([userId, mutationId])
+}
+model CycleArtifact {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  kind String @db.VarChar(24)
+  inputHash String @db.VarChar(64)
+  payload Json
+  sourceSequence Int
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, kind, inputHash])
 }

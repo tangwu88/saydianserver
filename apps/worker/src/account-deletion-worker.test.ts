@@ -55,6 +55,7 @@ describe("account deletion anonymization", () => {
     expect(prisma.fileObject.findMany).toHaveBeenCalledWith({ where: { ownerUserId: userId, status: "DELETION_PENDING" }, select: { id: true, objectKey: true }, orderBy: { id: "asc" } });
     expect(fileDeletion.delete).toHaveBeenCalledWith([file.objectKey]);
     expect(tx.fileObject.deleteMany).toHaveBeenCalledWith({ where: { ownerUserId: userId, status: "DELETION_PENDING", id: { in: [file.id] } } });
+    for(const table of ['cycleArtifact','cycleMutation','cycleRecord','cycleState'])expect(tx[table].deleteMany).toHaveBeenCalledWith({where:{userId}});
     expect(tx.wechatOfficialIdentity.deleteMany).toHaveBeenCalledWith({ where: { userId } });
     expect(tx.commerceGiftSession.deleteMany).toHaveBeenCalledWith({ where: { userId } });
     expect(tx.commerceGiftRedemption.updateMany).toHaveBeenCalledWith({ where: { userId }, data: { verifiedMobile: "用户已注销", clientIp: null, addressSnapshot: { redacted: true, reason: "account_deleted" } } });

@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **489 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **497 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -178,7 +178,7 @@
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
 
-## V2 App 接口（130）
+## V2 App 接口（138）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -260,6 +260,14 @@
 | `GET /api/saydian-app/v2/content/legal-page/say-ring/:type` | Say Ring 当前已发布法律 HTML 页面 | public | path:type；type=privacy\|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖 | text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意 | GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口 |
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
 | `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503；语言指令不改变健康安全边界 |
+| `GET /api/saydian-app/v2/health/cycle/changes` | 本人周期增量记录 | member | query:owner，query:cursor?；owner=当前账号SHA256保护；cursor非负整数 | rows,cursor,hasMore,epoch；每页200；删除标记；no-store | 本人鉴权、独立周期表；不含关爱授权 |
+| `POST /api/saydian-app/v2/health/cycle/sync` | 周期离线队列同步 | member | ownerHash、offsetMinutes、epoch、rows最多40项；id/kind/data/deleted/baseRevision/mutationId | 逐条ACK或冲突原行、sequence；幂等重放 | 本人锁、乐观版本、用途确认、重叠校验；无戒指写入 |
+| `GET /api/saydian-app/v2/health/cycle/prediction` | 不可改写的周期参考快照 | member | query:owner，query:offsetMinutes?；owner、offsetMinutes | id,prediction,sourceSequence,createdAt；calendar-v1 | 至少3完整周期且无漏记；增强清单为空 |
+| `GET /api/saydian-app/v2/health/cycle/ai-availability` | 独立周期AI说明及可用性 | member | query:owner；owner | available,granted,version,document；无凭据 | 已审发布专属说明和匹配配置；不复用睡眠同意 |
+| `POST /api/saydian-app/v2/health/cycle/analysis-consent` | 周期AI单独授权或撤回 | member | ownerHash,granted:boolean,version；撤回无需版本 | 当前可用性与授权状态 | 最新已审说明；不自动接受其他协议 |
+| `POST /api/saydian-app/v2/health/cycle/explanation` | 基于结构化事实的周期解读 | member | ownerHash,offsetMinutes | prediction,action,aiGenerated,sourceSequence,nightly,featureHash；仅审核建议枚举 | 第三方仅摘要；前后检查记录版本/授权；失败固定模板 |
+| `GET /api/saydian-app/v2/health/cycle/night-features` | 本人合格夜间描述特征 | member | query:owner；owner | value={features,summary},inputHash,asOf；增强恒false | 真实睡眠窗、同来源固件算法、覆盖/缺口过滤；不回写原值 |
+| `POST /api/saydian-app/v2/health/cycle/erase` | 删除本人全部周期数据 | member | ownerHash,confirmed:true | deleted,sequence；epoch增加，旧队列不能复活 | 清除周期载荷/报告/幂等副本，撤回周期AI；保留其他健康数据 |
 | `GET /api/saydian-app/v2/devices/binding-history-status` | 只读确认旧会员绑定历史 | member | query:product，query:deviceId；product=say-ring；deviceId=当前精确 SDK 标识 | {product:say-ring,deviceId,priorBindingConfirmed:boolean}；会员行锁内确认，目标存在时要求同会员其他设备首次入库早于目标30秒以上，目标不存在时要求已有任一终生绑定；包含已解绑记录，无历史或不可证明时false，不写绑定、不重新授权清空 | 核心服务 |
 | `GET /api/saydian-app/v2/devices` | 已绑定设备 | member | 无请求体 | Device[]；只含未解绑设备 | 核心服务 |
 | `GET /api/saydian-app/v2/devices/binding-initialization-status` | 只读查询精确首次绑定决定 | member | query:product，query:deviceId，query:operationId；product=say-ring；deviceId=当前精确SDK标识；operationId=已持久化的小写UUIDv4 | {product:say-ring,deviceId,operationId,decision:preserve\|clear-issued\|not-found}；按同会员、目标、操作号读原业务回执，不返回清空授权；preserve可恢复同步，clear-issued不可重放，not-found可用同操作号请求首次决定；操作冲突或损坏409 | 核心服务 |

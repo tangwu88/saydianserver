@@ -97,7 +97,38 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
       "日汇总记录需要有效的本地日期和设备编号",
     );
   }
+  // 可选溯源扩展：只保留白名单，不从当前绑定猜填旧来源或质量。
+  const metadata: Partial<HealthRecordInputContract["source"]> = {};
+  for (const key of ["vendor", "deviceCategory", "sourceApp"] as const) {
+    const value=sourceRaw[key];
+    if(value != null) {
+      if(typeof value!=="string" || !/^[A-Za-z0-9._-]{1,80}$/.test(value))return rejected(id,"invalid_source","来源标识不正确");
+      metadata[key]=value;
+    }
+  }
+  if(sourceRaw.provenance!=null){
+    const p=safeObject(sourceRaw.provenance);
+    const strings:Record<string,readonly string[]>={timeBasis:["sdk","slot","unknown"],temperatureKind:["skin","estimated_body","unknown"],algorithm:["sdnn","rmssd","unknown"],captureMode:["history","manual"]};
+    const keys=[...Object.keys(strings),"contactVerified","intervalSeconds","validCount","rejectedCount","sdkQuality"];
+    if(Object.keys(p).some(k=>!keys.includes(k)))return rejected(id,"invalid_source","未支持的采样字段");
+    for(const[k,v]of Object.entries(p)){
+      if(strings[k]?!strings[k].includes(String(v)):k==="contactVerified"?typeof v!=="boolean":typeof v!=="number"||!Number.isFinite(v)||v<0||v>86400)return rejected(id,"invalid_source","采样信息不正确");
+    }
+    metadata.provenance=p as Record<string,string|number|boolean>;
+  }
+  if(sourceRaw.sleepWindows!=null){
+    const windows=sourceRaw.sleepWindows;
+    if(metric!=="sleep"||!Array.isArray(windows)||windows.length>32)return rejected(id,"invalid_source","睡眠时间窗不正确");
+    const normalized=[];
+    for(const rawWindow of windows){
+      const w=safeObject(rawWindow),start=new Date(String(w.startAt)),end=new Date(String(w.endAt));
+      if(!["night","nap"].includes(String(w.kind))||!/^\d{4}-\d{2}-\d{2}$/.test(String(w.date))||!Number.isFinite(+start)||!Number.isFinite(+end)||+end<=+start||+end-+start>86400000||+end>Date.now()+600000)return rejected(id,"invalid_source","睡眠时间窗不正确");
+      normalized.push({startAt:start.toISOString(),endAt:end.toISOString(),kind:String(w.kind),date:String(w.date)});
+    }
+    metadata.sleepWindows=normalized;
+  }
   const source: HealthRecordInputContract["source"] = {
+    ...metadata,
     platform: platform as HealthRecordInputContract["source"]["platform"],
     ...(sourceRaw.deviceId ? { deviceId: String(sourceRaw.deviceId) } : {}),
     ...(sourceRaw.model ? { model: String(sourceRaw.model) } : {}),

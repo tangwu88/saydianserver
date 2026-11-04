@@ -21631,6 +21631,274 @@
       }
     },
     {
+      "key": "CycleController.changes",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/cycle/changes",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "owner",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cycle.controller.ts",
+      "summary": "本人周期增量记录",
+      "request": "owner=当前账号SHA256保护；cursor非负整数",
+      "response": "rows,cursor,hasMore,epoch；每页200；删除标记；no-store",
+      "dependency": "本人鉴权、独立周期表；不含关爱授权",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CycleController.sync",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/cycle/sync",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cycle.controller.ts",
+      "summary": "周期离线队列同步",
+      "request": "ownerHash、offsetMinutes、epoch、rows最多40项；id/kind/data/deleted/baseRevision/mutationId",
+      "response": "逐条ACK或冲突原行、sequence；幂等重放",
+      "dependency": "本人锁、乐观版本、用途确认、重叠校验；无戒指写入",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CycleController.prediction",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/cycle/prediction",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "owner",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "offsetMinutes",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cycle.controller.ts",
+      "summary": "不可改写的周期参考快照",
+      "request": "owner、offsetMinutes",
+      "response": "id,prediction,sourceSequence,createdAt；calendar-v1",
+      "dependency": "至少3完整周期且无漏记；增强清单为空",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CycleController.availability",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/cycle/ai-availability",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "owner",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cycle.controller.ts",
+      "summary": "独立周期AI说明及可用性",
+      "request": "owner",
+      "response": "available,granted,version,document；无凭据",
+      "dependency": "已审发布专属说明和匹配配置；不复用睡眠同意",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CycleController.consent",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/cycle/analysis-consent",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cycle.controller.ts",
+      "summary": "周期AI单独授权或撤回",
+      "request": "ownerHash,granted:boolean,version；撤回无需版本",
+      "response": "当前可用性与授权状态",
+      "dependency": "最新已审说明；不自动接受其他协议",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CycleController.explain",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/cycle/explanation",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "{ offsetMinutes?: number; ownerHash?: string }",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cycle.controller.ts",
+      "summary": "基于结构化事实的周期解读",
+      "request": "ownerHash,offsetMinutes",
+      "response": "prediction,action,aiGenerated,sourceSequence,nightly,featureHash；仅审核建议枚举",
+      "dependency": "第三方仅摘要；前后检查记录版本/授权；失败固定模板",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CycleController.nightFeatures",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/cycle/night-features",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "owner",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cycle.controller.ts",
+      "summary": "本人合格夜间描述特征",
+      "request": "owner",
+      "response": "value={features,summary},inputHash,asOf；增强恒false",
+      "dependency": "真实睡眠窗、同来源固件算法、覆盖/缺口过滤；不回写原值",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CycleController.erase",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/cycle/erase",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "{ confirmed?: boolean; ownerHash?: string }",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cycle.controller.ts",
+      "summary": "删除本人全部周期数据",
+      "request": "ownerHash,confirmed:true",
+      "response": "deleted,sequence；epoch增加，旧队列不能复活",
+      "dependency": "清除周期载荷/报告/幂等副本，撤回周期AI；保留其他健康数据",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "DevicesController.bindingHistoryStatus",
       "method": "GET",
       "path": "/api/saydian-app/v2/devices/binding-history-status",

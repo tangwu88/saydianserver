@@ -15,6 +15,14 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+ "CycleController.changes": entry("本人周期增量记录", "owner=当前账号SHA256保护；cursor非负整数", "rows,cursor,hasMore,epoch；每页200；删除标记；no-store", "本人鉴权、独立周期表；不含关爱授权"),
+ "CycleController.sync": entry("周期离线队列同步", "ownerHash、offsetMinutes、epoch、rows最多40项；id/kind/data/deleted/baseRevision/mutationId", "逐条ACK或冲突原行、sequence；幂等重放", "本人锁、乐观版本、用途确认、重叠校验；无戒指写入"),
+ "CycleController.prediction": entry("不可改写的周期参考快照", "owner、offsetMinutes", "id,prediction,sourceSequence,createdAt；calendar-v1", "至少3完整周期且无漏记；增强清单为空"),
+ "CycleController.availability": entry("独立周期AI说明及可用性", "owner", "available,granted,version,document；无凭据", "已审发布专属说明和匹配配置；不复用睡眠同意"),
+ "CycleController.consent": entry("周期AI单独授权或撤回", "ownerHash,granted:boolean,version；撤回无需版本", "当前可用性与授权状态", "最新已审说明；不自动接受其他协议"),
+ "CycleController.explain": entry("基于结构化事实的周期解读", "ownerHash,offsetMinutes", "prediction,action,aiGenerated,sourceSequence,nightly,featureHash；仅审核建议枚举", "第三方仅摘要；前后检查记录版本/授权；失败固定模板"),
+ "CycleController.nightFeatures": entry("本人合格夜间描述特征", "owner", "value={features,summary},inputHash,asOf；增强恒false", "真实睡眠窗、同来源固件算法、覆盖/缺口过滤；不回写原值"),
+ "CycleController.erase": entry("删除本人全部周期数据", "ownerHash,confirmed:true", "deleted,sequence；epoch增加，旧队列不能复活", "清除周期载荷/报告/幂等副本，撤回周期AI；保留其他健康数据"),
   "GiftController.capabilities": entry("礼品兑换是否开放","无","{enabled}；中国站，默认关闭","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
   "GiftController.validate": entry("验证礼品卡","{cardNo:8位数字且8开头,checkCode:6位数字}","短时token、商品、可兑规格；不返回校验码或哈希","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
   "GiftController.view": entry("恢复未完成兑换","{token}","卡片与商品摘要；仅校验卡片，不授予订单或地址权限","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),

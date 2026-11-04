@@ -148,6 +148,11 @@ export interface HealthRecordSourceContract {
   origin?: "watch_history" | "app_measurement" | "remote_member" | "manual_entry" | "imported" | "unknown";
   measurementSource?: "wearable" | "manual" | "imported";
   rawVersion?: number;
+  vendor?: string;
+  deviceCategory?: string;
+  sourceApp?: string;
+  provenance?: Record<string, string | number | boolean>;
+  sleepWindows?: Array<{startAt:string;endAt:string;kind:string;date:string}>;
 }
 
 export interface HealthAggregationContract {
@@ -382,3 +387,5 @@ export * from "./report-visuals";
 export { partnerLevelName } from "./partner";
 export * from "./commerce-erp";
 export * from "./store-download";
+
+export * from "./cycle-tracking";
