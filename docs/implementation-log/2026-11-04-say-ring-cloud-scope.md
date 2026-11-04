@@ -9,3 +9,11 @@
 失败留档：第一轮子进程PATH没有Node，补入已有Node24路径后启动成功；完整测试首轮12项包上传临时文件夹用例因macOS `/var` 别名而失败，仅将测试TMPDIR改为原目录真实路径后通过，未改上传实现/夹具。工具测试首次缺PowerShell路径，补入现有 `/Users/saydian/develop/powershell-7.6.6` 后58项通过。所有原失败及纠正日志私存 `build/physio-cloud-scope-20261104/`，此目录仅本机Git排除，不提交产物。
 
 本轮只含2个内容源码/测试文件及本实施记录，差异检查通过。待核验：远端CI、生产公开页面和正式JSON协议版本；候选源码、CI、生产发布分别记录。
+
+## 发布验收
+
+源码 `129baa895ee4f7b8d9e2ab402ab6d76dc8469c0d` 已推送工作分支及main。[CI/发布41774622006](https://github.com/tangwu88/saydianserver/actions/runs/41774622006)的verify、resolve、China deploy全部成功，美国按现有 `[deploy cn only]` 条件跳过。2026-11-04 04:51UTC，两处readiness均为该revision且database=ok；公开隐私/条款均HTTP200，真实新说明可见。两份已审v3正式JSON的正文SHA256、文档类型/语言/版本及capabilities配对同意版本与发布前完全一致。
+
+公开页面旧区块保留校验最初使用了错误的1181 id而返回false；按实际页面min-build属性核对后，旧1062/1110/1181区块与新1236区块均保留。没有修改内容或文档正文去匹配错误选择器。修正前后私有报告分别留档。此收尾文档仅提交工作分支，不为同一运行源码重复触发生产发布。
+
+客户端另在XR1236完成68条既有生理记录真实补传，原148条本机记录与普通Profile恢复均通过；这不是本轮服务端新增接口或HRV传感器测量验收。
