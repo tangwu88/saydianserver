@@ -260,7 +260,7 @@
 | `GET /api/saydian-app/v2/content/legal-page/say-ring/:type` | Say Ring 当前已发布法律 HTML 页面 | public | path:type；type=privacy\|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖 | text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意 | GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口 |
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
 | `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503；语言指令不改变健康安全边界 |
-| `GET /api/saydian-app/v2/health/cycle/changes` | 本人周期增量记录 | member | query:owner，query:cursor?；owner=当前账号SHA256保护；cursor非负整数 | rows,cursor,hasMore,epoch；每页200；删除标记；no-store | 本人鉴权、独立周期表；不含关爱授权 |
+| `GET /api/saydian-app/v2/health/cycle/changes` | 本人周期增量记录 | member | query:owner，query:cursor?，query:schemaVersion?；owner=当前账号SHA256保护；cursor非负整数 | rows,cursor,hasMore,epoch；每页200；删除标记；no-store | 本人鉴权、独立周期表；不含关爱授权 |
 | `POST /api/saydian-app/v2/health/cycle/sync` | 周期离线队列同步 | member | ownerHash、offsetMinutes、epoch、rows最多40项；id/kind/data/deleted/baseRevision/mutationId | 逐条ACK或冲突原行、sequence；幂等重放 | 本人锁、乐观版本、用途确认、重叠校验；无戒指写入 |
 | `GET /api/saydian-app/v2/health/cycle/prediction` | 不可改写的周期参考快照 | member | query:owner，query:offsetMinutes?；owner、offsetMinutes | id,prediction,sourceSequence,createdAt；calendar-v1 | 至少3完整周期且无漏记；增强清单为空 |
 | `GET /api/saydian-app/v2/health/cycle/ai-availability` | 独立周期AI说明及可用性 | member | query:owner；owner | available,granted,version,document；无凭据 | 已审发布专属说明和匹配配置；不复用睡眠同意 |

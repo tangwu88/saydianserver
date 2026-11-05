@@ -8,6 +8,11 @@ period.data={start:YYYY-MM-DD,end?:YYYY-MM-DD}，daily.data={date,flow?,pain?,mo
 
 prediction GET(offsetMinutes,owner)建立不可覆盖的calendar-v1快照；至少3完整周期/4真实开始日期，最近最多6周期min/max。参考过期不滚动。AI/explanation与night-features为独立路由；无合格数据不补零。旧报告包含sourceSequence、featureHash；新依据变化需重新生成。
 
+## 按天记录：旧版兼容
+旧版保持原格式。1247 在读取 changes 时附带 `schemaVersion=2`，只有服务端也返回 2 后，才发送包含可选 `daily.data.symptoms` 的修订。枚举仅包含 `headache`（头痛）、`lower_back_ache`（腰酸）、`bloating`（腹胀），最多 3 个且不重复。该字段不参与预测，不发送给外部模型。
+
+同一会员、同一行在修订检查和行锁内合并：没有 symptoms 意为不改，明确的空列表意为清空，删除整行返回空载荷的墓碑。旧客户端收到的增量、写入回执、冲突和重放均不含新字段；旧版改经量或心情不覆盖已存的感受。离线、新服务未就绪或未取得逐行回执均不报同步成功。兼容变更使用已有 JSON 列，未新增数据库迁移。部署仍服从下述既有周期表验收要求。
+
 ## 迁移和部署
 
 新增CycleState/Record/Mutation/Artifact和HealthRecord.sourceMetadata。SQL只新增，不改已有数值、设备绑定或原法律文档；生产迁移需在独立备份恢复/审查后执行。未执行迁移的线上仍不可用；不要把本地代码或单测当生产验收。回退应用代码时保留新表和数据，不执行DROP。

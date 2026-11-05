@@ -3,12 +3,12 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
-} from '@nestjs/common';
-import { Prisma, IntegrationState } from '@prisma/client';
-import { PrismaService } from '../common/prisma.service';
-import { IntegrationSecretsService } from '../common/integration-secrets.service';
-import { safeObject } from '../common/crypto';
-import { sleepAiProviderForEndpoint } from '@saydian/app-contracts';
+} from "@nestjs/common";
+import { Prisma, IntegrationState } from "@prisma/client";
+import { PrismaService } from "../common/prisma.service";
+import { IntegrationSecretsService } from "../common/integration-secrets.service";
+import { safeObject } from "../common/crypto";
+import { sleepAiProviderForEndpoint } from "@saydian/app-contracts";
 import {
   CYCLE_AI_NOTICE,
   CycleRow,
@@ -18,9 +18,11 @@ import {
   object,
   prediction,
   safeAiChoice,
-} from './cycle-domain';
-import { validateRow } from './cycle-domain';
-import { cycleNightSummary } from './cycle-night';
+  mergeDailyData,
+  cycleWireView,
+} from "./cycle-domain";
+import { validateRow } from "./cycle-domain";
+import { cycleNightSummary } from "./cycle-night";
 const json = (v: unknown) =>
   JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
 @Injectable()
@@ -38,9 +40,9 @@ export class CycleService {
           where: { id: userId },
           select: { status: true },
         })
-      )?.status !== 'ACTIVE'
+      )?.status !== "ACTIVE"
     )
-      throw new ForbiddenException('请重新登录');
+      throw new ForbiddenException("请重新登录");
     return tx.cycleState.upsert({
       where: { userId },
       create: { userId },
@@ -65,27 +67,28 @@ export class CycleService {
   private today(offset: unknown) {
     const n = Number(offset ?? 0);
     if (!Number.isInteger(n) || n < -840 || n > 840)
-      throw new BadRequestException('时区不正确');
+      throw new BadRequestException("时区不正确");
     return new Date(Date.now() + n * 60000).toISOString().slice(0, 10);
   }
   async sync(userId: string, body: unknown) {
     const b = object(body);
     const today = this.today(b.offsetMinutes);
     if (!Array.isArray(b.rows) || b.rows.length > 40)
-      throw new BadRequestException('每次最多同步40项');
-    const rows = b.rows.map((r) => validateRow(r, today));
+      throw new BadRequestException("每次最多同步40项");
+    const extended = b.schemaVersion === 2;
+    const rows = b.rows.map((r) => validateRow(r, today, extended));
     if (
       new Set(rows.map((r) => r.id)).size !== rows.length ||
       new Set(rows.map((r) => r.mutationId)).size !== rows.length
     )
-      throw new BadRequestException('重复同步项');
+      throw new BadRequestException("重复同步项");
     return this.db.$transaction(async (tx) => {
       let { sequence, epoch } = await this.lock(tx, userId);
       // 删除代次变化后，其他手机的旧离线队列必须先刷新，不能把已删除资料复活。
       if (Number(b.epoch ?? 0) !== epoch)
         throw new ConflictException({
-          errorKey: 'cycle_reset',
-          message: '周期数据已被删除，请先刷新',
+          errorKey: "cycle_reset",
+          message: "周期数据已被删除，请先刷新",
         });
       const results: unknown[] = [];
       for (const row of rows) {
@@ -96,7 +99,7 @@ export class CycleService {
         });
         if (replay) {
           if (replay.inputHash !== inputHash)
-            throw new ConflictException('重复请求内容不一致');
+            throw new ConflictException("重复请求内容不一致");
           results.push(replay.result);
           continue;
         }
@@ -111,48 +114,49 @@ export class CycleService {
           continue;
         }
         const setting =
-          row.kind === 'settings'
+          row.kind === "settings"
             ? row.data
             : safeObject(
                 (
                   await tx.cycleRecord.findUnique({
                     where: {
-                      userId_clientId: { userId, clientId: 'settings' },
+                      userId_clientId: { userId, clientId: "settings" },
                     },
                   })
                 )?.data,
               );
         if (
-          row.kind !== 'settings' &&
+          row.kind !== "settings" &&
           !row.deleted &&
           (!setting.enabled ||
             !setting.adultConfirmed ||
             !setting.purposeAccepted)
         )
-          throw new ForbiddenException('请先开启生理周期并确认数据用途');
+          throw new ForbiddenException("请先开启生理周期并确认数据用途");
         if (current && current.kind !== row.kind)
-          throw new ConflictException('记录类型不能变更');
+          throw new ConflictException("记录类型不能变更");
         const revision = (current?.revision ?? 0) + 1;
+        const storedData = json(mergeDailyData(row, current?.data));
         const saved = await tx.cycleRecord.upsert({
           where: { userId_clientId: { userId, clientId: row.id } },
           create: {
             userId,
             clientId: row.id,
             kind: row.kind,
-            data: row.deleted ? {} : json(row.data),
+            data: storedData,
             revision,
             deleted: row.deleted,
             changeSeq: ++sequence,
           },
           update: {
-            data: row.deleted ? {} : json(row.data),
+            data: storedData,
             revision,
             deleted: row.deleted,
             changeSeq: sequence,
           },
         });
         if (
-          row.kind === 'settings' &&
+          row.kind === "settings" &&
           (!row.data.enabled || row.data.recordOnly)
         )
           await tx.consentRecord.updateMany({
@@ -177,28 +181,33 @@ export class CycleService {
       noOverlap(
         (
           await tx.cycleRecord.findMany({
-            where: { userId, kind: 'period', deleted: false },
+            where: { userId, kind: "period", deleted: false },
           })
         ).map((r) => this.wire(r) as CycleRow),
       );
       await tx.cycleState.update({ where: { userId }, data: { sequence } });
-      return { results, sequence };
+      return {
+        results: results.map((r) => cycleWireView(r, extended)),
+        sequence,
+        ...(extended ? { schemaVersion: 2 } : {}),
+      };
     });
   }
-  async changes(userId: string, cursor = 0) {
+  async changes(userId: string, cursor = 0, extended = false) {
     if (!Number.isSafeInteger(cursor) || cursor < 0)
-      throw new BadRequestException('同步游标不正确');
+      throw new BadRequestException("同步游标不正确");
     return this.db.$transaction(async (tx) => {
       const state = await this.lock(tx, userId);
       if (cursor > state.sequence)
-        throw new ConflictException('请重新读取周期记录');
+        throw new ConflictException("请重新读取周期记录");
       const rows = await tx.cycleRecord.findMany({
         where: { userId, changeSeq: { gt: cursor } },
-        orderBy: { changeSeq: 'asc' },
+        orderBy: { changeSeq: "asc" },
         take: 200,
       });
       return {
-        rows: rows.map((r) => this.wire(r)),
+        rows: rows.map((r) => cycleWireView(this.wire(r), extended)),
+        ...(extended ? { schemaVersion: 2 } : {}),
         cursor:
           rows.length === 200
             ? rows[rows.length - 1]!.changeSeq
@@ -219,16 +228,16 @@ export class CycleService {
       const inputHash = digest({
         sequence: state.sequence,
         today,
-        model: 'calendar-v1',
+        model: "calendar-v1",
       });
       // 快照只创建，既有结果不会被后来真实日期重写。
       const artifact = await tx.cycleArtifact.upsert({
         where: {
-          userId_kind_inputHash: { userId, kind: 'prediction', inputHash },
+          userId_kind_inputHash: { userId, kind: "prediction", inputHash },
         },
         create: {
           userId,
-          kind: 'prediction',
+          kind: "prediction",
           inputHash,
           payload: json(value),
           sourceSequence: state.sequence,
@@ -252,21 +261,21 @@ export class CycleService {
           reviewed: true,
           publishedAt: { lte: new Date() },
         },
-        orderBy: { publishedAt: 'desc' },
+        orderBy: { publishedAt: "desc" },
       }),
       this.db.consentRecord.findFirst({
         where: { userId, documentType: CYCLE_AI_NOTICE },
-        orderBy: { acceptedAt: 'desc' },
+        orderBy: { acceptedAt: "desc" },
       }),
-      this.db.integrationConfig.findUnique({ where: { key: 'ai' } }),
+      this.db.integrationConfig.findUnique({ where: { key: "ai" } }),
     ]);
-    const document = documents.find((d) => d.locale === 'zh-Hans') ?? null;
+    const document = documents.find((d) => d.locale === "zh-Hans") ?? null;
     const c = safeObject(integration?.publicConfig);
     const providerReady =
       integration?.state === IntegrationState.CONFIGURED &&
       c.cycleAiEnabled === true &&
       c.cycleNoticeVersion === document?.version &&
-      Boolean(sleepAiProviderForEndpoint(String(c.baseUrl ?? '')));
+      Boolean(sleepAiProviderForEndpoint(String(c.baseUrl ?? "")));
     return {
       available: Boolean(document && providerReady),
       granted: Boolean(
@@ -286,8 +295,8 @@ export class CycleService {
   }
   async consent(userId: string, body: unknown) {
     const b = object(body);
-    if (typeof b.granted !== 'boolean')
-      throw new BadRequestException('请明确是否同意AI分析');
+    if (typeof b.granted !== "boolean")
+      throw new BadRequestException("请明确是否同意AI分析");
     await this.db.$transaction(async (tx) => {
       await this.lock(tx, userId);
       if (!b.granted) {
@@ -301,7 +310,7 @@ export class CycleService {
       const setting = safeObject(
         (
           await tx.cycleRecord.findUnique({
-            where: { userId_clientId: { userId, clientId: 'settings' } },
+            where: { userId_clientId: { userId, clientId: "settings" } },
           })
         )?.data,
       );
@@ -310,7 +319,7 @@ export class CycleService {
         !available.available ||
         b.version !== available.version
       )
-        throw new ConflictException('周期AI说明或配置已更新，请重新查看');
+        throw new ConflictException("周期AI说明或配置已更新，请重新查看");
       await tx.consentRecord.upsert({
         where: {
           userId_documentType_version: {
@@ -324,7 +333,7 @@ export class CycleService {
           documentType: CYCLE_AI_NOTICE,
           version: available.version!,
           acceptedAt: new Date(),
-          source: 'say_ring_cycle',
+          source: "say_ring_cycle",
         },
         update: { acceptedAt: new Date(), withdrawnAt: null },
       });
@@ -337,9 +346,9 @@ export class CycleService {
       where: {
         userId,
         observedAt: { gte: new Date(+asOf - 180 * 86400000), lte: asOf },
-        metric: { in: ['SLEEP', 'TEMPERATURE', 'HEART_RATE', 'HRV'] },
+        metric: { in: ["SLEEP", "TEMPERATURE", "HEART_RATE", "HRV"] },
       },
-      orderBy: { observedAt: 'desc' },
+      orderBy: { observedAt: "desc" },
       take: 100000,
     });
     const value = cycleNightSummary(records, asOf);
@@ -355,44 +364,44 @@ export class CycleService {
     const nightly = await this.nightFeatures(userId);
     const available = await this.aiAvailability(userId);
     let action =
-      p.status === 'reference'
-        ? 'prepare'
-        : p.status === 'needs_confirmation'
-          ? 'check_records'
-          : 'continue_recording';
+      p.status === "reference"
+        ? "prepare"
+        : p.status === "needs_confirmation"
+          ? "check_records"
+          : "continue_recording";
     let aiGenerated = false;
     if (available.available && available.granted) {
       const integration = await this.db.integrationConfig.findUnique({
-          where: { key: 'ai' },
+          where: { key: "ai" },
         }),
         c = safeObject(integration?.publicConfig);
-      const secrets = await this.secrets.resolve('ai', {
-        apiKey: 'AI_API_KEY',
-        model: 'AI_MODEL',
+      const secrets = await this.secrets.resolve("ai", {
+        apiKey: "AI_API_KEY",
+        model: "AI_MODEL",
       });
       try {
         // 只传类别与数量，无日期、身份、原始读数/硬件标识；模型只选择已审核的建议动作。
         const response = await fetch(
-          String(c.baseUrl).replace(/\/$/, '') + '/chat/completions',
+          String(c.baseUrl).replace(/\/$/, "") + "/chat/completions",
           {
-            method: 'POST',
-            redirect: 'error',
+            method: "POST",
+            redirect: "error",
             headers: {
               authorization: `Bearer ${secrets.apiKey}`,
-              'content-type': 'application/json',
+              "content-type": "application/json",
             },
             body: JSON.stringify({
               model: c.model ?? secrets.model,
               temperature: 0,
-              response_format: { type: 'json_object' },
+              response_format: { type: "json_object" },
               messages: [
                 {
-                  role: 'system',
+                  role: "system",
                   content:
-                    'Return JSON with only action: continue_recording, prepare, check_records or keep_wearing. No numbers, dates, diagnoses or free text. prepare only when status is reference.',
+                    "Return JSON with only action: continue_recording, prepare, check_records or keep_wearing. No numbers, dates, diagnoses or free text. prepare only when status is reference.",
                 },
                 {
-                  role: 'user',
+                  role: "user",
                   content: JSON.stringify({
                     status: p.status,
                     completeCycles: Array.isArray(p.lengths)
@@ -406,12 +415,12 @@ export class CycleService {
             signal: AbortSignal.timeout(15000),
           },
         );
-        if (!response.ok) throw new Error('provider_unavailable');
+        if (!response.ok) throw new Error("provider_unavailable");
         const data = object(await response.json()),
           choices = data.choices as Array<{ message: { content: string } }>;
         action = safeAiChoice(
           JSON.parse(choices[0]!.message.content),
-          p.status === 'reference',
+          p.status === "reference",
         ).action;
         aiGenerated = true;
       } catch {
@@ -428,21 +437,21 @@ export class CycleService {
             !current.granted ||
             current.version !== available.version))
       )
-        throw new ConflictException('记录或授权已变化，请重新查看');
+        throw new ConflictException("记录或授权已变化，请重新查看");
       const refreshed = await this.nightFeatures(userId);
       if (refreshed.inputHash !== nightly.inputHash)
-        throw new ConflictException('戒指记录已更新，请重新分析');
+        throw new ConflictException("戒指记录已更新，请重新分析");
       await tx.cycleArtifact.upsert({
         where: {
           userId_kind_inputHash: {
             userId,
-            kind: 'night_features',
+            kind: "night_features",
             inputHash: nightly.inputHash,
           },
         },
         create: {
           userId,
-          kind: 'night_features',
+          kind: "night_features",
           inputHash: nightly.inputHash,
           sourceSequence: state.sequence,
           payload: json(nightly.value),
@@ -462,11 +471,11 @@ export class CycleService {
       const inputHash = digest(value);
       const artifact = await tx.cycleArtifact.upsert({
         where: {
-          userId_kind_inputHash: { userId, kind: 'explanation', inputHash },
+          userId_kind_inputHash: { userId, kind: "explanation", inputHash },
         },
         create: {
           userId,
-          kind: 'explanation',
+          kind: "explanation",
           inputHash,
           sourceSequence: state.sequence,
           payload: json(value),

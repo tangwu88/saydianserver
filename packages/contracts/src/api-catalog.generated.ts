@@ -21649,6 +21649,12 @@ export const apiCatalog = {
           "name": "cursor",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "schemaVersion",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
