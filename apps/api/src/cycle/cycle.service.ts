@@ -12,6 +12,7 @@ import { sleepAiProviderForEndpoint } from "@saydian/app-contracts";
 import {
   CYCLE_AI_NOTICE,
   CycleRow,
+  canonical,
   dateOnly,
   digest,
   noOverlap,
@@ -106,7 +107,20 @@ export class CycleService {
         const current = await tx.cycleRecord.findUnique({
           where: { userId_clientId: { userId, clientId: row.id } },
         });
-        if ((current?.revision ?? 0) !== row.baseRevision) {
+        // 接口上线前，两台手机可能分别离线保存了同一份首次设置。
+        // 仅在第一版逐项相同时返回各自的回执，避免重复修订或重放开关的副作用。
+        const sameInitialSettings =
+          current?.revision === 1 &&
+          row.baseRevision === 0 &&
+          current.kind === "settings" &&
+          row.kind === "settings" &&
+          !current.deleted &&
+          !row.deleted &&
+          canonical(current.data) === canonical(row.data);
+        if (
+          (current?.revision ?? 0) !== row.baseRevision &&
+          !sameInitialSettings
+        ) {
           results.push({
             id: row.id,
             conflict: current ? this.wire(current) : null,
@@ -137,25 +151,28 @@ export class CycleService {
           throw new ConflictException("记录类型不能变更");
         const revision = (current?.revision ?? 0) + 1;
         const storedData = json(mergeDailyData(row, current?.data));
-        const saved = await tx.cycleRecord.upsert({
-          where: { userId_clientId: { userId, clientId: row.id } },
-          create: {
-            userId,
-            clientId: row.id,
-            kind: row.kind,
-            data: storedData,
-            revision,
-            deleted: row.deleted,
-            changeSeq: ++sequence,
-          },
-          update: {
-            data: storedData,
-            revision,
-            deleted: row.deleted,
-            changeSeq: sequence,
-          },
-        });
+        const saved = sameInitialSettings
+          ? current
+          : await tx.cycleRecord.upsert({
+              where: { userId_clientId: { userId, clientId: row.id } },
+              create: {
+                userId,
+                clientId: row.id,
+                kind: row.kind,
+                data: storedData,
+                revision,
+                deleted: row.deleted,
+                changeSeq: ++sequence,
+              },
+              update: {
+                data: storedData,
+                revision,
+                deleted: row.deleted,
+                changeSeq: sequence,
+              },
+            });
         if (
+          !sameInitialSettings &&
           row.kind === "settings" &&
           (!row.data.enabled || row.data.recordOnly)
         )

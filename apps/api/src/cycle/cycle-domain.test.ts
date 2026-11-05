@@ -215,6 +215,35 @@ function dbFixture() {
   return { db, records };
 }
 describe("cycle service sync", () => {
+  it("acknowledges the same initial settings from two offline phones without overwriting a different choice", async () => {
+    const { db } = dbFixture();
+    const service = new CycleService(db, {} as any);
+    const first = {
+      id: "settings",
+      kind: "settings",
+      data: settings,
+      deleted: false,
+      baseRevision: 0,
+      mutationId: "first-phone",
+    };
+    await service.sync("a", { rows: [first] });
+    const second = { ...first, mutationId: "second-phone" };
+    const receipt = await service.sync("a", { rows: [second] });
+    expect(receipt.results).toMatchObject([
+      { mutationId: "second-phone", row: { revision: 1, data: settings } },
+    ]);
+    expect(await service.sync("a", { rows: [second] })).toEqual(receipt);
+    expect(receipt.sequence).toBe(1);
+    const different = {
+      ...first,
+      mutationId: "different-choice",
+      data: { ...settings, recordOnly: !settings.recordOnly },
+    };
+    expect(
+      (await service.sync("a", { rows: [different] })).results,
+    ).toMatchObject([{ conflict: { revision: 1, data: settings } }]);
+  });
+
   it("idempotently replays ACK, detects revised conflict and preserves deleted row", async () => {
     const { db, records } = dbFixture(),
       s = new CycleService(db, {} as any);
