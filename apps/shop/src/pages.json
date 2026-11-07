@@ -10,6 +10,7 @@
     { "path": "pages/order-detail/index", "style": { "navigationBarTitleText": "订单详情" } },
     { "path": "pages/after-sale/index", "style": { "navigationBarTitleText": "申请售后" } },
     { "path": "pages/profile/index", "style": { "navigationBarTitleText": "个人中心" } },
+    { "path": "pages/member-profile/index", "style": { "navigationBarTitleText": "个人资料" } },
     { "path": "pages/login/index", "style": { "navigationBarTitleText": "登录" } },
     { "path": "pages/addresses/index", "style": { "navigationBarTitleText": "收货地址" } },
     { "path": "pages/address-edit/index", "style": { "navigationBarTitleText": "编辑地址" } },

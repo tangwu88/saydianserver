@@ -15,6 +15,9 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+  "CommerceMemberProfileController.profile": entry("商城会员读取本人个人资料", "已验证会员会话；不接受会员ID参数", "与App相同的MemberProfile，联系方式脱敏；private no-store", "复用MembersService；当前会员身份由会话取得"),
+  "CommerceMemberProfileController.save": entry("商城会员修改本人个人资料", "nickname、gender、birthday、heightCm、weightKg；仅更新提交字段；avatarFileId可选，null移除头像", "与App相同的MemberProfile；头像只允许当前会员上传且ACTIVE的avatar文件；忽略账号、角色、归属和外部头像URL", "复用App资料验证和会员表；不修改验证状态或登录凭据"),
+  "CommerceMemberProfileController.avatar": entry("商城会员上传个人头像", "multipart file；JPG/PNG/WebP，10MB以内；校验实际文件字节", "{id,url,sha256,byteSize}；仅上传，保存资料时关联", "复用App头像存储；每分钟最多10次；本人会话"),
   "AdminHealthScreenController.updates": entry("检查会员指标更新", "memberId；days=7/30/90", "分组计数、更新时间；不返回测量值；可见页面每10秒检查", "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计"),
   "AdminHealthScreenController.references": entry("手动参考测量历史", "memberId；cursor可选", "每页50条，包含撤销历史；来源由录入者声明；no-store", "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计"),
   "AdminHealthScreenController.saveReference": entry("追加手动参考测量", "metric、measuredAt含时区、unit、values、method、context、requestKey", "幂等追加参考值；不修改原始HealthRecord或设备；不自动调用AI", "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计"),
@@ -96,7 +99,7 @@ export const notes = {
   "PartnerController.logout": entry("退出品牌伙伴平台", "本人伙伴会话", "{loggedOut:true}；吊销当前会话", "主库；伙伴身份与会员/员工推广隔离"),
   "PartnerController.dashboard": entry("品牌伙伴平台概览", "本人伙伴会话", "账户、可消费余额、保证金、会员数量、订单数量、累计采购金额", "主库；伙伴身份与会员/员工推广隔离"),
   "PartnerController.promotion": entry("品牌伙伴专属推广二维码", "本人伙伴会话", "{name,partnerNo,promotionCode,linkUrl,qrDataUrl,active}；链接指向H5注册", "主库；伙伴身份与会员/员工推广隔离"),
-  "PartnerController.members": entry("所属会员列表", "search?、page?；当前会话决定伙伴身份", "{items,total,page,pageSize}；仅当前partnerId会员", "主库；伙伴身份与会员/员工推广隔离"),
+  "PartnerController.members": entry("所属会员列表", "search?、page?；当前会话决定伙伴身份", "{items,total,page,pageSize,canViewMemberHealth}；头像、昵称、性别、联系方式、会员编号、设备数和注册时间；仅战略合作伙伴返回birthday/heightCm/weightKg及健康记录数，未知保留null；不返回HealthProfile或测量值", "主库；每次读取当前伙伴等级和会员归属；列表读取审计成功后返回"),
   "PartnerController.profile": entry("所属会员资料与健康档案", "id为会员UUID", "基本资料；仅战略合作伙伴返回生日、身高、体重、HealthProfile，读取审计成功后返回", "主库；伙伴身份与会员/员工推广隔离"),
   "PartnerController.healthSummary": entry("所属会员健康摘要", "id为会员UUID", "按指标统计数量与首末时间；未知值不补零", "仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403"),
   "PartnerController.healthRecords": entry("所属会员历史健康记录", "id为会员UUID、page?、pageSize?（最多100）", "{items,total,page,pageSize}；保留原始历史记录；写敏感读取审计", "仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403"),

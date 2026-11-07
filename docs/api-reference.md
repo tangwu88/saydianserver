@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **541 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **544 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -549,7 +549,7 @@
 | `GET /api/saydian-app/vip/v1/dashboard` | 品牌伙伴平台概览 | partner | 本人伙伴会话 | 账户、可消费余额、保证金、会员数量、订单数量、累计采购金额 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/promotion` | 品牌伙伴专属推广二维码 | partner | 本人伙伴会话 | {name,partnerNo,promotionCode,linkUrl,qrDataUrl,active}；链接指向H5注册 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/certificate` | 查看与打印电子授权证书 | partner | 本人伙伴会话 | 赛电授权数据、当前等级/状态、核验链接和二维码；随账户启用状态有效 | 主库当前伙伴账户 |
-| `GET /api/saydian-app/vip/v1/members` | 所属会员列表 | partner | query:search?，query:page?；search?、page?；当前会话决定伙伴身份 | {items,total,page,pageSize}；仅当前partnerId会员 | 主库；伙伴身份与会员/员工推广隔离 |
+| `GET /api/saydian-app/vip/v1/members` | 所属会员列表 | partner | query:search?，query:page?；search?、page?；当前会话决定伙伴身份 | {items,total,page,pageSize,canViewMemberHealth}；头像、昵称、性别、联系方式、会员编号、设备数和注册时间；仅战略合作伙伴返回birthday/heightCm/weightKg及健康记录数，未知保留null；不返回HealthProfile或测量值 | 主库；每次读取当前伙伴等级和会员归属；列表读取审计成功后返回 |
 | `GET /api/saydian-app/vip/v1/members/:id/profile` | 所属会员资料与健康档案 | partner | path:id；id为会员UUID | 基本资料；仅战略合作伙伴返回生日、身高、体重、HealthProfile，读取审计成功后返回 | 主库；伙伴身份与会员/员工推广隔离 |
 | `GET /api/saydian-app/vip/v1/members/:id/health-summary` | 所属会员健康摘要 | partner | path:id；id为会员UUID | 按指标统计数量与首末时间；未知值不补零 | 仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403 |
 | `GET /api/saydian-app/vip/v1/members/:id/health-records` | 所属会员历史健康记录 | partner | path:id，query:page?，query:pageSize?；id为会员UUID、page?、pageSize?（最多100） | {items,total,page,pageSize}；保留原始历史记录；写敏感读取审计 | 仅当前启用战略合作伙伴；读取当次数据库等级，其他等级403 |

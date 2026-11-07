@@ -316,7 +316,9 @@ async function officialLogin() {
     const challengeHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))), (b) => b.toString(16).padStart(2, "0")).join("");
     const requestSession = mallOAuthSessionStamp(),
       agreed = { ...consent.value };
-    const returnTo = safeMallRoute(mallStorage.get("saidian-post-login-route"));
+    const returnTo = partnerReferral.value && !continueWithoutPartner.value
+      ? "/pages/profile/index"
+      : safeMallRoute(mallStorage.get("saidian-post-login-route"));
     const response: any = await api("/auth/wechat/h5/authorize-url", {
       method: "POST",
       data: {
@@ -356,9 +358,13 @@ async function save(response: any) {
   await saveMallSession(response);
   if (!active) return;
   if (response?.user?.id) claimPurchaseReferral(String(response.user.id));
+  // Invitation registration finishes at the member center, even if this
+  // browser retained an older checkout or OAuth return destination.
+  const target = partnerReferral.value && !continueWithoutPartner.value
+    ? "/pages/profile/index"
+    : safeMallRoute(response.returnTo || mallStorage.get("saidian-post-login-route"));
   clearPartnerReferral();
   partnerReferral.value = null;
-  const target = safeMallRoute(response.returnTo || mallStorage.get("saidian-post-login-route"));
   mallStorage.remove("saidian-post-login-route");
   sessionStorage.removeItem(OAUTH_CONTEXT_KEY);
   code.value = "";

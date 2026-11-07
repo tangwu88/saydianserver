@@ -111,7 +111,12 @@ export class PartnerMembersService {
     });
   }
 
-  async members(partnerId: string, search: string, pageInput: unknown) {
+  async members(
+    partnerId: string,
+    search: string,
+    pageInput: unknown,
+    requestId = "partner-member-list",
+  ) {
     const { page, pageSize, skip } = partnerPage(pageInput);
     const where: Prisma.UserWhereInput = {
       partnerId,
@@ -129,44 +134,79 @@ export class PartnerMembersService {
           }
         : {}),
     };
-    return this.prisma.$transaction(async (tx) => {
-      const canViewMemberHealth = await this.healthAccess(tx, partnerId);
-      const [items, total] = await Promise.all([
-        tx.user.findMany({
-          where,
-          select: {
-            id: true,
-            compatibilityId: true,
-            nickname: true,
-            mobile: true,
-            email: true,
-            avatarUrl: true,
-            gender: true,
-            createdAt: true,
-            _count: {
-              select: {
-                devices: true,
-                ...(canViewMemberHealth ? { healthRecords: true } : {}),
+    return this.prisma.$transaction(
+      async (tx) => {
+        const canViewMemberHealth = await this.healthAccess(tx, partnerId);
+        const [items, total] = await Promise.all([
+          tx.user.findMany({
+            where,
+            select: {
+              id: true,
+              compatibilityId: true,
+              nickname: true,
+              mobile: true,
+              email: true,
+              avatarUrl: true,
+              gender: true,
+              ...(canViewMemberHealth
+                ? { birthday: true, heightCm: true, weightKg: true }
+                : {}),
+              createdAt: true,
+              _count: {
+                select: {
+                  devices: true,
+                  ...(canViewMemberHealth ? { healthRecords: true } : {}),
+                },
               },
             },
-          },
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          skip,
-          take: pageSize,
-        }),
-        tx.user.count({ where }),
-      ]);
-      return {
-        canViewMemberHealth,
-        items: items.map((item) => ({
-          ...item,
-          memberNo: String(item.compatibilityId),
-        })),
-        total,
-        page,
-        pageSize,
-      };
-    });
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip,
+            take: pageSize,
+          }),
+          tx.user.count({ where }),
+        ]);
+        await this.audit(
+          tx,
+          partnerId,
+          partnerId,
+          "USER_PROFILE_LIST",
+          requestId,
+          items.length,
+          page,
+        );
+        return {
+          canViewMemberHealth,
+          items: items.map((item) => ({
+            id: item.id,
+            compatibilityId: item.compatibilityId,
+            nickname: item.nickname,
+            mobile: item.mobile,
+            email: item.email,
+            avatarUrl: item.avatarUrl,
+            gender: item.gender,
+            createdAt: item.createdAt,
+            memberNo: String(item.compatibilityId),
+            ...(canViewMemberHealth
+              ? {
+                  birthday: item.birthday,
+                  heightCm: item.heightCm,
+                  weightKg: item.weightKg,
+                }
+              : {}),
+            _count: {
+              devices: item._count.devices,
+              ...(canViewMemberHealth
+                ? { healthRecords: item._count.healthRecords }
+                : {}),
+            },
+          })),
+          total,
+          page,
+          pageSize,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   profile(partnerId: string, id: string, requestId: string) {

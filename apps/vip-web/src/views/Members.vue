@@ -4,7 +4,8 @@ import { ElMessage } from "element-plus";
 import { api, data, errorMessage } from "../api";
 import { date } from "../present";
 import { openHealthScreen } from "@saydian/health-screen-ui/open-window";
-import { Search, Refresh, User, Share } from "@element-plus/icons-vue";
+import { Search, Refresh, Share } from "@element-plus/icons-vue";
+import MemberListCard from "../components/MemberListCard.vue";
 import PageError from "../components/PageError.vue";
 import EmptyState from "../components/EmptyState.vue";
 import {
@@ -14,7 +15,15 @@ import {
 } from "@saydian/app-contracts";
 const canViewMemberHealth = ref(false);
 const healthScreenEnabled = ref(false);
-onMounted(async () => { try { healthScreenEnabled.value = data<{enabled:boolean}>(await api.get("/health-analysis/availability")).enabled; } catch { healthScreenEnabled.value = false; } });
+onMounted(async () => {
+  try {
+    healthScreenEnabled.value = data<{ enabled: boolean }>(
+      await api.get("/health-analysis/availability"),
+    ).enabled;
+  } catch {
+    healthScreenEnabled.value = false;
+  }
+});
 const error = ref(""),
   detailError = ref(""),
   deviceError = ref(""),
@@ -229,7 +238,7 @@ function changeDeviceTab() {
     <PageError :message="error" @retry="load" />
     <div class="panel">
       <form
-        class="toolbar"
+        class="toolbar member-list-toolbar"
         @submit.prevent="
           page = 1;
           load();
@@ -247,8 +256,12 @@ function changeDeviceTab() {
           "
           style="max-width: 360px"
         /><el-button native-type="submit" type="primary">搜索</el-button
-        ><el-button :icon="Refresh" :loading="busy" @click="load"
-          >刷新</el-button
+        ><el-button
+          :icon="Refresh"
+          :loading="busy"
+          aria-label="刷新会员列表"
+          @click="load"
+          ><span class="refresh-label">刷新</span></el-button
         >
       </form>
       <div v-loading="busy">
@@ -268,28 +281,15 @@ function changeDeviceTab() {
           ></EmptyState
         >
         <div class="member-grid">
-          <article v-for="member in items" :key="member.id" class="record-card">
-            <div class="record-head">
-              <div class="member-name">
-                <el-icon :size="22"><User /></el-icon
-                ><b>{{ member.nickname || "未填写昵称" }}</b>
-              </div>
-              <el-button type="primary" plain @click="openMember(member)">{{
-                canViewMemberHealth ? "查看档案" : "查看资料"
-              }}</el-button>
-            </div>
-            <el-button v-if="canViewMemberHealth && healthScreenEnabled" type="primary" plain size="small" @click="openHealthScreen('vip', member.id)">健康大屏</el-button>
-            <p class="member-contact">
-              {{ member.mobile || member.email || "未填写联系方式" }}
-            </p>
-            <p class="muted member-meta">
-              {{ member.memberNo }} · {{ member._count.devices }} 台设备
-              <template v-if="canViewMemberHealth">
-                · {{ member._count.healthRecords }} 条健康记录</template
-              >
-            </p>
-            <small class="muted">注册于 {{ date(member.createdAt) }}</small>
-          </article>
+          <MemberListCard
+            v-for="member in items"
+            :key="member.id"
+            :member="member"
+            :can-view-health="canViewMemberHealth"
+            :show-health-screen="healthScreenEnabled"
+            @open="openMember(member)"
+            @health-screen="openHealthScreen('vip', member.id)"
+          />
         </div>
       </div>
       <el-pagination
@@ -662,52 +662,33 @@ function changeDeviceTab() {
 <style scoped>
 .member-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
-.member-grid .record-card {
-  margin: 0;
-}
-.member-name {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.member-name .el-icon {
-  color: #b82237;
-}
-.member-name b {
-  overflow-wrap: anywhere;
-}
-.member-contact {
-  font-size: 14px;
-  overflow-wrap: anywhere;
-  margin: 0 0 12px;
-}
-.member-meta {
-  font-size: 13px;
-  line-height: 1.7;
-}
-.record-head {
-  flex-wrap: wrap;
+@media (min-width: 1500px) {
+  .member-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 600px), (max-width: 950px) and (max-height: 500px) {
-  .toolbar > .el-input {
-    flex-basis: calc(100% - 72px);
+  .member-list-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 44px;
+    gap: 8px;
+  }
+  .member-list-toolbar > .el-input {
+    min-width: 0;
+    width: 100%;
     max-width: none !important;
   }
-  .member-meta {
-    overflow-wrap: anywhere;
-    margin: 10px 0;
+  .member-list-toolbar > .el-button {
+    margin: 0;
+    min-height: 44px;
   }
-  .member-grid .record-card {
-    padding: 14px;
+  .member-list-toolbar > .el-button:last-child {
+    padding: 0;
   }
-  .member-name b {
-    font-size: 15px;
-  }
-  .member-name .el-icon {
+  .refresh-label {
     display: none;
   }
   .mobile-record-facts {

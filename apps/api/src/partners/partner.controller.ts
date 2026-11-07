@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Post,
   Query,
@@ -82,12 +83,14 @@ export class PartnerController {
     return this.partners.certificate(partner.id);
   }
   @Get("members")
+  @Header("Cache-Control", "private, no-store")
   members(
     @CurrentPartner() partner: Partner,
+    @Req() request: RequestWithContext,
     @Query("search") search = "",
     @Query("page") page?: string,
   ) {
-    return this.membersService.members(partner.id, search, page);
+    return this.membersService.members(partner.id, search, page, request.requestId);
   }
   @Get("members/:id/profile")
   profile(

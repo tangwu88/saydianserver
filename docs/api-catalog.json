@@ -21504,6 +21504,95 @@
       }
     },
     {
+      "key": "CommerceMemberProfileController.profile",
+      "method": "GET",
+      "path": "/api/saidian-mall/v1/storefront/member-profile",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-member-profile.controller.ts",
+      "summary": "商城会员读取本人个人资料",
+      "request": "已验证会员会话；不接受会员ID参数",
+      "response": "与App相同的MemberProfile，联系方式脱敏；private no-store",
+      "dependency": "复用MembersService；当前会员身份由会话取得",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-member-profile.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceMemberProfileController.save",
+      "method": "PUT",
+      "path": "/api/saidian-mall/v1/storefront/member-profile",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-member-profile.controller.ts",
+      "summary": "商城会员修改本人个人资料",
+      "request": "nickname、gender、birthday、heightCm、weightKg；仅更新提交字段；avatarFileId可选，null移除头像",
+      "response": "与App相同的MemberProfile；头像只允许当前会员上传且ACTIVE的avatar文件；忽略账号、角色、归属和外部头像URL",
+      "dependency": "复用App资料验证和会员表；不修改验证状态或登录凭据",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/commerce/commerce-member-profile.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CommerceMemberProfileController.avatar",
+      "method": "POST",
+      "path": "/api/saidian-mall/v1/storefront/member-profile/avatar",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/commerce/commerce-member-profile.controller.ts",
+      "summary": "商城会员上传个人头像",
+      "request": "multipart file；JPG/PNG/WebP，10MB以内；校验实际文件字节",
+      "response": "{id,url,sha256,byteSize}；仅上传，保存资料时关联",
+      "dependency": "复用App头像存储；每分钟最多10次；本人会话",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/commerce/commerce-member-profile.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "CommerceEmployeeWithdrawalController.summary",
       "method": "GET",
       "path": "/api/saidian-mall/v1/wecom/me/withdrawals",
@@ -37645,8 +37734,8 @@
       "source": "apps/api/src/partners/partner.controller.ts",
       "summary": "所属会员列表",
       "request": "search?、page?；当前会话决定伙伴身份",
-      "response": "{items,total,page,pageSize}；仅当前partnerId会员",
-      "dependency": "主库；伙伴身份与会员/员工推广隔离",
+      "response": "{items,total,page,pageSize,canViewMemberHealth}；头像、昵称、性别、联系方式、会员编号、设备数和注册时间；仅战略合作伙伴返回birthday/heightCm/weightKg及健康记录数，未知保留null；不返回HealthProfile或测量值",
+      "dependency": "主库；每次读取当前伙伴等级和会员归属；列表读取审计成功后返回",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

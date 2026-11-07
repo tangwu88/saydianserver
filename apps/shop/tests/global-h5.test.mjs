@@ -11,7 +11,7 @@ const vue = nodeRequire("vue"),
   { parse, compileScript, compileTemplate } = nodeRequire("vue/compiler-sfc");
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
-function harness({ realm = "global", storage = new Map(), url = "https://app.saydian.cn/global/saidian-mall/", request, document: documentOverride } = {}) {
+function harness({ realm = "global", storage = new Map(), url = "https://app.saydian.cn/global/saidian-mall/", request, fetch: fetchOverride, document: documentOverride } = {}) {
   const requests = [],
     toasts = [],
     events = {},
@@ -83,6 +83,7 @@ function harness({ realm = "global", storage = new Map(), url = "https://app.say
     clearInterval,
     getCurrentPages: () => [],
     console,
+    fetch: fetchOverride,
   });
   const cache = new Map();
   function load(name) {
@@ -552,7 +553,8 @@ function phoneLoginHarness(t, options = {}) {
   let bindAttempts = 0;
   const mode = options.mode || "test";
   const h = harness({
-    url: `https://app.saydian.cn/global/saidian-mall/oauth/callback?code=synthetic-code&state=${state}`,
+    url: options.url || `https://app.saydian.cn/global/saidian-mall/oauth/callback?code=synthetic-code&state=${state}`,
+    fetch: options.fetch,
     request: (request) => {
       const ok = (data) => request.success({ statusCode: 200, data });
       if (request.url.includes("/storefront/capabilities"))
@@ -647,8 +649,10 @@ function phoneLoginHarness(t, options = {}) {
   t.after(h.unmount);
   return { ...h, ui };
 }
-function codeLoginHarness(t) {
+function codeLoginHarness(t, options = {}) {
   const h = harness({
+    url: options.url,
+    fetch: options.fetch,
     request: (request) => {
       const raw = (data) => request.success({ statusCode: 200, data });
       const envelope = (data, statusCode = 200) =>
@@ -710,6 +714,47 @@ function codeLoginHarness(t) {
   t.after(h.unmount);
   return { ...h, ui };
 }
+const partnerFetch = async () => ({ ok: true, json: async () => ({ data: { partnerCode: "partner-invite", name: "合成合作伙伴", notice: "仅本地测试" } }) });
+for (const channel of ["sms", "email"]) test(`partner invitation ${channel} registration reaches profile instead of a stale shopping route`, async t => {
+  const h = codeLoginHarness(t, { url: "https://app.saydian.cn/global/saidian-mall/?partner=partner-invite#/pages/login/index", fetch: partnerFetch });
+  await settle(() => !h.ui.loading.value);
+  const routes = [];
+  h.uni.reLaunch = route => routes.push(route.url);
+  h.storage.set("saydian-global-mall:saidian-post-login-route", "/pages/checkout/index");
+  h.ui.changeContact(channel);
+  h.ui.identifier.value = channel === "sms" ? "13812345678" : "synthetic@example.com";
+  await h.ui.sendCode();
+  h.ui.code.value = "123456";
+  h.ui.accepted.value = true;
+  await h.ui.login();
+  assert.equal(h.requests.find(item => item.url.endsWith("/auth/code/login")).data.partnerCode, "partner-invite");
+  assert.deepEqual(routes, ["/pages/profile/index"]);
+  assert.equal(h.storage.has("saydian-global-mall:saidian-post-login-route"), false);
+  assert.equal(h.load("partner-referral").currentPartnerReferral(), null);
+});
+test("WeChat invitation phone binding reaches profile instead of the old OAuth return page", async t => {
+  const h = phoneLoginHarness(t, { mode: "sms", url: `https://app.saydian.cn/global/saidian-mall/oauth/callback?partner=partner-invite&code=synthetic-code&state=${state}`, fetch: partnerFetch });
+  await settle(() => !h.ui.loading.value);
+  h.ui.identifier.value = "13812345678";
+  await h.ui.sendCode();
+  h.ui.code.value = "123456";
+  h.ui.accepted.value = true;
+  await h.ui.login();
+  assert.equal(new URL(h.location.replacedWith).hash, "#/pages/profile/index");
+});
+test("ordinary login still returns to its explicit shopping destination", async t => {
+  const h = codeLoginHarness(t);
+  await settle(() => !h.ui.loading.value);
+  const routes = [];
+  h.uni.reLaunch = route => routes.push(route.url);
+  h.storage.set("saydian-global-mall:saidian-post-login-route", "/pages/checkout/index");
+  h.ui.identifier.value = "13812345678";
+  await h.ui.sendCode();
+  h.ui.code.value = "123456";
+  h.ui.accepted.value = true;
+  await h.ui.login();
+  assert.deepEqual(routes, ["/pages/checkout/index"]);
+});
 test("login defaults to phone OTP and contains no registration or password flow", async (t) => {
   const h = codeLoginHarness(t);
   await settle(() => !h.ui.loading.value);

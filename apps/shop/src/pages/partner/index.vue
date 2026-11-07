@@ -43,7 +43,9 @@ function login() {
 }
 function partnerAccountLogin() {
   /* #ifdef H5 */
-  window.location.assign(`/vip/login?password=1&next=${encodeURIComponent(next.value)}`);
+  window.location.assign(
+    `/vip/login?password=1&next=${encodeURIComponent(next.value)}`,
+  );
   /* #endif */
 }
 async function load() {
@@ -105,11 +107,12 @@ async function submit() {
   busy.value = true;
   error.value = "";
   try {
-    await api("/partner/applications", {
+    const application = await api("/partner/applications", {
       method: "POST",
       auth: true,
       data: { ...form, idempotencyKey: requestId },
     });
+    status.value = { ...status.value, application };
     requestId = "";
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "提交未完成，请重试";
@@ -132,8 +135,16 @@ onShow(() => {
 <template>
   <DesktopHeader /><view class="saydian-app-surface"
     ><view class="partner-content">
-      <h1>{{ status?.partner ? "合作伙伴平台" : "申请合作分销" }}</h1>
-      <view v-if="error" class="error-state" role="alert"
+      <h1>{{ status?.partner ? "合作伙伴平台" : "申请合作伙伴" }}</h1>
+      <view
+        v-if="
+          error &&
+          (!status ||
+            status.partner ||
+            status.application?.status === 'PENDING')
+        "
+        class="error-state"
+        role="alert"
         >{{ error
         }}<button class="text-button" @click="load">重新查询</button></view
       >
@@ -175,11 +186,7 @@ onShow(() => {
           查看最新进度
         </button></view
       >
-      <form
-        v-else-if="status"
-        class="app-panel partner-panel"
-        @submit.prevent="submit"
-      >
+      <form v-else-if="status" class="app-panel partner-panel" @submit="submit">
         <view
           v-if="status.application?.status === 'REJECTED'"
           class="error-state"
@@ -187,44 +194,57 @@ onShow(() => {
             status.application.reviewReason
           }}。可修改信息后重新申请。</view
         >
-        <label
-          >合作名称<input
+        <label class="partner-field"
+          ><text>合作名称</text
+          ><input
+            class="partner-input"
             v-model="form.name"
             maxlength="80"
             placeholder="公司、门店或个人名称"
         /></label>
-        <label
-          >联系人<input
+        <label class="partner-field"
+          ><text>联系人</text
+          ><input
+            class="partner-input"
             v-model="form.contactName"
             maxlength="40"
             placeholder="姓名"
         /></label>
-        <label
-          >联系电话<input
+        <label class="partner-field"
+          ><text>联系电话</text
+          ><input
+            class="partner-input"
             v-model="form.mobile"
             type="text"
             maxlength="30"
             placeholder="便于联系的手机号"
         /></label>
-        <label
-          >所在地区<input
+        <label class="partner-field"
+          ><text>所在地区</text
+          ><input
+            class="partner-input"
             v-model="form.region"
             maxlength="120"
             placeholder="省、市、区"
         /></label>
-        <label
-          >合作介绍<textarea
+        <label class="partner-field"
+          ><text>合作介绍</text
+          ><textarea
+            class="partner-textarea"
             v-model="form.description"
             maxlength="2000"
             placeholder="经营情况、合作意向等"
           />
         </label>
+        <view v-if="error" class="error-state" role="alert">{{ error }}</view>
         <button class="primary-btn" form-type="submit" :disabled="busy">
           {{ busy ? "正在提交…" : "提交申请" }}
         </button>
       </form>
       <!-- #ifdef H5 -->
-      <button class="text-button" @click="partnerAccountLogin">已有合作账号？使用账号密码登录</button>
+      <button class="text-button" @click="partnerAccountLogin">
+        已有合作账号？使用账号密码登录
+      </button>
       <!-- #endif -->
       <button class="text-button" @click="back">返回个人中心</button>
     </view></view
@@ -243,6 +263,7 @@ onShow(() => {
   margin: 12px 0 24px;
 }
 .partner-panel {
+  display: block;
   padding: 24px;
   margin-bottom: 20px;
 }
@@ -251,25 +272,27 @@ onShow(() => {
   color: #596579;
   margin: 12px 0 20px;
 }
-.partner-panel label {
+.partner-field {
   display: grid;
   gap: 8px;
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 20px;
 }
-.partner-panel input,
-.partner-panel textarea {
+.partner-input,
+.partner-textarea {
+  display: block;
   box-sizing: border-box;
   width: 100%;
-  padding: 12px 14px;
+  padding: 0 14px;
   border: 1px solid #dce1ea;
   border-radius: 9px;
   font-size: 16px;
   font-weight: 400;
-  min-height: 46px;
+  height: 48px;
 }
-.partner-panel textarea {
+.partner-textarea {
+  padding: 12px 14px;
   height: 120px;
 }
 .partner-panel button {

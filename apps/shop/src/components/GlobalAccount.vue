@@ -3,10 +3,11 @@
   <view class="saydian-app-surface account-surface"><view class="account-content">
     <h1>我的</h1>
     <view v-if="error" class="error-state">{{ error }}<button class="text-button" :disabled="!!loading" @click="$emit('refresh')">重试</button></view>
-    <view class="member-hero">
-      <view class="avatar" aria-hidden="true"><image v-if="user?.avatarUrl" :src="user.avatarUrl" mode="aspectFill" /><text v-else>{{ user?.nickname?.slice(0, 1) || 'S' }}</text></view>
+    <button class="member-hero" role="button" aria-label="编辑个人资料" @click="user ? go('/pages/member-profile/index') : login()">
+      <view class="avatar" aria-hidden="true"><image v-if="user?.avatarUrl" class="avatar-photo" :src="user.avatarUrl" mode="aspectFill" /><text v-else>{{ user?.nickname?.slice(0, 1) || 'S' }}</text></view>
       <view class="member-name"><h2>{{ user?.nickname || '我的账户' }}</h2><text v-if="user" class="muted">会员 ID：{{ memberNumber }}</text></view>
-    </view>
+      <text v-if="user" class="edit-profile">编辑资料 ›</text>
+    </button>
     <view v-if="user" class="app-panel account-details">
       <view v-if="user.phoneMasked" class="detail-row"><text>手机号</text><view><text>{{ user.phoneMasked }}</text><text v-if="user.phoneVerified === false" class="pending">待验证</text></view></view>
       <view v-if="user.emailMasked" class="detail-row"><text>邮箱</text><text>{{ user.emailMasked }}</text></view>
@@ -29,7 +30,7 @@
       <text v-else-if="!recentOrdersLoading && !(recentOrders || []).length" class="muted recent-state">暂无订单，去商城看看吧</text>
     </view>
     <view class="app-panel account-menu"><button v-for="item in shoppingMenus" :key="item.url" @click="go(item.url)"><text>{{ item.label }}</text><text class="chevron">›</text></button></view>
-    <view class="app-panel account-menu"><button @click="help('agreement')"><text>用户协议</text><text class="chevron">›</text></button><button @click="help('privacy')"><text>隐私政策</text><text class="chevron">›</text></button><button v-if="!miniProgram" @click="go('/pages/partner/index')"><text>申请合作分销</text><text class="chevron">›</text></button></view>
+    <view class="app-panel account-menu"><button @click="help('agreement')"><text>用户协议</text><text class="chevron">›</text></button><button @click="help('privacy')"><text>隐私政策</text><text class="chevron">›</text></button><button v-if="!miniProgram" @click="go('/pages/partner/index')"><text>申请合作伙伴</text><text class="chevron">›</text></button></view>
     <button v-if="user" class="outline-btn logout" @click="$emit('logout')">退出登录</button>
   </view></view>
 </template>
@@ -63,3 +64,4 @@ function statusLabel(value: string) { return ({ PENDING_PAYMENT: '待付款', PA
 <style scoped>.account-content{max-width:600px;margin:0 auto}.account-content>h1{text-align:center;font-size:20px;margin-bottom:26px}.member-hero{display:flex;align-items:center;gap:15px;padding:24px 20px;border:1px solid #dce5d3;border-radius:24px;background:#e9eee4;box-shadow:none;margin-bottom:18px}.avatar{width:60px;height:60px;border-radius:50%;overflow:hidden;background:#fff;color:#245d47;display:flex;align-items:center;justify-content:center;flex:none;font-size:30px;font-weight:800}.avatar image{width:100%;height:100%;display:block}.member-name{min-width:0;overflow-wrap:anywhere}.member-name .muted{margin-top:6px}.account-details{padding:4px 18px}.detail-row{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:18px 0;font-size:15px;border-bottom:1px solid #dde3ec}.detail-row:last-child{border:0}.detail-row>view,.detail-row>text:last-child{text-align:right;overflow-wrap:anywhere}.pending{font-size:12px;color:#8a4b00;background:#fff6de;border-radius:5px;padding:2px 6px;margin-left:8px;white-space:nowrap}.account-menu{padding:0 18px;margin-top:18px}.account-menu button{display:flex;justify-content:space-between;align-items:center;padding:17px 0;margin:0;background:none;border-radius:0;font-size:16px;color:#171b2b;text-align:left;border-bottom:1px solid #dde3ec}.account-menu button:last-child{border:0}.chevron{font-size:25px;color:#98a2b3;line-height:1}.logout{width:100%;margin-top:24px}@media(max-width:380px){.member-hero{padding:20px 16px}.detail-row{flex-wrap:wrap;gap:8px}.pending{display:inline-block}}</style>
 
 <style scoped>.order-shortcuts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:18px 0}.order-shortcuts button{margin:0;padding:16px 4px;background:white;border:1px solid var(--line);border-radius:12px;font-size:14px;line-height:1.6;color:var(--ink)}.order-shortcut-arrow{display:block;font-size:20px;color:var(--green)}</style>
+<style scoped>.member-hero{width:100%;text-align:left;line-height:1.5;color:var(--ink)}.avatar-photo{display:block;width:100%;height:100%}.member-name{flex:1}.member-name h2{margin:0;font-size:20px;line-height:1.4}.edit-profile{font-size:13px;color:#245d47;flex:none}@media(max-width:380px){.member-hero{gap:10px}.member-name h2{font-size:18px}.avatar{width:48px;height:48px}.edit-profile{font-size:12px}}</style>
