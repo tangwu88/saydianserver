@@ -1392,9 +1392,13 @@
   border-radius: 10px;
   padding: 8px 12px;
   font-size: 12px;
-  white-space: nowrap;
+  white-space: normal;
+  width: max-content;
+  max-width: 260px;
+  line-height: 1.5;
   pointer-events: none;
 }
+.arrival-reading { display: block; }
 .body-hotspot.oxygen .arrival-bubble,
 .body-hotspot.metabolic .arrival-bubble,
 .body-hotspot.activity .arrival-bubble {

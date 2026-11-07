@@ -159,7 +159,10 @@ export interface HealthScreenRecords {
 }
 export interface HealthScreenTransport {
   profile(id: string, signal: AbortSignal): Promise<ScreenProfileGate>;
-  completeProfile(id: string, values: Partial<ScreenProfile> & { expectedRevision?: string }): Promise<ScreenProfileGate>;
+  completeProfile(
+    id: string,
+    values: Partial<ScreenProfile> & { expectedRevision?: string },
+  ): Promise<ScreenProfileGate>;
   updates(
     memberId: string,
     days: HealthScreenDays,
@@ -205,7 +208,26 @@ export interface HealthScreenTransport {
   ): Promise<MemberAnalysisResult>;
 }
 export interface HealthScreenUpdates {
-  groups: { group: HealthScreenGroup; count: number; updatedAt: string }[];
+  groups: {
+    group: HealthScreenGroup;
+    count: number;
+    updatedAt: string;
+    measurements?: HealthScreenMeasurementUpdate[];
+  }[];
+}
+export interface HealthScreenMeasurementUpdate {
+  key: string;
+  revision: string;
+  metric: string;
+  kind: "device" | "reference";
+  label: string;
+  measuredAt: string;
+  updatedAt: string;
+  withdrawn: boolean;
+  values: Pick<
+    HealthScreenRecord["values"][number],
+    "key" | "label" | "value" | "unit"
+  >[];
 }
 export interface HealthReferenceInput {
   metric:

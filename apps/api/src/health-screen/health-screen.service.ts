@@ -16,6 +16,11 @@ import {
   type HealthScreenGroup,
   type ScreenProfileGate,
   type ScreenProfile,
+  type HealthScreenMeasurementUpdate,
+  type HealthScreenUpdates,
+  healthMetricLabel,
+  HEALTH_REFERENCE_DEFINITIONS,
+  HEALTH_REFERENCE_CONTEXTS,
 } from "@saydian/app-contracts";
 import {
   healthScreenQwenEndpoint,
@@ -36,6 +41,7 @@ import {
   displayRecord,
   recordDay,
   type ScreenActor,
+  type ScreenRecord,
   validateReference,
   referenceScreenRecord,
   referencePublic,
@@ -541,32 +547,134 @@ export class HealthScreenService {
           _max: { updatedAt: true },
         });
         // Include voided references in the revision so a withdrawal invalidates the display too.
-        const references = await tx.memberHealthReference.groupBy({
-          by: ["metric"],
-          where: {
-            userId: memberId,
-            observedAt: {
-              gte: new Date(period.from),
-              lt: new Date(period.to),
-              lte: now,
-            },
+        const referenceWhere = {
+          userId: memberId,
+          observedAt: {
+            gte: new Date(period.from),
+            lt: new Date(period.to),
+            lte: now,
           },
+        };
+        const references = await tx.memberHealthReference.groupBy({
+          by: ["metric", "method", "context", "unit"],
+          where: referenceWhere,
           _count: { _all: true },
           _max: { updatedAt: true },
         });
         const groups = new Map<
           HealthScreenGroup,
-          { group: HealthScreenGroup; count: number; updatedAt: string }
+          HealthScreenUpdates["groups"][number]
         >();
         for (const row of [...device, ...references]) {
           const group = metricGroups[row.metric];
           if (!group || !row._max.updatedAt) continue;
-          const value = groups.get(group) || { group, count: 0, updatedAt: "" };
+          const value = groups.get(group) || {
+            group,
+            count: 0,
+            updatedAt: "",
+            measurements: [],
+          };
           value.count += row._count._all;
           value.updatedAt = [value.updatedAt, row._max.updatedAt.toISOString()]
             .sort()
             .at(-1)!;
           groups.set(group, value);
+        }
+        const measurement = (
+          row: ScreenRecord,
+          key: string,
+          kind: "device" | "reference",
+          label: string,
+          withdrawn = false,
+        ): HealthScreenMeasurementUpdate => ({
+          key,
+          kind,
+          label,
+          metric: row.metric,
+          revision: hash([
+            row.id,
+            row.updatedAt.toISOString(),
+            row.values,
+            row.unit,
+            withdrawn,
+          ]),
+          measuredAt: row.observedAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+          withdrawn,
+          values: withdrawn
+            ? []
+            : displayRecord(row).values.map(
+                ({ reason: _reason, ...value }) => value,
+              ),
+        });
+        // Pick by upload/update time, not the period average or most recent
+        // observation time: a newly uploaded historical reading must show its own value.
+        for (const version of device) {
+          const group = metricGroups[version.metric];
+          if (!group || !version._max.updatedAt) continue;
+          const row = await tx.healthRecord.findFirst({
+            where: {
+              AND: [
+                this.where(memberId, period, now),
+                { metric: version.metric, updatedAt: version._max.updatedAt },
+              ],
+            },
+            orderBy: [{ observedAt: "desc" }, { id: "desc" }],
+          });
+          if (row)
+            groups
+              .get(group)!
+              .measurements!.push(
+                measurement(
+                  row,
+                  "device:" + row.metric,
+                  "device",
+                  healthMetricLabel(row.metric),
+                ),
+              );
+        }
+        for (const version of references) {
+          const group = metricGroups[version.metric];
+          if (!group || !version._max.updatedAt) continue;
+          const row = await tx.memberHealthReference.findFirst({
+            where: {
+              ...referenceWhere,
+              metric: version.metric,
+              method: version.method,
+              context: version.context,
+              unit: version.unit,
+              updatedAt: version._max.updatedAt,
+            },
+            orderBy: [{ observedAt: "desc" }, { id: "desc" }],
+          });
+          if (!row) continue;
+          const def =
+            HEALTH_REFERENCE_DEFINITIONS[
+              row.metric as keyof typeof HEALTH_REFERENCE_DEFINITIONS
+            ];
+          const context =
+            row.context === "RESTING"
+              ? ""
+              : HEALTH_REFERENCE_CONTEXTS[row.context] || "";
+          groups
+            .get(group)!
+            .measurements!.push(
+              measurement(
+                referenceScreenRecord(row),
+                [
+                  "reference",
+                  row.metric,
+                  row.method,
+                  row.context,
+                  row.unit,
+                ].join(":"),
+                "reference",
+                context +
+                  (def?.label || healthMetricLabel(row.metric)) +
+                  "参考值",
+                !!row.voidedAt,
+              ),
+            );
         }
         await this.audit(
           tx,
@@ -613,15 +721,13 @@ export class HealthScreenService {
           { count: Math.min(rows.length, 50) },
         );
         return {
-          items: rows
-            .slice(0, 50)
-            .map((row) => ({
-              ...referencePublic(row),
-              canVoid:
-                !row.voidedAt &&
-                (actor.type !== "MEMBER" ||
-                  (row.actorType === "MEMBER" && row.actorId === actor.id)),
-            })),
+          items: rows.slice(0, 50).map((row) => ({
+            ...referencePublic(row),
+            canVoid:
+              !row.voidedAt &&
+              (actor.type !== "MEMBER" ||
+                (row.actorType === "MEMBER" && row.actorId === actor.id)),
+          })),
           nextCursor: rows.length > 50 ? rows[49]!.id : null,
         };
       }),

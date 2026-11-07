@@ -1,6 +1,34 @@
-import type { HealthScreenUpdates } from "@saydian/app-contracts";
+import type {
+  HealthScreenUpdates,
+  HealthScreenMeasurementUpdate,
+} from "@saydian/app-contracts";
+import { formatScreenValue, sleepValueInHours } from "./sleep-display";
 export const MEASUREMENT_POLL_MS = 5000;
 export const MEASUREMENT_NOTICE_MS = 20000;
+
+export function measurementReadings(
+  m: HealthScreenMeasurementUpdate,
+): string[] {
+  if (m.withdrawn) return [m.label + "已撤销"];
+  const values = m.values.filter((v) => Number.isFinite(v.value));
+  if (m.metric === "BLOOD_PRESSURE") {
+    const high = values.find((v) => v.key.includes("systolic"));
+    const low = values.find((v) => v.key.includes("diastolic"));
+    if (high && low && high.unit === low.unit)
+      return [
+        `${m.label} ${formatScreenValue(high.value)}/${formatScreenValue(low.value)} ${high.unit}`,
+      ];
+  }
+  if (!values.length) return [m.label + "已上报"];
+  return values.map((v) => {
+    const display = sleepValueInHours(m.metric, v.unit, v.value);
+    const label =
+      m.kind === "reference" && values.length === 1
+        ? m.label
+        : v.label.replace(/\s*·\s*(单位待核实|来源待核实|定义待核实)$/, "");
+    return `${label} ${formatScreenValue(display.value)} ${display.unit}`.trim();
+  });
+}
 
 export function changedHealthGroups(
   previous: HealthScreenUpdates | null,
@@ -15,9 +43,22 @@ export function changedHealthGroups(
     .map((n) => {
       const old = previous.groups.find((p) => p.group === n.group);
       const added = n.count - (old?.count || 0);
+      const measurements = (n.measurements || []).filter((m) => {
+        if (!old) return true;
+        if (!old.measurements) return m.updatedAt > old.updatedAt;
+        return (
+          old.measurements.find((p) => p.key === m.key)?.revision !== m.revision
+        );
+      });
+      const readings = measurements.flatMap(measurementReadings);
       return {
         group: n.group,
-        message: added > 0 ? `收到 ${added} 条新记录` : "数据已更新",
+        message: readings.length
+          ? readings.join("；")
+          : added > 0
+            ? `收到 ${added} 条新记录`
+            : "数据已更新",
+        readings,
         updatedAt: n.updatedAt,
       };
     });

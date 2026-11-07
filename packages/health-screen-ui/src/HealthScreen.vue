@@ -81,7 +81,7 @@ const days = ref<HealthScreenDays>(7),
   profileOpen = ref(false),
   motion = ref(true),
   visible = ref(!document.hidden);
-const arrivals = ref<Record<string, { id: number; message: string; until: number }>>({});
+const arrivals = ref<Record<string, { id: number; message: string; readings: string[]; until: number }>>({});
 let arrivalSequence = 0;
 let updateTimer: ReturnType<typeof setInterval> | undefined;
 const measurements = new MeasurementObserver((signal) =>
@@ -364,6 +364,7 @@ async function checkUpdates() {
         arrivals.value[item.group] = {
           id: ++arrivalSequence,
           message: item.message,
+          readings: item.readings,
           until: Date.now() + MEASUREMENT_NOTICE_MS,
         };
       // A normal refresh may already contain these values. The upload notice
@@ -687,7 +688,7 @@ onBeforeUnmount(() => {
       <section class="measurement-notices" role="status" aria-live="polite" aria-atomic="false" aria-label="新测量提醒">
         <article v-for="item in arrivalItems" :key="item.id" class="measurement-notice" :data-group="item.key">
           <component :is="item.icon" />
-          <div><strong>{{ item.label }}</strong><p>{{ item.message }}</p></div>
+          <div><strong>{{ item.label }}</strong><p v-for="(reading,index) in (item.readings.length ? item.readings : [item.message])" :key="index">{{ reading }}</p></div>
           <button class="notice-view" :aria-label="`查看${item.label}新测量`" @click="tab='detail';selectGroup(item.key)">查看</button>
           <button class="notice-close" :aria-label="`关闭${item.label}提醒`" @click="delete arrivals[item.key]"><Close /></button>
         </article>
@@ -944,7 +945,7 @@ onBeforeUnmount(() => {
                 ><em v-if="hotspotNotes[g.key]">{{ hotspotNotes[g.key] }}</em></span
               >
               <span v-if="arrivals[g.key]" :key="arrivals[g.key]?.id" class="arrival-bubble" aria-hidden="true"
-                >{{ arrivals[g.key]?.message }}</span
+                ><span v-for="(reading,index) in (arrivals[g.key]?.readings.length ? arrivals[g.key]!.readings : [arrivals[g.key]?.message])" :key="index" class="arrival-reading">{{ reading }}</span></span
               >
             </button>
           </div>

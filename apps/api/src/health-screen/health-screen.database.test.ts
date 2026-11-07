@@ -804,6 +804,23 @@ describe.runIf(process.env.RUN_HEALTH_SCREEN_DATABASE_TESTS === "1")(
           })),
         });
         const after = await svc.updates(userId, 7, admin);
+        expect(
+          after.groups.find((g) => g.group === "oxygen")?.measurements,
+        ).toEqual([
+          expect.objectContaining({
+            metric: "BLOOD_OXYGEN",
+            kind: "device",
+            values: [expect.objectContaining({ value: 98, unit: "%" })],
+          }),
+        ]);
+        expect(
+          after.groups.find((g) => g.group === "cardiovascular")?.measurements,
+        ).toContainEqual(
+          expect.objectContaining({
+            metric: "HEART_RATE",
+            values: [expect.objectContaining({ value: 74, unit: "次/分" })],
+          }),
+        );
         for (const [group, added] of [
           ["cardiovascular", 2],
           ["oxygen", 1],
@@ -819,6 +836,57 @@ describe.runIf(process.env.RUN_HEALTH_SCREEN_DATABASE_TESTS === "1")(
       } finally {
         await db.healthRecord.deleteMany({
           where: { userId, clientRecordId: { startsWith: prefix } },
+        });
+      }
+    });
+    it("returns the latest upload's own value even if the measurement is historical, with member isolation", async () => {
+      const prefix = "historical-value-" + randomUUID();
+      const common = {
+        metric: "HEART_RATE" as const,
+        unit: "bpm",
+        timezoneOffsetMinutes: 480,
+        quality: "UNKNOWN" as const,
+        sourcePlatform: "qa",
+      };
+      try {
+        await db.healthRecord.createMany({
+          data: [
+            {
+              ...common,
+              userId,
+              clientRecordId: prefix + "recent",
+              observedAt: new Date(),
+              updatedAt: new Date(Date.now() - 10000),
+              values: { bpm: 76 },
+            },
+            {
+              ...common,
+              userId,
+              clientRecordId: prefix + "historical",
+              observedAt: new Date(Date.now() - 86400000),
+              values: { bpm: 83 },
+            },
+            {
+              ...common,
+              userId: otherId,
+              clientRecordId: prefix + "other",
+              observedAt: new Date(),
+              values: { bpm: 99 },
+            },
+          ],
+        });
+        const result = await svc.updates(userId, 7, admin);
+        const uploaded = result.groups
+          .find((g) => g.group === "cardiovascular")!
+          .measurements!.find((m) => m.metric === "HEART_RATE")!;
+        expect(uploaded.values).toEqual([
+          expect.objectContaining({ value: 83, unit: "次/分" }),
+        ]);
+        expect(Date.parse(uploaded.measuredAt)).toBeLessThan(Date.now() - 3600000);
+        expect(uploaded.revision).toHaveLength(64);
+      } finally {
+        await db.healthRecord.deleteMany({
+          where: { clientRecordId: { startsWith: prefix } },
         });
       }
     });
