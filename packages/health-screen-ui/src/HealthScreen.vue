@@ -35,15 +35,25 @@ import type {
   HealthScreenTransport,
   HealthScreenGroup,
   HealthScreenRecord,
-  HealthScreenUpdates,
 } from "@saydian/app-contracts";
 import HealthReferenceDialog from "./HealthReferenceDialog.vue";
 import HealthScreenProfileDialog from "./HealthScreenProfileDialog.vue";
-import { changedHealthGroups } from "./updates";
+import {
+  MeasurementObserver,
+  MEASUREMENT_POLL_MS,
+  MEASUREMENT_NOTICE_MS,
+} from "./updates";
+import { visibleExclusions, visibleRecordReason } from "./quality-display";
 import HealthTrend from "./HealthTrend.vue";
 import HealthTrendGroup from "./HealthTrendGroup.vue";
 import { groupTrends } from "./trend-groups";
 import {selectBodyProfile} from "./body-profile";
+import {
+  formatScreenValue as num,
+  sleepRecordInHours,
+  sleepSeriesInHours,
+  sleepValueInHours,
+} from "./sleep-display";
 const emit=defineEmits<{"access-lost":[]}>();
 const props = defineProps<{
   memberId: string;
@@ -71,11 +81,12 @@ const days = ref<HealthScreenDays>(7),
   profileOpen = ref(false),
   motion = ref(true),
   visible = ref(!document.hidden);
-const arrivals = ref<Record<string, { message: string; until: number }>>({});
-let updatesBaseline: HealthScreenUpdates | null = null,
-  updatesBusy = false;
-let updateController: AbortController | null = null,
-  updateTimer: ReturnType<typeof setInterval> | undefined;
+const arrivals = ref<Record<string, { id: number; message: string; until: number }>>({});
+let arrivalSequence = 0;
+let updateTimer: ReturnType<typeof setInterval> | undefined;
+const measurements = new MeasurementObserver((signal) =>
+  props.transport.updates(props.memberId, days.value, signal),
+);
 const rows = ref<HealthScreenRecord[]>([]),
   recordError = ref(""),
   recordLoading = ref(false),
@@ -118,8 +129,19 @@ const metricOrder = [
   "hrv_rmssd",
   "hrv_sdnn",
 ];
+const displaySeries = computed(() =>
+  (screen.value?.series || []).map(sleepSeriesInHours),
+);
+const displayRows = computed(() => rows.value.map(sleepRecordInHours));
+const arrivalItems = computed(() =>
+  groups.flatMap((g) => arrivals.value[g.key] ? [{ ...g, ...arrivals.value[g.key]! }] : []),
+);
+const sourceExclusions = computed(() =>
+  series.value.map((s) => ({ ...s, exclusions: visibleExclusions(s.exclusions) }))
+    .filter((s) => Object.keys(s.exclusions).length),
+);
 const series = computed(() =>
-  (screen.value?.series.filter((s) => s.group === group.value) || []).sort(
+  displaySeries.value.filter((s) => s.group === group.value).sort(
     (a, b) => {
       const rank = (key: string) =>
         metricOrder.includes(key) ? metricOrder.indexOf(key) : 100;
@@ -132,7 +154,7 @@ const focusSeries = computed(
 );
 const trendGroups = computed(() =>
   groupTrends(
-    trendScope.value === "all" ? screen.value?.series || [] : series.value,
+    trendScope.value === "all" ? displaySeries.value : series.value,
   ),
 );
 const visibleTrends = computed(() =>
@@ -179,9 +201,7 @@ const summaryMetrics = computed(() =>
         note:
           s.kind === "reference"
             ? `${s.label.split(" · ")[2] || "最近"}参考值`
-            : s.eligibleCount < s.count
-              ? "周期均值 · 待核实"
-              : "周期均值",
+            : "周期均值",
       };
     },
   ),
@@ -189,7 +209,7 @@ const summaryMetrics = computed(() =>
 const hotspotNotes = computed(() => Object.fromEntries(groups.map(({ key }) => {
   const related = screen.value?.series.filter((s) => s.group === key) || [];
   const refs = related.filter((s) => s.kind === "reference").length;
-  return [key, refs ? `手动参考 ${refs} 项` : related.some((s) => s.eligibleCount < s.count) ? "含待核实记录" : ""];
+  return [key, refs ? `手动参考 ${refs} 项` : ""];
 })));
 const figure = computed(()=>screen.value ? selectBodyProfile(screen.value.member) : null);
 const markerPosition = computed(()=>figure.value?.anchors[group.value] || [50,50]);
@@ -261,11 +281,13 @@ const sourceLabels: Record<string, string> = {
   manual_entry: "手动记录",
   imported: "导入记录",
 };
-const sourceLabel = (key: string) => sourceLabels[key] || "来源待核实";
-const num = (v: number | null | undefined) =>
-  v === null || v === undefined
-    ? "—"
-    : new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(v);
+const sourceLabel = (key: string) => sourceLabels[key] || "来源未提供";
+function scoreValue(key: string, value: number | null) {
+  const s = screen.value?.series.find((s) => s.key === key);
+  if (!s || s.metric !== "SLEEP") return num(value);
+  const display = sleepValueInHours(s.metric, s.unit, value);
+  return `${num(display.value)} ${display.unit}`;
+}
 const date = (v: string | null | undefined) =>
   v
     ? new Intl.DateTimeFormat("zh-CN", {
@@ -294,78 +316,66 @@ async function load(reset = false) {
     confirmOpen.value = false;
     referenceOpen.value = false;
     profileOpen.value = false;
-    updateController?.abort();
-    updatesBaseline = null;
+    measurements.reset();
     arrivals.value = {};
   }
   const n = epoch;
   controller?.abort();
-  controller = new AbortController();
+  const request = new AbortController();
+  controller = request;
   loading.value = true;
   error.value = "";
   try {
+    // Establish the upload baseline before loading charts, so an upload during
+    // the initial read still produces a notice even if its values are already visible.
+    const firstRead = await measurements.initialize(request.signal);
+    if (!owned(n) || controller !== request || request.signal.aborted) return;
     const next = await props.transport.load(
       props.memberId,
       days.value,
-      controller.signal,
+      request.signal,
     );
-    if (!owned(n)) return;
+    if (!owned(n) || controller !== request || request.signal.aborted) return;
     screen.value = next;
-    if (!updatesBaseline) void checkUpdates();
+    if (firstRead) void checkUpdates();
   } catch (e: any) {
-    if (!owned(n) || e?.name === "AbortError" || e?.code === "ERR_CANCELED")
+    if (!owned(n) || controller !== request || request.signal.aborted || e?.name === "AbortError" || e?.code === "ERR_CANCELED")
       return;
     error.value = props.errorMessage(e);
     if ([401, 403, 404, 428].includes(e?.response?.status)) {
       emit("access-lost");
       screen.value = null;
       rows.value = [];
+      arrivals.value = {};
+      measurements.reset();
     }
   } finally {
-    if (owned(n)) loading.value = false;
+    if (owned(n) && controller === request) loading.value = false;
   }
 }
 async function checkUpdates() {
-  if (updatesBusy || !screen.value || document.hidden) return;
-  updatesBusy = true;
-  const n = epoch,
-    digest = screen.value.dataDigest;
-  updateController?.abort();
-  updateController = new AbortController();
+  if (!screen.value || document.hidden) return;
+  const n = epoch;
   try {
-    const next = await props.transport.updates(
-      props.memberId,
-      days.value,
-      updateController.signal,
-    );
+    const changes = await measurements.check();
     if (!owned(n)) return;
-    const firstCheck = updatesBaseline === null;
-    const changes = changedHealthGroups(updatesBaseline, next);
-    updatesBaseline = next;
-    // Cover uploads committed between the initial aggregation snapshot and revision request.
-    // Initial reconciliation never announces older records as a new arrival.
-    if (
-      firstCheck &&
-      next.groups.some((g) => g.updatedAt > (screen.value?.dataUpdatedAt || ""))
-    ) {
-      await load();
-      return;
-    }
     if (changes.length) {
-      await load();
-      if (!owned(n) || !screen.value || screen.value.dataDigest === digest)
-        return;
       for (const item of changes)
         arrivals.value[item.group] = {
+          id: ++arrivalSequence,
           message: item.message,
-          until: Date.now() + 20000,
+          until: Date.now() + MEASUREMENT_NOTICE_MS,
         };
+      // A normal refresh may already contain these values. The upload notice
+      // must still appear; it does not depend on a changed aggregate digest.
+      await load();
+      if (owned(n) && screen.value && tab.value === "records" && rows.value.length &&
+          (!props.requiresRecordReason || recordReason.value.trim().length >= 5))
+        await loadRecords();
     }
   } catch (e: any) {
     if (owned(n) && [401, 403, 404, 428].includes(e?.response?.status))
       denyReference(e);
-  } finally {
-    updatesBusy = false;
   }
 }
 function denyReference(e: unknown) {
@@ -374,6 +384,7 @@ function denyReference(e: unknown) {
   screen.value = null;
   rows.value = [];
   arrivals.value = {};
+  measurements.reset();
   error.value = props.errorMessage(e);
 }
 async function pollAnalysis() {
@@ -485,6 +496,7 @@ async function toggleFullscreen() {
 function visibility() {
   visible.value = !document.hidden;
   if (!document.hidden) {
+    void checkUpdates();
     void load();
     void pollAnalysis();
   }
@@ -567,7 +579,7 @@ onMounted(() => {
     for (const [key, item] of Object.entries(arrivals.value))
       if (item.until < Date.now()) delete arrivals.value[key];
     void checkUpdates();
-  }, 10000);
+  }, MEASUREMENT_POLL_MS);
   document.addEventListener("visibilitychange", visibility);
   document.addEventListener("fullscreenchange", fullChange);
 });
@@ -578,7 +590,7 @@ onBeforeUnmount(() => {
   clearInterval(timer);
   clearInterval(poll);
   clearInterval(updateTimer);
-  updateController?.abort();
+  measurements.reset();
   document.removeEventListener("visibilitychange", visibility);
   document.removeEventListener("fullscreenchange", fullChange);
   screen.value = null;
@@ -672,6 +684,14 @@ onBeforeUnmount(() => {
       </p>
     </div>
     <template v-else>
+      <section class="measurement-notices" role="status" aria-live="polite" aria-atomic="false" aria-label="新测量提醒">
+        <article v-for="item in arrivalItems" :key="item.id" class="measurement-notice" :data-group="item.key">
+          <component :is="item.icon" />
+          <div><strong>{{ item.label }}</strong><p>{{ item.message }}</p></div>
+          <button class="notice-view" :aria-label="`查看${item.label}新测量`" @click="tab='detail';selectGroup(item.key)">查看</button>
+          <button class="notice-close" :aria-label="`关闭${item.label}提醒`" @click="delete arrivals[item.key]"><Close /></button>
+        </article>
+      </section>
       <div class="freshness">
         <span
           >{{ screen.period.dates[0] }} — {{ screen.period.dates.at(-1) }} ·
@@ -891,6 +911,11 @@ onBeforeUnmount(() => {
                 draggable="false"
               />
             </div>
+            <span
+              v-for="item in arrivalItems" :key="item.id"
+              class="measurement-anchor" :data-group="item.key" aria-hidden="true"
+              :style="{left:(figure?.anchors[item.key][0] || 50)+'%',top:(figure?.anchors[item.key][1] || 50)+'%','--arrival-color':item.key==='cardiovascular'?'#ff789b':'#4cebd2'}"
+            ><i></i><i></i><component :is="item.icon" /></span>
             <Aim
               aria-hidden="true"
               class="body-marker"
@@ -918,7 +943,7 @@ onBeforeUnmount(() => {
                 }}</small
                 ><em v-if="hotspotNotes[g.key]">{{ hotspotNotes[g.key] }}</em></span
               >
-              <span v-if="arrivals[g.key]" class="arrival-bubble" role="status"
+              <span v-if="arrivals[g.key]" :key="arrivals[g.key]?.id" class="arrival-bubble" aria-hidden="true"
                 >{{ arrivals[g.key]?.message }}</span
               >
             </button>
@@ -984,8 +1009,8 @@ onBeforeUnmount(() => {
                   <p v-if="s.kind === 'reference'" class="muted">
                     {{ s.count }} 条参考值 · {{s.eligibleCount?s.eligibleCount+" 条符合当前评分规则":"趋势对照"}}
                   </p>
-                  <p v-else :class="{ unverified: s.eligibleCount < s.count }">
-                    {{ s.eligibleCount }} / {{ s.count }} 条符合评分基础条件
+                  <p v-else>
+                    {{ s.count }} 条测量记录
                   </p>
                 </article>
               </div>
@@ -1090,23 +1115,21 @@ onBeforeUnmount(() => {
               </div>
               <p v-if="recordError" class="warning-note">{{ recordError }}</p>
               <div class="record-list">
-                <article v-for="r in rows" :key="r.id">
+                <article v-for="r in displayRows" :key="r.id">
                   <header>
                     <time>{{ date(r.measuredAt) }}</time
-                    ><span>{{
-                      r.quality === "VALID" ? "已标记有效" : "质量待核实"
-                    }}</span>
+                    >
                   </header>
                   <p v-for="v in r.values" :key="v.key">
                     <span>{{ v.label }}</span
                     ><b>{{ num(v.value) }} {{ v.unit }}</b
-                    ><small v-if="v.reason">{{ v.reason }}</small>
+                    ><small v-if="visibleRecordReason(v.reason)">{{ visibleRecordReason(v.reason) }}</small>
                   </p>
                   <p v-if="r.unavailableReason" class="warning-note">
                     {{ r.unavailableReason }}
                   </p>
                   <footer>
-                    {{ r.sourceModel || "设备型号待核实" }} ·
+                    {{ r.sourceModel || "设备型号未提供" }} ·
                     {{ sourceLabel(r.source) }}<br />上传
                     {{ date(r.uploadedAt) }}
                   </footer>
@@ -1185,8 +1208,8 @@ onBeforeUnmount(() => {
             </p>
           </section>
           <details class="health-panel quality-panel">
-            <summary><Warning />数据来源与质量说明</summary>
-            <p v-if="tab === 'trends' && trendGroups.length">趋势图：虚线表示手动参考值，灰色点表示含待核实记录，缺失日期留空。</p>
+            <summary><Warning />数据来源与说明</summary>
+            <p v-if="tab === 'trends' && trendGroups.length">趋势图：虚线表示手动参考值，各来源独立展示，缺失日期留空。</p>
             <p v-if="screen.unusableRecordCount">
               本周期有
               {{ screen.unusableRecordCount }}
@@ -1198,9 +1221,7 @@ onBeforeUnmount(() => {
               }}项指标值
             </p>
             <p
-              v-for="s in series.filter(
-                (s) => Object.keys(s.exclusions).length,
-              )"
+              v-for="s in sourceExclusions"
               :key="s.key"
             >
               <strong>{{ s.label }}：</strong
@@ -1210,7 +1231,7 @@ onBeforeUnmount(() => {
                   .join("；")
               }}
             </p>
-            <p v-if="!series.some((s) => Object.keys(s.exclusions).length)">
+            <p v-if="!sourceExclusions.length">
               仅对来源、定义与覆盖量符合已发布规则的记录计算分数。
             </p>
             <p
@@ -1260,7 +1281,7 @@ onBeforeUnmount(() => {
           <p>
             {{
               item.reason ||
-              `依据值 ${num(item.value)}；采用 ${item.days} 天、${item.count} 条记录；权重 ${item.weight}`
+              `依据值 ${scoreValue(item.key, item.value)}；采用 ${item.days} 天、${item.count} 条记录；权重 ${item.weight}`
             }}
           </p>
           <p>{{ item.basis }}</p>
@@ -1296,7 +1317,6 @@ onBeforeUnmount(() => {
               : `新分析使用1次健康报告次数，当前可用${screen.availability.credits}次。相同数据复用已有结果，不重复扣次。`
           }}
         </p>
-        <p class="muted">来源待核实的指标只说明数据局限，不判断健康状态。</p>
         <div class="modal-actions">
           <button class="secondary-button" @click="confirmOpen = false">
             取消</button

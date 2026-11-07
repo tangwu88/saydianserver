@@ -620,9 +620,6 @@
   color: #7facc2;
   margin: 5px 0 0;
 }
-.metric-cards p.unverified {
-  color: #e9c684;
-}
 .ai-conclusion {
   background: #113956;
   border: 1px solid #205575;
@@ -1322,6 +1319,66 @@
   border-color: #7cf8df;
   box-shadow: 0 0 24px #54ddbd65;
   animation: arrival-highlight 2.4s ease-in-out 4;
+}
+.measurement-notices {
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  z-index: 80;
+  display: grid;
+  gap: 10px;
+  width: min(370px, calc(100% - 32px));
+  pointer-events: none;
+}
+.measurement-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #62e8d3;
+  border-radius: 14px;
+  background: #093348f5;
+  box-shadow: 0 8px 30px #00121bd9, 0 0 20px #2cddc429;
+  color: #e5ffff;
+  pointer-events: auto;
+  animation: measurement-notice-in .3s ease-out;
+}
+.measurement-notice > svg { width: 30px; height: 30px; color: #6af5da; flex-shrink: 0; }
+.measurement-notice > div { flex: 1; min-width: 0; }
+.measurement-notice strong { font-size: 14px; }
+.measurement-notice p { margin: 4px 0 0; font-size: 13px; color: #bde9eb; }
+.measurement-notice button { border: 0; background: transparent; color: #86f2e6; padding: 8px 4px; cursor: pointer; }
+.measurement-notice .notice-close { padding: 7px; }
+.notice-close svg { display: block; width: 17px; height: 17px; }
+.measurement-anchor {
+  position: absolute;
+  z-index: 2;
+  translate: -50% -50%;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: var(--arrival-color);
+}
+.measurement-anchor > i {
+  position: absolute;
+  inset: -6px;
+  border: 2px solid var(--arrival-color);
+  border-radius: 50%;
+  box-shadow: 0 0 22px var(--arrival-color);
+  animation: measurement-wave 1.8s ease-out infinite;
+}
+.measurement-anchor > i:nth-child(2) { animation-delay: .9s; }
+.measurement-anchor > svg { width: 28px; height: 28px; filter: drop-shadow(0 0 6px var(--arrival-color)); animation: measurement-beat 1.2s ease-in-out infinite; }
+@keyframes measurement-notice-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes measurement-wave { from { scale: .65; opacity: .95; } to { scale: 2; opacity: 0; } }
+@keyframes measurement-beat { 50% { scale: 1.2; } }
+@media (max-width: 640px) { .measurement-notices { top: 76px; right: 16px; } }
+.health-screen.motion-paused .measurement-anchor > * { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .measurement-anchor > *, .measurement-notice { animation: none !important; }
+  .measurement-anchor > i:nth-child(2) { display: none; }
 }
 .arrival-bubble {
   position: absolute;

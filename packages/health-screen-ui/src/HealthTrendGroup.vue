@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import type { HealthScreenSeries } from "@saydian/app-contracts";
 import type { TrendGroup } from "./trend-groups";
 import { shortSeriesLabel, trendPath } from "./trend-groups";
+import { formatScreenValue } from "./sleep-display";
 const props = defineProps<{ chart: TrendGroup; days: number }>();
 const active = ref<string | null>(null);
 const colors = [
@@ -33,7 +34,7 @@ const color = (s: HealthScreenSeries, i: number) =>
     : colors[i % colors.length];
 const title = (s: HealthScreenSeries, i: number) => {
   const p = s.points[i]!;
-  return `${p.date} · ${s.label} · ${p.value} ${s.unit} · ${p.count}条${s.kind === "reference" ? "参考值" : "记录"}`;
+  return `${p.date} · ${s.label} · ${formatScreenValue(p.value)} ${s.unit} · ${p.count}条${s.kind === "reference" ? "参考值" : "记录"}`;
 };
 watch(
   () => props.chart,

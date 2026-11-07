@@ -776,6 +776,52 @@ describe.runIf(process.env.RUN_HEALTH_SCREEN_DATABASE_TESTS === "1")(
         ),
       ).toBe(true);
     });
+    it("includes every new upload in regional updates without promoting unknown-quality records into scores", async () => {
+      const before = await svc.updates(userId, 7, admin),
+        facts = await svc.load(userId, 7, admin),
+        prefix = "regional-upload-" + randomUUID();
+      const records = [
+        { metric: "HEART_RATE", unit: "bpm", values: { bpm: 74 } },
+        { metric: "ECG", unit: null, values: {} },
+        { metric: "BLOOD_OXYGEN", unit: "%", values: { percent: 98 } },
+        { metric: "STEPS", unit: "steps", values: { steps: 42 } },
+        { metric: "BODY_COMPOSITION", unit: "%", values: { bodyFat: 20 } },
+        { metric: "BLOOD_COMPOSITION", unit: null, values: {} },
+      ] as const;
+      try {
+        await db.healthRecord.createMany({
+          data: records.map((r, i) => ({
+            ...r,
+            userId,
+            clientRecordId: prefix + i,
+            observedAt: new Date(Date.now() - 1000),
+            timezoneOffsetMinutes: 480,
+            quality: "UNKNOWN",
+            sourcePlatform: "qa",
+            sourceOrigin: "app_measurement",
+            sourceModel: "SYNTHETIC",
+            sourceMetadata: { timeBasis: "sdk" },
+          })),
+        });
+        const after = await svc.updates(userId, 7, admin);
+        for (const [group, added] of [
+          ["cardiovascular", 2],
+          ["oxygen", 1],
+          ["activity", 1],
+          ["metabolic", 2],
+        ] as const)
+          expect(after.groups.find((g) => g.group === group)?.count).toBe(
+            (before.groups.find((g) => g.group === group)?.count || 0) + added,
+          );
+        expect((await svc.load(userId, 7, admin)).eligibleRecordCount).toBe(
+          facts.eligibleRecordCount,
+        );
+      } finally {
+        await db.healthRecord.deleteMany({
+          where: { userId, clientRecordId: { startsWith: prefix } },
+        });
+      }
+    });
     it("detects updated old measurements and rejects reference writes during maintenance", async () => {
       const before = await svc.updates(userId, 90, admin);
       const oldest = await db.healthRecord.findFirstOrThrow({

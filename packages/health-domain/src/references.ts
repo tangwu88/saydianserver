@@ -17,6 +17,7 @@ export const metricGroups: Record<string, HealthScreenGroup> = {
   HEART_RATE: "cardiovascular",
   BLOOD_PRESSURE: "cardiovascular",
   HRV: "cardiovascular",
+  ECG: "cardiovascular",
   BLOOD_OXYGEN: "oxygen",
   SLEEP: "sleep",
   STEPS: "activity",
@@ -26,6 +27,8 @@ export const metricGroups: Record<string, HealthScreenGroup> = {
   BLOOD_GLUCOSE: "metabolic",
   URIC_ACID: "metabolic",
   BLOOD_LIPIDS: "metabolic",
+  BODY_COMPOSITION: "metabolic",
+  BLOOD_COMPOSITION: "metabolic",
 };
 // These are input format limits, not clinical normal ranges. No automatic correction or conversion.
 export function validateReference(

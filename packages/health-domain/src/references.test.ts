@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
-import { validateReference, referenceScreenRecord } from "./references";
+import { validateReference, referenceScreenRecord, metricGroups } from "./references";
+import { healthMetrics } from "@saydian/app-contracts";
 import { ScreenAccumulator, screenPeriod, recordValues } from "./aggregation";
 import type { MemberHealthReference } from "@prisma/client";
 const now = new Date("2026-11-07T03:00:00Z");
@@ -26,6 +27,12 @@ function row(overrides: Record<string, unknown> = {}) {
   } as unknown as MemberHealthReference;
 }
 describe("manual references remain separate from device measurements", () => {
+  it("maps every accepted upload metric to a body region, including ECG and composition records", () => {
+    for (const metric of healthMetrics) expect(metricGroups[metric.toUpperCase()]).toBeTruthy();
+    expect(metricGroups.ECG).toBe("cardiovascular");
+    expect(metricGroups.BODY_COMPOSITION).toBe("metabolic");
+    expect(metricGroups.BLOOD_COMPOSITION).toBe("metabolic");
+  });
   it("normalizes explicit offset time and rejects future or timezone-less entries", () => {
     expect(validateReference(input(), now).measuredAt).toBe(
       "2026-11-06T00:00:00.000Z",

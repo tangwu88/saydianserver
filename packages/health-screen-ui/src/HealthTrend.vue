@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { HealthScreenSeries } from "@saydian/app-contracts";
+import { formatScreenValue } from "./sleep-display";
 const props = defineProps<{ series: HealthScreenSeries }>();
 const selected = ref<number | null>(null);
 const range = computed(() => {
@@ -92,7 +93,7 @@ const hovered = computed(() =>
           tabindex="0"
         >
           <title>
-            {{ p.date }} · {{ p.value }} {{ series.unit }} · {{ p.count }}条 ·
+            {{ p.date }} · {{ formatScreenValue(p.value) }} {{ series.unit }} · {{ p.count }}条 ·
             {{
               series.kind === "reference"
                 ? (p.eligibleCount ? `手动参考，${p.eligibleCount}条符合评分规则` : "手动参考，仅作对照")
@@ -107,7 +108,7 @@ const hovered = computed(() =>
       </text>
     </svg>
     <div v-if="hovered" class="trend-caption">
-      {{ hovered.date }} · {{ hovered.value }} {{ series.unit }} · {{ hovered.count }}条记录
+      {{ hovered.date }} · {{ formatScreenValue(hovered.value) }} {{ series.unit }} · {{ hovered.count }}条记录
     </div>
   </figure>
 </template>
