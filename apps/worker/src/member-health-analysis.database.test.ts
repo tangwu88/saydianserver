@@ -172,10 +172,10 @@ describe.runIf(process.env.RUN_HEALTH_SCREEN_DATABASE_TESTS === "1")(
           id: userId,
           partnerId,
           locale: "zh-Hans",
-          nickname: "SYNTHETIC WORKER",
+          nickname: "SYNTHETIC WORKER",gender:"FEMALE",birthday:new Date("1980-01-01"),weightKg:60,
           healthProfile: {
             create: {
-              analysisConsentVersion: tag,
+              screenName:"合成任务会员",analysisConsentVersion: tag,
               analysisConsentedAt: new Date(),
             },
           },

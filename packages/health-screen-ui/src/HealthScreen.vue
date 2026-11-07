@@ -38,15 +38,18 @@ import type {
   HealthScreenUpdates,
 } from "@saydian/app-contracts";
 import HealthReferenceDialog from "./HealthReferenceDialog.vue";
+import HealthScreenProfileDialog from "./HealthScreenProfileDialog.vue";
 import { changedHealthGroups } from "./updates";
 import HealthTrend from "./HealthTrend.vue";
 import HealthTrendGroup from "./HealthTrendGroup.vue";
 import { groupTrends } from "./trend-groups";
-import bodyImage from "./assets/health-body.png";
+import {selectBodyProfile} from "./body-profile";
+const emit=defineEmits<{"access-lost":[]}>();
 const props = defineProps<{
   memberId: string;
   transport: HealthScreenTransport;
   backUrl: string;
+  backLabel?: string;
   errorMessage: (error: unknown) => string;
   sessionKey: () => string | null;
   requiresRecordReason?: boolean;
@@ -65,6 +68,7 @@ const days = ref<HealthScreenDays>(7),
   basisOpen = ref(false),
   confirmOpen = ref(false),
   referenceOpen = ref(false),
+  profileOpen = ref(false),
   motion = ref(true),
   visible = ref(!document.hidden);
 const arrivals = ref<Record<string, { message: string; until: number }>>({});
@@ -182,26 +186,19 @@ const summaryMetrics = computed(() =>
     },
   ),
 );
-const hotspotHint = (key: string) => {
+const hotspotNotes = computed(() => Object.fromEntries(groups.map(({ key }) => {
   const related = screen.value?.series.filter((s) => s.group === key) || [];
-  if (!related.length) return "等待测量记录";
   const refs = related.filter((s) => s.kind === "reference").length;
-  if (refs) return `${refs}项手动参考可对照`;
-  return related.some((s) => s.eligibleCount < s.count)
-    ? "含待核实记录"
-    : "查看指标与趋势";
-};
-const markerPosition = computed(
-  () =>
-    ({
-      sleep: [50, 9],
-      cardiovascular: [52, 28],
-      temperature: [31, 48],
-      oxygen: [45, 26],
-      metabolic: [50, 45],
-      activity: [54, 74],
-    })[group.value],
-);
+  return [key, refs ? `手动参考 ${refs} 项` : related.some((s) => s.eligibleCount < s.count) ? "含待核实记录" : ""];
+})));
+const figure = computed(()=>screen.value ? selectBodyProfile(screen.value.member) : null);
+const markerPosition = computed(()=>figure.value?.anchors[group.value] || [50,50]);
+const guideLines = computed(()=>groups.map(g=>{
+  const [x,y]=figure.value?.anchors[g.key] || [50,50];
+  const row = {sleep:[280,130],cardiovascular:[280,360],temperature:[280,610],oxygen:[720,250],metabolic:[720,520],activity:[720,820]}[g.key];
+  const color = g.key==="cardiovascular"?"#ff789b":["temperature","activity"].includes(g.key)?"#32e8c3":"#26d5f7";
+  return {key:g.key,x:x*10,y:y*10,color,points:row.join(",")+" "+((row[0]!+x*10)/2)+","+row[1]+" "+(x*10)+","+(y*10)};
+}));
 async function selectGroup(key: HealthScreenGroup) {
   group.value = key;
   trendScope.value = "selected";
@@ -296,6 +293,7 @@ async function load(reset = false) {
     recordsController?.abort();
     confirmOpen.value = false;
     referenceOpen.value = false;
+    profileOpen.value = false;
     updateController?.abort();
     updatesBaseline = null;
     arrivals.value = {};
@@ -318,7 +316,8 @@ async function load(reset = false) {
     if (!owned(n) || e?.name === "AbortError" || e?.code === "ERR_CANCELED")
       return;
     error.value = props.errorMessage(e);
-    if ([401, 403, 404].includes(e?.response?.status)) {
+    if ([401, 403, 404, 428].includes(e?.response?.status)) {
+      emit("access-lost");
       screen.value = null;
       rows.value = [];
     }
@@ -363,13 +362,14 @@ async function checkUpdates() {
         };
     }
   } catch (e: any) {
-    if (owned(n) && [401, 403, 404].includes(e?.response?.status))
+    if (owned(n) && [401, 403, 404, 428].includes(e?.response?.status))
       denyReference(e);
   } finally {
     updatesBusy = false;
   }
 }
 function denyReference(e: unknown) {
+  if ([401,403,404,428].includes((e as any)?.response?.status)) emit("access-lost");
   referenceOpen.value = false;
   screen.value = null;
   rows.value = [];
@@ -391,7 +391,7 @@ async function pollAnalysis() {
     screen.value.analysis = result;
     if (result.status === "READY" || result.status === "FAILED") void load();
   } catch (e: any) {
-    if (owned(n) && [401, 403, 404].includes(e?.response?.status)) {
+    if (owned(n) && [401, 403, 404, 428].includes(e?.response?.status)) {
       screen.value = null;
       rows.value = [];
       error.value = props.errorMessage(e);
@@ -464,7 +464,8 @@ async function loadRecords(more = false) {
   } catch (e: any) {
     if (owned(n) && e?.code !== "ERR_CANCELED") {
       recordError.value = props.errorMessage(e);
-      if ([401, 403, 404].includes(e?.response?.status)) {
+      if ([401, 403, 404, 428].includes(e?.response?.status)) {
+      emit("access-lost");
         rows.value = [];
         screen.value = null;
       }
@@ -532,7 +533,7 @@ watch(modalVisible, async (open) => {
   }
 });
 function modalKey(event: KeyboardEvent) {
-  if (!modalVisible.value) return;
+  if (profileOpen.value || !modalVisible.value) return;
   if (event.key === "Escape") {
     basisOpen.value = false;
     confirmOpen.value = false;
@@ -592,16 +593,16 @@ onBeforeUnmount(() => {
     @keydown="modalKey"
   >
     <header class="screen-top">
-      <a :href="backUrl" class="screen-brand" aria-label="返回会员列表"
+      <a :href="backUrl" class="screen-brand" :aria-label="backLabel || '返回会员列表'"
         ><DataAnalysis /><span
           >赛电 · <b>AI 健康趋势分析</b
           ><small>PERSONAL HEALTH INSIGHTS</small></span
         ></a
       >
       <div v-if="screen" class="member-strip">
-        <User /><strong>{{ shownName }}</strong
-        ><span class="member-number">NO. {{ screen.member.memberNo }}</span
-        ><span
+        <User /><button type="button" class="profile-link" aria-haspopup="dialog" title="会员基本资料" @click="profileOpen=true"><strong>{{ shownName }}</strong></button>
+        <button type="button" class="profile-link member-number" aria-haspopup="dialog" title="会员基本资料" @click="profileOpen=true">NO. {{ screen.member.memberNo }}</button>
+        <span
           >{{
             screen.member.gender === "MALE"
               ? "男"
@@ -609,11 +610,11 @@ onBeforeUnmount(() => {
                 ? "女"
                 : "性别未填写"
           }}<template v-if="screen.member.age !== null">
-            · {{ screen.member.age }}岁</template
+            · {{ screen.member.age }}岁 · {{ screen.member.weightKg }} kg</template
           ></span
         ><i></i><span>近{{ days }}天 · {{ screen.recordCount }}条记录</span>
       </div>
-      <div class="screen-tools">
+      <div class="screen-tools"><slot name="session" :availability="screen?.availability" />
         <button
           v-if="screen"
           class="calibrate-button"
@@ -633,8 +634,8 @@ onBeforeUnmount(() => {
           <option :value="30">近30天</option>
           <option :value="90">近90天</option></select
         ><button
-          :aria-label="masked ? '显示昵称' : '隐藏昵称'"
-          :title="masked ? '显示昵称' : '姓名脱敏'"
+          :aria-label="masked ? '显示姓名' : '隐藏姓名'"
+          :title="masked ? '显示姓名' : '姓名脱敏'"
           @click="masked = !masked"
         >
           <View v-if="masked" /><Hide v-else /></button
@@ -651,7 +652,7 @@ onBeforeUnmount(() => {
           @click="toggleFullscreen"
         >
           <FullScreen /></button
-        ><a :href="backUrl" title="返回会员列表" aria-label="返回会员列表"
+        ><a :href="backUrl" :title="backLabel || '返回会员列表'" :aria-label="backLabel || '返回会员列表'"
           ><Back
         /></a>
       </div>
@@ -767,20 +768,11 @@ onBeforeUnmount(() => {
             >
             <div v-else class="panel-empty">
               <DataAnalysis />
-              <h3>
-                {{ busyAnalysis ? "正在生成分析" : "先了解数据，再形成建议" }}
-              </h3>
-              <p>
-                {{
-                  busyAnalysis
-                    ? "千问正在整理所选周期的记录，完成后自动展示。"
-                    : "点击下方按钮，基于本次记录生成健康管理参考。"
-                }}
-              </p>
+              <h3>{{ busyAnalysis ? "正在生成分析" : "暂无分析" }}</h3>
             </div>
           </section>
           <section class="health-panel next-panel">
-            <h2><Document />下一步建议</h2>
+            <h2><Document />{{ screen.analysis?.content?.suggestions.length ? "下一步建议" : "分析概览" }}</h2>
             <ol v-if="screen.analysis?.content" class="suggestion-list">
               <li
                 v-for="(item, i) in screen.analysis.content.suggestions"
@@ -798,9 +790,6 @@ onBeforeUnmount(() => {
                 </div>
               </li>
             </ol>
-            <p v-else class="muted next-empty">
-              分析完成后，这里将显示与本次记录相关的建议。
-            </p>
             <div class="coverage-strip">
               <div>
                 <b>{{ screen.recordCount }}</b
@@ -836,17 +825,18 @@ onBeforeUnmount(() => {
                       : "生成 AI 健康分析"
               }}
             </button>
-            <p
+            <details
               v-if="screen.availability.reasons.length"
               class="availability-reason"
             >
-              {{ screen.availability.reasons.join(" · ") }}
-            </p>
+              <summary>查看不可生成的原因</summary>
+              <ul><li v-for="reason in screen.availability.reasons" :key="reason">{{ reason }}</li></ul>
+            </details>
           </section>
         </aside>
         <section class="body-panel" aria-label="人体指标导航">
           <div class="body-caption">
-            <span>个人健康全景</span><small>点击部位，查看对应指标</small>
+            <span>个人健康全景</span><small v-if="figure">{{ figure.label }}</small>
           </div>
           <div class="body-stage">
             <svg
@@ -856,50 +846,7 @@ onBeforeUnmount(() => {
               aria-hidden="true"
             >
               <g
-                v-for="link in [
-                  {
-                    key: 'sleep',
-                    points: '280,130 410,130 500,90',
-                    x: 500,
-                    y: 90,
-                    color: '#26d5f7',
-                  },
-                  {
-                    key: 'cardiovascular',
-                    points: '280,360 400,360 520,280',
-                    x: 520,
-                    y: 280,
-                    color: '#ff789b',
-                  },
-                  {
-                    key: 'temperature',
-                    points: '280,610 320,610 310,480',
-                    x: 310,
-                    y: 480,
-                    color: '#32e8c3',
-                  },
-                  {
-                    key: 'oxygen',
-                    points: '720,250 610,250 450,260',
-                    x: 450,
-                    y: 260,
-                    color: '#26d5f7',
-                  },
-                  {
-                    key: 'metabolic',
-                    points: '720,520 620,520 500,450',
-                    x: 500,
-                    y: 450,
-                    color: '#26d5f7',
-                  },
-                  {
-                    key: 'activity',
-                    points: '720,820 640,820 540,740',
-                    x: 540,
-                    y: 740,
-                    color: '#32e8c3',
-                  },
-                ]"
+                v-for="link in guideLines"
                 :key="link.key"
                 :opacity="group === link.key || arrivals[link.key] ? 1 : 0.38"
               >
@@ -913,18 +860,19 @@ onBeforeUnmount(() => {
                 <circle :cx="link.x" :cy="link.y" r="5" :fill="link.color" />
               </g>
             </svg>
-            <div class="body-visual" aria-hidden="true">
+            <div v-if="figure" class="body-visual" :data-figure="figure.key" :style="{'--figure-width':figure.width,'--heart-y':figure.anchors.cardiovascular[1]+'%'}">
               <img
                 class="health-body"
-                :src="bodyImage"
-                alt=""
+                :src="figure.src"
+                 :alt="figure.label+'人体示意图'"
                 draggable="false"
               />
               <svg
-                class="circulation-overlay"
+                class="circulation-overlay" aria-hidden="true"
                 viewBox="0 0 1210 1300"
                 fill="none"
               >
+                <g :transform="figure.child ? 'translate(153 239) scale(.75 .77)' : undefined">
                 <path
                   class="circulation-path"
                   d="M626 359 C608 326 599 278 601 224 C597 188 589 153 601 104 M626 359 C597 408 588 501 600 594 C584 680 537 748 538 877 L519 1160 M600 594 C622 688 663 764 662 878 L681 1160 M607 281 C551 256 482 272 460 324 L420 493 L374 653 M613 281 C675 253 728 278 746 331 L786 496 L829 657"
@@ -933,10 +881,12 @@ onBeforeUnmount(() => {
                   class="circulation-return"
                   d="M533 1150 L552 880 C550 748 602 673 614 590 L620 410 M665 1150 L647 879 C648 743 615 673 614 590 M384 654 L435 494 L473 327 C501 283 566 287 617 308 M820 650 L772 493 L731 330 C709 293 652 283 617 308"
                 />
+                </g>
               </svg>
+              <span v-if="figure.child" class="child-heart-marker" aria-hidden="true"></span>
               <img
-                class="health-body heart-layer"
-                :src="bodyImage"
+                v-if="!figure.child" class="health-body heart-layer" aria-hidden="true"
+                :src="figure.src"
                 alt=""
                 draggable="false"
               />
@@ -966,17 +916,13 @@ onBeforeUnmount(() => {
                     ? `记录覆盖 ${groupCoverage(g.key)} 天`
                     : "暂无数据"
                 }}</small
-                ><em>{{ hotspotHint(g.key) }}</em></span
+                ><em v-if="hotspotNotes[g.key]">{{ hotspotNotes[g.key] }}</em></span
               >
               <span v-if="arrivals[g.key]" class="arrival-bubble" role="status"
-                >{{ arrivals[g.key]?.message
-                }}<small>点击查看 {{ g.short }}</small></span
+                >{{ arrivals[g.key]?.message }}</span
               >
             </button>
           </div>
-          <p class="body-footnote">
-            循环与心跳为示意动画 · 非实时测量<br />新记录上报后自动提示，隐藏页面时暂停检查
-          </p>
         </section>
         <aside
           class="right-stack"
@@ -1021,7 +967,7 @@ onBeforeUnmount(() => {
                 <article v-for="s in series" :key="s.key">
                   <span>{{ s.label }}</span
                   ><small v-if="s.kind === 'reference'" class="reference-badge"
-                    >手动参考 · 来源由录入者提供</small
+                    >手动参考</small
                   >
                   <div>
                     <b>{{ num(s.average) }}</b
@@ -1036,7 +982,7 @@ onBeforeUnmount(() => {
                     · {{ s.coverageDays }}天
                   </p>
                   <p v-if="s.kind === 'reference'" class="muted">
-                    {{ s.count }} 条参考值 · 仅作对照分析
+                    {{ s.count }} 条参考值 · {{s.eligibleCount?s.eligibleCount+" 条符合当前评分规则":"趋势对照"}}
                   </p>
                   <p v-else :class="{ unverified: s.eligibleCount < s.count }">
                     {{ s.eligibleCount }} / {{ s.count }} 条符合评分基础条件
@@ -1046,7 +992,6 @@ onBeforeUnmount(() => {
               <div v-else class="panel-empty">
                 <component :is="chosen.icon" />
                 <h3>此周期暂无对应记录</h3>
-                <p>可切换时间范围，或等待设备同步。</p>
               </div>
               <label v-if="series.length > 1" class="trend-picker"
                 >趋势指标
@@ -1081,8 +1026,7 @@ onBeforeUnmount(() => {
                 </article>
               </div>
               <div class="trend-toolbar">
-                <span>虚线为手动参考 · 灰色含待核实数据 · 缺失留空</span
-                ><select
+                <select
                   v-model="trendScope"
                   aria-label="趋势范围"
                   @change="expandedTrends = false"
@@ -1100,7 +1044,7 @@ onBeforeUnmount(() => {
                 />
               </div>
               <p v-if="!trendGroups.length" class="panel-empty">
-                此周期暂无对应趋势，录入参考值或等待设备同步。
+                本周期暂无趋势数据
               </p>
               <button
                 v-if="trendGroups.length > 3"
@@ -1115,10 +1059,7 @@ onBeforeUnmount(() => {
                 <span>{{ expandedTrends ? "−" : "+" }}</span>
               </button>
             </template>
-            <template v-else
-              ><p class="muted">
-                以下为原始测量记录。新录入的参考值可在右上角“校准”中查看与撤销。
-              </p>
+            <template v-else>
               <div class="record-controls">
                 <select
                   v-model="recordMetric"
@@ -1128,7 +1069,7 @@ onBeforeUnmount(() => {
                   <option value="">
                     {{
                       recordSeries[0]?.label ||
-                      "暂无设备记录；参考值请查看校准历史"
+                      "暂无设备记录"
                     }}
                   </option>
                   <option v-for="m in recordOptions" :key="m" :value="m">
@@ -1196,11 +1137,6 @@ onBeforeUnmount(() => {
                 录入 / 管理
               </button>
             </h2>
-            <div class="reference-flow">
-              <span><Odometer />设备记录</span><b>＋</b
-              ><span><Edit />参考测量</span><b>→</b
-              ><span><TrendCharts />趋势对照</span>
-            </div>
             <div v-if="referenceSeries.length" class="reference-summary">
               <article
                 v-for="s in tab === 'references'
@@ -1222,14 +1158,7 @@ onBeforeUnmount(() => {
                 >
               </article>
             </div>
-            <p v-else class="reference-empty">
-              补充血糖、血压、尿酸、血脂等参考值，结合设备记录查看变化。
-            </p>
-            <p class="reference-scope">
-              {{
-                referenceSeries.length ? "已纳入本周期对照 · " : ""
-              }}来源由录入者提供，保留设备原始读数。
-            </p>
+            <p v-else class="reference-empty">本周期暂无手动参考值</p>
             <button
               v-if="tab === 'references'"
               class="primary-button"
@@ -1238,34 +1167,26 @@ onBeforeUnmount(() => {
               <Edit />填写参考值 / 查看历史
             </button>
           </section>
-          <section class="health-panel screen-conclusion">
+          <section v-if="screen.analysis?.content" class="health-panel screen-conclusion">
             <h2>
               <DataAnalysis />AI 分析结论 <span class="ai-badge">AI</span>
             </h2>
-            <template v-if="screen.analysis?.content"
-              ><p v-if="screen.analysisStale" class="warning-note">
-                数据已更新，以下为上次分析。
-              </p>
-              <p
-                v-for="(item, i) in (insights.length
-                  ? insights
-                  : screen.analysis.content.summary
-                ).slice(0, 2)"
-                :key="i"
-              >
-                {{ item.text }}
-              </p></template
+            <p v-if="screen.analysisStale" class="warning-note">
+              数据已更新，以下为上次分析。
+            </p>
+            <p
+              v-for="(item, i) in (insights.length
+                ? insights
+                : screen.analysis.content.summary
+              ).slice(0, 2)"
+              :key="i"
             >
-            <p v-else class="muted">
-              {{
-                busyAnalysis
-                  ? "正在整理统计结果，完成后自动展示。"
-                  : "尚未生成本周期分析。点击“生成 AI 健康分析”，综合设备记录与手动参考值形成摘要。"
-              }}
+              {{ item.text }}
             </p>
           </section>
           <details class="health-panel quality-panel">
             <summary><Warning />数据来源与质量说明</summary>
+            <p v-if="tab === 'trends' && trendGroups.length">趋势图：虚线表示手动参考值，灰色点表示含待核实记录，缺失日期留空。</p>
             <p v-if="screen.unusableRecordCount">
               本周期有
               {{ screen.unusableRecordCount }}
@@ -1383,14 +1304,18 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
+    <HealthScreenProfileDialog v-if="profileOpen && screen" :member-id="memberId" :transport="transport" :error-message="errorMessage"
+      @close="profileOpen=false" @saved="profileOpen=false;load()" @denied="profileOpen=false;emit('access-lost')" />
     <HealthReferenceDialog
       v-if="referenceOpen && screen"
       :member-id="memberId"
       :member-name="shownName"
+      :member-no="screen.member.memberNo"
       :transport="transport"
       :error-message="errorMessage"
       @close="referenceOpen = false"
       @saved="load()"
+      @edit-profile="profileOpen=true"
       @denied="denyReference"
     />
   </main>

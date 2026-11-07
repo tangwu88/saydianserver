@@ -391,3 +391,5 @@ export * from "./store-download";
 export * from "./cycle-tracking";
 
 export * from "./health-screen";
+
+export * from "./health-score-catalog";

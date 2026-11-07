@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>会员健康大屏 · 赛电本地预览</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --line: #26455b;
+        --muted: #a6bac7;
+        --cyan: #6ce7e2;
+        --panel: #0c2439;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(ellipse at 54% 42%, #123b51, transparent 62%), #071826;
+        color: #edf8fa;
+        font:
+          16px/1.5 system-ui,
+          "PingFang SC",
+          sans-serif;
+      }
+      main,
+      header > div {
+        max-width: 1500px;
+        margin: auto;
+        padding-inline: clamp(18px, 4vw, 64px);
+      }
+      header {
+        border-bottom: 1px solid var(--line);
+      }
+      header > div {
+        height: 67px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      header b {
+        font-size: 19px;
+        letter-spacing: 0.06em;
+      }
+      header small {
+        margin-left: auto;
+        color: var(--muted);
+      }
+      .mark {
+        color: var(--cyan);
+        font-size: 26px;
+      }
+      h1 {
+        font-size: clamp(29px, 3.1vw, 52px);
+        line-height: 1.2;
+        margin: 36px 0 8px;
+      }
+      p {
+        color: var(--muted);
+        margin: 5px 0;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin: 22px 0;
+      }
+      article {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: linear-gradient(170deg, #103047e6, #081d2ee6);
+        padding: 13px;
+        min-width: 0;
+      }
+      article h2 {
+        font-size: 18px;
+        margin: 1px 0 10px;
+      }
+      article small {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--muted);
+        margin-left: 8px;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+      }
+      .figure {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        background: transparent;
+        padding: 4px;
+        color: var(--muted);
+        min-width: 0;
+      }
+      .figure img {
+        display: block;
+        width: 100%;
+        height: clamp(170px, 18vw, 270px);
+        object-fit: cover;
+      }
+      .figure[aria-pressed="true"] {
+        border-color: var(--cyan);
+        background: #123a48;
+        color: var(--cyan);
+      }
+      button,
+      a {
+        font: inherit;
+        cursor: pointer;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid #fbd66c;
+        outline-offset: 3px;
+      }
+      .figure:hover {
+        background: #113346;
+      }
+      .actions {
+        padding: 18px 22px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .actions strong {
+        font-size: 20px;
+      }
+      .actions small {
+        display: block;
+        color: var(--muted);
+      }
+      .btn,
+      select {
+        background: transparent;
+        border: 1px solid #416078;
+        color: #e1eff6;
+        padding: 10px 16px;
+        border-radius: 9px;
+        text-decoration: none;
+        display: inline-block;
+      }
+      .btn:hover {
+        background: #194057;
+      }
+      .primary {
+        background: var(--cyan);
+        border-color: var(--cyan);
+        color: #052a32;
+        font-weight: 700;
+      }
+      .primary:hover {
+        background: #a3fff2;
+      }
+      .tools {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 18px 0;
+      }
+      .tools .btn {
+        font-size: 14px;
+      }
+      details {
+        border-top: 1px solid var(--line);
+        margin: 26px 0 40px;
+        padding-top: 13px;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--muted);
+      }
+      details p {
+        font-size: 14px;
+        margin: 8px 0;
+      }
+      select {
+        background: #0c2439;
+      }
+      .code {
+        font-variant-numeric: tabular-nums;
+        color: var(--cyan);
+      }
+      #error {
+        color: #ffb9a1;
+      }
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .figure img {
+          height: 220px;
+        }
+      }
+      @media (max-width: 550px) {
+        header > div {
+          height: 52px;
+        }
+        .grid {
+          gap: 7px;
+        }
+        article {
+          padding: 7px;
+          border-radius: 11px;
+        }
+        article h2 {
+          font-size: 15px;
+        }
+        article small {
+          display: block;
+          margin: 0;
+        }
+        .figure img {
+          height: 120px;
+        }
+        .figure {
+          font-size: 13px;
+        }
+        .actions {
+          align-items: stretch;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .btn {
+          padding: 9px 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <span class="mark" aria-hidden="true">ϟ</span><b>赛电 SAYDIAN</b
+        ><small>本地预览 · 合成会员</small>
+      </div>
+    </header>
+    <main>
+      <h1>会员健康大屏</h1>
+      <p>选择年龄和性别，打开对应会员的大屏。</p>
+      <div id="grid" class="grid" aria-label="选择预览会员"></div>
+      <div class="actions">
+        <div aria-live="polite">
+          <strong id="chosen">加载中…</strong><small id="identity"></small>
+        </div>
+        <button class="btn primary" id="open">打开所选会员大屏 →</button>
+      </div>
+      <nav class="tools" aria-label="其他预览入口">
+        <button class="btn" id="incomplete">体验资料补全</button
+        ><a
+          class="btn"
+          href="/admin/health-screen"
+          target="_blank"
+          rel="noopener"
+          >体验会员登录 ↗</a
+        ><button class="btn" id="rules">查看健康评分规则</button>
+      </nav>
+      <details>
+        <summary>本地模拟短信收件箱</summary>
+        <p>
+          在会员登录页用以下合成号码获取验证码，再回到这里读取。验证码有效期为 5
+          分钟。
+        </p>
+        <select aria-label="测试手机号" id="phone"></select>
+        <button class="btn" id="read">读取验证码</button>
+        <output class="code" id="code" aria-live="polite"></output>
+      </details>
+      <p role="alert" id="error"></p>
+    </main>
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      let selected, missing;
+      function select(person, button) {
+        document
+          .querySelectorAll(".figure")
+          .forEach((node) =>
+            node.setAttribute("aria-pressed", String(node === button)),
+          );
+        selected = person;
+        $("chosen").textContent = person.name;
+        $("identity").textContent = person.years + " 岁 · 合成会员";
+        $("phone").value = person.mobile;
+        $("code").textContent = "";
+      }
+      async function staff(path) {
+        try {
+          const r = await fetch("/preview/staff", {
+            method: "POST",
+            headers: { "x-preview": "synthetic" },
+          });
+          if (!r.ok) throw Error("本地后台会话暂不可用，请稍后重试。");
+          const { token } = await r.json();
+          sessionStorage.setItem("saydian-global-admin-token", token);
+          sessionStorage.removeItem("saydian-global-admin-roles");
+          location.assign(path);
+        } catch (e) {
+          $("error").textContent = e.message;
+        }
+      }
+      try {
+        const data = await fetch("/preview/people").then((r) => r.json());
+        missing = data.missing;
+        const selectPhone = (n, label) => {
+          const o = document.createElement("option");
+          o.value = n;
+          o.textContent = n + " · " + label;
+          $("phone").append(o);
+        };
+        for (const [i, key] of ["child", "teen", "adult", "senior"].entries()) {
+          const members = data.people.filter((p) => p.stage === key);
+          const card = document.createElement("article"),
+            heading = document.createElement("h2"),
+            sub = document.createElement("small"),
+            pair = document.createElement("div");
+          heading.textContent = members[0].label;
+          sub.textContent = ["0–11 岁", "12–17 岁", "18–59 岁", "60 岁及以上"][
+            i
+          ];
+          heading.append(sub);
+          card.append(heading, pair);
+          pair.className = "pair";
+          $("grid").append(card);
+          for (const p of members) {
+            const btn = document.createElement("button"),
+              img = document.createElement("img");
+            img.src =
+              p.stage === "adult" && p.sex === "male"
+                ? "/figures/health-body.png"
+                : "/figures/profiles/" + p.stage + "-" + p.sex + ".webp";
+            img.alt = "";
+            btn.className = "figure";
+            btn.type = "button";
+            btn.setAttribute("aria-label", "选择" + p.name);
+            btn.setAttribute("aria-pressed", "false");
+            btn.append(
+              img,
+              document.createTextNode(p.sex === "male" ? "男" : "女"),
+            );
+            btn.onclick = () => select(p, btn);
+            pair.append(btn);
+            selectPhone(p.mobile, p.name);
+            if (!selected) select(p, btn);
+          }
+        }
+        selectPhone("19900007909", "资料待完善");
+        $("open").onclick = () =>
+          staff("/admin/members/" + selected.id + "/health-screen");
+        $("incomplete").onclick = () =>
+          staff("/admin/members/" + missing + "/health-screen");
+        $("rules").onclick = () => staff("/admin/health-score-rules");
+        $("phone").onchange = () => {
+          $("code").textContent = "";
+        };
+        $("read").onclick = async () => {
+          const r = await fetch("/preview/inbox/" + $("phone").value.slice(-4));
+          const data = await r.json();
+          $("code").textContent = data.code || "暂无有效验证码";
+        };
+      } catch {
+        $("error").textContent = "无法载入本地预览会员，请刷新重试。";
+      }
+    </script>
+  </body>
+</html>

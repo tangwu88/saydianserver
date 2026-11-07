@@ -20,7 +20,8 @@ api.interceptors.response.use(
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       sessionStorage.removeItem(tokenKey);
       sessionStorage.removeItem(rolesKey);
-      if (!location.pathname.endsWith("/login")) {
+      if (/\/health-screen\/?$/.test(location.pathname)) window.dispatchEvent(new Event("health-screen-staff-expired"));
+      else if (!location.pathname.endsWith("/login")) {
         location.assign(`${import.meta.env.BASE_URL}login`);
       }
     }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRoute } from "vue-router";
-import HealthScreen from "@saydian/health-screen-ui";
+import HealthScreenEntry from "@saydian/health-screen-ui/entry";
 import type { HealthScreenTransport } from "@saydian/app-contracts";
 import {
   api,
@@ -11,10 +11,14 @@ import {
   getAdminRoles,
 } from "../api";
 const route = useRoute(),
-  memberId = computed(() => String(route.params.id));
+  memberId = computed(() => String(route.params.id || "me"));
 const path = (id: string) =>
   `/member-health-analysis/${encodeURIComponent(id)}`;
 const transport: HealthScreenTransport = {
+  profile: async (id, signal) =>
+    responseData(await api.get(path(id) + "/profile", { signal })),
+  completeProfile: async (id, v) =>
+    responseData(await api.post(path(id) + "/profile", v)),
   updates: async (id, days, signal) =>
     responseData(
       await api.get(`${path(id)}/updates`, { params: { days }, signal }),
@@ -60,7 +64,8 @@ const transport: HealthScreenTransport = {
 };
 </script>
 <template>
-  <HealthScreen
+  <HealthScreenEntry
+    @self="$router.replace('/health-screen')"
     :key="memberId"
     :member-id="memberId"
     :transport="transport"

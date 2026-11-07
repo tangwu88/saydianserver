@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
+import { MemberScreenLogin } from "./member-screen-login";
 import { HealthScreenService } from "./health-screen.service";
 import type { PrismaService } from "../common/prisma.service";
 import type { IntegrationSecretsService } from "../common/integration-secrets.service";
@@ -128,6 +129,7 @@ describe.runIf(process.env.RUN_HEALTH_SCREEN_DATABASE_TESTS === "1")(
           data: {
             id,
             nickname: "SYNTHETIC HEALTH QA",
+            weightKg: 70,
             locale: "zh-Hans",
             gender: "MALE",
             birthday: new Date("1980-01-01"),
@@ -135,6 +137,7 @@ describe.runIf(process.env.RUN_HEALTH_SCREEN_DATABASE_TESTS === "1")(
             healthProfile: {
               create: {
                 timezone: "Asia/Shanghai",
+                screenName: "合成测评会员",
                 analysisConsentVersion: tag,
                 analysisConsentedAt: now,
               },
@@ -169,6 +172,214 @@ describe.runIf(process.env.RUN_HEALTH_SCREEN_DATABASE_TESTS === "1")(
         },
       });
     }, 30000);
+    it("requires profile after access checks, persists only missing fields and leaves App nickname intact", async () => {
+      const id = randomUUID();
+      await db.user.create({ data: { id, nickname: "微信用户", partnerId } });
+      try {
+        const self: ScreenActor = { type: "MEMBER", id };
+        expect((await svc.profileGate(id, self)).missing).toEqual([
+          "name",
+          "gender",
+          "birthday",
+          "weightKg",
+        ]);
+        await expect(svc.load(id, 7, self)).rejects.toMatchObject({
+          status: 428,
+        });
+        await expect(
+          svc.records(id, { days: "7" }, self),
+        ).rejects.toMatchObject({ status: 428 });
+        await expect(svc.load(userId, 7, self)).rejects.toMatchObject({
+          status: 403,
+        });
+        expect((await svc.profileGate(id, partner)).canComplete).toBe(false);
+        const fields = {
+          name: "示例小林",
+          gender: "FEMALE",
+          birthday: "2016-02-29",
+          weightKg: 35,
+        };
+        await expect(
+          svc.completeProfile(id, fields, partner),
+        ).rejects.toMatchObject({ status: 403 });
+        await expect(
+          svc.completeProfile(id, { ...fields, birthday: "2015-02-29" }, self),
+        ).rejects.toMatchObject({ status: 400 });
+        await expect(
+          svc.completeProfile(id, { ...fields, userId }, self),
+        ).rejects.toMatchObject({ status: 400 });
+        expect((await svc.completeProfile(id, fields, self)).missing).toEqual(
+          [],
+        );
+        expect((await svc.load(id, 7, self)).member).toMatchObject({
+          id,
+          nickname: "示例小林",
+          gender: "FEMALE",
+          weightKg: 35,
+        });
+        expect(
+          (await db.user.findUniqueOrThrow({ where: { id } })).nickname,
+        ).toBe("微信用户");
+        await expect(
+          svc.completeProfile(id, { weightKg: 90 }, admin),
+        ).rejects.toMatchObject({ status: 409 });
+        await db.user.update({ where: { id }, data: { birthday: null } });
+        await expect(svc.updates(id, 7, self)).rejects.toMatchObject({
+          status: 428,
+        });
+      } finally {
+        await db.user.delete({ where: { id } });
+      }
+    });
+    it("edits existing personal details with a version check and keeps the member number and measurements", async () => {
+      const id = randomUUID(),
+        self: ScreenActor = { type: "MEMBER", id };
+      await db.user.create({
+        data: {
+          id,
+          nickname: "隔离编辑验收",
+          gender: "MALE",
+          birthday: new Date("1986-01-01"),
+          weightKg: 71,
+          heightCm: 170.25,
+          partnerId,
+          healthProfile: { create: { screenName: "原姓名" } },
+        },
+      });
+      try {
+        const gate = await svc.profileGate(id, self);
+        const input = {
+          expectedRevision: gate.revision,
+          name: "已更新姓名",
+          birthday: "2015-01-01",
+          gender: "FEMALE",
+          weightKg: 36.5,
+          heightCm: 141.25,
+        };
+        await expect(
+          svc.completeProfile(id, input, partner),
+        ).rejects.toMatchObject({ status: 403 });
+        await expect(
+          svc.completeProfile(id, { ...input, heightCm: 401 }, self),
+        ).rejects.toMatchObject({ status: 400 });
+        const saved = await svc.completeProfile(id, input, self);
+        expect(saved.memberNo).toBe(gate.memberNo);
+        expect(saved.profile).toMatchObject({
+          name: input.name,
+          heightCm: 141.25,
+          weightKg: 36.5,
+          gender: "FEMALE",
+        });
+        await expect(
+          svc.completeProfile(
+            id,
+            { expectedRevision: gate.revision, weightKg: 68 },
+            admin,
+          ),
+        ).rejects.toMatchObject({ status: 409 });
+        const changes = await Promise.allSettled(
+          [65, 67].map((weightKg) =>
+            svc.completeProfile(
+              id,
+              { expectedRevision: saved.revision, weightKg },
+              admin,
+            ),
+          ),
+        );
+        expect(changes.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+        expect(changes.find((r) => r.status === "rejected")).toMatchObject({
+          reason: { status: 409 },
+        });
+        const current = await svc.profileGate(id, self);
+        await svc.completeProfile(
+          id,
+          { expectedRevision: current.revision, heightCm: null },
+          self,
+        );
+        expect((await svc.load(id, 7, self)).member).toMatchObject({
+          id,
+          gender: "FEMALE",
+          nickname: "已更新姓名",
+          heightCm: null,
+          memberNo: gate.memberNo,
+        });
+        expect(await db.healthRecord.count({ where: { userId: id } })).toBe(0);
+        expect(
+          await db.user.findUniqueOrThrow({
+            where: { id },
+            select: { nickname: true },
+          }),
+        ).toEqual({ nickname: "隔离编辑验收" });
+        const audit = await db.auditLog.findMany({
+          where: {
+            action: "MEMBER_HEALTH_SCREEN_PROFILE_UPDATED",
+            entityId: id,
+          },
+        });
+        expect(audit).toHaveLength(3);
+        expect(JSON.stringify(audit.map((r) => r.afterJson))).not.toContain(
+          input.name,
+        );
+      } finally {
+        await db.user.delete({ where: { id } });
+      }
+    });
+    it("separates scan and desktop secrets, consumes once and revokes with the parent member session", async () => {
+      const login = new MemberScreenLogin(db as unknown as PrismaService);
+      const orig = await db.userSession.create({
+        data: {
+          userId,
+          accessJti: randomUUID(),
+          refreshTokenHash: randomUUID(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      });
+      const user = { id: userId, sessionId: orig.id };
+      try {
+        const req = await login.createQr();
+        const token = new URLSearchParams(
+          new URL(req.scanUrl).hash.split("?")[1],
+        ).get("scan")!;
+        expect(req.scanUrl).not.toContain(req.poll);
+        expect((await login.inspect(token)).match).toBe(req.match);
+        expect(await login.poll(req.poll)).toEqual({ status: "pending" });
+        await expect(login.poll(token)).rejects.toMatchObject({ status: 410 });
+        await expect(
+          login.approve(token, { ...user, id: otherId }),
+        ).rejects.toMatchObject({ status: 401 });
+        await login.approve(token, user);
+        const results = await Promise.allSettled([
+          login.poll(req.poll),
+          login.poll(req.poll),
+        ]);
+        const valid = results.flatMap((r) =>
+          r.status === "fulfilled" && "token" in r.value
+            ? [r.value.token!]
+            : [],
+        );
+        expect(valid).toHaveLength(1);
+        expect((await login.resolve(valid[0]!)).id).toBe(userId);
+        const sms = await login.exchange(user);
+        await login.logout(sms.token);
+        await expect(login.resolve(sms.token)).rejects.toMatchObject({
+          status: 401,
+        });
+        const cancelled = await login.createQr();
+        await login.cancel(cancelled.poll);
+        await expect(login.poll(cancelled.poll)).rejects.toMatchObject({
+          status: 410,
+        });
+        await db.userSession.update({
+          where: { id: orig.id },
+          data: { revokedAt: new Date() },
+        });
+        await expect(login.resolve(valid[0]!)).rejects.toMatchObject({
+          status: 401,
+        });
+      } finally {
+        await db.userSession.delete({ where: { id: orig.id } });
+      }
+    });
     afterAll(async () => {
       if (!db) return;
       const analyses = await db.memberHealthAnalysis.findMany({

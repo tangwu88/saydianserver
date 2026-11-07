@@ -1,4 +1,7 @@
-import { HEALTH_REFERENCE_DEFINITIONS } from "@saydian/app-contracts";
+import {
+  SCREEN_SCORE_METRICS,
+  HEALTH_REFERENCE_DEFINITIONS,
+} from "@saydian/app-contracts";
 import { createHash } from "node:crypto";
 import type {
   HealthScreenDays,
@@ -43,13 +46,21 @@ export const object = (v: unknown): Record<string, any> =>
 const round = (v: number) => Math.round(v * 100) / 100;
 export const hash = (v: unknown) =>
   createHash("sha256").update(JSON.stringify(v)).digest("hex");
+// An aggregation formats thousands of records in the same zone; reuse its ICU formatter.
+let dateFormatter: { zone: string; value: Intl.DateTimeFormat } | undefined;
 export function localDate(date: Date, timezone: string): string {
-  const p = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
+  if (dateFormatter?.zone !== timezone) {
+    dateFormatter = {
+      zone: timezone,
+      value: new Intl.DateTimeFormat("en-CA", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }),
+    };
+  }
+  const p = dateFormatter.value.formatToParts(date);
   return `${p.find((x) => x.type === "year")!.value}-${p.find((x) => x.type === "month")!.value}-${p.find((x) => x.type === "day")!.value}`;
 }
 function shiftDate(day: string, amount: number) {
@@ -128,6 +139,8 @@ type Value = {
   value: number;
   reason: string | null;
   origin: string;
+  referenceKey?: string | undefined;
+  referenceMethod?: string;
 };
 const origins = [
   "watch_history",
@@ -163,6 +176,15 @@ export function recordValues(
       ([key]) => typeof v[key] === "number" && Number.isFinite(v[key]),
     );
     return parts.map(([key, label]) => ({
+      referenceKey: SCREEN_SCORE_METRICS.find(
+        (m) =>
+          m.reference?.metric === record.metric &&
+          m.reference.field === key &&
+          m.reference.context === context &&
+          m.reference.methods.includes(method) &&
+          m.units.includes(record.unit || ""),
+      )?.key,
+      referenceMethod: method,
       key: `reference_${record.metric.toLowerCase()}_${key}_${method.toLowerCase()}_${context.toLowerCase()}_${hash(record.unit).slice(0, 6)}`,
       metric: record.metric,
       label: `${label} · 手动参考 · ${referenceContexts[context]} · ${referenceMethods[method]}`,
@@ -549,14 +571,28 @@ export class ScreenAccumulator {
     version: number | null,
     subject: Subject,
   ): HealthScreenFacts {
+    const byKey = new Map(rules?.items.map((r) => [r.key, r]));
     const series = [...this.samples.entries()]
       .map(([key, { def, values }]): HealthScreenSeries => {
         const reference = key.startsWith("reference_");
+        const refRule = def.referenceKey
+          ? byKey.get(def.referenceKey)
+          : undefined;
+        const referenceEligible =
+          !!refRule &&
+          refRule.referenceUnit === def.unit &&
+          refRule.allowedOrigins.includes(def.referenceMethod || "");
+        if (referenceEligible)
+          values.forEach((v) => {
+            if (!v.reason) this.eligible.add(v.recordId);
+          });
         const byDay = (eligibleOnly: boolean) =>
           this.period.dates.map((date) => {
             const list = values.filter(
               (v) =>
-                v.date === date && (!eligibleOnly || (!reference && !v.reason)),
+                v.date === date &&
+                (!eligibleOnly ||
+                  ((!reference || referenceEligible) && !v.reason)),
             );
             // Multiple daily device summaries cannot be added together. Use the latest reported daily total.
             const chosen =
@@ -597,7 +633,10 @@ export class ScreenAccumulator {
           unit: def.unit,
           semantics: def.semantics,
           count: values.length,
-          eligibleCount: reference ? 0 : values.filter((v) => !v.reason).length,
+          eligibleCount:
+            reference && !referenceEligible
+              ? 0
+              : values.filter((v) => !v.reason).length,
           coverageDays: all.filter((p) => p.count).length,
           eligibleDays: valid.filter((p) => p.count).length,
           latest: last.value,
@@ -651,9 +690,17 @@ export class ScreenAccumulator {
         items: [],
       };
     const items = rules.items.map((rule) => {
-      const stream = this.samples.get(rule.key),
-        values =
-          stream?.values.filter(
+      const stream = this.samples.get(rule.key);
+      const values = rule.referenceUnit
+        ? [...this.samples.values()]
+            .filter(
+              ({ def }) =>
+                def.referenceKey === rule.key &&
+                def.unit === rule.referenceUnit &&
+                rule.allowedOrigins.includes(def.referenceMethod || ""),
+            )
+            .flatMap((s) => s.values.filter((v) => !v.reason))
+        : stream?.values.filter(
             (v) => !v.reason && rule.allowedOrigins.includes(v.origin),
           ) || [];
       const byDay = new Map<string, Sample[]>();

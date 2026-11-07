@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/HealthScreen.vue",
-    "./open-window": "./src/open-window.ts"
+    "./open-window": "./src/open-window.ts",
+    "./entry": "./src/HealthScreenEntry.vue"
   },
   "dependencies": {
     "@saydian/app-contracts": "workspace:*",

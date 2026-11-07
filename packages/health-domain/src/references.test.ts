@@ -192,3 +192,96 @@ describe("manual references remain separate from device measurements", () => {
     ).toThrow();
   });
 });
+
+import { scoreMetric, newScreenScoreRule } from "@saydian/app-contracts";
+import { validateRules } from "./policy";
+it("scores only explicitly included reference method, context and unit", () => {
+  const rule = newScreenScoreRule(scoreMetric("ref_glucose_fasting")!);
+  Object.assign(rule, {
+    weight: 1,
+    minDays: 1,
+    minSamples: 1,
+    basis: "Synthetic regression only",
+    bands: [{ min: null, max: null, score: 61 }],
+  });
+  const rules = validateRules(
+    { title: "Synthetic", description: "", items: [rule] },
+    true,
+  );
+  const period = screenPeriod(7, "Asia/Shanghai", now),
+    acc = new ScreenAccumulator(period);
+  for (const data of [
+    { method: "LAB_REPORT", values: { value: 5.4 } },
+    { method: "LAB_REPORT", context: "AFTER_MEAL_2H", values: { value: 8 } },
+    { method: "LAB_REPORT", unit: "mg/dL", values: { value: 95 } },
+    { method: "GLUCOSE_METER", values: { value: 7 } },
+  ])
+    acc.add(referenceScreenRecord(row(data)));
+  const facts = acc.finish(rules, 3, { age: 40, gender: "FEMALE" });
+  expect(facts.score.items[0]).toMatchObject({
+    value: 5.4,
+    count: 1,
+    score: 61,
+  });
+  expect(facts.eligibleRecordCount).toBe(1);
+  expect(facts.series.filter((s) => s.eligibleCount > 0)).toHaveLength(1);
+  for (const bad of [
+    { referenceUnit: "mmHg" },
+    { allowedOrigins: ["watch_history"] },
+    { allowedOrigins: ["LAB_REPORT", "GLUCOSE_METER"] },
+  ])
+    expect(() =>
+      validateRules({ ...rules, items: [{ ...rule, ...bad }] }),
+    ).toThrow();
+});
+it("keeps systolic/diastolic, uric acid and partial lipid fields independent", () => {
+  const keys = [
+    "ref_bp_systolic",
+    "ref_bp_diastolic",
+    "ref_urate_fasting",
+    "ref_lipid_tc",
+    "ref_lipid_ldl",
+  ];
+  const rules = {
+    title: "Synthetic",
+    description: "",
+    items: keys.map((k) => ({
+      ...newScreenScoreRule(scoreMetric(k)!),
+      bands: [{ min: null, max: null, score: 80 }],
+    })),
+  };
+  const acc = new ScreenAccumulator(screenPeriod(7, "Asia/Shanghai", now));
+  for (const input of [
+    {
+      metric: "BLOOD_PRESSURE",
+      method: "BLOOD_PRESSURE_MONITOR",
+      context: "RESTING",
+      unit: "mmHg",
+      values: { systolic: 120, diastolic: 75 },
+    },
+    {
+      metric: "URIC_ACID",
+      method: "LAB_REPORT",
+      context: "FASTING",
+      unit: "μmol/L",
+      values: { value: 350 },
+    },
+    {
+      metric: "BLOOD_LIPIDS",
+      method: "LAB_REPORT",
+      context: "FASTING",
+      unit: "mmol/L",
+      values: { totalCholesterol: 4.5 },
+    },
+  ])
+    acc.add(referenceScreenRecord(row(input)));
+  const facts = acc.finish(rules, 2, { age: 30, gender: "MALE" });
+  expect(facts.score.items.map((i) => i.value)).toEqual([
+    120,
+    75,
+    350,
+    4.5,
+    null,
+  ]);
+  expect(facts.score.items[4]?.score).toBeNull();
+});

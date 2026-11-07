@@ -18,7 +18,7 @@ const { Client } = createRequire(join(root, "apps/migrator/package.json"))(
 const database =
   "postgresql://health_preview@127.0.0.1:55447/saydian_health_screen_preview";
 const action = process.argv[2];
-if (!["prepare", "api", "admin", "vip", "arrival"].includes(action))
+if (!["prepare", "api", "admin", "vip", "arrival", "access-api"].includes(action))
   throw Error("Use prepare/api/admin/vip/arrival");
 const run = (cmd, args, env) =>
   new Promise((done, reject) => {
@@ -106,11 +106,12 @@ if (action === "prepare") {
   const member = await db.user.create({
     data: {
       nickname: "本地合成会员",
+      weightKg: 65,
       gender: "MALE",
       birthday: new Date("1970-06-15"),
       locale: "zh-Hans",
       partnerId: partner.id,
-      healthProfile: { create: { timezone: "Asia/Shanghai" } },
+      healthProfile: { create: { timezone: "Asia/Shanghai",screenName:"本地合成会员" } },
     },
   });
   const empty = await db.user.create({
@@ -245,15 +246,16 @@ if (action === "arrival") {
   }
 }
 
-if (action === "api")
+if (action === "api" || action === "access-api")
   await run(
     process.execPath,
     [
       "-r",
       join(root, "apps/api/node_modules/ts-node/register/transpile-only"),
+      ...(action === "access-api" ? ["-r",join(root,"tools/health-screen-preview-sms.cjs")] : []),
       join(root, "apps/api/src/main.ts"),
     ],
-    saved.env,
+    action === "access-api" ? {...saved.env,COMMERCE_STOREFRONT_URL:"http://127.0.0.1:3312/global/saidian-mall/"} : saved.env,
   );
 if (action === "admin")
   await run(

@@ -20,6 +20,7 @@
     { "path": "pages/coupon-gift/index", "style": { "navigationBarTitleText": "领取优惠券" } },
     { "path": "pages/help/index", "style": { "navigationBarTitleText": "帮助与服务" } },
     { "path": "pages/employee/index", "style": { "navigationBarTitleText": "推广中心" } },
+    { "path": "pages/health-screen-authorize/index", "style": { "navigationBarTitleText": "确认登录健康大屏" } },
     { "path": "pages/partner/index", "style": { "navigationBarTitleText": "申请合作伙伴" } }
   ],
   "tabBar": {

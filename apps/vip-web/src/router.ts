@@ -15,7 +15,8 @@ export const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
   routes: [
     { path: "/login", component: Login },
-    { path: "/members/:id/health-screen", component: () => import("./views/MemberHealthScreen.vue") },
+    { path: "/health-screen", component: () => import("./views/MemberHealthScreen.vue"), meta: { public: true } },
+  { path: "/members/:id/health-screen", component: () => import("./views/MemberHealthScreen.vue") },
     { path: "/auth/member-start", component: () => import("./views/MemberStart.vue"), meta: { public: true } },
     { path: "/auth/member-callback", component: () => import("./views/MemberCallback.vue"), meta: { public: true } },
     {
@@ -43,6 +44,7 @@ export const router = createRouter({
   ],
 });
 router.beforeEach((to) => {
+  if (to.path === "/health-screen" || /^\/members\/[^/]+\/health-screen\/?$/.test(to.path)) return true;
   const loggedIn = !!sessionStorage.getItem(partnerTokenKey);
   if (!to.meta.public && to.path !== "/login" && !loggedIn)
     return { path: "/login", query: { next: to.path } };

@@ -57,6 +57,7 @@ export interface HealthScoreItemRule {
   maxAge: number | null;
   gender: "ANY" | "MALE" | "FEMALE";
   allowedOrigins: string[];
+  referenceUnit?: string;
   bands: HealthScoreBand[];
   basis: string;
   referenceUrl: string;
@@ -121,6 +122,8 @@ export interface HealthScreenResponse extends HealthScreenFacts {
     nickname: string;
     gender: string;
     age: number | null;
+    weightKg: number;
+    heightCm: number | null;
   };
   analysis: MemberAnalysisResult | null;
   analysisStale: boolean;
@@ -155,6 +158,8 @@ export interface HealthScreenRecords {
   nextCursor: string | null;
 }
 export interface HealthScreenTransport {
+  profile(id: string, signal: AbortSignal): Promise<ScreenProfileGate>;
+  completeProfile(id: string, values: Partial<ScreenProfile> & { expectedRevision?: string }): Promise<ScreenProfileGate>;
   updates(
     memberId: string,
     days: HealthScreenDays,
@@ -239,7 +244,7 @@ export const HEALTH_REFERENCE_DEFINITIONS = {
     units: ["mmHg"],
     methods: ["BLOOD_PRESSURE_MONITOR"],
     contexts: ["RESTING"],
-    fields: { systolic: "收缩压", diastolic: "舒张压" },
+    fields: { systolic: "收缩压（高压）", diastolic: "舒张压（低压）" },
   },
   URIC_ACID: {
     label: "尿酸",
@@ -308,6 +313,7 @@ export interface HealthReferenceRecord {
   createdAt: string;
   voidedAt: string | null;
   voidReason: string | null;
+  canVoid?: boolean;
 }
 export interface HealthReferencePage {
   items: HealthReferenceRecord[];
@@ -321,4 +327,21 @@ export interface HealthScoreRuleVersion {
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
+}
+
+export type ScreenProfileField = "name" | "gender" | "birthday" | "weightKg";
+export interface ScreenProfile {
+  name: string;
+  gender: "MALE" | "FEMALE" | "UNSPECIFIED";
+  birthday: string | null;
+  weightKg: number | null;
+  heightCm: number | null;
+}
+export interface ScreenProfileGate {
+  memberNo: number;
+  revision: string;
+  profile: ScreenProfile;
+  missing: ScreenProfileField[];
+  canComplete: boolean;
+  suggestedName: string;
 }

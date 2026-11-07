@@ -93,6 +93,7 @@ const screen = obj({
     nickname: text,
     gender: text,
     age: nullableNumber,
+    weightKg: {type:"number"},heightCm:nullableNumber,
   }),
   period,
   recordCount: count,
@@ -146,7 +147,7 @@ const rules = obj({
   items: {
     type: "array",
     minItems: 1,
-    maxItems: 20,
+    maxItems: 23,
     items: obj({
       key: text,
       label: text,
@@ -158,6 +159,7 @@ const rules = obj({
       maxAge: nullableNumber,
       gender: { enum: ["ANY", "MALE", "FEMALE"] },
       allowedOrigins: list(text),
+
       bands: list(
         obj({
           min: nullableNumber,
@@ -315,3 +317,21 @@ healthScreenFieldContracts["HealthScoreRulesController.publish"] = record(
   }),
   version,
 );
+
+const profileFields={name:text,gender:{enum:["MALE","FEMALE","UNSPECIFIED"]},birthday:nullableText,weightKg:nullableNumber,heightCm:nullableNumber};
+const gate=obj({memberNo:count,revision:text,profile:obj(profileFields),missing:list({enum:["name","gender","birthday","weightKg"]}),canComplete:flag,suggestedName:text});
+for(const owner of ["AdminHealthScreenController","PartnerHealthScreenController"])healthScreenFieldContracts[owner+".profile"]=record(null,gate);
+healthScreenFieldContracts["AdminHealthScreenController.completeProfile"]=record(obj({...profileFields,expectedRevision:text},[]),gate);
+for(const method of ["load","records","updates","generate","result","references","saveReference","voidReference"])healthScreenFieldContracts["OwnHealthScreenController."+method]=healthScreenFieldContracts["AdminHealthScreenController."+method];
+healthScreenFieldContracts["OwnHealthScreenController.profileGate"]=record(null,gate);
+healthScreenFieldContracts["OwnHealthScreenController.completeProfile"]=record(obj({...profileFields,expectedRevision:text},[]),gate);
+healthScreenFieldContracts["OwnHealthScreenController.logout"]=record(obj({},[]),obj({loggedOut:flag}));
+const secret={type:"string",minLength:64,maxLength:64};
+healthScreenFieldContracts["ScreenLoginController.options"]=record(null,obj({enabled:flag}));
+healthScreenFieldContracts["ScreenLoginController.session"]=record(obj({},[]),obj({token:secret,expiresAt:text}));
+healthScreenFieldContracts["ScreenLoginController.qr"]=record(obj({},[]),obj({qr:text,scanUrl:text,poll:secret,match:text,expiresAt:text}));
+healthScreenFieldContracts["ScreenLoginController.result"]=record(obj({poll:secret}),{oneOf:[obj({status:{const:"pending"}}),obj({status:{const:"approved"},token:secret,expiresAt:text})]});
+healthScreenFieldContracts["ScreenLoginController.cancel"]=record(obj({poll:secret}),obj({cancelled:flag}));
+healthScreenFieldContracts["ScreenScanController.scan"]=record(obj({scan:secret}),obj({match:text,expiresAt:text}));
+healthScreenFieldContracts["ScreenScanController.approve"]=record(obj({scan:secret}),obj({approved:flag}));
+rules.properties.items.items.properties.referenceUnit=text;

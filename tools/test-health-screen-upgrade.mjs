@@ -45,7 +45,7 @@ async function snapshot(client, tables) {
   for (const table of tables) {
     const rows = (
       await client.query(
-        `SELECT to_jsonb(t) - 'memberHealthAnalysisId' AS row FROM ${quote(table)} t`,
+        `SELECT to_jsonb(t) - 'memberHealthAnalysisId' - 'screenName' AS row FROM ${quote(table)} t`,
       )
     ).rows
       .map((r) => JSON.stringify(r.row))
@@ -109,6 +109,7 @@ try {
     'INSERT INTO "ReportCreditLedger" (id,"userId",type,delta,"balanceAfter","sourceType","sourceId","idempotencyKey") VALUES ($1,$2,\'ADMIN_ADJUSTMENT\',2,2,\'qa\',$3,$3)',
     [credit, user, credit],
   );
+  await db.query('INSERT INTO "HealthProfile" (id,"userId","updatedAt") VALUES ($1,$2,NOW())',[randomUUID(),user]);
   const tables = (
       await db.query(
         "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename<>'_prisma_migrations' ORDER BY tablename",
@@ -167,6 +168,11 @@ try {
       [randomUUID(), user, metric, unit, values, randomUUID(), randomUUID()],
     );
   }
+  const accessMigration = await readFile(join(migrations,"20261107190000_health_screen_member_access","migration.sql"),"utf8");
+  assert(!/DROP\s|TRUNCATE\s|DELETE\s+FROM|UPDATE\s+"/i.test(accessMigration));
+  await db.query(accessMigration);
+  assert.equal((await db.query('SELECT "screenName" FROM "HealthProfile" WHERE "userId"=$1',[user])).rows[0].screenName,null);
+  await db.query('INSERT INTO "HealthScreenLogin" ("scanHash","pollHash","expiresAt") VALUES ($1,$2,NOW())',["synthetic-scan","synthetic-poll"]);
   const referenceBefore = await snapshot(db, ["MemberHealthReference"]);
   const dump = process.env.PG_DUMP_BIN,
     restoreBin = process.env.PG_RESTORE_BIN;
@@ -193,6 +199,8 @@ try {
   restored = new Client({ connectionString: restoreUrl.href });
   await restored.connect();
   assert.deepEqual(await snapshot(restored, tables), before);
+  assert.equal((await restored.query('SELECT "screenName" FROM "HealthProfile" WHERE "userId"=$1',[user])).rows[0].screenName,null);
+  assert.equal((await restored.query('SELECT COUNT(*)::int AS count FROM "HealthScreenLogin" WHERE "scanHash"=$1',["synthetic-scan"])).rows[0].count,1);
   assert.deepEqual(
     await snapshot(restored, ["MemberHealthReference"]),
     referenceBefore,

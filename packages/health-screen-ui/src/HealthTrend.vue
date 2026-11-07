@@ -95,7 +95,7 @@ const hovered = computed(() =>
             {{ p.date }} · {{ p.value }} {{ series.unit }} · {{ p.count }}条 ·
             {{
               series.kind === "reference"
-                ? "手动参考，仅作对照"
+                ? (p.eligibleCount ? `手动参考，${p.eligibleCount}条符合评分规则` : "手动参考，仅作对照")
                 : `${p.eligibleCount}条符合评分基础条件`
             }}
           </title>
@@ -106,14 +106,8 @@ const hovered = computed(() =>
         {{ series.points.at(-1)?.date.slice(5) }}
       </text>
     </svg>
-    <div class="trend-caption">
-      {{
-        hovered
-          ? `${hovered.date} · ${hovered.value} ${series.unit} · ${hovered.count}条记录`
-          : series.kind === "reference"
-            ? "黄色点为手动参考值，来源由录入者提供；缺失日期留空"
-            : "灰色点含待核实记录；缺失日期留空"
-      }}
+    <div v-if="hovered" class="trend-caption">
+      {{ hovered.date }} · {{ hovered.value }} {{ series.unit }} · {{ hovered.count }}条记录
     </div>
   </figure>
 </template>

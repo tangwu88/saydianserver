@@ -567,6 +567,7 @@ model CommerceWechatBindTicket {
 }
 
 model UserSession {
+  screenLogins        HealthScreenLogin[]
   giftSessions        CommerceGiftSession[]
   id                  String                @id @default(uuid()) @db.Uuid
   userId              String                @db.Uuid
@@ -1222,6 +1223,7 @@ model MigrationConflict {
 // Health profile and paid wellness reports. Raw measurements remain in
 // HealthRecord; these models store consent, evidence indexes and generated views.
 model HealthProfile {
+  screenName               String?   @db.VarChar(40)
   id                       String    @id @default(uuid()) @db.Uuid
   userId                   String    @unique @db.Uuid
   timezone                 String    @default("Asia/Shanghai")
@@ -2369,4 +2371,19 @@ model HealthScoreRuleVersion {
   publishedAt DateTime?
 
   @@index([status, version])
+}
+
+/// One-time, short-lived approval for one display. Neither credential is stored in plaintext.
+model HealthScreenLogin {
+  scanHash   String       @id
+  pollHash   String       @unique
+  viewHash   String?      @unique
+  createdAt  DateTime     @default(now())
+  expiresAt  DateTime
+  approvedAt DateTime?
+  consumedAt DateTime?
+  sessionId  String?      @db.Uuid
+  session    UserSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
 }

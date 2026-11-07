@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import {
+  SCREEN_SCORE_METRICS,
+  newScreenScoreRule,
+  scoreMetric,
+  HEALTH_REFERENCE_METHODS,
+  type HealthScoreItemRule,
+} from "@saydian/app-contracts";
 import type {
   HealthScoreRuleVersion,
   HealthScoreRules,
@@ -19,20 +26,26 @@ const items = ref<HealthScoreRuleVersion[]>([]),
   dirty = ref(false);
 const writable = computed(() => getAdminRoles().includes("SUPER_ADMIN")),
   editable = computed(() => writable.value && editor.value?.status === "DRAFT");
-const metrics = [
-  ["heart_rate", "心率"],
-  ["systolic", "收缩压"],
-  ["diastolic", "舒张压"],
-  ["blood_oxygen", "血氧"],
-  ["sleep_minutes", "整夜睡眠时长"],
-  ["steps", "日步数"],
-  ["distance", "日距离"],
-  ["calories", "日活动热量"],
-  ["temperature_skin", "皮温"],
-  ["temperature_estimated_body", "估算体温"],
-  ["hrv_sdnn", "HRV SDNN"],
-  ["hrv_rmssd", "HRV RMSSD"],
-];
+const metrics = SCREEN_SCORE_METRICS;
+const addKey = ref("");
+const availableMetrics = computed(() =>
+  metrics.filter(
+    (metric) =>
+      !editor.value?.rules.items.some((item) => item.key === metric.key),
+  ),
+);
+function resetReferenceBasis(item: HealthScoreItemRule) {
+  item.bands = [];
+  item.basis = "";
+  fresh();
+}
+function changeMetric(item: HealthScoreItemRule, key: string) {
+  const metric = scoreMetric(key);
+  if (!metric) return;
+  delete item.referenceUnit;
+  Object.assign(item, newScreenScoreRule(metric));
+  fresh();
+}
 const origins = [
   ["watch_history", "设备历史"],
   ["app_measurement", "App 测量"],
@@ -76,6 +89,7 @@ async function create(copy?: HealthScoreRules) {
   }
 }
 function open(row: HealthScoreRuleVersion) {
+  addKey.value = "";
   editor.value = JSON.parse(JSON.stringify(row));
   fresh();
   dirty.value = false;
@@ -134,7 +148,7 @@ async function toggle() {
     await ElMessageBox.confirm(
       enabled.value
         ? "关闭后会员大屏和新分析将暂不可用。已有数据保留。"
-        : "开放后，有权限的管理员和战略伙伴可查看会员大屏。评分仍须单独发布。",
+        : "开放后，会员可查看本人数据，获授权的后台人员和战略伙伴可查看权限内的会员。评分仍须单独发布。",
       "调整健康大屏开放状态",
     );
   } catch {
@@ -170,25 +184,10 @@ async function runPreview() {
 }
 function addItem() {
   if (!editor.value) return;
-  const pair = metrics.find(
-    ([key]) => !editor.value!.rules.items.some((i) => i.key === key),
-  );
-  if (!pair) return;
-  editor.value.rules.items.push({
-    key: pair[0]!,
-    label: pair[1]!,
-    weight: 1,
-    required: true,
-    minDays: 3,
-    minSamples: 3,
-    minAge: 18,
-    maxAge: null,
-    gender: "ANY",
-    allowedOrigins: ["watch_history", "app_measurement"],
-    bands: [],
-    basis: "",
-    referenceUrl: "",
-  });
+  const metric = availableMetrics.value.find((m) => m.key === addKey.value);
+  if (!metric) return;
+  editor.value.rules.items.push(newScreenScoreRule(metric));
+  addKey.value = "";
   fresh();
 }
 onMounted(load);
@@ -311,9 +310,16 @@ onMounted(load);
             </header>
             <div class="rule-grid">
               <el-form-item label="指标"
-                ><el-select v-model="item.key" @change="fresh"
+                ><el-select
+                  v-model="item.key"
+                  @change="(key: string) => changeMetric(item, key)"
                   ><el-option
-                    v-for="[key, label] in metrics"
+                    v-for="{ key, label } in metrics"
+                    :disabled="
+                      editor.rules.items.some(
+                        (other) => other !== item && other.key === key,
+                      )
+                    "
                     :key="key"
                     :label="label"
                     :value="key" /></el-select></el-form-item
@@ -364,7 +370,34 @@ onMounted(load);
                     value="FEMALE" /></el-select
               ></el-form-item>
             </div>
-            <el-form-item label="允许的测量来源（仍需通过数据质量检查）"
+            <div v-if="scoreMetric(item.key)?.reference" class="rule-two">
+              <el-form-item label="参考测量来源"
+                ><el-select
+                  :model-value="item.allowedOrigins[0]"
+                  @change="
+                    (v: string) => {
+                      item.allowedOrigins = [v];
+                      resetReferenceBasis(item);
+                    }
+                  "
+                  ><el-option
+                    v-for="m in scoreMetric(item.key)!.reference!.methods"
+                    :key="m"
+                    :value="m"
+                    :label="HEALTH_REFERENCE_METHODS[m]" /></el-select
+              ></el-form-item>
+              <el-form-item label="评分区间使用的单位"
+                ><el-select
+                  v-model="item.referenceUnit"
+                  @change="() => resetReferenceBasis(item)"
+                  ><el-option
+                    v-for="u in scoreMetric(item.key)!.units"
+                    :key="u"
+                    :value="u"
+                    :label="u" /></el-select
+              ></el-form-item>
+            </div>
+            <el-form-item v-else label="允许的测量来源（仍需通过数据质量检查）"
               ><el-checkbox-group v-model="item.allowedOrigins" @change="fresh"
                 ><el-checkbox
                   v-for="[key, label] in origins"
@@ -428,7 +461,20 @@ onMounted(load);
                 maxlength="1000"
             /></el-form-item>
           </article>
-          <el-button v-if="editable" @click="addItem"
+          <el-select
+            v-if="editable && availableMetrics.length"
+            v-model="addKey"
+            filterable
+            placeholder="选择要添加的评分指标"
+            aria-label="选择要添加的评分指标"
+            style="max-width: 290px; margin-right: 10px"
+            ><el-option
+              v-for="m in availableMetrics"
+              :key="m.key"
+              :value="m.key"
+              :label="m.label"
+          /></el-select>
+          <el-button v-if="editable" :disabled="!addKey" @click="addItem"
             >添加指标</el-button
           ></el-form
         >

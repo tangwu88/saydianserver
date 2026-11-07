@@ -28,6 +28,19 @@ export class PartnerHealthScreenController {
   availability(@CurrentPartner() p: Partner) {
     return this.service.entry({ type: "PARTNER", id: p.id });
   }
+  @Get("members/:memberId/health-analysis/profile")
+  @Header("Cache-Control", "no-store")
+  profile(
+    @Param("memberId") id: string,
+    @CurrentPartner() a: Partner,
+    @Req() r: RequestWithContext,
+  ) {
+    return this.service.profileGate(
+      id,
+      { type: "PARTNER", id: a.id },
+      r.requestId,
+    );
+  }
   @Get("members/:memberId/health-analysis")
   @Header("Cache-Control", "no-store")
   load(

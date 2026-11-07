@@ -1,0 +1,132 @@
+.screen-entry {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: radial-gradient(ellipse at 50% 38%, #103857, #06192e 65%);
+  color: #e5f6ff;
+  font:
+    16px/1.55 system-ui,
+    sans-serif;
+}
+.entry-card {
+  width: min(100%, 420px);
+  box-sizing: border-box;
+  padding: clamp(22px, 4vw, 36px);
+  border: 1px solid #2a607e;
+  background: #09223a;
+  border-radius: 18px;
+  box-shadow: 0 18px 68px #010d1970;
+}
+.entry-card h1,
+.entry-card h2 {
+  margin: 0 0 9px;
+  font-size: 26px;
+  color: #fff;
+}
+.entry-card p,
+.entry-card small {
+  color: #b6d3e5;
+}
+.entry-card label {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0;
+}
+.entry-card input,
+.entry-card select,
+.entry-card button {
+  box-sizing: border-box;
+  font: inherit;
+  border-radius: 7px;
+}
+.entry-card input:not([type="checkbox"]),
+.entry-card select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 12px;
+  color: #fff;
+  background: #081827;
+  border: 1px solid #42718a;
+  color-scheme: dark;
+}
+.entry-card button {
+  background: #113a56;
+  color: #d3f8ff;
+  border: 1px solid #39708a;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.entry-card button:disabled {
+  opacity: 0.52;
+  cursor: default;
+}
+.entry-card a {
+  color: #6fdfeb;
+}
+.entry-tabs,
+.entry-fields {
+  display: flex;
+  gap: 8px;
+}
+.entry-tabs {
+  margin: 18px 0;
+}
+.entry-tabs button {
+  flex: 1;
+}
+.entry-tabs button[aria-pressed="true"] {
+  border-color: #52d8ed;
+  color: white;
+}
+.entry-fields button {
+  flex: none;
+}
+.entry-card .entry-check {
+  display: block;
+  font-size: 13px;
+}
+.entry-check input {
+  vertical-align: middle;
+}
+.entry-card .entry-primary {
+  display: block;
+  width: 100%;
+  background: #37c9de;
+  color: #061c2a;
+  border: 0;
+  font-weight: 700;
+  margin: 16px 0 8px;
+}
+.entry-card .entry-error {
+  color: #ffb09d;
+}
+.entry-qr {
+  text-align: center;
+}
+.entry-qr img {
+  display: block;
+  margin: 16px auto;
+  width: 192px;
+  max-width: 100%;
+  border-radius: 8px;
+}
+.entry-card button:focus-visible,
+.entry-card a:focus-visible {
+  outline: 2px solid #80f7ff;
+  outline-offset: 3px;
+}
+.entry-card .legal-link {
+  background: none;
+  padding: 0;
+  border: 0;
+  color: #79e8f2;
+  font-size: inherit;
+  text-decoration: underline;
+}
+.legal-panel p {
+  max-height: 35vh;
+  overflow: auto;
+  white-space: pre-line;
+}

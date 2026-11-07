@@ -540,3 +540,13 @@ export const notes = {
   "CommerceEmployeeController.gift": entry("查看员工赠送的优惠券", "token=高熵一次性赠券令牌", "优惠券、员工摘要和领取状态；不返回会员信息", "主库商城"),
   "CommerceEmployeeController.redeemGift": entry("会员领取员工赠券", "token=赠券令牌；需会员登录", "本人优惠券领取记录；并发领取只成功一次", "主库商城"),
 };
+
+for (const owner of ["AdminHealthScreenController","PartnerHealthScreenController"]) notes[owner+".profile"]=entry("检查大屏必填资料","会员 UUID","缺项、已有资料、可否补全","当前角色和归属校验、访问审计");
+notes["AdminHealthScreenController.completeProfile"]=entry("保存会员大屏基本资料","补全缺项；编辑已有资料需 expectedRevision。身高选填","已保存资料与缺项","仅超级管理员");
+for(const op of ["load","records","updates","generate","result","references","saveReference","voidReference"]) notes["OwnHealthScreenController."+op]={...notes["AdminHealthScreenController."+op],dependency:"大屏专用会话，只限本人；资料、开关、授权和次数按操作核验"};
+notes["OwnHealthScreenController.profileGate"]=entry("读取本人资料完整度","大屏会话","四项必填资料和缺项","仅本人");
+notes["OwnHealthScreenController.completeProfile"]=entry("保存本人资料","补全缺项或凭 expectedRevision 更新姓名、性别、生日、体重及可选身高","保存后重新检查必填项","仅本人");
+notes["OwnHealthScreenController.logout"]=entry("退出大屏","大屏专用会话","loggedOut","撤销本浏览器大屏凭证");
+for(const [op,desc] of Object.entries({options:"查询大屏开放状态",session:"交换仅本人大屏的限时会话",qr:"创建三分钟微信扫码请求",result:"凭浏览器私密票据查询并一次领取会话",cancel:"取消未消费的扫码请求"}))notes["ScreenLoginController."+op]=entry(desc,"见字段契约","no-store","中国站，浏览器票据与扫码票据独立");
+notes["ScreenScanController.scan"]=entry("核对扫码登录请求","扫码票据","四位核对码、有效期","不提供会员资料");
+notes["ScreenScanController.approve"]=entry("手机端确认大屏登录","已登录会员、扫码票据","approved","限有效正式会员会话、一次确认");

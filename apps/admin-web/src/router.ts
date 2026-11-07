@@ -13,6 +13,7 @@ import UsMigrationView from "./views/UsMigrationView.vue";
 
 const routes = [
   { path: "/login", component: LoginView },
+  { path: "/health-screen", component: () => import("./views/MemberHealthScreenView.vue"), meta: { public: true } },
   { path: "/members/:id/health-screen", component: () => import("./views/MemberHealthScreenView.vue"), meta: { resource: "member-health-analysis" } },
   {
     path: "/",
@@ -38,6 +39,7 @@ export const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
+  if (to.path === "/health-screen" || /^\/members\/[^/]+\/health-screen\/?$/.test(to.path)) return true;
   if (to.path !== "/login" && !hasAdminToken()) return "/login";
   if (to.path === "/login" && hasAdminToken()) return "/";
   if (to.path !== "/login") {

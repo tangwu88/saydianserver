@@ -15,10 +15,11 @@ import { Close } from "@element-plus/icons-vue";
 const props = defineProps<{
   memberId: string;
   memberName: string;
+  memberNo: number;
   transport: HealthScreenTransport;
   errorMessage: (e: unknown) => string;
 }>();
-const emit = defineEmits<{ close: []; saved: []; denied: [error: unknown] }>();
+const emit = defineEmits<{ close: []; saved: []; "edit-profile":[]; denied: [error: unknown] }>();
 const metric = ref<HealthReferenceInput["metric"]>("BLOOD_GLUCOSE");
 const context = ref<HealthReferenceInput["context"]>("FASTING");
 const method = ref<HealthReferenceInput["method"]>("GLUCOSE_METER");
@@ -172,12 +173,9 @@ onBeforeUnmount(() => {
         <Close />
       </button>
       <h2 id="reference-title">校准 · 录入参考值</h2>
-      <p>
-        {{ memberName }} ·
-        用血糖仪、血压计、尿酸仪或检验单等参考测量，与设备记录对照。
-      </p>
-      <p class="muted">
-        只记录参考值，不修正设备读数。来源由录入者提供，请按原始测量结果填写。
+      <p>会员：
+        <button type="button" class="profile-link" aria-haspopup="dialog" title="会员基本资料" :disabled="saving" @click="emit('edit-profile')">{{ memberName }}</button>
+        <button type="button" class="profile-link" aria-haspopup="dialog" title="会员基本资料" :disabled="saving" @click="emit('edit-profile')">NO. {{ memberNo }}</button>
       </p>
       <p v-if="error" class="screen-error" role="alert">{{ error }}</p>
       <p v-if="notice" class="reference-success" role="status">{{ notice }}</p>
@@ -239,17 +237,11 @@ onBeforeUnmount(() => {
             </select></label
           >
         </div>
-        <p class="muted">
-          将为此会员保存一条
-          {{ def.label }}
-          参考记录。不同单位、来源和测量情境分别展示；需要更正时撤销后重新录入。
-        </p>
         <button class="primary-button" type="submit" :disabled="saving">
           {{ saving ? "正在保存…" : "确认保存参考值" }}
         </button>
       </form>
       <h3 class="reference-history-title">参考记录与撤销历史</h3>
-      <p class="muted">时间以 {{ timeZone }} 展示。历史记录不能覆盖或删除。</p>
       <p v-if="reading">正在读取…</p>
       <p v-else-if="!rows.length" class="muted">尚无手动参考记录</p>
       <div class="reference-history">
@@ -280,7 +272,7 @@ onBeforeUnmount(() => {
             撤销于 {{ date(r.voidedAt) }} · {{ r.voidReason }}
           </p>
           <button
-            v-else
+            v-else-if="r.canVoid!==false"
             type="button"
             class="text-button"
             :disabled="saving"

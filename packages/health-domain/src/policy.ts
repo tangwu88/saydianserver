@@ -1,7 +1,13 @@
 import type { Prisma } from "@prisma/client";
-import type { HealthScoreRules } from "@saydian/app-contracts";
-import { object } from "./aggregation";
-export type ScreenActor = { type: "ADMIN" | "PARTNER"; id: string };
+import {
+  SCREEN_SCORE_METRICS,
+  newScreenScoreRule,
+  scoreMetric,
+  type HealthScoreRules,
+} from "@saydian/app-contracts";
+import { object, screenPeriod } from "./aggregation";
+import { readScreenProfile } from "./screen-profile";
+export type ScreenActor = { type: "ADMIN" | "PARTNER" | "MEMBER"; id: string };
 export class HealthScreenError extends Error {
   constructor(
     readonly code: string,
@@ -27,9 +33,12 @@ export async function authorizeScreen(
   actor: ScreenActor,
   userId: string,
   lock = false,
+  requireProfile = true,
 ) {
   if (!(await screenEnabled(db)))
     throw new HealthScreenError("screen_disabled", "健康大屏尚未开放", 404);
+  if (actor.type === "MEMBER" && actor.id !== userId)
+    throw new HealthScreenError("forbidden", "会员只能查看自己的大屏");
   if (lock)
     await db.$queryRaw`SELECT id FROM "User" WHERE id=${userId}::uuid FOR SHARE`;
   const member = await db.user.findUnique({
@@ -54,7 +63,7 @@ export async function authorizeScreen(
     )
       throw new HealthScreenError("forbidden", "没有查看会员健康数据的权限");
     bypass = roles.includes("SUPER_ADMIN");
-  } else {
+  } else if (actor.type === "PARTNER") {
     if (lock)
       await db.$queryRaw`SELECT p.id FROM "BrandPartner" p JOIN "PartnerLevel" l ON p."levelId"=l.id WHERE p.id=${actor.id}::uuid FOR SHARE OF p,l`;
     const partner = await db.brandPartner.findUnique({
@@ -72,7 +81,21 @@ export async function authorizeScreen(
         "仅战略伙伴可查看当前所属会员的健康资料",
       );
   }
-  return { member, bypass };
+  if (
+    actor.type !== "MEMBER" &&
+    actor.type !== "ADMIN" &&
+    actor.type !== "PARTNER"
+  )
+    throw new HealthScreenError("forbidden", "访问身份无效");
+  const day = screenPeriod(7, member.healthProfile?.timezone).dates.at(-1)!;
+  const gate = readScreenProfile(member, day);
+  if (requireProfile && gate.missing.length)
+    throw new HealthScreenError(
+      "screen_profile_incomplete",
+      "请先完善会员姓名、性别、出生日期和体重",
+      428,
+    );
+  return { member, bypass, gate, day };
 }
 export async function analysisConsent(
   db: Prisma.TransactionClient,
@@ -122,47 +145,22 @@ export async function analysisConsent(
     );
   return `${current.version}:${profile.analysisConsentedAt.toISOString()}`;
 }
-export const scoreKeys = [
-  "heart_rate",
-  "systolic",
-  "diastolic",
-  "blood_oxygen",
-  "sleep_minutes",
-  "steps",
-  "distance",
-  "calories",
-  "temperature_skin",
-  "temperature_estimated_body",
-  "hrv_sdnn",
-  "hrv_rmssd",
-];
+export const scoreKeys = SCREEN_SCORE_METRICS.map((m) => m.key);
 export function draftRules(): HealthScoreRules {
   return {
     title: "健康参考评分 · 待审核草稿",
     description:
-      "仅作健康管理参考。请依据适用人群与测量方式填写区间和依据，预览审核后发布。",
+      "请按适用人群、测量方法和单位审核区间与依据。参考测量默认仅展示分项。",
     items: [
-      ["heart_rate", "心率"],
-      ["systolic", "收缩压"],
-      ["diastolic", "舒张压"],
-      ["blood_oxygen", "血氧"],
-      ["sleep_minutes", "睡眠时长"],
-      ["steps", "日步数"],
-    ].map(([key, label]) => ({
-      key: key!,
-      label: label!,
-      weight: 1,
-      required: true,
-      minDays: 3,
-      minSamples: 3,
-      minAge: 18,
-      maxAge: null,
-      gender: "ANY",
-      allowedOrigins: ["watch_history", "app_measurement"],
-      bands: [],
-      basis: "",
-      referenceUrl: "",
-    })),
+      "heart_rate",
+      "systolic",
+      "diastolic",
+      "blood_oxygen",
+      "sleep_minutes",
+      "steps",
+      "ref_glucose_fasting",
+      "ref_urate_fasting",
+    ].map((k) => newScreenScoreRule(scoreMetric(k)!)),
   };
 }
 export function validateRules(
@@ -181,9 +179,9 @@ export function validateRules(
     data.description.length > 2000 ||
     !Array.isArray(data.items) ||
     !data.items.length ||
-    data.items.length > 20
+    data.items.length > scoreKeys.length
   )
-    fail("请填写规则名称、说明和1至20个评分指标");
+    fail("请填写规则名称、说明和有效数量的评分指标");
   const keys = new Set<string>();
   const items: HealthScoreRules["items"] = data.items.map((raw: unknown) => {
     const r = object(raw);
@@ -214,11 +212,23 @@ export function validateRules(
       !["ANY", "MALE", "FEMALE"].includes(r.gender)
     )
       fail("适用人群设置无效");
+    const metric = scoreMetric(r.key)!;
+    if (
+      metric.reference &&
+      (!metric.units.includes(r.referenceUnit) ||
+        !Array.isArray(r.allowedOrigins) ||
+        r.allowedOrigins.length !== 1 ||
+        !metric.reference.methods.includes(r.allowedOrigins[0]))
+    )
+      fail("参考指标需选择对应单位及一种测量来源");
+    if (!metric.reference && r.referenceUnit !== undefined)
+      fail("此指标不支持参考单位");
     if (
       !Array.isArray(r.allowedOrigins) ||
       !r.allowedOrigins.length ||
       r.allowedOrigins.some(
         (o: unknown) =>
+          !metric.reference &&
           ![
             "watch_history",
             "app_measurement",
@@ -286,6 +296,7 @@ export function validateRules(
       maxAge: r.maxAge as number | null,
       gender: r.gender as "ANY" | "MALE" | "FEMALE",
       allowedOrigins: r.allowedOrigins as string[],
+      ...(metric.reference ? { referenceUnit: String(r.referenceUnit) } : {}),
       bands,
       basis: r.basis as string,
       referenceUrl: r.referenceUrl as string,

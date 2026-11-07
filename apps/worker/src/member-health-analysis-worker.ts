@@ -138,8 +138,9 @@ export class MemberHealthAnalysisWorker {
     )
       throw new PermanentTaskError("member_analysis:paused");
     try {
+      if (row.actorType !== "ADMIN" && row.actorType !== "PARTNER" && row.actorType !== "MEMBER") throw new HealthScreenError("forbidden","未知访问身份");
       const actor: ScreenActor = {
-        type: row.actorType === "ADMIN" ? "ADMIN" : "PARTNER",
+        type: row.actorType,
         id: row.actorId,
       };
       const current = await authorizeScreen(db, actor, row.userId, lock);

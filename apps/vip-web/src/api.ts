@@ -16,7 +16,8 @@ api.interceptors.response.use(
     if (axios.isAxiosError(error) && error.response?.status === 403 && error.response.data?.errorKey === "PARTNER_AGREEMENT_REQUIRED") window.dispatchEvent(new Event("partner-agreement-required"));
     if (axios.isAxiosError(error) && error.response?.status === 401 && !String(error.config?.url).includes("/auth/member-login")) {
       sessionStorage.removeItem(partnerTokenKey);
-      if (!location.pathname.endsWith("/login"))
+      if (/\/health-screen\/?$/.test(location.pathname)) window.dispatchEvent(new Event("health-screen-staff-expired"));
+      else if (!location.pathname.endsWith("/login"))
         location.assign(
           `${import.meta.env.BASE_URL}login?next=${encodeURIComponent(location.pathname.slice(import.meta.env.BASE_URL.length - 1))}`,
         );

@@ -14,6 +14,8 @@ import {
   type MemberAnalysisResult,
   type HealthAnalysisContent,
   type HealthScreenGroup,
+  type ScreenProfileGate,
+  type ScreenProfile,
 } from "@saydian/app-contracts";
 import {
   healthScreenQwenEndpoint,
@@ -38,10 +40,13 @@ import {
   referenceScreenRecord,
   referencePublic,
   metricGroups,
+  validScreenName,
+  validScreenBirthday,
+  validScreenWeight,
 } from "@saydian/health-domain";
 import { PrismaService } from "../common/prisma.service";
 import { IntegrationSecretsService } from "../common/integration-secrets.service";
-const TEMPLATE = "member-health-screen-v3-metabolic-reference";
+const TEMPLATE = "member-health-screen-v4-profile-score";
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 const uuid = (id: string) => {
   if (
@@ -110,7 +115,7 @@ export class HealthScreenService {
           )
         )
           return { enabled: false };
-      } else {
+      } else if (actor.type === "PARTNER") {
         const p = await this.prisma.brandPartner.findUnique({
           where: { id: actor.id },
           include: { level: true },
@@ -120,6 +125,168 @@ export class HealthScreenService {
       }
       return { enabled: await screenEnabled(this.prisma) };
     });
+  }
+  private profileView(
+    access: Awaited<ReturnType<typeof authorizeScreen>>,
+    actor: ScreenActor,
+  ): ScreenProfileGate {
+    const canComplete = access.bypass || actor.type === "MEMBER";
+    const nick = access.member.nickname;
+    return {
+      ...access.gate,
+      memberNo: access.member.compatibilityId,
+      revision: hash([access.member.id, access.gate.profile]),
+      canComplete,
+      suggestedName:
+        canComplete &&
+        !access.gate.profile.name &&
+        validScreenName(nick) &&
+        !/^(赛电会员|未命名会员|微信用户|会员\d*)$/.test(nick)
+          ? nick
+          : "",
+    };
+  }
+  async profileGate(id: string, actor: ScreenActor, requestId?: string) {
+    return this.handle(() =>
+      this.prisma.$transaction(async (tx) => {
+        const access = await authorizeScreen(tx, actor, uuid(id), true, false);
+        await this.audit(
+          tx,
+          actor,
+          id,
+          "MEMBER_HEALTH_SCREEN_PROFILE_READ",
+          requestId,
+        );
+        return this.profileView(access, actor);
+      }),
+    );
+  }
+  async completeProfile(
+    id: string,
+    input: unknown,
+    actor: ScreenActor,
+    requestId?: string,
+  ) {
+    return this.handle(() =>
+      this.prisma.$transaction(async (tx) => {
+        uuid(id);
+        if (businessWritesPaused(process.env))
+          throw new HealthScreenError("writes_paused", "当前暂停资料录入");
+        if (actor.type === "MEMBER" && actor.id !== id)
+          throw new HealthScreenError("forbidden", "只能完善自己的资料");
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id=${id}::uuid FOR UPDATE`;
+        const access = await authorizeScreen(tx, actor, id, true, false);
+        if (!access.bypass && actor.type !== "MEMBER")
+          throw new HealthScreenError(
+            "forbidden",
+            "请由会员本人或总管理员修改基本资料",
+          );
+        const { expectedRevision, ...fields } = object(input);
+        const keys = Object.keys(fields);
+        const current = access.gate.profile;
+        const allKeys = [
+          "name",
+          "gender",
+          "birthday",
+          "weightKg",
+          "heightCm",
+        ] as const;
+        if (keys.some((k) => !allKeys.some((key) => key === k)))
+          throw new HealthScreenError(
+            "invalid_profile",
+            "只能修改会员基本资料",
+            400,
+          );
+        const editing = expectedRevision !== undefined;
+        if (
+          editing &&
+          expectedRevision !== this.profileView(access, actor).revision
+        )
+          throw new HealthScreenError(
+            "profile_changed",
+            "会员资料已被更新，请重新载入后再修改",
+            409,
+          );
+        const changed = allKeys.filter(
+          (k) => Object.hasOwn(fields, k) && fields[k] !== current[k],
+        );
+        if (
+          !editing &&
+          changed.some(
+            (k) => k === "heightCm" || !access.gate.missing.includes(k),
+          )
+        )
+          throw new HealthScreenError(
+            "profile_changed",
+            "资料已更新，请重新核对",
+            409,
+          );
+        const values = { ...current, ...fields };
+        if (
+          !validScreenName(values.name) ||
+          !["MALE", "FEMALE"].includes(values.gender) ||
+          !validScreenBirthday(values.birthday, access.day) ||
+          !validScreenWeight(values.weightKg)
+        )
+          throw new HealthScreenError(
+            "invalid_profile",
+            "请填写姓名、性别、有效出生日期和体重（0.1–500 千克）",
+            400,
+          );
+        if (
+          changed.includes("heightCm") &&
+          values.heightCm !== null &&
+          (typeof values.heightCm !== "number" ||
+            !Number.isFinite(values.heightCm) ||
+            values.heightCm < 50 ||
+            values.heightCm > 250 ||
+            Math.abs(
+              values.heightCm * 100 - Math.round(values.heightCm * 100),
+            ) > 1e-7)
+        )
+          throw new HealthScreenError(
+            "invalid_profile",
+            "身高可留空，或填写50至250厘米并最多保留两位小数",
+            400,
+          );
+        if (changed.length) {
+          if (changed.includes("name"))
+            await tx.healthProfile.upsert({
+              where: { userId: id },
+              create: { userId: id, screenName: values.name.trim() },
+              update: { screenName: values.name.trim() },
+            });
+          const update = {
+            ...(changed.includes("gender") ? { gender: values.gender } : {}),
+            ...(changed.includes("birthday")
+              ? { birthday: new Date(values.birthday + "T00:00:00Z") }
+              : {}),
+            ...(changed.includes("weightKg")
+              ? { weightKg: values.weightKg }
+              : {}),
+            ...(changed.includes("heightCm")
+              ? { heightCm: values.heightCm }
+              : {}),
+          };
+          if (Object.keys(update).length)
+            await tx.user.update({ where: { id }, data: update });
+          await this.audit(
+            tx,
+            actor,
+            id,
+            editing
+              ? "MEMBER_HEALTH_SCREEN_PROFILE_UPDATED"
+              : "MEMBER_HEALTH_SCREEN_PROFILE_COMPLETED",
+            requestId,
+            { fields: changed },
+          );
+        }
+        return this.profileView(
+          await authorizeScreen(tx, actor, id, false),
+          actor,
+        );
+      }),
+    );
   }
   private async audit(
     tx: Prisma.TransactionClient,
@@ -335,7 +502,9 @@ export class HealthScreenService {
             member: {
               id: member.id,
               memberNo: member.compatibilityId,
-              nickname: member.nickname,
+              nickname: member.healthProfile!.screenName!,
+              weightKg: Number(member.weightKg),
+              heightCm: member.heightCm ? Number(member.heightCm) : null,
               gender: member.gender,
               age: subject.age,
             },
@@ -444,7 +613,15 @@ export class HealthScreenService {
           { count: Math.min(rows.length, 50) },
         );
         return {
-          items: rows.slice(0, 50).map(referencePublic),
+          items: rows
+            .slice(0, 50)
+            .map((row) => ({
+              ...referencePublic(row),
+              canVoid:
+                !row.voidedAt &&
+                (actor.type !== "MEMBER" ||
+                  (row.actorType === "MEMBER" && row.actorId === actor.id)),
+            })),
           nextCursor: rows.length > 50 ? rows[49]!.id : null,
         };
       }),
@@ -543,6 +720,14 @@ export class HealthScreenService {
             "reference_missing",
             "参考记录不存在",
             404,
+          );
+        if (
+          actor.type === "MEMBER" &&
+          (row.actorType !== "MEMBER" || row.actorId !== actor.id)
+        )
+          throw new HealthScreenError(
+            "reference_read_only",
+            "只能撤销本人录入的参考值",
           );
         if (!row.voidedAt) {
           const changed = await tx.memberHealthReference.updateMany({

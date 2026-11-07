@@ -30,6 +30,35 @@ export class AdminHealthScreenController {
   availability(@CurrentAdmin() a: Admin) {
     return this.service.entry({ type: "ADMIN", id: a.id });
   }
+  @Get(":memberId/profile")
+  @Header("Cache-Control", "no-store")
+  profile(
+    @Param("memberId") id: string,
+    @CurrentAdmin() a: Admin,
+    @Req() r: RequestWithContext,
+  ) {
+    return this.service.profileGate(
+      id,
+      { type: "ADMIN", id: a.id },
+      r.requestId,
+    );
+  }
+  @Post(":memberId/profile")
+  @Header("Cache-Control", "no-store")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  completeProfile(
+    @Param("memberId") id: string,
+    @Body() input: unknown,
+    @CurrentAdmin() a: Admin,
+    @Req() r: RequestWithContext,
+  ) {
+    return this.service.completeProfile(
+      id,
+      input,
+      { type: "ADMIN", id: a.id },
+      r.requestId,
+    );
+  }
   @Get(":memberId")
   @Header("Cache-Control", "no-store")
   load(

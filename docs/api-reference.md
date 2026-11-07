@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **520 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **541 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -88,7 +88,7 @@
 | `POST /api/v1/site/refresh` | 旧版刷新 | public | 表单 refresh_token | LegacySession | 核心服务 |
 | `POST /api/v1/site/logout` | 旧版退出 | member | 无请求体 | {logged_out:true} | 核心服务 |
 
-## 商城 H5/小程序兼容接口（85）
+## 商城 H5/小程序兼容接口（87）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -174,11 +174,13 @@
 | `POST /api/saidian-mall/v1/storefront/gift-redemptions/preview` | 预览免费礼品兑换 | member | {token,skuId,addressId} | 商品和地址快照、fingerprint、数量1、实付和运费0 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
 | `POST /api/saidian-mall/v1/storefront/gift-redemptions/submit` | 核销礼品卡并生成订单 | member | {token,skuId,addressId,fingerprint,requestKey:8至128字符} | {orderId,orderNo}；一卡一单；事务内核销、结算、扣库存及ERP排队 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
 | `POST /api/saidian-mall/v1/storefront/gift-redemptions/result` | 查询本人原兑换结果 | member | {token} | {completed,orderId?,orderNo?}；仅本次验证会员可查 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
+| `POST /api/saidian-mall/v1/auth/health-screen/scan` | 核对扫码登录请求 | public | 扫码票据 | 四位核对码、有效期 | 不提供会员资料 |
+| `POST /api/saidian-mall/v1/auth/health-screen/approve` | 手机端确认大屏登录 | member | 已登录会员、扫码票据 | approved | 限有效正式会员会话、一次确认 |
 | `GET /api/saidian-mall/v1/partner/status` | 当前会员合作申请与账户状态 | member | 已验证商城会员会话 | {partner,application}；仅该会员数据 | 主库；会员绑定独立于推广归属 |
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
 
-## V2 App 接口（138）
+## V2 App 接口（154）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -275,6 +277,22 @@
 | `POST /api/saydian-app/v2/devices` | 上报设备连接 | member | {deviceId/hardwareId,vendor,model,displayName/name,macAddress?,firmware?,capabilities?:string[],syncCursor?,product?:say-ring,initializeFirstBinding?:boolean}；macAddress仅接受标准 MAC，iOS UUID 不可冒充 | Device；仅say-ring且显式initializeFirstBinding=true时附firstBindingInitialization:{product,deviceId,shouldClear}，账号行锁后检查含已解绑的全部绑定历史，仅首次事务返回true，丢失响应/重复上报不重新授权；更新最近连接并记录一条连接历史；完整 JSON 请求体同时保存为 `字段=值 \| 字段=值` 字符串；不是服务端蓝牙连接 | 核心服务 |
 | `PATCH /api/saydian-app/v2/devices/:id/capabilities` | 更新设备能力及游标 | member | path:id；{capabilities:string[],firmware?,syncCursor?}；id=绑定记录 UUID | Device | 核心服务 |
 | `DELETE /api/saydian-app/v2/devices/:id` | 解绑设备 | member | path:id；id=绑定记录 UUID | {unbound:true}；保留历史健康数据 | 核心服务 |
+| `GET /api/saydian-app/v2/member-health-screen/login/options` | 查询大屏开放状态 | public | 见字段契约 | no-store | 中国站，浏览器票据与扫码票据独立 |
+| `POST /api/saydian-app/v2/member-health-screen/login/session` | 交换仅本人大屏的限时会话 | member | 见字段契约 | no-store | 中国站，浏览器票据与扫码票据独立 |
+| `POST /api/saydian-app/v2/member-health-screen/login/qr` | 创建三分钟微信扫码请求 | public | 见字段契约 | no-store | 中国站，浏览器票据与扫码票据独立 |
+| `POST /api/saydian-app/v2/member-health-screen/login/qr/result` | 凭浏览器私密票据查询并一次领取会话 | public | 见字段契约 | no-store | 中国站，浏览器票据与扫码票据独立 |
+| `POST /api/saydian-app/v2/member-health-screen/login/qr/cancel` | 取消未消费的扫码请求 | public | 见字段契约 | no-store | 中国站，浏览器票据与扫码票据独立 |
+| `GET /api/saydian-app/v2/member-health-screen/me/profile` | 读取本人资料完整度 | member | 大屏会话 | 四项必填资料和缺项 | 仅本人 |
+| `POST /api/saydian-app/v2/member-health-screen/me/profile` | 保存本人资料 | member | 补全缺项或凭 expectedRevision 更新姓名、性别、生日、体重及可选身高 | 保存后重新检查必填项 | 仅本人 |
+| `GET /api/saydian-app/v2/member-health-screen/me` | 会员健康大屏聚合 | member | query:days；memberId=会员UUID；days=7/30/90 | HealthScreenResponse：资料、完整序列、覆盖、评分依据及版本、AI任务；no-store | 大屏专用会话，只限本人；资料、开关、授权和次数按操作核验 |
+| `GET /api/saydian-app/v2/member-health-screen/me/updates` | 检查会员指标更新 | member | query:days；memberId；days=7/30/90 | 分组计数、更新时间；不返回测量值；可见页面每10秒检查 | 大屏专用会话，只限本人；资料、开关、授权和次数按操作核验 |
+| `GET /api/saydian-app/v2/member-health-screen/me/records` | 大屏测量记录分页 | member | query:*；memberId；days、metric、cursor；审核员必填reason至少5字 | {items,nextCursor}；每页50；测量时间倒序；安全来源和质量字段；no-store | 大屏专用会话，只限本人；资料、开关、授权和次数按操作核验 |
+| `GET /api/saydian-app/v2/member-health-screen/me/references` | 手动参考测量历史 | member | query:cursor；memberId；cursor可选 | 每页50条，包含撤销历史；来源由录入者声明；no-store | 大屏专用会话，只限本人；资料、开关、授权和次数按操作核验 |
+| `POST /api/saydian-app/v2/member-health-screen/me/references` | 追加手动参考测量 | member | metric、measuredAt含时区、unit、values、method、context、requestKey | 幂等追加参考值；不修改原始HealthRecord或设备；不自动调用AI | 大屏专用会话，只限本人；资料、开关、授权和次数按操作核验 |
+| `POST /api/saydian-app/v2/member-health-screen/me/references/:id/void` | 撤销参考测量 | member | path:id；memberId、referenceId；reason需5至200字 | 保留历史和首次撤销理由；后续聚合排除；不覆盖历史分析快照 | 大屏专用会话，只限本人；资料、开关、授权和次数按操作核验 |
+| `POST /api/saydian-app/v2/member-health-screen/me/analyses` | 创建或复用独立大屏分析 | member | {days,inputDigest:SHA256,requestKey:UUID} | MemberAnalysisResult；会员级锁；相同输入复用；扣次和Outbox同事务；no-store | 大屏专用会话，只限本人；资料、开关、授权和次数按操作核验 |
+| `GET /api/saydian-app/v2/member-health-screen/me/analyses/:id` | 大屏分析状态与结果 | member | path:id；memberId、id均UUID | MemberAnalysisResult；READY才含正文；no-store | 大屏专用会话，只限本人；资料、开关、授权和次数按操作核验 |
+| `POST /api/saydian-app/v2/member-health-screen/me/logout` | 退出大屏 | member | 大屏专用会话 | loggedOut | 撤销本浏览器大屏凭证 |
 | `GET /api/saydian-app/v2/health/records/:recordId/ecg` | 读取本人私有心电波形 | member | path:recordId；recordId=本人clientRecordId | gzip JSON数值数组；响应头x-content-sha256、x-ecg-sample-rate、x-ecg-sample-count；无公开存储地址；不存在404 | 私有文件存储 |
 | `GET /api/saydian-app/v2/health/capabilities` | 健康同步能力 | member | 无请求体 | {dailySummaryVersions:true,dailySummaryVersion:1}；只表示服务端支持日汇总版本折叠，与普通设备能力无关 | 核心服务 |
 | `POST /api/saydian-app/v2/health/records/batch` | 健康批量同步 | member | header:idempotency-key；HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册 | {acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收 | 核心服务 |
@@ -321,7 +339,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（177）
+## 管理后台接口（179）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -331,6 +349,8 @@
 | `GET /api/saydian-app/admin/v1/health-reports/:id` | 后台查看健康报告进度和结果 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id；id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR | 报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文 | 报告队列与读取审计；AI结果仅供健康管理参考 |
 | `PATCH /api/saydian-app/admin/v1/health-reports/:id` | 超级管理员复核并编辑已生成健康报告 | admin: SUPER_ADMIN | path:id；id=报告UUID；仅SUPER_ADMIN；{content:{overview,trends:[{metric,text}],suggestions,limitations},expectedUpdatedAt}；指标、顺序和证据ID不可修改 | 更新后的报告正文；使用乐观锁，版本冲突返回409；HEALTH_REPORT_UPDATE审计只保存内容散列和变更章节，不保存报告正文 | 已生成READY报告；内容仅供日常健康管理参考 |
 | `GET /api/saydian-app/admin/v1/member-health-analysis/availability` | 会员大屏入口状态 | admin: SUPER_ADMIN, HEALTH_AUDITOR | 无 | {enabled}；默认关闭 | SUPER_ADMIN/HEALTH_AUDITOR |
+| `GET /api/saydian-app/admin/v1/member-health-analysis/:memberId/profile` | 检查大屏必填资料 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId；会员 UUID | 缺项、已有资料、可否补全 | 当前角色和归属校验、访问审计 |
+| `POST /api/saydian-app/admin/v1/member-health-analysis/:memberId/profile` | 保存会员大屏基本资料 | admin: SUPER_ADMIN | path:memberId；补全缺项；编辑已有资料需 expectedRevision。身高选填 | 已保存资料与缺项 | 仅超级管理员 |
 | `GET /api/saydian-app/admin/v1/member-health-analysis/:memberId` | 会员健康大屏聚合 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId，query:days；memberId=会员UUID；days=7/30/90 | HealthScreenResponse：资料、完整序列、覆盖、评分依据及版本、AI任务；no-store | 当前管理员权限与访问审计；功能开关 |
 | `GET /api/saydian-app/admin/v1/member-health-analysis/:memberId/updates` | 检查会员指标更新 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId，query:days；memberId；days=7/30/90 | 分组计数、更新时间；不返回测量值；可见页面每10秒检查 | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
 | `GET /api/saydian-app/admin/v1/member-health-analysis/:memberId/references` | 手动参考测量历史 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId，query:cursor；memberId；cursor可选 | 每页50条，包含撤销历史；来源由录入者声明；no-store | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
@@ -503,11 +523,12 @@
 | `POST /api/saydian-app/admin/v1/partner-agreements/:id/publish` | 发布合作协议版本 | admin: SUPER_ADMIN | path:id；id为协议UUID；{contentSha256} | 当前已发布版本；其他版本停用 | 仅SUPER_ADMIN；所有伙伴后续业务须同意当前已发布版本 |
 | `GET /api/saydian-app/admin/v1/partner-agreements/:id/acceptances` | 查看协议阅读与签署记录 | admin: SUPER_ADMIN | path:id；id为协议UUID | {items}；账户、首次阅读/同意时间、会话、IP、客户端；最多1000 | 仅SUPER_ADMIN |
 
-## 品牌伙伴平台接口（45）
+## 品牌伙伴平台接口（46）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
 | `GET /api/saydian-app/vip/v1/health-analysis/availability` | 战略伙伴大屏入口状态 | partner | 无 | {enabled}；默认关闭 | 当前启用distribution-1等级 |
+| `GET /api/saydian-app/vip/v1/members/:memberId/health-analysis/profile` | 检查大屏必填资料 | partner | path:memberId；会员 UUID | 缺项、已有资料、可否补全 | 当前角色和归属校验、访问审计 |
 | `GET /api/saydian-app/vip/v1/members/:memberId/health-analysis` | 所属会员健康大屏聚合 | partner | path:memberId，query:days；memberId=会员UUID；days=7/30/90 | HealthScreenResponse：完整周期、数据质量、评分及分析；no-store | 当前战略伙伴等级及会员归属；访问审计；功能开关 |
 | `GET /api/saydian-app/vip/v1/members/:memberId/health-analysis/updates` | 检查会员指标更新 | partner | path:memberId，query:days；memberId；days=7/30/90 | 分组计数、更新时间；不返回测量值；可见页面每10秒检查 | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
 | `GET /api/saydian-app/vip/v1/members/:memberId/health-analysis/references` | 手动参考测量历史 | partner | path:memberId，query:cursor；memberId；cursor可选 | 每页50条，包含撤销历史；来源由录入者声明；no-store | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
