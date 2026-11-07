@@ -634,8 +634,6 @@ export class AdminService {
       throw new BadRequestException("手机号格式不正确，请填写带国家区号的号码");
     if (emailInput && !email)
       throw new BadRequestException("邮箱地址格式不正确");
-    if (!mobile && !email)
-      throw new BadRequestException("手机号和邮箱至少保留一项");
     if (
       typeof input.mobileVerified !== "boolean" ||
       typeof input.emailVerified !== "boolean"
@@ -670,6 +668,11 @@ export class AdminService {
           user.status === UserStatus.DELETED
         ) {
           throw new ConflictException("注销流程中的会员不能手工编辑");
+        }
+        // Existing WeChat-only members can edit ordinary profile fields without
+        // inventing a contact. Never remove an existing member's last contact.
+        if (!mobile && !email && (user.mobile || user.email)) {
+          throw new BadRequestException("手机号和邮箱至少保留一项");
         }
         const referralEmployee =
           referralEmployeeIdInput &&

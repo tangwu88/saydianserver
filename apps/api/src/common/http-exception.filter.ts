@@ -102,6 +102,8 @@ export class SafeHttpExceptionFilter implements ExceptionFilter {
       );
     const partnerMember =
       /^\/(?:global\/)?api\/saidian-mall\/v1\/partner(?:\/|\?|$)/.test(path);
+    const adminMemberProfile =
+      /^\/(?:global\/)?api\/saydian-app\/admin\/v1\/members\/[^/?]+\/(?:profile|points-adjustments)(?:\?|$)/.test(path);
     const gift =
       /^\/(?:global\/)?api\/saidian-mall\/v1\/storefront\/gift-redemptions(?:\/|\?|$)/.test(
         path,
@@ -116,6 +118,7 @@ export class SafeHttpExceptionFilter implements ExceptionFilter {
           ? "操作过于频繁，请稍后再试"
           : !partner &&
               !partnerMember &&
+              !adminMemberProfile &&
               !gift &&
               !errorKey &&
               /[\u3400-\u9fff]/.test(details.message)

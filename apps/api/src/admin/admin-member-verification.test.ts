@@ -417,6 +417,38 @@ describe("international member contact verification administration", () => {
     });
   });
 
+  it("edits an existing contactless member without inventing contacts or revoking sessions", async () => {
+    const h = updateHarness({ mobile: null, email: null, mobileVerifiedAt: null, emailVerifiedAt: null, heightCm: null, weightKg: null });
+    const result = await h.service.updateMemberProfile(superAdmin, h.current()!.id, "contactless-profile", {
+      nickname: "Synthetic member",
+      gender: "FEMALE",
+      birthday: "1970-06-15",
+      heightCm: 170,
+      weightKg: 55,
+      mobile: "",
+      email: "",
+      status: "ACTIVE",
+      mobileVerified: false,
+      emailVerified: false,
+      expectedUpdatedAt: initialUpdatedAt.toISOString(),
+    });
+    expect(result).toMatchObject({ gender: "FEMALE", heightCm: 170, weightKg: 55, mobile: null, email: null });
+    expect(h.tx.userSession.updateMany).not.toHaveBeenCalled();
+    expect(h.auditLog.create).toHaveBeenCalledOnce();
+  });
+
+  it.each([{ mobile: "+8613812348888", email: null }, { mobile: null, email: "member@example.invalid" }])(
+    "rejects removing an existing member's final contact: %j", async (contacts) => {
+      const h = updateHarness(contacts);
+      await expect(h.service.updateMemberProfile(superAdmin, h.current()!.id, "remove-last-contact", {
+        nickname: "Synthetic member", mobile: "", email: "", status: "ACTIVE",
+        mobileVerified: false, emailVerified: false, expectedUpdatedAt: initialUpdatedAt.toISOString(),
+      })).rejects.toThrow("手机号和邮箱至少保留一项");
+      expect(h.tx.user.updateMany).not.toHaveBeenCalled();
+      expect(h.tx.userSession.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     [{ avatarUrl: "file:///avatar.png" }, "头像地址不正确"],
     [{ gender: "UNKNOWN" }, "性别选项不正确"],

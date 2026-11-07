@@ -507,6 +507,35 @@ describe("international member admin list", () => {
     expect(sfc).toContain(':disabled-date="memberBirthdayDisabled"');
   });
 
+  it.each(["", "0", "0.00"])("keeps missing measurements empty and treats %j points as no adjustment", async (pointAdjustment) => {
+    const h = harness();
+    h.api.get.mockResolvedValueOnce({ data: { data: { ...member, mobile: null, email: null, heightCm: null, weightKg: null } } });
+    await h.openEdit(member);
+    expect(h.form.value).toMatchObject({ heightCm: null, weightKg: null });
+    h.form.value.pointAdjustment = pointAdjustment;
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledWith("/members/internal-uuid/profile", expect.objectContaining({ heightCm: null, weightKg: null, mobile: "", email: "" }));
+    expect(h.api.post).not.toHaveBeenCalled();
+    expect(h.messages.success).toHaveBeenCalledWith("会员资料已保存");
+    expect(h.sfc).not.toContain('<el-input-number v-model="form.heightCm"');
+    expect(h.sfc).not.toContain('<el-input-number v-model="form.weightKg"');
+  });
+
+  it("validates typed measurements before saving, then submits numeric values", async () => {
+    const h = harness(["SUPER_ADMIN"], "请求失败，请稍后重试");
+    h.api.get.mockResolvedValueOnce({ data: { data: { ...member } } });
+    await h.openEdit(member);
+    h.form.value.heightCm = "0";
+    await h.save();
+    expect(h.api.patch).not.toHaveBeenCalled();
+    expect(h.dialogVisible.value).toBe(true);
+    expect(h.messages.error).toHaveBeenCalledWith("身高须在50至250之间");
+    h.form.value.heightCm = "170";
+    h.form.value.weightKg = "55.5";
+    await h.save();
+    expect(h.api.patch).toHaveBeenCalledWith("/members/internal-uuid/profile", expect.objectContaining({ heightCm: 170, weightKg: 55.5 }));
+  });
+
   it("loads active promoter choices and saves the employee ID without forcing a password change", async () => {
     const h = harness();
     const employeeId = "00000000-0000-4000-8000-000000000456";

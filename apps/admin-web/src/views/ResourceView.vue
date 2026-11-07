@@ -656,8 +656,18 @@ function pointDeltaCents(value: unknown): number {
   if (!text) return 0;
   if (!/^-?(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/.test(text)) throw new Error("积分调整金额最多保留两位小数");
   const cents = Math.round(Number(text) * 100);
-  if (!Number.isSafeInteger(cents) || cents === 0) throw new Error("积分调整金额不能为0");
+  if (!Number.isSafeInteger(cents)) throw new Error("积分调整金额超出范围");
   return cents;
+}
+
+function memberMeasure(value: unknown, min: number, max: number, label: string): number | null {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const number = Number(text);
+  if (!/^\d+(?:\.\d+)?$/.test(text) || !Number.isFinite(number) || number < min || number > max) {
+    throw new Error(`${label}须在${min}至${max}之间`);
+  }
+  return number;
 }
 
 function contactVerificationLabel(row: Row, channel: "mobile" | "email"): string {
@@ -1036,8 +1046,8 @@ async function save(): Promise<void> {
         avatarUrl: form.value.avatarUrl,
         gender: form.value.gender,
         birthday: form.value.birthday,
-        heightCm: form.value.heightCm,
-        weightKg: form.value.weightKg,
+        heightCm: memberMeasure(form.value.heightCm, 50, 250, "身高"),
+        weightKg: memberMeasure(form.value.weightKg, 10, 500, "体重"),
         mobile: form.value.mobile,
         email: form.value.email,
         status: form.value.status,
@@ -1107,7 +1117,7 @@ async function save(): Promise<void> {
     } else {
       await api.post(`/${resource.value}`, payload);
     }
-    ElMessage.success(resource.value === "members" ? (form.value.pointAdjustment ? "会员资料与积分已保存" : form.value.newPassword ? "会员资料和密码已保存，原登录已退出" : "会员资料已保存") : "已保存");
+    ElMessage.success(resource.value === "members" ? (pointDeltaCents(form.value.pointAdjustment) ? "会员资料与积分已保存" : form.value.newPassword ? "会员资料和密码已保存，原登录已退出" : "会员资料已保存") : "已保存");
     dialogVisible.value = false;
     await load();
   } catch (error) {
@@ -1764,8 +1774,8 @@ onBeforeUnmount(() => {
           <el-form-item label="出生日期">
             <el-date-picker v-model="form.birthday" type="date" value-format="YYYY-MM-DD" format="YYYY年MM月DD日" clearable :disabled-date="memberBirthdayDisabled" style="width: 100%" placeholder="选择出生日期" />
           </el-form-item>
-          <el-form-item label="身高"> <el-input-number v-model="form.heightCm" :min="50" :max="250" :precision="1" :step="0.1" controls-position="right" /><span class="muted" style="margin-left: 10px">厘米，可留空</span> </el-form-item>
-          <el-form-item label="体重"> <el-input-number v-model="form.weightKg" :min="10" :max="500" :precision="1" :step="0.1" controls-position="right" /><span class="muted" style="margin-left: 10px">千克，可留空</span> </el-form-item>
+          <el-form-item label="身高"> <el-input v-model="form.heightCm" inputmode="decimal" placeholder="未填写" clearable style="width: 156px" /><span class="muted" style="margin-left: 10px">厘米，可留空</span> </el-form-item>
+          <el-form-item label="体重"> <el-input v-model="form.weightKg" inputmode="decimal" placeholder="未填写" clearable style="width: 156px" /><span class="muted" style="margin-left: 10px">千克，可留空</span> </el-form-item>
           <el-divider content-position="left">登录与联系方式</el-divider>
           <el-form-item label="手机号">
             <el-input :model-value="form.mobile" clearable placeholder="国内填写11位手机号；国际号码请带国家区号" @input="onMemberContactInput('mobile', $event)" />
