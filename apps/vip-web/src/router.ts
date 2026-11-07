@@ -15,6 +15,7 @@ export const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
   routes: [
     { path: "/login", component: Login },
+    { path: "/members/:id/health-screen", component: () => import("./views/MemberHealthScreen.vue") },
     { path: "/auth/member-start", component: () => import("./views/MemberStart.vue"), meta: { public: true } },
     { path: "/auth/member-callback", component: () => import("./views/MemberCallback.vue"), meta: { public: true } },
     {

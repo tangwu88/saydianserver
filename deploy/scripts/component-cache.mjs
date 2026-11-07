@@ -13,9 +13,9 @@ export function isComponentInput(name, path) {
   assert(components.includes(name));
   if (common.includes(path) || path.startsWith("packages/contracts/") || path.startsWith(".github/") || path.startsWith("deploy/scripts/")) return true;
   if (path === `docker/${name}.Dockerfile`) return true;
-  if (name === "api") return path.startsWith("packages/commerce-domain/") || path.startsWith("apps/api/");
-  if (name === "worker") return path.startsWith("packages/commerce-domain/") || path.startsWith("apps/worker/") || path.startsWith("apps/api/prisma/") || path === "apps/api/package.json";
-  return ["apps/admin-web/", "apps/vip-web/", "apps/download-web/", "apps/shop/"].some(prefix => path.startsWith(prefix)) || path === "docker/admin-nginx.conf";
+  if (name === "api") return (path.startsWith("packages/commerce-domain/") || path.startsWith("packages/health-domain/")) || path.startsWith("apps/api/");
+  if (name === "worker") return (path.startsWith("packages/commerce-domain/") || path.startsWith("packages/health-domain/")) || path.startsWith("apps/worker/") || path.startsWith("apps/api/prisma/") || path === "apps/api/package.json";
+  return ["packages/health-screen-ui/", "apps/admin-web/", "apps/vip-web/", "apps/download-web/", "apps/shop/"].some(prefix => path.startsWith(prefix)) || path === "docker/admin-nginx.conf";
 }
 
 export function inputHash(name, entries) {

@@ -4,7 +4,9 @@
   "private": true,
   "type": "commonjs",
   "main": "dist/main.js",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.build.json",
@@ -18,7 +20,8 @@
     "@saydian/app-contracts": "workspace:*",
     "@saydian/commerce-domain": "workspace:*",
     "dotenv": "^17.2.2",
-    "ioredis": "^5.7.0"
+    "ioredis": "^5.7.0",
+    "@saydian/health-domain": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.20.5",

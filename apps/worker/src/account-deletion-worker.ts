@@ -54,6 +54,8 @@ export class AccountDeletionWorker {
         await tx.deviceBinding.deleteMany({ where: { userId } });
         await tx.aiConversation.deleteMany({ where: { userId } });
         await tx.reportCreditLedger.deleteMany({ where: { userId } });
+        await tx.memberHealthReference.deleteMany({ where: { userId } });
+        await tx.memberHealthAnalysis.deleteMany({ where: { userId } });
         await tx.healthReport.deleteMany({ where: { userId } });
         await tx.healthMembership.deleteMany({ where: { userId } });
         await tx.healthProfile.deleteMany({ where: { userId } });

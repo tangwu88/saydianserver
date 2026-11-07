@@ -1,3 +1,5 @@
+import { HealthScreenModule } from "../health-screen/health-screen.module";
+import { PartnerHealthScreenController } from "./partner-health-screen.controller";
 import { Module } from "@nestjs/common";
 import { AdminModule } from "../admin/admin.module";
 import { BillingModule } from "../billing/billing.module";
@@ -18,8 +20,9 @@ import { PartnerAgreementService } from "./partner-agreement.service";
 import { PartnerMemberController, PartnerMemberLoginController, PartnerAgreementController, PartnerOnboardingAdminController } from "./partner-onboarding.controller";
 
 @Module({
-  imports: [AdminModule, BillingModule, SupportModule, AuthModule],
+  imports: [HealthScreenModule, AdminModule, BillingModule, SupportModule, AuthModule],
   controllers: [
+    PartnerHealthScreenController,
     PartnerPublicController,
     PartnerController,
     PartnerAdminController,

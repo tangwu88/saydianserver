@@ -1,3 +1,5 @@
+import { HealthScreenModule } from "../health-screen/health-screen.module";
+import { AdminHealthScreenController, HealthScoreRulesController } from "./admin-health-screen.controller";
 import { Module } from "@nestjs/common";
 import { AdminController, AdminLoginController } from "./admin.controller";
 import { AdminAuditInterceptor } from "./admin-audit.interceptor";
@@ -11,8 +13,8 @@ import { AuthModule } from "../auth/auth.module";
 import { AdminEmailDeliveryController } from "./admin-email-delivery.controller";
 
 @Module({
-  imports: [HealthReportsModule, SupportModule, AuthModule],
-  controllers: [AdminLoginController, AdminController, AdminHealthReportsController, AdminEmailDeliveryController],
+  imports: [HealthScreenModule, HealthReportsModule, SupportModule, AuthModule],
+  controllers: [AdminHealthScreenController, HealthScoreRulesController, AdminLoginController, AdminController, AdminHealthReportsController, AdminEmailDeliveryController],
   providers: [
     AdminAuthService,
     AdminAuthGuard,

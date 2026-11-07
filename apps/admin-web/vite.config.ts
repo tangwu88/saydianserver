@@ -5,7 +5,7 @@ export default defineConfig({
   base: process.env.VITE_BASE_PATH || "/admin/",
   plugins: [vue()],
   optimizeDeps: {
-    include: ["@saydian/app-contracts", "@saydian/app-contracts/download"],
+    include: ["@saydian/app-contracts", "@saydian/app-contracts/download", "@saydian/app-contracts/commerce-erp"],
   },
   server: {
     port: 5173,

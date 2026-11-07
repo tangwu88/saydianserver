@@ -1,0 +1,23 @@
+{
+  "name": "@saydian/health-domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@saydian/app-contracts": "workspace:*",
+    "@prisma/client": "^6.15.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

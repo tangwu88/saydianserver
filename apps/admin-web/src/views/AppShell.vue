@@ -12,7 +12,7 @@ const groups = [
   { title: "会员与健康", items: [
     ["/members", "会员与健康档案"], ["/care", "远程关爱"],
     ["/warnings", "健康预警"], ["/health-reports", "健康报告"],
-    ["/health-report-offers", "报告方案"], ["/devices", "设备"],
+    ["/health-score-rules", "健康评分规则"], ["/health-report-offers", "报告方案"], ["/devices", "设备"],
   ] },
   { title: "商城", items: [
     ["/commerce-products", "商品"], ["/commerce-categories", "分类"],

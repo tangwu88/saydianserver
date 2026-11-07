@@ -16,6 +16,8 @@ export const adminResourcePermissions: Record<string, Rule> = {
   care: { read: [...app, ...customer, ...health, ...view], write: app },
   warnings: { read: [...app, ...customer, ...health, ...view], write: health },
   devices: { read: [...app, ...customer, ...health, ...view], write: app },
+  "member-health-analysis": { read: health, write: health },
+  "health-score-rules": { read: health, write: [] },
   "health-reports": { read: [...health, ...customer, ...view], write: health },
   "health-report-offers": { read: [...app, ...finance, ...health, ...view], write: finance },
   "commerce-products": common, "commerce-categories": common,

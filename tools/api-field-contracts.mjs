@@ -1,4 +1,5 @@
 // Deliberately explicit: an inferred controller route is not a verified field contract.
+import { healthScreenFieldContracts } from "./health-screen-field-contracts.mjs";
 import { h5FieldContracts } from "./h5-field-contracts.mjs";
 import { giftFieldContracts } from "./gift-field-contracts.mjs";
 import { partnerFieldContracts } from "./partner-field-contracts.mjs";
@@ -113,7 +114,7 @@ for (const method of ["receipt", "verify"]) {
   }, withdrawal, null, withdrawalSource);
 }
 
-Object.assign(fieldContracts, h5FieldContracts, partnerFieldContracts, giftFieldContracts);
+Object.assign(fieldContracts, h5FieldContracts, partnerFieldContracts, giftFieldContracts, healthScreenFieldContracts);
 
 export function routeContract(route) {
   return fieldContracts[route.key] ?? { status: "unreviewed", requestSchema: null, requestExample: null, responseSchema: null, responseExample: null, contentType: /multipart/i.test(route.request) ? "multipart/form-data" : "application/json", source: route.source, note: "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。" };

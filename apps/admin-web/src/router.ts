@@ -13,11 +13,13 @@ import UsMigrationView from "./views/UsMigrationView.vue";
 
 const routes = [
   { path: "/login", component: LoginView },
+  { path: "/members/:id/health-screen", component: () => import("./views/MemberHealthScreenView.vue"), meta: { resource: "member-health-analysis" } },
   {
     path: "/",
     component: AppShell,
     children: [
       { path: "", component: DashboardView },
+      { path: "health-score-rules", component: () => import("./views/HealthScoreRulesView.vue") },
       { path: "api-docs", component: ApiDocsView },
       { path: "commerce-withdrawals", component: CommerceWithdrawalsView },
       { path: "integrations", component: IntegrationsView },
@@ -41,7 +43,7 @@ router.beforeEach(async (to) => {
   if (to.path !== "/login") {
     try { await ensureAdminRoles(); }
     catch { clearAdminToken(); return "/login"; }
-    const resource = to.path.split("/").filter(Boolean)[0] ?? "dashboard";
+    const resource = typeof to.meta.resource === "string" ? to.meta.resource : to.path.split("/").filter(Boolean)[0] ?? "dashboard";
     if (to.path !== "/" && !canAdminResource(getAdminRoles(), resource, "read")) return "/";
   }
   return true;

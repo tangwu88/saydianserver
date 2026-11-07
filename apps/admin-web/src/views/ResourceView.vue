@@ -6,6 +6,7 @@ import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, getAdminRoles, readableError, responseData } from "../api";
 import { canAdminResource } from "@saydian/app-contracts";
+import { openHealthScreen } from "@saydian/health-screen-ui/open-window";
 import PartnerAssignmentDialog from "../components/PartnerAssignmentDialog.vue";
 import CommerceWorkspace from "../components/CommerceWorkspace.vue";
 import StoreDownloadEditor from "../components/StoreDownloadEditor.vue";
@@ -30,6 +31,12 @@ const memberColumns = ["avatarUrl", "memberNo", "promotionCode", "emailMasked", 
 const memberPageSize = 30;
 const route = useRoute();
 const loading = ref(false);
+const healthScreenEnabled = ref(false);
+watch(() => route.params.resource, async resource => {
+  healthScreenEnabled.value = false;
+  if (resource !== "members" || !getAdminRoles().some(role => ["SUPER_ADMIN", "HEALTH_AUDITOR"].includes(role))) return;
+  try { const result = responseData<{ enabled: boolean }>(await api.get("/member-health-analysis/availability")); if (route.params.resource === "members") healthScreenEnabled.value = result.enabled; } catch { /* hidden until authorized */ }
+}, { immediate: true });
 const loadError = ref("");
 const saving = ref(false);
 const productImagesUploading = ref(0);
@@ -1581,6 +1588,7 @@ onBeforeUnmount(() => {
           <el-table-column v-if="resource === 'members'" label="健康数据" width="230" fixed="right">
             <template #default="scope">
               <el-button size="small" @click="viewHealth(scope.row, false)">查看摘要</el-button>
+              <el-button v-if="canReadRawHealth && healthScreenEnabled" size="small" type="primary" plain @click="openHealthScreen('admin', scope.row.id)">健康大屏</el-button>
               <el-button v-if="canReadRawHealth" size="small" type="warning" plain @click="viewHealth(scope.row, true)">原始记录</el-button>
             </template>
           </el-table-column>

@@ -20,8 +20,8 @@
     "test:http:unified": "node tools/unified-http-smoke.mjs",
     "test:restore:local": "node tools/test-local-backup-restore.mjs",
     "build": "pnpm --filter @saydian/app-contracts build && pnpm -r --if-present build",
-    "typecheck": "pnpm --filter @saydian/app-contracts build && pnpm --filter @saydian/commerce-domain build && pnpm -r --if-present typecheck",
-    "test": "pnpm --filter @saydian/app-contracts build && pnpm --filter @saydian/commerce-domain build && pnpm -r --if-present test",
+    "typecheck": "pnpm --filter @saydian/app-contracts build && pnpm --filter @saydian/commerce-domain build && pnpm --filter @saydian/health-domain build && pnpm -r --if-present typecheck",
+    "test": "pnpm --filter @saydian/app-contracts build && pnpm --filter @saydian/commerce-domain build && pnpm --filter @saydian/health-domain build && pnpm -r --if-present test",
     "lint": "pnpm -r --if-present lint",
     "dev:api": "pnpm --filter @saydian/app-api dev",
     "dev:worker": "pnpm --filter @saydian/app-worker dev",
@@ -38,7 +38,9 @@
     "migrate:mall:verify": "pnpm --filter @saydian/app-migrator mall:verify",
     "migrate:takeover:check": "pnpm --filter @saydian/app-migrator takeover:check",
     "migrate:takeover:activate": "pnpm --filter @saydian/app-migrator takeover:activate",
-    "dev:vip": "pnpm --filter @saydian/app-vip-web dev"
+    "dev:vip": "pnpm --filter @saydian/app-vip-web dev",
+    "test:health-screen:upgrade": "node tools/test-health-screen-upgrade.mjs",
+    "test:health-screen:database": "node tools/test-health-screen-database.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

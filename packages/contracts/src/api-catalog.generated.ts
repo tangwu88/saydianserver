@@ -183,6 +183,2849 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminHealthScreenController.availability",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/member-health-analysis/availability",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "会员大屏入口状态",
+      "request": "无",
+      "response": "{enabled}；默认关闭",
+      "dependency": "SUPER_ADMIN/HEALTH_AUDITOR",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "AdminHealthScreenController.load",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/member-health-analysis/:memberId",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "days",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "会员健康大屏聚合",
+      "request": "memberId=会员UUID；days=7/30/90",
+      "response": "HealthScreenResponse：资料、完整序列、覆盖、评分依据及版本、AI任务；no-store",
+      "dependency": "当前管理员权限与访问审计；功能开关",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "member": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "memberNo": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "nickname": {
+                  "type": "string"
+                },
+                "gender": {
+                  "type": "string"
+                },
+                "age": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "memberNo",
+                "nickname",
+                "gender",
+                "age"
+              ],
+              "additionalProperties": true
+            },
+            "period": {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "enum": [
+                    7,
+                    30,
+                    90
+                  ]
+                },
+                "timezone": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "dates": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "days",
+                "timezone",
+                "from",
+                "to",
+                "dates"
+              ],
+              "additionalProperties": true
+            },
+            "recordCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unusableRecordCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "eligibleRecordCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "coverageDays": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "lastMeasuredAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "dataUpdatedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "series": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "device",
+                      "reference"
+                    ]
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "group": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "type": "string"
+                  },
+                  "semantics": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "eligibleCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "coverageDays": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "eligibleDays": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "latest": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "latestAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "average": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "eligibleAverage": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "exclusions": {
+                    "type": "object"
+                  },
+                  "points": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "eligibleValue": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "eligibleCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "date",
+                        "value",
+                        "eligibleValue",
+                        "count",
+                        "eligibleCount"
+                      ],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "metric",
+                  "label",
+                  "group",
+                  "unit",
+                  "semantics",
+                  "count",
+                  "eligibleCount",
+                  "coverageDays",
+                  "eligibleDays",
+                  "latest",
+                  "latestAt",
+                  "average",
+                  "eligibleAverage",
+                  "sources",
+                  "exclusions",
+                  "points"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "qualityCounts": {
+              "type": "object"
+            },
+            "score": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "total": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "basis": {
+                        "type": "string"
+                      },
+                      "referenceUrl": {
+                        "type": "string"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "days": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "weight": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "label",
+                      "score",
+                      "value",
+                      "reason",
+                      "basis",
+                      "referenceUrl",
+                      "count",
+                      "days",
+                      "weight"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "version",
+                "title",
+                "total",
+                "reason",
+                "items"
+              ],
+              "additionalProperties": true
+            },
+            "dataDigest": {
+              "type": "string"
+            },
+            "analysis": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "enum": [
+                        "QUEUED",
+                        "GENERATING",
+                        "READY",
+                        "FAILED",
+                        "REVOKED"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "generatedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "period": {
+                      "type": "object",
+                      "properties": {
+                        "days": {
+                          "enum": [
+                            7,
+                            30,
+                            90
+                          ]
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "dates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "days",
+                        "timezone",
+                        "from",
+                        "to",
+                        "dates"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "inputDigest": {
+                      "type": "string"
+                    },
+                    "ruleVersion": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "content": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "summary": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "evidence"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "insights": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "text",
+                                  "evidence"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "suggestions": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "evidence"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "limitations": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "summary",
+                            "insights",
+                            "suggestions",
+                            "limitations"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "failureReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "createdAt",
+                    "generatedAt",
+                    "period",
+                    "inputDigest",
+                    "ruleVersion",
+                    "content",
+                    "failureReason"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "analysisStale": {
+              "type": "boolean"
+            },
+            "availability": {
+              "type": "object",
+              "properties": {
+                "canGenerate": {
+                  "type": "boolean"
+                },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "credits": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "consentBypass": {
+                  "type": "boolean"
+                },
+                "creditBypass": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "canGenerate",
+                "reasons",
+                "credits",
+                "consentBypass",
+                "creditBypass"
+              ],
+              "additionalProperties": true
+            },
+            "fetchedAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "member",
+            "period",
+            "recordCount",
+            "unusableRecordCount",
+            "eligibleRecordCount",
+            "coverageDays",
+            "lastMeasuredAt",
+            "dataUpdatedAt",
+            "series",
+            "qualityCounts",
+            "score",
+            "dataDigest",
+            "analysis",
+            "analysisStale",
+            "availability",
+            "fetchedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。",
+        "query": {
+          "days": {
+            "schema": {
+              "enum": [
+                "7",
+                "30",
+                "90"
+              ]
+            },
+            "example": "7",
+            "required": false
+          }
+        }
+      }
+    },
+    {
+      "key": "AdminHealthScreenController.updates",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/member-health-analysis/:memberId/updates",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "days",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "检查会员指标更新",
+      "request": "memberId；days=7/30/90",
+      "response": "分组计数、更新时间；不返回测量值；可见页面每10秒检查",
+      "dependency": "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "group": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "group",
+                  "count",
+                  "updatedAt"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "groups"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。",
+        "query": {
+          "days": {
+            "schema": {
+              "enum": [
+                "7",
+                "30",
+                "90"
+              ]
+            },
+            "required": false
+          }
+        }
+      }
+    },
+    {
+      "key": "AdminHealthScreenController.references",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/member-health-analysis/:memberId/references",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "手动参考测量历史",
+      "request": "memberId；cursor可选",
+      "response": "每页50条，包含撤销历史；来源由录入者声明；no-store",
+      "dependency": "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "metric": {
+                    "type": "string"
+                  },
+                  "measuredAt": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "type": "string"
+                  },
+                  "values": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  },
+                  "method": {
+                    "type": "string"
+                  },
+                  "context": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "voidedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "voidReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "metric",
+                  "measuredAt",
+                  "unit",
+                  "values",
+                  "method",
+                  "context",
+                  "createdAt",
+                  "voidedAt",
+                  "voidReason"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "nextCursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "items",
+            "nextCursor"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。",
+        "query": {
+          "cursor": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          }
+        }
+      }
+    },
+    {
+      "key": "AdminHealthScreenController.saveReference",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/member-health-analysis/:memberId/references",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "追加手动参考测量",
+      "request": "metric、measuredAt含时区、unit、values、method、context、requestKey",
+      "response": "幂等追加参考值；不修改原始HealthRecord或设备；不自动调用AI",
+      "dependency": "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "metric": {
+              "enum": [
+                "BLOOD_GLUCOSE",
+                "URIC_ACID",
+                "BLOOD_LIPIDS",
+                "BLOOD_PRESSURE",
+                "HEART_RATE",
+                "BLOOD_OXYGEN",
+                "TEMPERATURE"
+              ]
+            },
+            "measuredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "values": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "method": {
+              "enum": [
+                "GLUCOSE_METER",
+                "URIC_ACID_METER",
+                "LIPID_METER",
+                "BLOOD_PRESSURE_MONITOR",
+                "PULSE_OXIMETER",
+                "THERMOMETER",
+                "LAB_REPORT"
+              ]
+            },
+            "context": {
+              "enum": [
+                "FASTING",
+                "AFTER_MEAL_2H",
+                "RANDOM",
+                "RESTING"
+              ]
+            },
+            "requestKey": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "metric",
+            "measuredAt",
+            "unit",
+            "values",
+            "method",
+            "context",
+            "requestKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "metric": {
+              "type": "string"
+            },
+            "measuredAt": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "values": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "method": {
+              "type": "string"
+            },
+            "context": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "voidedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "voidReason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "metric",
+            "measuredAt",
+            "unit",
+            "values",
+            "method",
+            "context",
+            "createdAt",
+            "voidedAt",
+            "voidReason"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "AdminHealthScreenController.voidReference",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/member-health-analysis/:memberId/references/:referenceId/void",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "referenceId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "撤销参考测量",
+      "request": "memberId、referenceId；reason需5至200字",
+      "response": "保留历史和首次撤销理由；后续聚合排除；不覆盖历史分析快照",
+      "dependency": "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "metric": {
+              "type": "string"
+            },
+            "measuredAt": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "values": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "method": {
+              "type": "string"
+            },
+            "context": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "voidedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "voidReason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "metric",
+            "measuredAt",
+            "unit",
+            "values",
+            "method",
+            "context",
+            "createdAt",
+            "voidedAt",
+            "voidReason"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "AdminHealthScreenController.records",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/member-health-analysis/:memberId/records",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "*",
+          "type": "{ days?: string; metric?: string; cursor?: string; reason?: string }",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "大屏测量记录分页",
+      "request": "memberId；days、metric、cursor；审核员必填reason至少5字",
+      "response": "{items,nextCursor}；每页50；测量时间倒序；安全来源和质量字段；no-store",
+      "dependency": "逐次鉴权和访问审计",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "metric": {
+                    "type": "string"
+                  },
+                  "measuredAt": {
+                    "type": "string"
+                  },
+                  "uploadedAt": {
+                    "type": "string"
+                  },
+                  "quality": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "sourceModel": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "unavailableReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "values": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "number"
+                        },
+                        "unit": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "label",
+                        "value",
+                        "unit",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "metric",
+                  "measuredAt",
+                  "uploadedAt",
+                  "quality",
+                  "source",
+                  "sourceModel",
+                  "unavailableReason",
+                  "values"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "nextCursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "items",
+            "nextCursor"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。",
+        "query": {
+          "days": {
+            "schema": {
+              "enum": [
+                "7",
+                "30",
+                "90"
+              ]
+            },
+            "example": "90",
+            "required": false
+          },
+          "metric": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "HEART_RATE",
+            "required": false
+          },
+          "cursor": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          },
+          "reason": {
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        }
+      }
+    },
+    {
+      "key": "AdminHealthScreenController.generate",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/member-health-analysis/:memberId/analyses",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "创建或复用独立大屏分析",
+      "request": "{days,inputDigest:SHA256,requestKey:UUID}",
+      "response": "MemberAnalysisResult；会员级锁；相同输入复用；扣次和Outbox同事务；no-store",
+      "dependency": "当前权限、授权和次数；超级管理员审计绕过",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "days": {
+              "enum": [
+                7,
+                30,
+                90
+              ]
+            },
+            "inputDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "requestKey": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "days",
+            "inputDigest",
+            "requestKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "enum": [
+                "QUEUED",
+                "GENERATING",
+                "READY",
+                "FAILED",
+                "REVOKED"
+              ]
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "generatedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "period": {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "enum": [
+                    7,
+                    30,
+                    90
+                  ]
+                },
+                "timezone": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "dates": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "days",
+                "timezone",
+                "from",
+                "to",
+                "dates"
+              ],
+              "additionalProperties": true
+            },
+            "inputDigest": {
+              "type": "string"
+            },
+            "ruleVersion": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "content": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "summary": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "insights": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "suggestions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "limitations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "summary",
+                    "insights",
+                    "suggestions",
+                    "limitations"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureReason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "createdAt",
+            "generatedAt",
+            "period",
+            "inputDigest",
+            "ruleVersion",
+            "content",
+            "failureReason"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "AdminHealthScreenController.result",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/member-health-analysis/:memberId/analyses/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "大屏分析状态与结果",
+      "request": "memberId、id均UUID",
+      "response": "MemberAnalysisResult；READY才含正文；no-store",
+      "dependency": "读取前重新鉴权、核对授权并审计",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "enum": [
+                "QUEUED",
+                "GENERATING",
+                "READY",
+                "FAILED",
+                "REVOKED"
+              ]
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "generatedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "period": {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "enum": [
+                    7,
+                    30,
+                    90
+                  ]
+                },
+                "timezone": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "dates": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "days",
+                "timezone",
+                "from",
+                "to",
+                "dates"
+              ],
+              "additionalProperties": true
+            },
+            "inputDigest": {
+              "type": "string"
+            },
+            "ruleVersion": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "content": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "summary": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "insights": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "suggestions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "limitations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "summary",
+                    "insights",
+                    "suggestions",
+                    "limitations"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureReason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "createdAt",
+            "generatedAt",
+            "period",
+            "inputDigest",
+            "ruleVersion",
+            "content",
+            "failureReason"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "HealthScoreRulesController.list",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/health-score-rules",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "HEALTH_AUDITOR"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "评分规则版本列表",
+      "request": "无",
+      "response": "{enabled,items}；最多100版",
+      "dependency": "SUPER_ADMIN/HEALTH_AUDITOR",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "status": {
+                    "enum": [
+                      "DRAFT",
+                      "PUBLISHED",
+                      "ARCHIVED"
+                    ]
+                  },
+                  "rules": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      "items": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "weight": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "required": {
+                              "type": "boolean"
+                            },
+                            "minDays": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 90
+                            },
+                            "minSamples": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100000
+                            },
+                            "minAge": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "maxAge": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "gender": {
+                              "enum": [
+                                "ANY",
+                                "MALE",
+                                "FEMALE"
+                              ]
+                            },
+                            "allowedOrigins": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "bands": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "min": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "max": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "score": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 100
+                                  }
+                                },
+                                "required": [
+                                  "min",
+                                  "max",
+                                  "score"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "basis": {
+                              "type": "string"
+                            },
+                            "referenceUrl": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "label",
+                            "weight",
+                            "required",
+                            "minDays",
+                            "minSamples",
+                            "minAge",
+                            "maxAge",
+                            "gender",
+                            "allowedOrigins",
+                            "bands",
+                            "basis",
+                            "referenceUrl"
+                          ],
+                          "additionalProperties": true
+                        }
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "description",
+                      "items"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  },
+                  "publishedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "version",
+                  "status",
+                  "rules",
+                  "createdAt",
+                  "updatedAt",
+                  "publishedAt"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "enabled",
+            "items"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "HealthScoreRulesController.save",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/health-score-rules",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "保存评分草稿",
+      "request": "{id?:UUID,rules?:HealthScoreRules}；缺省生成空阈值草稿",
+      "response": "规则版本；已发布不可改写",
+      "dependency": "SUPER_ADMIN；保存审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "rules": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "items": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "weight": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "minDays": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                      },
+                      "minSamples": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      },
+                      "minAge": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "maxAge": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "gender": {
+                        "enum": [
+                          "ANY",
+                          "MALE",
+                          "FEMALE"
+                        ]
+                      },
+                      "allowedOrigins": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "bands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "min": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "max": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "score": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "min",
+                            "max",
+                            "score"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "basis": {
+                        "type": "string"
+                      },
+                      "referenceUrl": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "label",
+                      "weight",
+                      "required",
+                      "minDays",
+                      "minSamples",
+                      "minAge",
+                      "maxAge",
+                      "gender",
+                      "allowedOrigins",
+                      "bands",
+                      "basis",
+                      "referenceUrl"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "title",
+                "description",
+                "items"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "status": {
+              "enum": [
+                "DRAFT",
+                "PUBLISHED",
+                "ARCHIVED"
+              ]
+            },
+            "rules": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "items": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "weight": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "minDays": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                      },
+                      "minSamples": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      },
+                      "minAge": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "maxAge": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "gender": {
+                        "enum": [
+                          "ANY",
+                          "MALE",
+                          "FEMALE"
+                        ]
+                      },
+                      "allowedOrigins": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "bands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "min": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "max": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "score": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "min",
+                            "max",
+                            "score"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "basis": {
+                        "type": "string"
+                      },
+                      "referenceUrl": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "label",
+                      "weight",
+                      "required",
+                      "minDays",
+                      "minSamples",
+                      "minAge",
+                      "maxAge",
+                      "gender",
+                      "allowedOrigins",
+                      "bands",
+                      "basis",
+                      "referenceUrl"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "title",
+                "description",
+                "items"
+              ],
+              "additionalProperties": true
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "string"
+            },
+            "publishedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "status",
+            "rules",
+            "createdAt",
+            "updatedAt",
+            "publishedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "HealthScoreRulesController.settings",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/health-score-rules/settings",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "健康大屏开放开关",
+      "request": "{enabled:boolean}",
+      "response": "{enabled}；与规则发布独立",
+      "dependency": "SUPER_ADMIN；变更审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "HealthScoreRulesController.publish",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/health-score-rules/:id/publish",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "审核发布评分版本",
+      "request": "id=规则UUID；{reviewed:true,expectedUpdatedAt:ISO时间}",
+      "response": "规则版本；并发更新校验；旧版本转历史",
+      "dependency": "SUPER_ADMIN；发布审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "reviewed": {
+              "const": true
+            },
+            "expectedUpdatedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "reviewed",
+            "expectedUpdatedAt"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "status": {
+              "enum": [
+                "DRAFT",
+                "PUBLISHED",
+                "ARCHIVED"
+              ]
+            },
+            "rules": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "items": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "weight": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "minDays": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                      },
+                      "minSamples": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      },
+                      "minAge": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "maxAge": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "gender": {
+                        "enum": [
+                          "ANY",
+                          "MALE",
+                          "FEMALE"
+                        ]
+                      },
+                      "allowedOrigins": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "bands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "min": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "max": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "score": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "min",
+                            "max",
+                            "score"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "basis": {
+                        "type": "string"
+                      },
+                      "referenceUrl": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "label",
+                      "weight",
+                      "required",
+                      "minDays",
+                      "minSamples",
+                      "minAge",
+                      "maxAge",
+                      "gender",
+                      "allowedOrigins",
+                      "bands",
+                      "basis",
+                      "referenceUrl"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "title",
+                "description",
+                "items"
+              ],
+              "additionalProperties": true
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "string"
+            },
+            "publishedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "status",
+            "rules",
+            "createdAt",
+            "updatedAt",
+            "publishedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "HealthScoreRulesController.preview",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/health-score-rules/:id/preview",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-health-screen.controller.ts",
+      "summary": "用会员数据预览已保存规则",
+      "request": "id=规则UUID；{memberId:UUID,days:7/30/90}",
+      "response": "{preview:true,score}；不调用AI不扣次；no-store",
+      "dependency": "SUPER_ADMIN；健康数据访问审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "memberId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "days": {
+              "enum": [
+                7,
+                30,
+                90
+              ]
+            }
+          },
+          "required": [
+            "memberId",
+            "days"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "preview": {
+              "const": true
+            },
+            "score": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "total": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "basis": {
+                        "type": "string"
+                      },
+                      "referenceUrl": {
+                        "type": "string"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "days": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "weight": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "label",
+                      "score",
+                      "value",
+                      "reason",
+                      "basis",
+                      "referenceUrl",
+                      "count",
+                      "days",
+                      "weight"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "version",
+                "title",
+                "total",
+                "reason",
+                "items"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "preview",
+            "score"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
       "key": "AdminLoginController.login",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/auth/login",
@@ -28587,6 +31430,1800 @@ export const apiCatalog = {
         "contentType": "application/json",
         "source": "apps/api/src/partners/partner-onboarding.controller.ts; apps/api/src/partners/partner-onboarding.service.ts; apps/api/src/partners/partner-agreement.service.ts; apps/api/src/partners/partner.controller.ts; apps/api/src/partners/partner-admin.controller.ts; apps/api/src/partners/partner-commerce.service.ts; apps/api/src/partners/partner-admin.service.ts; apps/api/src/billing/billing.service.ts; packages/contracts/src/partner.ts",
         "note": "请求及最小响应已按源码复核；整数分金额、当前伙伴会话及幂等约束由服务端验证；本地合成回执不代表真实支付或ERP联调。"
+      }
+    },
+    {
+      "key": "PartnerHealthScreenController.availability",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/health-analysis/availability",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-health-screen.controller.ts",
+      "summary": "战略伙伴大屏入口状态",
+      "request": "无",
+      "response": "{enabled}；默认关闭",
+      "dependency": "当前启用distribution-1等级",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "PartnerHealthScreenController.load",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:memberId/health-analysis",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "days",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-health-screen.controller.ts",
+      "summary": "所属会员健康大屏聚合",
+      "request": "memberId=会员UUID；days=7/30/90",
+      "response": "HealthScreenResponse：完整周期、数据质量、评分及分析；no-store",
+      "dependency": "当前战略伙伴等级及会员归属；访问审计；功能开关",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "member": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "memberNo": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "nickname": {
+                  "type": "string"
+                },
+                "gender": {
+                  "type": "string"
+                },
+                "age": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "memberNo",
+                "nickname",
+                "gender",
+                "age"
+              ],
+              "additionalProperties": true
+            },
+            "period": {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "enum": [
+                    7,
+                    30,
+                    90
+                  ]
+                },
+                "timezone": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "dates": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "days",
+                "timezone",
+                "from",
+                "to",
+                "dates"
+              ],
+              "additionalProperties": true
+            },
+            "recordCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unusableRecordCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "eligibleRecordCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "coverageDays": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "lastMeasuredAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "dataUpdatedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "series": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "device",
+                      "reference"
+                    ]
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "group": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "type": "string"
+                  },
+                  "semantics": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "eligibleCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "coverageDays": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "eligibleDays": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "latest": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "latestAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "average": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "eligibleAverage": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "exclusions": {
+                    "type": "object"
+                  },
+                  "points": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "eligibleValue": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "eligibleCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "date",
+                        "value",
+                        "eligibleValue",
+                        "count",
+                        "eligibleCount"
+                      ],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "metric",
+                  "label",
+                  "group",
+                  "unit",
+                  "semantics",
+                  "count",
+                  "eligibleCount",
+                  "coverageDays",
+                  "eligibleDays",
+                  "latest",
+                  "latestAt",
+                  "average",
+                  "eligibleAverage",
+                  "sources",
+                  "exclusions",
+                  "points"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "qualityCounts": {
+              "type": "object"
+            },
+            "score": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "total": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "basis": {
+                        "type": "string"
+                      },
+                      "referenceUrl": {
+                        "type": "string"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "days": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "weight": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "label",
+                      "score",
+                      "value",
+                      "reason",
+                      "basis",
+                      "referenceUrl",
+                      "count",
+                      "days",
+                      "weight"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "version",
+                "title",
+                "total",
+                "reason",
+                "items"
+              ],
+              "additionalProperties": true
+            },
+            "dataDigest": {
+              "type": "string"
+            },
+            "analysis": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "enum": [
+                        "QUEUED",
+                        "GENERATING",
+                        "READY",
+                        "FAILED",
+                        "REVOKED"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "generatedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "period": {
+                      "type": "object",
+                      "properties": {
+                        "days": {
+                          "enum": [
+                            7,
+                            30,
+                            90
+                          ]
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "dates": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "days",
+                        "timezone",
+                        "from",
+                        "to",
+                        "dates"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "inputDigest": {
+                      "type": "string"
+                    },
+                    "ruleVersion": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "content": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "summary": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "evidence"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "insights": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "text",
+                                  "evidence"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "suggestions": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "evidence"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "limitations": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "summary",
+                            "insights",
+                            "suggestions",
+                            "limitations"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "failureReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "createdAt",
+                    "generatedAt",
+                    "period",
+                    "inputDigest",
+                    "ruleVersion",
+                    "content",
+                    "failureReason"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "analysisStale": {
+              "type": "boolean"
+            },
+            "availability": {
+              "type": "object",
+              "properties": {
+                "canGenerate": {
+                  "type": "boolean"
+                },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "credits": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "consentBypass": {
+                  "type": "boolean"
+                },
+                "creditBypass": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "canGenerate",
+                "reasons",
+                "credits",
+                "consentBypass",
+                "creditBypass"
+              ],
+              "additionalProperties": true
+            },
+            "fetchedAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "member",
+            "period",
+            "recordCount",
+            "unusableRecordCount",
+            "eligibleRecordCount",
+            "coverageDays",
+            "lastMeasuredAt",
+            "dataUpdatedAt",
+            "series",
+            "qualityCounts",
+            "score",
+            "dataDigest",
+            "analysis",
+            "analysisStale",
+            "availability",
+            "fetchedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。",
+        "query": {
+          "days": {
+            "schema": {
+              "enum": [
+                "7",
+                "30",
+                "90"
+              ]
+            },
+            "example": "7",
+            "required": false
+          }
+        }
+      }
+    },
+    {
+      "key": "PartnerHealthScreenController.updates",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:memberId/health-analysis/updates",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "days",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-health-screen.controller.ts",
+      "summary": "检查会员指标更新",
+      "request": "memberId；days=7/30/90",
+      "response": "分组计数、更新时间；不返回测量值；可见页面每10秒检查",
+      "dependency": "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "group": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "group",
+                  "count",
+                  "updatedAt"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "groups"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。",
+        "query": {
+          "days": {
+            "schema": {
+              "enum": [
+                "7",
+                "30",
+                "90"
+              ]
+            },
+            "required": false
+          }
+        }
+      }
+    },
+    {
+      "key": "PartnerHealthScreenController.references",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:memberId/health-analysis/references",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-health-screen.controller.ts",
+      "summary": "手动参考测量历史",
+      "request": "memberId；cursor可选",
+      "response": "每页50条，包含撤销历史；来源由录入者声明；no-store",
+      "dependency": "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "metric": {
+                    "type": "string"
+                  },
+                  "measuredAt": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "type": "string"
+                  },
+                  "values": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  },
+                  "method": {
+                    "type": "string"
+                  },
+                  "context": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "voidedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "voidReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "metric",
+                  "measuredAt",
+                  "unit",
+                  "values",
+                  "method",
+                  "context",
+                  "createdAt",
+                  "voidedAt",
+                  "voidReason"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "nextCursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "items",
+            "nextCursor"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。",
+        "query": {
+          "cursor": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          }
+        }
+      }
+    },
+    {
+      "key": "PartnerHealthScreenController.saveReference",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/members/:memberId/health-analysis/references",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-health-screen.controller.ts",
+      "summary": "追加手动参考测量",
+      "request": "metric、measuredAt含时区、unit、values、method、context、requestKey",
+      "response": "幂等追加参考值；不修改原始HealthRecord或设备；不自动调用AI",
+      "dependency": "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "metric": {
+              "enum": [
+                "BLOOD_GLUCOSE",
+                "URIC_ACID",
+                "BLOOD_LIPIDS",
+                "BLOOD_PRESSURE",
+                "HEART_RATE",
+                "BLOOD_OXYGEN",
+                "TEMPERATURE"
+              ]
+            },
+            "measuredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "values": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "method": {
+              "enum": [
+                "GLUCOSE_METER",
+                "URIC_ACID_METER",
+                "LIPID_METER",
+                "BLOOD_PRESSURE_MONITOR",
+                "PULSE_OXIMETER",
+                "THERMOMETER",
+                "LAB_REPORT"
+              ]
+            },
+            "context": {
+              "enum": [
+                "FASTING",
+                "AFTER_MEAL_2H",
+                "RANDOM",
+                "RESTING"
+              ]
+            },
+            "requestKey": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "metric",
+            "measuredAt",
+            "unit",
+            "values",
+            "method",
+            "context",
+            "requestKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "metric": {
+              "type": "string"
+            },
+            "measuredAt": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "values": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "method": {
+              "type": "string"
+            },
+            "context": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "voidedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "voidReason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "metric",
+            "measuredAt",
+            "unit",
+            "values",
+            "method",
+            "context",
+            "createdAt",
+            "voidedAt",
+            "voidReason"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "PartnerHealthScreenController.voidReference",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/members/:memberId/health-analysis/references/:referenceId/void",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "referenceId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-health-screen.controller.ts",
+      "summary": "撤销参考测量",
+      "request": "memberId、referenceId；reason需5至200字",
+      "response": "保留历史和首次撤销理由；后续聚合排除；不覆盖历史分析快照",
+      "dependency": "每次检查当前角色/等级/会员归属和功能开关；访问及变更审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "metric": {
+              "type": "string"
+            },
+            "measuredAt": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "values": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "method": {
+              "type": "string"
+            },
+            "context": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "voidedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "voidReason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "metric",
+            "measuredAt",
+            "unit",
+            "values",
+            "method",
+            "context",
+            "createdAt",
+            "voidedAt",
+            "voidReason"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "PartnerHealthScreenController.records",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:memberId/health-analysis/records",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "*",
+          "type": "{ days?: string; metric?: string; cursor?: string }",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-health-screen.controller.ts",
+      "summary": "所属会员大屏记录分页",
+      "request": "memberId；days、metric、cursor可选",
+      "response": "{items,nextCursor}；每页50；测量时间倒序；no-store",
+      "dependency": "逐次复核等级和归属；访问审计",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "metric": {
+                    "type": "string"
+                  },
+                  "measuredAt": {
+                    "type": "string"
+                  },
+                  "uploadedAt": {
+                    "type": "string"
+                  },
+                  "quality": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "sourceModel": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "unavailableReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "values": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "number"
+                        },
+                        "unit": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "label",
+                        "value",
+                        "unit",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "metric",
+                  "measuredAt",
+                  "uploadedAt",
+                  "quality",
+                  "source",
+                  "sourceModel",
+                  "unavailableReason",
+                  "values"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "nextCursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "items",
+            "nextCursor"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。",
+        "query": {
+          "days": {
+            "schema": {
+              "enum": [
+                "7",
+                "30",
+                "90"
+              ]
+            },
+            "example": "90",
+            "required": false
+          },
+          "metric": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "HEART_RATE",
+            "required": false
+          },
+          "cursor": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          },
+          "reason": {
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        }
+      }
+    },
+    {
+      "key": "PartnerHealthScreenController.generate",
+      "method": "POST",
+      "path": "/api/saydian-app/vip/v1/members/:memberId/health-analysis/analyses",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-health-screen.controller.ts",
+      "summary": "申请或复用所属会员大屏分析",
+      "request": "{days,inputDigest:SHA256,requestKey:UUID}",
+      "response": "MemberAnalysisResult；事务扣次及Outbox；等价输入复用；no-store",
+      "dependency": "当前等级/归属、会员当前同意、报告次数及千问配置",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "days": {
+              "enum": [
+                7,
+                30,
+                90
+              ]
+            },
+            "inputDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "requestKey": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "days",
+            "inputDigest",
+            "requestKey"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "enum": [
+                "QUEUED",
+                "GENERATING",
+                "READY",
+                "FAILED",
+                "REVOKED"
+              ]
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "generatedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "period": {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "enum": [
+                    7,
+                    30,
+                    90
+                  ]
+                },
+                "timezone": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "dates": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "days",
+                "timezone",
+                "from",
+                "to",
+                "dates"
+              ],
+              "additionalProperties": true
+            },
+            "inputDigest": {
+              "type": "string"
+            },
+            "ruleVersion": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "content": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "summary": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "insights": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "suggestions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "limitations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "summary",
+                    "insights",
+                    "suggestions",
+                    "limitations"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureReason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "createdAt",
+            "generatedAt",
+            "period",
+            "inputDigest",
+            "ruleVersion",
+            "content",
+            "failureReason"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
+      }
+    },
+    {
+      "key": "PartnerHealthScreenController.result",
+      "method": "GET",
+      "path": "/api/saydian-app/vip/v1/members/:memberId/health-analysis/analyses/:id",
+      "auth": "partner",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/partners/partner-health-screen.controller.ts",
+      "summary": "读取所属会员大屏分析",
+      "request": "memberId、id均UUID",
+      "response": "MemberAnalysisResult；READY才含正文；no-store",
+      "dependency": "重新检查等级、归属和授权；访问审计",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "enum": [
+                "QUEUED",
+                "GENERATING",
+                "READY",
+                "FAILED",
+                "REVOKED"
+              ]
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "generatedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "period": {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "enum": [
+                    7,
+                    30,
+                    90
+                  ]
+                },
+                "timezone": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "dates": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "days",
+                "timezone",
+                "from",
+                "to",
+                "dates"
+              ],
+              "additionalProperties": true
+            },
+            "inputDigest": {
+              "type": "string"
+            },
+            "ruleVersion": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "content": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "summary": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "insights": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "suggestions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "text",
+                          "evidence"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "limitations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "summary",
+                    "insights",
+                    "suggestions",
+                    "limitations"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureReason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "createdAt",
+            "generatedAt",
+            "period",
+            "inputDigest",
+            "ruleVersion",
+            "content",
+            "failureReason"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/health-screen/health-screen.service.ts; packages/contracts/src/health-screen.ts; packages/health-domain/src/policy.ts; apps/api/src/health-screen/health-screen.database.test.ts",
+        "note": "健康统计/确定性评分/独立异步分析；实际权限和授权由服务端检查。结构复核与本地合成验收不代表真实千问或生产验收。"
       }
     },
     {

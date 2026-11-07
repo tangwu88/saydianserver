@@ -1,3 +1,4 @@
+import { MemberHealthAnalysisWorker } from "./member-health-analysis-worker";
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import Redis from "ioredis";
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
     new HealthReportWorker(prisma),
     new NotificationCampaignWorker(prisma, pushProvider),
     new CommerceJobWorker(prisma),
+    new MemberHealthAnalysisWorker(prisma),
   );
   const shutdown = () => worker.stop();
   process.once("SIGINT", shutdown);

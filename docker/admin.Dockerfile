@@ -7,12 +7,14 @@ COPY apps/vip-web/package.json apps/vip-web/package.json
 COPY apps/download-web/package.json apps/download-web/package.json
 COPY apps/shop/package.json apps/shop/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
-RUN pnpm install --frozen-lockfile --filter @saydian/app-admin-web --filter @saydian/app-vip-web --filter @saydian/app-download-web --filter @saydian/app-shop --filter @saydian/app-contracts
+COPY packages/health-screen-ui/package.json packages/health-screen-ui/package.json
+RUN pnpm install --frozen-lockfile --filter @saydian/app-admin-web... --filter @saydian/app-vip-web... --filter @saydian/app-download-web --filter @saydian/app-shop --filter @saydian/app-contracts
 COPY apps/admin-web apps/admin-web
 COPY apps/vip-web apps/vip-web
 COPY apps/download-web apps/download-web
 COPY apps/shop apps/shop
 COPY packages/contracts packages/contracts
+COPY packages/health-screen-ui packages/health-screen-ui
 RUN pnpm --filter @saydian/app-contracts build && pnpm --filter @saydian/app-admin-web build && pnpm --filter @saydian/app-vip-web build && pnpm --filter @saydian/app-download-web build && pnpm --filter @saydian/app-shop build:h5
 
 FROM nginxinc/nginx-unprivileged:1.27.3-alpine

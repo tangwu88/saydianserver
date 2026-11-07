@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **497 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **520 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -321,7 +321,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（163）
+## 管理后台接口（177）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -330,6 +330,20 @@
 | `POST /api/saydian-app/admin/v1/health-reports` | 后台申请生成或复用AI健康报告 | admin: SUPER_ADMIN, HEALTH_AUDITOR | {memberId:UUID,idempotencyKey:8–160字符}；不创建付款；每次请求服务端复核条件 | {report:{id,status,period,dataCompleteness,freePreview,aiGenerated,aiLabel,generatedAt,createdAt,needsPayment},reused}；SUPER_ADMIN可绕过会员App同意且审计memberConsentBypassed=true，HEALTH_AUDITOR不可绕过；状态小写；会员级锁与同事务报告/扣次/Outbox/审计；同会员同键重放，失败409 health_report_unavailable | 已满足availability条件；第三方真实运行需独立验收 |
 | `GET /api/saydian-app/admin/v1/health-reports/:id` | 后台查看健康报告进度和结果 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id；id=国际健康报告UUID；限SUPER_ADMIN/HEALTH_AUDITOR | 报告结构+memberId；READY加content:{overview,trends:[{metric,text}],suggestions,limitations}和limitations；FAILED仅安全提示；返回前强制HEALTH_REPORT_READ审计，未完成不返回正文 | 报告队列与读取审计；AI结果仅供健康管理参考 |
 | `PATCH /api/saydian-app/admin/v1/health-reports/:id` | 超级管理员复核并编辑已生成健康报告 | admin: SUPER_ADMIN | path:id；id=报告UUID；仅SUPER_ADMIN；{content:{overview,trends:[{metric,text}],suggestions,limitations},expectedUpdatedAt}；指标、顺序和证据ID不可修改 | 更新后的报告正文；使用乐观锁，版本冲突返回409；HEALTH_REPORT_UPDATE审计只保存内容散列和变更章节，不保存报告正文 | 已生成READY报告；内容仅供日常健康管理参考 |
+| `GET /api/saydian-app/admin/v1/member-health-analysis/availability` | 会员大屏入口状态 | admin: SUPER_ADMIN, HEALTH_AUDITOR | 无 | {enabled}；默认关闭 | SUPER_ADMIN/HEALTH_AUDITOR |
+| `GET /api/saydian-app/admin/v1/member-health-analysis/:memberId` | 会员健康大屏聚合 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId，query:days；memberId=会员UUID；days=7/30/90 | HealthScreenResponse：资料、完整序列、覆盖、评分依据及版本、AI任务；no-store | 当前管理员权限与访问审计；功能开关 |
+| `GET /api/saydian-app/admin/v1/member-health-analysis/:memberId/updates` | 检查会员指标更新 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId，query:days；memberId；days=7/30/90 | 分组计数、更新时间；不返回测量值；可见页面每10秒检查 | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
+| `GET /api/saydian-app/admin/v1/member-health-analysis/:memberId/references` | 手动参考测量历史 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId，query:cursor；memberId；cursor可选 | 每页50条，包含撤销历史；来源由录入者声明；no-store | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
+| `POST /api/saydian-app/admin/v1/member-health-analysis/:memberId/references` | 追加手动参考测量 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId；metric、measuredAt含时区、unit、values、method、context、requestKey | 幂等追加参考值；不修改原始HealthRecord或设备；不自动调用AI | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
+| `POST /api/saydian-app/admin/v1/member-health-analysis/:memberId/references/:referenceId/void` | 撤销参考测量 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId，path:referenceId；memberId、referenceId；reason需5至200字 | 保留历史和首次撤销理由；后续聚合排除；不覆盖历史分析快照 | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
+| `GET /api/saydian-app/admin/v1/member-health-analysis/:memberId/records` | 大屏测量记录分页 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId，query:*；memberId；days、metric、cursor；审核员必填reason至少5字 | {items,nextCursor}；每页50；测量时间倒序；安全来源和质量字段；no-store | 逐次鉴权和访问审计 |
+| `POST /api/saydian-app/admin/v1/member-health-analysis/:memberId/analyses` | 创建或复用独立大屏分析 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId；{days,inputDigest:SHA256,requestKey:UUID} | MemberAnalysisResult；会员级锁；相同输入复用；扣次和Outbox同事务；no-store | 当前权限、授权和次数；超级管理员审计绕过 |
+| `GET /api/saydian-app/admin/v1/member-health-analysis/:memberId/analyses/:id` | 大屏分析状态与结果 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:memberId，path:id；memberId、id均UUID | MemberAnalysisResult；READY才含正文；no-store | 读取前重新鉴权、核对授权并审计 |
+| `GET /api/saydian-app/admin/v1/health-score-rules` | 评分规则版本列表 | admin: SUPER_ADMIN, HEALTH_AUDITOR | 无 | {enabled,items}；最多100版 | SUPER_ADMIN/HEALTH_AUDITOR |
+| `POST /api/saydian-app/admin/v1/health-score-rules` | 保存评分草稿 | admin: SUPER_ADMIN | {id?:UUID,rules?:HealthScoreRules}；缺省生成空阈值草稿 | 规则版本；已发布不可改写 | SUPER_ADMIN；保存审计 |
+| `POST /api/saydian-app/admin/v1/health-score-rules/settings` | 健康大屏开放开关 | admin: SUPER_ADMIN | {enabled:boolean} | {enabled}；与规则发布独立 | SUPER_ADMIN；变更审计 |
+| `POST /api/saydian-app/admin/v1/health-score-rules/:id/publish` | 审核发布评分版本 | admin: SUPER_ADMIN | path:id；id=规则UUID；{reviewed:true,expectedUpdatedAt:ISO时间} | 规则版本；并发更新校验；旧版本转历史 | SUPER_ADMIN；发布审计 |
+| `POST /api/saydian-app/admin/v1/health-score-rules/:id/preview` | 用会员数据预览已保存规则 | admin: SUPER_ADMIN | path:id；id=规则UUID；{memberId:UUID,days:7/30/90} | {preview:true,score}；不调用AI不扣次；no-store | SUPER_ADMIN；健康数据访问审计 |
 | `POST /api/saydian-app/admin/v1/auth/login` | 后台登录 | public | JSON {username,password} | AdminSession；不能与 App Token 混用 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/us-migration/inventory` | 美国迁移脱敏候选清单 | admin: SUPER_ADMIN | query:page?；page从1开始，每页100；仅SUPER_ADMIN | 协议来源、共享/无法归属标记、关联数量；approved恒为false，无迁移副作用 | 北京源库只读快照；迁移须单独核对 |
 | `POST /api/saydian-app/admin/v1/content-images` | 上传后台文章或协议图片 | admin: SUPER_ADMIN, CONTENT_EDITOR | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR | {id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥 | 已配置对象存储 |
@@ -489,10 +503,19 @@
 | `POST /api/saydian-app/admin/v1/partner-agreements/:id/publish` | 发布合作协议版本 | admin: SUPER_ADMIN | path:id；id为协议UUID；{contentSha256} | 当前已发布版本；其他版本停用 | 仅SUPER_ADMIN；所有伙伴后续业务须同意当前已发布版本 |
 | `GET /api/saydian-app/admin/v1/partner-agreements/:id/acceptances` | 查看协议阅读与签署记录 | admin: SUPER_ADMIN | path:id；id为协议UUID | {items}；账户、首次阅读/同意时间、会话、IP、客户端；最多1000 | 仅SUPER_ADMIN |
 
-## 品牌伙伴平台接口（36）
+## 品牌伙伴平台接口（45）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
+| `GET /api/saydian-app/vip/v1/health-analysis/availability` | 战略伙伴大屏入口状态 | partner | 无 | {enabled}；默认关闭 | 当前启用distribution-1等级 |
+| `GET /api/saydian-app/vip/v1/members/:memberId/health-analysis` | 所属会员健康大屏聚合 | partner | path:memberId，query:days；memberId=会员UUID；days=7/30/90 | HealthScreenResponse：完整周期、数据质量、评分及分析；no-store | 当前战略伙伴等级及会员归属；访问审计；功能开关 |
+| `GET /api/saydian-app/vip/v1/members/:memberId/health-analysis/updates` | 检查会员指标更新 | partner | path:memberId，query:days；memberId；days=7/30/90 | 分组计数、更新时间；不返回测量值；可见页面每10秒检查 | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
+| `GET /api/saydian-app/vip/v1/members/:memberId/health-analysis/references` | 手动参考测量历史 | partner | path:memberId，query:cursor；memberId；cursor可选 | 每页50条，包含撤销历史；来源由录入者声明；no-store | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
+| `POST /api/saydian-app/vip/v1/members/:memberId/health-analysis/references` | 追加手动参考测量 | partner | path:memberId；metric、measuredAt含时区、unit、values、method、context、requestKey | 幂等追加参考值；不修改原始HealthRecord或设备；不自动调用AI | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
+| `POST /api/saydian-app/vip/v1/members/:memberId/health-analysis/references/:referenceId/void` | 撤销参考测量 | partner | path:memberId，path:referenceId；memberId、referenceId；reason需5至200字 | 保留历史和首次撤销理由；后续聚合排除；不覆盖历史分析快照 | 每次检查当前角色/等级/会员归属和功能开关；访问及变更审计 |
+| `GET /api/saydian-app/vip/v1/members/:memberId/health-analysis/records` | 所属会员大屏记录分页 | partner | path:memberId，query:*；memberId；days、metric、cursor可选 | {items,nextCursor}；每页50；测量时间倒序；no-store | 逐次复核等级和归属；访问审计 |
+| `POST /api/saydian-app/vip/v1/members/:memberId/health-analysis/analyses` | 申请或复用所属会员大屏分析 | partner | path:memberId；{days,inputDigest:SHA256,requestKey:UUID} | MemberAnalysisResult；事务扣次及Outbox；等价输入复用；no-store | 当前等级/归属、会员当前同意、报告次数及千问配置 |
+| `GET /api/saydian-app/vip/v1/members/:memberId/health-analysis/analyses/:id` | 读取所属会员大屏分析 | partner | path:memberId，path:id；memberId、id均UUID | MemberAnalysisResult；READY才含正文；no-store | 重新检查等级、归属和授权；访问审计 |
 | `POST /api/saydian-app/vip/v1/auth/member-login` | 兑换会员一次性伙伴登录凭证 | public | {ticket,codeVerifier} | {token,expiresAt}；同一凭证只成功一次；浏览器PKCE验证防止他人转发链接切换账户 | 核对原会员会话、账户绑定、有效期及账户版本；支持微信H5授权后进入 |
 | `GET /api/saydian-app/vip/v1/agreement` | 查看当前已发布合作协议 | partner | 伙伴会话 | {agreement,accepted,viewedAt?,acceptedAt?}；首次阅读登记；草稿不返回 | 无已发布版本时不阻断现有使用 |
 | `POST /api/saydian-app/vip/v1/agreement/accept` | 同意当前合作协议 | partner | {agreementId,contentSha256,agreed:true} | {accepted,acceptedAt}；版本/hash匹配并已读取；重复不新增签署 | 发布版本锁；不可变签署记录与审计 |

@@ -1,0 +1,132 @@
+# 会员健康大屏
+
+面向中国站管理后台与战略伙伴网页，显示指定会员的真实健康记录。生产默认关闭；不自动发布评分规则、不自动请求模型。此模块不增加原生 App 页面，不混入 App 健康报告或 Say Ring 睡眠报告列表。
+
+## 入口与权限
+
+- 管理后台：会员列表“健康大屏”，`/admin/members/:id/health-screen`。只有当前有效的 SUPER_ADMIN / HEALTH_AUDITOR 可访问。
+- 伙伴网页：“我的会员”的“健康大屏”，`/vip/members/:id/health-screen`。当前有效的 `distribution-1` 等级、伙伴启用状态、会员归属均由服务端逐次查询；令牌或已有缓存不能替代验证。
+- “健康评分规则”入口提供版本、草稿编辑、预览和发布。只有超级管理员能保存、发布规则或切换大屏开放状态。健康审核员可查看规则。
+- 功能开关是私有 AppSetting `member_health_screen.value.enabled`。不存在即关闭；迁移不创建开启配置。页面开放与规则发布是两个独立操作。
+- 数据响应 `Cache-Control: no-store`；健康明细只留在 Vue 内存，切换会员、周期或登录身份立即清空。浏览器只沿用既有登录凭证机制。
+- 每次聚合、记录查询、分析结果读取和复用均写健康访问审计。健康审核员读取记录必须提供至少5字原因。
+
+## 数据定义
+
+近7、30、90天包含会员时区的今天，缺省 Asia/Shanghai。UTC查询窗口通过 IANA 时区计算，正确跨越夏令时。原始睡眠在已声明整夜且有结束时间时归入醒来日；日汇总沿用上传时的 `aggregationLocalDate`，不把上传日期当作测量日期。
+
+数据库按1000条分批遍历完整窗口，无31点或固定条数截断。仅使用当前有效日汇总，保留源表全部历史版本。原始记录依靠现有会员/clientRecordId唯一约束与记录ID去重。测量记录按测量时间、ID倒序游标分页，每页50条；跨会员游标拒绝。
+
+- 普通采样：先按日算采样平均，再计算有记录日的平均。日期缺失保持空值，不补零。
+- 步数、距离、热量：只有活动日汇总或明确 `daily_total` 才当作日累计；同日多个来源采用测量时间最新的汇总，不相加。其它记录单独标为采样值，不参加评分。
+- 睡眠：当前有效整夜汇总或明确 `sleepScope=night` 才为夜晚时长，片段单列；缺失夜晚不算0。
+- HRV：SDNN / RMSSD / 算法未知分别显示；未知算法不评分。
+- 温度：皮温、估算体温、定义未知分别显示；不能据皮温判断发热。
+- 单位：仅明确单位或未填写单位但自带明确单位名的字段可转换；显式冲突单位、不同未知单位保持独立序列，不混合。
+- 质量：VALID、已知来源、设备型号及明确SDK/时槽时间依据构成评分基础条件；手动记录可不要求SDK时间依据。规则还会追加来源、年龄、性别和覆盖门槛。
+- 格式异常或无可用数值的记录计入可查看记录，不进入图表；显示排除数量，原始值可在分页记录里核对并标明原因。
+- 未验证血糖来源不参与代谢评分。首版评分指标白名单完全不包含血糖。参考 [FDA 手表/戒指血糖测量说明](https://www.fda.gov/medical-devices/safety-communications/do-not-use-smartwatches-or-smart-rings-measure-blood-glucose-levels-fda-safety-communication)。
+
+可查看次数、符合评分基础条件次数、各指标覆盖日数、排除原因独立返回。“基础条件”不代表已通过某个已发布规则的全部要求。
+
+## 手动参考值与校准
+
+右上角“校准”只录入血糖仪、血压计、尿酸仪、血脂仪、血氧仪、体温计或检验单的参考测量值；这是用户已确认的范围，不修改设备后续读数，也不覆盖原始 HealthRecord。参考数据保存在独立 `MemberHealthReference`。
+
+- 支持血糖、血压、尿酸、血脂、心率、血氧、实测体温；按指标限制来源和单位。血糖区分空腹、餐后2小时、随机；尿酸和血脂区分空腹、随机/非空腹；其他指标注明静息。
+- 尿酸为血液尿酸，支持 `μmol/L` / `mg/dL`，参考来源为尿酸仪或检验单。血脂支持总胆固醇 TC、甘油三酯 TG、高密度脂蛋白胆固醇 HDL-C、低密度脂蛋白胆固醇 LDL-C，单位 `mmol/L` / `mg/dL`，来源为检验单或血脂仪。可以只填已检测的血脂项目，至少一项；缺项不补零。四项分别进入序列及AI证据，不合并成一个“血脂值”。
+- 时间输入标明浏览器时区，转换为带时区 ISO 后由服务端验证；趋势仍按会员时区归日。不接受未来时间、错配单位/来源、非数值或反向血压。数值上限只是数据格式保护，不是临床正常范围。
+- `mmol/L`、`μmol/L`、`mg/dL`、摄氏与华氏分别成序列，不换算后混合。不同参考来源、测量情境也分开；实测体温与皮温不混合。
+- 来源由录入者声明，不表示服务端独立核验。多序列图表以虚线和描边点标识参考值；首版只用于对照和 AI 说明，不计入评分基础条件数量或改变已发布的分数规则。
+- 保存使用请求幂等键及数据库锁；重复点击只新增一条。错误数据只能填写原因后撤销、再重新录入，保存原录入者、时间、来源、首次撤销者和理由。历史不能覆盖或删除。
+- 每次读取、保存、撤销重新验证角色、当前战略伙伴等级、会员归属和功能开关；变更服从维护停写。审计不记录测量值。注销清理包含参考值。
+- 参考值单独进入去标识化 AI 统计。已撤销值不进入后续新聚合；历史分析快照保留并标记数据已变化。不会由参考值反推设备修正系数、替来源未知的腕表血糖背书。
+- `HealthReferenceMetric` 为独立数据库枚举，尿酸和血脂没有扩入设备上传 `HealthMetric`；不能通过设备原始上传接口伪造手动参考值。前后端字段、单位、来源、测量情境共用 contracts 定义。
+
+字段语义参考 [MedlinePlus 尿酸检测](https://medlineplus.gov/lab-tests/uric-acid-test/) 与 [MedlinePlus 胆固醇检测](https://medlineplus.gov/lab-tests/cholesterol-levels/)，仅用于区别检测项目；本次未据此设置临床阈值或评分区间。
+
+## 趋势大屏
+
+深蓝/青色三栏：左侧保留真实的评分状态、AI摘要与下一步建议，中间为2.5D人体和六部位导航，右侧默认“趋势变化”。同屏优先展示血压、血糖、心率，其他指标可展开；点击代谢热点集中查看血糖、尿酸、血脂。
+
+同一维度、单位与统计定义可叠加比较，但每种来源/测量情境仍是独立曲线。不同单位、皮温/实测体温、HRV算法、睡眠定义不混图；缺失日期断开，待核实数据用灰色和文字说明。参考数据只有一天时只显示该日的点，不构造历史曲线。图表不绘制未经审核的“正常范围”。
+
+“手动校准”标签展示所有参考项目及测量情境、时间；“录入/管理”打开新增与撤销历史。原始测量记录标签不把新增参考枚举提交给设备记录查询。1080p、2K、4K为三栏，手机为纵排与可滚动表单；更长内容在面板内滚动，不隐藏查询/录入入口。
+
+## 动态展示与新数据提示
+
+人体为实际生成的透明 2.5D 插画，配合固定节奏的轻微起伏、心脏局部脉动及循环流动轨迹。显示“循环与心跳为示意动画 · 非实时测量”，不把动画节拍绑定到个人心率。支持暂停按钮和 `prefers-reduced-motion`，页面隐藏时停动画、停轮询。
+
+可见页面每10秒读取轻量 `/updates` 分组修订信息，只返回计数和更新时间；发生变化时读取完整聚合。首次打开、切换会员/周期不弹新记录提醒。新上传（包括历史补传）或日汇总修订后，对应部位出现约20秒提示和柔和高亮；不闪烁、不自动调用 AI。每60秒全量检查保留为兜底，已有分析与当前摘要不同时标明过期。提示依据服务端新增/更新时间，不代表实时测量。
+
+## 确定性评分
+
+`HealthScoreRuleVersion` 保存规则正文、单调版本号、状态和操作者。新增草稿不预填医学阈值、依据链接或分数。填写指标、来源要求、年龄/性别、最少天数/记录数、区间、权重和依据后可对会员数据预览。
+
+区间为包含下限、不包含上限，空边界为无限；每项以符合来源要求的日值平均匹配唯一评分区间。预览和发布均验证区间不重叠、来源合法、依据完整。总分为已配置权重的加权平均，全部必需项及有权重项都可评分时才产生；缺项不按零、不重分配权重。结果返回计算值、采用天数/记录数、依据及版本。
+
+发布使用数据库锁和预期更新时间：审核后草稿被修改会拒绝发布；发布后不可原地编辑，旧发布版转历史，新修改必须复制草稿。所有保存、预览、发布和开关变更均审计。
+
+## 千问任务与次数
+
+只有点击生成并确认后创建任务；打开页面、定时刷新、预览评分不调用千问。相同会员/周期/数据摘要/规则及模板版本、相同授权边界的有效任务或结果复用。数据/规则变化后显示已有分析已过期。SUPER_ADMIN 沿用既有审核绕过与免扣次政策；健康审核员和伙伴必须有当前有效分析授权及次数。
+
+事务内共享原报告的会员次数 advisory lock，重新验证权限和授权、创建独立 MemberHealthAnalysis、扣一次额度并写 Outbox。重复 requestKey 不能改变输入/会员/操作者；不同并发 requestKey 对等输入复用同一任务。独立流水通过 memberHealthAnalysisId 关联，失败退回的幂等键唯一。先使用有效套餐次数，再用独立余额；套餐失效后退款进入独立额度。
+
+Worker 在执行前、发请求前及结果落库前复核当前角色/等级/归属和授权快照；变更则不发布结果并退次。暂时失败最多尝试3次，间隔15秒；失败终止通过原 Outbox 机制退次。模型请求90秒超时。
+
+沿用 `ai` 集成加密凭据，支持当前已配置千问入口以及阿里北京兼容入口、北京工作空间入口；要求 HTTPS 和 qwen 模型名。不会自动改第三方配置。官方地址依据：[阿里百炼 Base URL](https://help.aliyun.com/en/model-studio/base-url)、[地域与工作空间](https://help.aliyun.com/en/model-studio/regions/)。新增地址适配仅影响本大屏，未放宽原 Say Ring 睡眠协议绑定。
+
+发给模型的仅是去标识化日统计、质量计数和已确定评分依据；不发送会员名、ID、电话、设备名、记录ID或任意原始JSON。待核实数值不作为模型数值证据，只发送排除数量。尿酸、TC、TG、HDL-C、LDL-C保留各自证据，不推定缺项或器官状态。输出必须为结构化摘要、指标说明、建议、局限性，每项证据 key 必须属于输入指标；拒绝额外分数字段及文本分数、HTML和明显诊断/处方宣称。模型不参与评分计算。当前模板版本为 `member-health-screen-v3-metabolic-reference`，不复用旧模板结果。
+
+## 接口
+
+管理员根路径 `/api/saydian-app/admin/v1/member-health-analysis`：
+
+| 方法 | 后缀                                                             | 用途                                                        |
+| ---- | ---------------------------------------------------------------- | ----------------------------------------------------------- |
+| GET  | `/availability`                                                  | 当前账号入口开关                                            |
+| GET  | `/:memberId?days=7`                                              | 完整聚合、评分、近期分析及可用性                            |
+| GET  | `/:memberId/records?days=90&metric=HEART_RATE&cursor=…&reason=…` | 安全字段记录分页                                            |
+| GET  | `/:memberId/updates?days=7`                                      | 当前可访问周期内各组计数与修订时间                          |
+| GET  | `/:memberId/references?cursor=…`                                 | 每页50条手动参考记录及撤销历史                              |
+| POST | `/:memberId/references`                                          | `{metric,measuredAt,unit,values,method,context,requestKey}` |
+| POST | `/:memberId/references/:referenceId/void`                        | `{reason}`，保留历史并排除后续聚合                          |
+| POST | `/:memberId/analyses`                                            | `{days,inputDigest,requestKey}`，创建或复用任务             |
+| GET  | `/:memberId/analyses/:id`                                        | 读取分析状态/结果                                           |
+
+伙伴根路径 `/api/saydian-app/vip/v1/members/:memberId/health-analysis` 使用相同查询、`/records`、`/updates`、`/references`、`/references/:referenceId/void`、`/analyses`、`/analyses/:id`；入口 GET `/api/saydian-app/vip/v1/health-analysis/availability`。
+
+规则根路径 `/api/saydian-app/admin/v1/health-score-rules`：GET版本列表；POST `{id?,rules?}`保存草稿；POST `/settings` `{enabled}`；POST `/:id/preview` `{memberId,days}`；POST `/:id/publish` `{reviewed:true,expectedUpdatedAt}`。
+
+共享 TypeScript 契约在 `packages/contracts/src/health-screen.ts`。完整路由清单由 `pnpm api:docs` 更新。
+
+## 本地预览与验收
+
+`tools/health-screen-local.mjs` 仅面向隔离、回环的本地数据库；不读取生产.env，不启动worker。`prepare` 创建明确命名的合成会员及94天记录。预览不伪造AI结论/评分，评分仍为待发布。
+
+本次端口：API 18097、总后台3310、伙伴3311、临时 PostgreSQL 55447。启动：
+
+```sh
+node tools/health-screen-local.mjs prepare
+node tools/health-screen-local.mjs api
+node tools/health-screen-local.mjs admin
+node tools/health-screen-local.mjs vip
+# 仅给明确命名的本地合成会员追加2条模拟测量，供浏览器验证提示：
+node tools/health-screen-local.mjs arrival
+```
+
+本地账号和随机密码保存在忽略目录 `artifacts/health-screen-20261107/preview-private.json`（0600）；不入Git。PostgreSQL 需预先在对应端口启动，日常服务端和生产数据库不受影响。
+
+针对性测试：
+
+```sh
+# DATABASE_URL 必须是回环控制数据库；脚本建立随机临时数据库并自动清理。
+pnpm test:health-screen:database
+# 指定可运行的本地 PostgreSQL dump/restore 二进制：
+PG_DUMP_BIN=/path/to/pg_dump PG_RESTORE_BIN=/path/to/pg_restore pnpm test:health-screen:upgrade
+```
+
+升级演练应用旧迁移、插入合成健康/次数记录、执行增量迁移，对112张原有表逐表哈希比对；随后插入手动参考值，再真实dump/restore到另一隔离库并复核原记录与参考值。前两次迁移新增分析、规则、手动参考值三表及额度流水可空外键；第三次 `20261107150000_reference_metabolic_metrics` 将参考记录的 metric 转为独立枚举，保留旧值，允许尿酸与血脂。三次均登记 compatible-migrations.json。演练也验证先有的血糖参考值在枚举转换后不变，尿酸与部分血脂三条记录均可备份恢复。此为本地演练，不代表生产迁移或生产恢复已验收。
+
+生产发布前仍需依仓库流程核验CI/版本，保持入口关闭，审核评分草稿后单独发布。真实千问验收需另行明确授权会员和测试目的；本轮未使用任何历史测试会员。

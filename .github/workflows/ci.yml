@@ -97,6 +97,8 @@ jobs:
         run: pnpm test:gifts:upgrade
       - name: Isolated gift redemption transaction tests
         run: pnpm test:gifts:database
+      - name: Isolated member health screen authorization and billing tests
+        run: pnpm test:health-screen:database
       - name: API smoke test
         run: |
           node apps/api/dist/main.js > api-smoke.log 2>&1 &

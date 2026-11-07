@@ -43,3 +43,9 @@ test("brand partner frontend invalidates its static image and keeps backend cach
   assert.equal(inputHash("api", entries), inputHash("api", changed));
   assert.equal(inputHash("worker", entries), inputHash("worker", changed));
 });
+
+test("health shared packages invalidate only their runtime consumers", () => {
+  const entries = [["README.md", Buffer.from("base")]];
+  for (const name of ["api", "worker"]) assert.notEqual(inputHash(name, entries), inputHash(name, [...entries, ["packages/health-domain/src/policy.ts", Buffer.from("policy")]]));
+  assert.notEqual(inputHash("admin", entries), inputHash("admin", [...entries, ["packages/health-screen-ui/src/HealthScreen.vue", Buffer.from("screen")]]));
+});

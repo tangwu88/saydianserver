@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { api, data, errorMessage } from "../api";
 import { date } from "../present";
+import { openHealthScreen } from "@saydian/health-screen-ui/open-window";
 import { Search, Refresh, User, Share } from "@element-plus/icons-vue";
 import PageError from "../components/PageError.vue";
 import EmptyState from "../components/EmptyState.vue";
@@ -12,6 +13,8 @@ import {
   healthTime,
 } from "@saydian/app-contracts";
 const canViewMemberHealth = ref(false);
+const healthScreenEnabled = ref(false);
+onMounted(async () => { try { healthScreenEnabled.value = data<{enabled:boolean}>(await api.get("/health-analysis/availability")).enabled; } catch { healthScreenEnabled.value = false; } });
 const error = ref(""),
   detailError = ref(""),
   deviceError = ref(""),
@@ -275,6 +278,7 @@ function changeDeviceTab() {
                 canViewMemberHealth ? "查看档案" : "查看资料"
               }}</el-button>
             </div>
+            <el-button v-if="canViewMemberHealth && healthScreenEnabled" type="primary" plain size="small" @click="openHealthScreen('vip', member.id)">健康大屏</el-button>
             <p class="member-contact">
               {{ member.mobile || member.email || "未填写联系方式" }}
             </p>

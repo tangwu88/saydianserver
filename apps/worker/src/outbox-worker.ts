@@ -1,3 +1,4 @@
+import { MemberHealthAnalysisWorker } from "./member-health-analysis-worker";
 import { OutboxStatus, PrismaClient, type OutboxEvent } from "@prisma/client";
 import {
   buildSafePushPayload,
@@ -31,6 +32,7 @@ export class OutboxWorker {
     private readonly healthReports?: HealthReportWorker,
     private readonly notificationCampaigns?: NotificationCampaignWorker,
     private readonly commerceJobs?: CommerceJobWorker,
+    private readonly memberHealthAnalyses?: MemberHealthAnalysisWorker,
   ) {}
 
   stop(): void {
@@ -61,6 +63,7 @@ export class OutboxWorker {
         generalEnabled ? undefined : "health_report_generate",
       );
     }
+    if (!generalEnabled && reportsEnabled) await this.recoverStaleClaims("member_health_analysis_generate");
     const deletionProcessed = generalEnabled
       ? await this.accountDeletions?.runOnce()
       : false;
@@ -75,7 +78,7 @@ export class OutboxWorker {
       where: {
         status: OutboxStatus.PENDING,
         nextAttemptAt: { lte: new Date() },
-        ...(generalEnabled ? {} : { eventType: "health_report_generate" }),
+        ...(generalEnabled ? {} : { eventType: { in: ["health_report_generate", "member_health_analysis_generate"] } }),
       },
       orderBy: { createdAt: "asc" },
       take: 20,
@@ -85,7 +88,7 @@ export class OutboxWorker {
     }
     for (const event of candidates) {
       if (businessWritesPaused(process.env)) break;
-      if (event.eventType === "health_report_generate") {
+      if (["health_report_generate", "member_health_analysis_generate"].includes(event.eventType)) {
         if (!healthReportWorkerEnabled(process.env)) break;
       } else if (shouldPauseWorkers(process.env)) {
         break;
@@ -123,7 +126,7 @@ export class OutboxWorker {
       });
     } catch (error) {
       const attempts = candidate.attempts + 1;
-      const policy =
+      const policy = candidate.eventType === "member_health_analysis_generate" ? { maximumAttempts: 3, delayMs: 15000 } :
         candidate.eventType === "health_report_generate" && this.healthReports
           ? await this.healthReports.retryPolicy(
               candidate.aggregateId,
@@ -138,6 +141,10 @@ export class OutboxWorker {
         error instanceof PermanentTaskError ||
         (error instanceof SleepProviderError && !error.retryable) ||
         error instanceof PermanentCampaignError;
+      if (candidate.eventType === "member_health_analysis_generate") {
+        if (deadLetter) await this.memberHealthAnalyses?.failPermanently(candidate.aggregateId);
+        else await this.memberHealthAnalyses?.retry(candidate.aggregateId);
+      }
       if (deadLetter && candidate.eventType === "health_report_generate") {
         await this.healthReports?.failPermanently(candidate.aggregateId, error);
       }
@@ -172,6 +179,11 @@ export class OutboxWorker {
   }
 
   private async deliver(event: OutboxEvent): Promise<void> {
+    if (event.eventType === "member_health_analysis_generate") {
+      if (!this.memberHealthAnalyses) throw new Error("Member analysis worker is unavailable");
+      await this.memberHealthAnalyses.generate(event.aggregateId);
+      return;
+    }
     if (event.eventType === "health_report_generate") {
       if (!this.healthReports)
         throw new Error("Health report worker is unavailable");

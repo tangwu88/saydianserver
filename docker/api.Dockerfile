@@ -4,14 +4,17 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/commerce-domain/package.json packages/commerce-domain/package.json
+COPY packages/health-domain/package.json packages/health-domain/package.json
 COPY apps/api/package.json apps/api/package.json
 RUN pnpm install --frozen-lockfile --filter @saydian/app-api...
 COPY packages/contracts packages/contracts
 COPY packages/commerce-domain packages/commerce-domain
+COPY packages/health-domain packages/health-domain
 COPY apps/api/prisma apps/api/prisma
 RUN pnpm --filter @saydian/app-contracts build \
  && pnpm --filter @saydian/app-api prisma:generate \
  && pnpm --filter @saydian/commerce-domain build \
+ && pnpm --filter @saydian/health-domain build \
  && pnpm --filter @saydian/app-api deploy --prod /runtime/api \
  && cd /runtime/api && ./node_modules/.bin/prisma generate
 
