@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **544 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **545 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -339,7 +339,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（179）
+## 管理后台接口（180）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -376,6 +376,7 @@
 | `POST /api/saydian-app/admin/v1/auth/logout` | 后台退出 | admin | 无请求体 | {loggedOut:true} | 核心服务 |
 | `GET /api/saydian-app/admin/v1/auth/me` | 当前后台身份和多角色 | admin | 无请求体 | {id,role,roles}；服务端每次请求检查实时角色，前端菜单仅权限提示 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/dashboard` | 运营概览 | admin | 无请求体 | 会员/健康/关爱/预警/反馈/积压数量；外部收款排除PARTNER_BALANCE，伙伴充值与商城成交额独立统计 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/members` | 超级管理员创建会员账号 | admin: SUPER_ADMIN | {mobile,password}；手机号按现有国内/国际规则规范化；密码至少8位且最多72个UTF-8字节；仅SUPER_ADMIN | {id,memberNo,mobile,nickname,status:ACTIVE,mobileVerified:true}；管理员代核实手机号，使用手表/戒指App与商城共享账号库及现有密码登录；不创建用户协议同意记录，App原有协议确认保持；重复手机号409且不覆盖旧账号，校验错误带固定errorKey | 用户与创建审计同事务；bcrypt成本12；审计不含手机号、密码或哈希；不创建设备绑定或健康测量值 |
 | `GET /api/saydian-app/admin/v1/members` | 会员查询 | admin | query:search?，query:page?，query:pageSize?，query:partnerId?；search 查昵称/手机号/旧会员ID/数字memberNo，国际版另支持邮箱；page默认1；pageSize默认30最大100；partnerId可筛选伙伴UUID，none筛选未归属会员；统一账号库 | {items,total,page,pageSize}；已登录后台返回数字memberNo、完整手机号、头像、推广上级及积分余额，国际版另含emailMasked；使用对应服务的管理员会话与角色权限 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员读取会员编辑资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；国内与国际版SUPER_ADMIN | 会员编号、头像、姓名/昵称、性别、出生日期、身高、体重、未脱敏手机号/邮箱、账号状态、推广上级、积分余额及独立验证状态；读取写入专门审计，不返回密码和健康记录 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/members/:id/profile` | 超级管理员编辑会员资料 | admin: SUPER_ADMIN | path:id；id=会员UUID；{nickname,avatarUrl?,gender:MALE\|FEMALE\|UNSPECIFIED,birthday?:YYYY-MM-DD,heightCm?:50..250,weightKg?:10..500,mobile?,email?,status:ACTIVE\|DISABLED,mobileVerified,emailVerified,referralEmployeeId?,newPassword?:8至72字节,expectedUpdatedAt}；身高体重可为空；国内手机号为11位，国际版须含国家区号；原本无联系方式的会员可编辑资料，已有联系方式的会员至少保留一项 | 原子更新 App 基本资料、联系方式验证状态、推广上级及可选新密码；联系方式、验证、账号状态或密码变化会注销会员现有会话，单独修改基本资料不会；重复联系方式409、过期版本409、注销流程会员409；编辑校验错误保留中文原因；专门审计只保存变更字段名和密码是否变更，不保存资料值、完整联系方式或密码 | 核心服务 |

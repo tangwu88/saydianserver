@@ -43,6 +43,7 @@ import { PrismaService } from "../common/prisma.service";
 import {
   isUuid,
   maskMobile,
+  normalizedMobile,
   safeObject,
   sha256,
 } from "../common/crypto";
@@ -360,6 +361,43 @@ export class AdminService {
       partnerRechargeCents: partnerRechargeCents._sum.amountCents ?? 0,
       commerceTurnoverCents: commerceTurnoverCents._sum.payableCents ?? 0,
     };
+  }
+
+  async createMember(
+    current: { id: string; role: string; roles?: string[] },
+    requestId: string,
+    input: Record<string, unknown>,
+  ) {
+    this.assertMemberAdministrator(current);
+    if (Object.keys(input).some(key => !["mobile", "password"].includes(key))) {
+      throw new BadRequestException({ errorKey: "admin_member_invalid_fields", message: "仅支持填写手机号和密码" });
+    }
+    const mobile = typeof input.mobile === "string" ? normalizedMobile(input.mobile) : "";
+    if (!mobile) throw new BadRequestException({ errorKey: "admin_member_invalid_mobile", message: "请输入有效手机号，国际号码请填写国家区号" });
+    const password = typeof input.password === "string" ? input.password : "";
+    if (password.length < 8 || Buffer.byteLength(password, "utf8") > 72) {
+      throw new BadRequestException({ errorKey: "admin_member_invalid_password", message: "密码须至少8位且不能超过72字节" });
+    }
+    const passwordHash = await hash(password, 12);
+    try {
+      return await this.prisma.$transaction(async tx => {
+        const user = await tx.user.create({
+          data: { mobile, passwordHash, mobileVerifiedAt: new Date(), nickname: `用户${mobile.slice(-4)}`, status: UserStatus.ACTIVE },
+          select: { id: true, compatibilityId: true, mobile: true, nickname: true, status: true },
+        });
+        await tx.auditLog.create({ data: {
+          actorType: "ADMIN", actorId: current.id, action: "MEMBER_CREATE",
+          entityType: "USER", entityId: user.id, requestId,
+          afterJson: { source: "admin", passwordSet: true, mobileVerified: true },
+        } });
+        return { id: user.id, memberNo: String(user.compatibilityId), mobile: user.mobile, nickname: user.nickname, status: user.status, mobileVerified: true };
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ConflictException({ errorKey: "admin_member_mobile_exists", message: "该手机号已注册，请直接搜索已有会员" });
+      }
+      throw error;
+    }
   }
 
   async members(search = "", pageInput = 1, pageSizeInput = 30, partnerIdInput = "") {

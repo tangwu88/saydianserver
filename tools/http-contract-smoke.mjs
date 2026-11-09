@@ -169,6 +169,35 @@ try {
   const adminLogin = await request(admin + "/auth/login", { method: "POST", body: { username: process.env.ADMIN_BOOTSTRAP_USERNAME, password: process.env.ADMIN_BOOTSTRAP_PASSWORD } });
   check(adminLogin.json.code, 200);
   const adminToken = adminLogin.json.data.token;
+  // Disposable CI database: create with the real admin API, then use both App entry points.
+  const manualMobile = "19900009999";
+  const manualCreated = await request(admin + "/members", { method: "POST", token: adminToken, body: { mobile: manualMobile, password } });
+  check(manualCreated.status, 201);
+  const manualMember = manualCreated.json.data;
+  check(manualMember.mobileVerified, true);
+  check("passwordHash" in manualMember, false);
+  const manualStored = await prisma.user.findUniqueOrThrow({ where: { id: manualMember.id } });
+  check(manualStored.mobile, "+86" + manualMobile);
+  check(manualStored.mobileVerifiedAt instanceof Date, true);
+  check([manualStored.birthday, manualStored.heightCm, manualStored.weightKg], [null, null, null]);
+  check(await prisma.healthRecord.count({ where: { userId: manualMember.id } }), 0);
+  check(await prisma.consentRecord.count({ where: { userId: manualMember.id } }), 0);
+  const manualAudit = await prisma.auditLog.findFirstOrThrow({ where: { action: "MEMBER_CREATE", entityId: manualMember.id } });
+  check(JSON.stringify(manualAudit.afterJson).includes(manualMobile), false);
+  check(JSON.stringify(manualAudit.afterJson).includes(password), false);
+  const duplicateManual = await request("/global" + admin + "/members", { method: "POST", token: adminToken, body: { mobile: "+86" + manualMobile, password: "another-fixture-password" } });
+  check(duplicateManual.status, 409);
+  check(duplicateManual.json.message, "该手机号已注册，请直接搜索已有会员");
+  const manualWatchBody = new FormData();
+  for (const [key, value] of Object.entries({ username: manualMobile, password, group: "app" })) manualWatchBody.set(key, value);
+  const manualWatch = await request("/api/v1/site/login", { method: "POST", body: manualWatchBody });
+  check(manualWatch.json.code, 200);
+  check(String(manualWatch.json.data.member.id), manualMember.memberNo);
+  check((await request(v2 + "/devices", { token: manualWatch.json.data.access_token })).status, 200);
+  const manualRing = await request(v2 + "/auth/login", { method: "POST", body: { mobile: manualMobile, password, product: "say-ring", locale: "zh-Hans", consentVersion: legalPageVersion, consentAccepted: true } });
+  check(manualRing.json.code, 200);
+  check(manualRing.json.data.member.id, manualMember.id);
+  check((await request(v2 + "/devices", { token: manualRing.json.data.accessToken })).status, 200);
   // Fixed read-only switches: local CI fixtures only, never production data.
   const iosSettingKey = "say_ring_ios_health_display";
   const closedIos = { schemaVersion: 1, metrics: { heart_rate: false, hrv: false, blood_oxygen: false, body_temperature: false, stress: false } };
