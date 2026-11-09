@@ -152,6 +152,16 @@ export class AdminController {
     return this.admin.dashboard();
   }
 
+  @Post("members")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  createMember(
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Req() request: RequestWithContext,
+    @Body() input: unknown,
+  ) {
+    return this.admin.createMember(current, request.requestId, safeObject(input));
+  }
+
   @Get("members")
   members(
     @Query("search") search?: string,

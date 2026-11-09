@@ -3739,6 +3739,40 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.createMember",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/members",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "超级管理员创建会员账号",
+      "request": "{mobile,password}；手机号按现有国内/国际规则规范化；密码至少8位且最多72个UTF-8字节；仅SUPER_ADMIN",
+      "response": "{id,memberNo,mobile,nickname,status:ACTIVE,mobileVerified:true}；管理员代核实手机号，使用手表/戒指App与商城共享账号库及现有密码登录；不创建用户协议同意记录，App原有协议确认保持；重复手机号409且不覆盖旧账号，校验错误带固定errorKey",
+      "dependency": "用户与创建审计同事务；bcrypt成本12；审计不含手机号、密码或哈希；不创建设备绑定或健康测量值",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.members",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/members",

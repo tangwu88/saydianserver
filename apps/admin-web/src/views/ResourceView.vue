@@ -13,6 +13,7 @@ import StoreDownloadEditor from "../components/StoreDownloadEditor.vue";
 import { uploadAppPackageChunks, PackageUploadError } from "../app-package-upload";
 import RichTextEditor from "../components/RichTextEditor.vue";
 import MemberHealthData from "../components/MemberHealthData.vue";
+import MemberCreateDialog from "../components/MemberCreateDialog.vue";
 import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
 import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
 import ContentImageField from "../components/ContentImageField.vue";
@@ -53,6 +54,7 @@ const memberReferralOptions = ref<Row[]>([]);
 const search = ref("");
 const memberPartnerFilter = ref("");
 const partnerAssignment = ref<Row | null>(null);
+const memberCreateVisible = ref(false);
 const commerceStatus = ref("");
 const orderKind = ref("");
 const reportType = ref("");
@@ -403,6 +405,12 @@ async function load(): Promise<void> {
   } finally {
     if (requestId === loadRequestId) loading.value = false;
   }
+}
+
+async function memberCreated(): Promise<void> {
+  search.value = "";
+  memberPartnerFilter.value = "";
+  await searchMembers();
 }
 
 async function searchMembers(): Promise<void> {
@@ -1539,6 +1547,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="page">
+    <MemberCreateDialog v-if="resource === 'members' && canManageMemberVerification" v-model="memberCreateVisible" @created="memberCreated" />
     <h1 class="page-title">{{ title }}</h1>
     <div class="resource-content">
       <CommerceWorkspace v-if="isCommerceResource" v-model:search="search" :resource="resource" :rows="rows" :meta="resourceMeta" :category-id="productCategoryId" :order-kind="orderKind" @kind-change="orderKind=$event;currentPage=1;load()" :loading="loading" :createable="createable" @refresh="refreshCommerce" @product-pagination="changeProductPagination" @category-change="changeProductCategory" @page-change="changeCommercePage" @status-change="changeCommerceStatus" @create="openCreate" @edit="openEdit" @delete-product="deleteCommerceProduct" @refund="refundAfterSale" @ship="openShipment" @shipping-refund="requestShippingRefund" @run-action="runAction" @batch-products="batchProducts" />
@@ -1549,6 +1558,7 @@ onBeforeUnmount(() => {
           <el-input v-if="searchable" v-model="search" placeholder="邮箱、会员编号、手机号、昵称或推广码" clearable style="width: 340px" @keyup.enter="searchMembers" @clear="searchMembers" />
           <el-input v-if="resource === 'members'" v-model="memberPartnerFilter" placeholder="品牌伙伴 ID（none 表示未归属）" clearable style="width: 290px" @keyup.enter="searchMembers" @clear="searchMembers" />
           <el-button v-if="resource === 'members'" :loading="loading" @click="searchMembers">搜索</el-button>
+          <el-button v-if="resource === 'members' && canManageMemberVerification" type="primary" @click="memberCreateVisible = true">新增会员账号</el-button>
           <el-button type="primary" @click="load">刷新</el-button>
           <el-button v-if="createable" @click="openCreate">新增</el-button>
           <span class="muted">{{ resource === "devices" ? "设备标识由 App 上报标识单向生成，用于蓝牙名或 MAC 缺失时区分设备。" : "会员手机号仅在已登录后台显示；健康原始数据仍按角色授权。" }}</span>
