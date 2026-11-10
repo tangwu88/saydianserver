@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 const h = vi.hoisted(() => ({ token: "owner", post: vi.fn(), put: vi.fn(), delete: vi.fn() }));
 vi.mock("./api", () => ({ api: h, responseData: (r: any) => r.data.data, adminSessionKey: () => h.token }));
@@ -6,6 +6,7 @@ import { PackageUploadError, uploadAppPackageChunks } from "./app-package-upload
 const network = () => Object.assign(new Error("synthetic network reset"), { isAxiosError: true, code: "ERR_NETWORK" });
 const envelope = (data: unknown) => ({ data: { data } });
 beforeEach(() => { vi.clearAllMocks(); h.token = "owner"; h.delete.mockResolvedValue({}); });
+afterEach(() => vi.restoreAllMocks());
 function fixture(size = 1024 * 1024 * 2 + 17) {
   const bytes = new Uint8Array(size); bytes.set([80, 75, 3, 4]);
   const file = new File([bytes], "SayRing.hap", { type: "application/octet-stream" });
@@ -36,6 +37,38 @@ it("retries a fragment whose response was lost using the same session and offset
   h.put.mockImplementation(async (...args) => { const r = await original(...args); if (!failed) { failed = true; throw network(); } return r; });
   await f.run(); expect(h.put.mock.calls[0]![0]).toBe(h.put.mock.calls[1]![0]); expect(f.starts()).toBe(1);
   expect(f.parts.size).toBe(3); expect(f.progress.mock.calls.some(([p]) => p.stage === "retrying")).toBe(true);
+});
+it("reports progress within a fragment, effective speed and remaining time without counting multipart overhead", async () => {
+  const f = fixture(1024 * 1024 * 2), original = h.put.getMockImplementation()!;
+  let now = 1000; vi.spyOn(Date, "now").mockImplementation(() => now);
+  const callbacks: Array<(event: { loaded: number }) => void> = [];
+  h.put.mockImplementation(async (...args) => {
+    const callback = args[2].onUploadProgress; callbacks.push(callback);
+    now += 2000; callback({ loaded: 512 * 1024 });
+    if (callbacks.length === 1) expect(f.progress).toHaveBeenLastCalledWith(expect.objectContaining({
+      stage: "uploading", percent: 25, uploadedBytes: 512 * 1024, totalBytes: f.file.size,
+      bytesPerSecond: 256 * 1024, remainingSeconds: 6,
+    }));
+    callback({ loaded: 1024 * 1024 + 500 });
+    if (callbacks.length === 1) expect(f.progress).toHaveBeenLastCalledWith(expect.objectContaining({ percent: 50, uploadedBytes: 1024 * 1024 }));
+    return original(...args);
+  });
+  await f.run();
+  expect(f.progress.mock.calls.filter(([p]) => p.stage === "uploading").every(([p]) => p.percent < 100 && p.uploadedBytes <= f.file.size)).toBe(true);
+  const count = f.progress.mock.calls.length; callbacks[0]!({ loaded: 1024 });
+  expect(f.progress).toHaveBeenCalledTimes(count); // Delayed events must not regress the completed state.
+});
+it.each(["cancel", "account"])("ignores late progress after %s without throwing from the event callback", async (kind) => {
+  const f = fixture(20), original = h.put.getMockImplementation()!;
+  h.put.mockImplementation(async (...args) => {
+    const result = await original(...args);
+    if (kind === "cancel") f.controller.abort(); else h.token = "another-account";
+    const count = f.progress.mock.calls.length;
+    expect(() => args[2].onUploadProgress({ loaded: 10 })).not.toThrow();
+    expect(f.progress).toHaveBeenCalledTimes(count);
+    return result;
+  });
+  await expect(f.run()).rejects.toBeInstanceOf(PackageUploadError);
 });
 it("retries a lost completion response without starting another upload", async () => {
   const f = fixture(20), original = h.post.getMockImplementation()!; let failed = false;

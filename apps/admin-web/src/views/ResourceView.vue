@@ -102,9 +102,12 @@ const packageUploading = ref<Record<string, boolean>>({});
 const appPackageBusy = computed(() => Object.values(packageUploading.value).some(Boolean));
 const packageUploadStatus = ref<Record<string, string>>({});
 const packageUploadErrors = ref<Record<string, string>>({});
+const packageFiles = ref<Record<string, { name: string; size: number; state: "uploading" | "uploaded" | "failed" | "cancelled" }>>({});
+function packageBytes(bytes: number): string { return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(0, Math.round(bytes / 1024))} KB`; }
+function choosePackageFile(event: MouseEvent) { (event.currentTarget as HTMLElement).parentElement?.querySelector<HTMLInputElement>('input[type="file"]')?.click(); }
 const packageUploadControllers = new Map<string, AbortController>();
 function cancelPackageUploads() { for (const controller of packageUploadControllers.values()) controller.abort(); }
-watch(dialogVisible, visible => { if (!visible) { cancelPackageUploads(); packageUploadErrors.value = {}; } });
+watch(dialogVisible, visible => { if (!visible) { cancelPackageUploads(); packageUploadErrors.value = {}; packageFiles.value = {}; } });
 const downloadPlatformOptions = [
   { key: "android", label: "Android", packageLabel: "APK" },
   { key: "ios", label: "iPhone", packageLabel: "TestFlight / App Store" },
@@ -1179,14 +1182,23 @@ async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event
     return;
   }
   packageUploading.value = { ...packageUploading.value, [platform]: true };
+  packageFiles.value[platform] = { name: file.name, size: file.size, state: "uploading" };
   packageUploadErrors.value[platform] = "";
   const controller = new AbortController(); packageUploadControllers.set(platform, controller);
   const settingKey = form.value.key;
   const editor = form.value.downloadEditor as DownloadManifestEditor;
+  const sameEditor = () => form.value.key === settingKey && form.value.downloadEditor === editor && dialogVisible.value;
   try {
     const product = form.value.key === "cn_app_update" ? "saydian-app-cn" : form.value.key === "app_update" ? "saidian" : form.value.key === "global_app_update" ? "saydian-global" : "say-ring";
     const uploaded = await uploadAppPackageChunks(file, platform, product, progress => {
+      if (!sameEditor() || controller.signal.aborted) return;
       packageUploadStatus.value[platform] = progress.stage === "hashing" ? "正在计算文件校验值…" : progress.stage === "verifying" ? "上传完成，正在校验并保存…" : progress.stage === "retrying" ? `已上传 ${progress.percent}%，连接中断后正在重试（${progress.attempt}/3）…` : `正在上传 ${progress.percent}%…`;
+      if (progress.stage === "uploading" && progress.totalBytes && progress.uploadedBytes !== undefined) {
+        const seconds = progress.remainingSeconds;
+        packageUploadStatus.value[platform] += ` ${packageBytes(progress.uploadedBytes)} / ${packageBytes(progress.totalBytes)}`;
+        if (progress.bytesPerSecond) packageUploadStatus.value[platform] += `，平均 ${packageBytes(progress.bytesPerSecond)}/s`;
+        if (seconds !== undefined && seconds > 0) packageUploadStatus.value[platform] += `，预计剩余 ${Math.floor(seconds / 60)}分${seconds % 60}秒`;
+      }
     }, controller.signal);
     if (controller.signal.aborted || form.value.key !== settingKey || form.value.downloadEditor !== editor || !dialogVisible.value) return;
     const release = editor.releases[platform];
@@ -1195,9 +1207,12 @@ async function uploadAppPackage(platform: "android" | "ios" | "harmonyos", event
     release.url = String(uploaded.url ?? "");
     release.sizeBytes = Number(uploaded.sizeBytes ?? 0);
     release.sha256 = String(uploaded.sha256 ?? "");
+    packageFiles.value[platform] = { name: file.name, size: file.size, state: "uploaded" };
     ElMessage.success("安装包上传成功，保存设置后正式发布");
   } catch (error) {
-    if (!controller.signal.aborted) {
+    if (sameEditor() && controller.signal.aborted) packageFiles.value[platform] = { name: file.name, size: file.size, state: "cancelled" };
+    if (sameEditor() && !controller.signal.aborted) {
+      packageFiles.value[platform] = { name: file.name, size: file.size, state: "failed" };
       const message = error instanceof PackageUploadError ? error.message : readableError(error);
       packageUploadErrors.value[platform] = message; ElMessage.error(message);
     }
@@ -2164,7 +2179,16 @@ onBeforeUnmount(() => {
                   </template>
                   <template v-else>
                     <el-form-item label="上传安装包">
-                      <input :accept="platform.key === 'android' ? '.apk' : '.hap'" type="file" :disabled="packageUploading[platform.key]" @change="uploadAppPackage(platform.key, $event)" />
+                      <div>
+                        <el-button :disabled="packageUploading[platform.key]" @click="choosePackageFile">{{ packageFiles[platform.key] ? '重新选择安装包' : '选择安装包' }}</el-button>
+                        <input hidden :aria-label="platform.label + '安装包'" :accept="platform.key === 'android' ? '.apk' : '.hap'" type="file" :disabled="packageUploading[platform.key]" @change="uploadAppPackage(platform.key, $event)" />
+                        <div v-if="packageFiles[platform.key]" :style="{ color: packageFiles[platform.key]?.state === 'uploaded' ? 'var(--el-color-success)' : undefined, overflowWrap: 'anywhere', marginTop: '8px' }" role="status">
+                          {{ packageFiles[platform.key]?.state === 'uploaded' ? '上传成功' : packageFiles[platform.key]?.state === 'cancelled' ? '已取消上传' : packageFiles[platform.key]?.state === 'failed' ? '上传未成功' : '已选择' }}：{{ packageFiles[platform.key]?.name }}（{{ packageBytes(packageFiles[platform.key]?.size ?? 0) }}）
+                          <div v-if="packageFiles[platform.key]?.state === 'uploaded'">文件已校验保存，点击底部“保存”后发布，无需重复上传。</div>
+                          <div v-if="packageFiles[platform.key]?.state === 'uploading'">下方文件信息暂为原值，校验成功后自动替换。</div>
+                        </div>
+                        <span v-else-if="form.downloadEditor.releases[platform.key].fileName" class="muted" style="display:block;overflow-wrap:anywhere">当前安装包：{{ form.downloadEditor.releases[platform.key].fileName }}</span>
+                      </div>
                       <span v-if="packageUploading[platform.key]" role="status">{{ packageUploadStatus[platform.key] || '正在准备上传…' }} <el-button link type="danger" @click="packageUploadControllers.get(platform.key)?.abort()">取消上传</el-button></span>
                       <span v-if="packageUploadErrors[platform.key]" role="alert" style="color:var(--el-color-danger)">{{ packageUploadErrors[platform.key] }}</span>
                       <span v-if="!packageUploading[platform.key]">最大 128MB；支持分片自动重试，上传后自动填写文件信息，保存设置后发布。</span>

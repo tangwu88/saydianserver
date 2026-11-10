@@ -1,7 +1,7 @@
 import axios from "axios";
 import { api, responseData, adminSessionKey } from "./api";
 export class PackageUploadError extends Error {}
-type Progress = { stage: "hashing" | "uploading" | "retrying" | "verifying"; percent: number; attempt?: number };
+type Progress = { stage: "hashing" | "uploading" | "retrying" | "verifying"; percent: number; attempt?: number; uploadedBytes?: number; totalBytes?: number; bytesPerSecond?: number; remainingSeconds?: number };
 type UploadResult = { fileName: string; url: string; sizeBytes: number; sha256: string };
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
   const stop = () => { clearTimeout(timer); reject(new PackageUploadError("已取消上传")); };
@@ -50,12 +50,23 @@ export async function uploadAppPackageChunks(file: File, platform: "android" | "
   try {
     const start = await retry(async () => responseData<{ uploadId: string; receivedBytes: number; chunkBytes: number }>(await api.post(`/app-packages/uploads?platform=${platform}&product=${encodeURIComponent(product)}`, { requestId: uploadId, fileName: file.name, sizeBytes: file.size, sha256 }, { signal, timeout: 60_000 })));
     if (start.uploadId !== uploadId || start.chunkBytes !== 1024 * 1024 || start.receivedBytes !== 0) throw new PackageUploadError("上传会话返回异常，请重新选择安装包");
+    const startedAt = Date.now();
+    function report(loaded = 0) {
+      const uploadedBytes = Math.min(file.size, received + loaded);
+      const elapsed = (Date.now() - startedAt) / 1000;
+      const speed = elapsed > 0 ? uploadedBytes / elapsed : 0;
+      progress({ stage: "uploading", percent: Math.min(99, Math.floor(uploadedBytes / file.size * 100)), uploadedBytes, totalBytes: file.size,
+        ...(speed > 0 ? { bytesPerSecond: speed, remainingSeconds: Math.ceil((file.size - uploadedBytes) / speed) } : {}) });
+    }
     while (received < file.size) {
-      progress({ stage: "uploading", percent: Math.floor(received / file.size * 100) });
+      report();
       const offset = received, end = Math.min(offset + start.chunkBytes, file.size);
       const uploaded = await retry(async () => {
         const body = new FormData(); body.append("file", file.slice(offset, end), "package.part");
-        return responseData<{ receivedBytes: number }>(await api.put(`/app-packages/uploads/${uploadId}/parts/${offset}`, body, { signal, timeout: 60_000 }));
+        report();
+        return responseData<{ receivedBytes: number }>(await api.put(`/app-packages/uploads/${uploadId}/parts/${offset}`, body, { signal, timeout: 60_000,
+          onUploadProgress: event => { if (!signal.aborted && adminSessionKey() === session && received === offset) report(Math.min(event.loaded, end - offset)); },
+        }));
       });
       if (uploaded.receivedBytes !== end) throw new PackageUploadError("上传片段确认异常，请重新选择安装包");
       received = end;

@@ -9,6 +9,7 @@ import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayl
 import { healthDeviceSource, healthMetricLabel, healthRawJson, healthTime } from "./health-display";
 import { groupCnDisplaySettings } from "./cn-settings";
 import { groupSayRingDisplaySettings } from "./say-ring-settings";
+import { PackageUploadError, uploadAppPackageChunks as uploadPackage } from "./app-package-upload";
 
 const envelope = (items: Record<string, unknown>[] = [], total = items.length) => ({ data: { data: { items, total, page: 1, pageSize: 30 } } });
 const member = {
@@ -57,7 +58,10 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
   const route = reactive({ params: { resource: "members" } });
   const watch = vi.fn();
   const onBeforeUnmount = vi.fn();
+  const uploadAppPackageChunks = vi.fn();
   const deps = {
+    uploadAppPackageChunks,
+    PackageUploadError,
     computed,
     groupSayRingDisplaySettings,
     groupCnDisplaySettings,
@@ -92,7 +96,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     healthRawJson,
     healthTime,
   };
-  const instance = new Function(...Object.keys(deps), code + "\nreturn { load, productPageSize, productCategoryId, changeProductCategory, changeProductPagination, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, changeDeviceHistoryTab, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, changeContentLocale, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, visibleRows, appProductFilter, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceHistoryTab, deviceMeasurements, deviceMeasurementsLoading, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal, contentProductLabel, rowProducts, appendProductGalleryImage }; ")(...Object.values(deps));
+  const instance = new Function(...Object.keys(deps), code + "\nreturn { cancelPackageUploads, uploadAppPackage, packageFiles, packageUploadStatus, packageUploadErrors, packageUploading, load, productPageSize, productCategoryId, changeProductCategory, changeProductPagination, searchMembers, changeCommercePage, viewHealth, contactVerificationLabel, canManageMemberVerification, onMemberContactInput, editable, resetResourceView, withDownloadSetting, openCreate, openEdit, save, loadCommerceProductBySku, deleteCommerceProduct, payloadForResource, validateCouponPeriod, openFeedback, saveFeedback, openHealthReport, openMemberDevices, openDeviceDetails, changeDeviceHistoryTab, loadDeviceMeasurements, changeDeviceMeasurementPage, closeDeviceDetails, localDateTime, articleCategoryLabel, articleCategorySelectionValid, changeContentLocale, selectableArticleCategories, articleCategoryOptions, articleCategoriesReady, originalArticleCategoryId, memberReferralOptions, erpLookupBusy, erpLookupError, rows, visibleRows, appProductFilter, columns, resourceMeta, currentPage, search, dialogVisible, detailRows, form, loading, loadError, render, dialogTitle, feedbackVisible, feedbackForm, feedbackSaving, healthReportVisible, healthReportRow, memberDevicesVisible, memberDevicesLoading, memberDeviceMember, memberDevices, deviceDetailVisible, deviceDetailLoading, deviceDetail, deviceConnections, deviceHistoryTab, deviceMeasurements, deviceMeasurementsLoading, deviceMeasurementsMessage, deviceMeasurementPage, deviceMeasurementTotal, contentProductLabel, rowProducts, appendProductGalleryImage }; ")(...Object.values(deps));
   return {
     ...instance,
     api,
@@ -103,6 +107,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
     watch,
     onBeforeUnmount,
     sfc,
+    uploadAppPackageChunks,
   };
 }
 
@@ -120,6 +125,69 @@ async function selectDeviceHistoryTab(h: ReturnType<typeof harness>, name: strin
   h.deviceHistoryTab.value = name;
   await h.changeDeviceHistoryTab(name);
 }
+
+describe("package upload feedback", () => {
+  function setup() {
+    const h = harness(); h.route.params.resource = "settings";
+    h.form.value = { key: "say_ring_app_update", downloadEditor: createSayRingDownloadDraft() };
+    h.dialogVisible.value = true;
+    const old = { fileName: "say-ring-android-old.apk", sizeBytes: 100, sha256: "old-hash", url: "/old.apk" };
+    Object.assign(h.form.value.downloadEditor.releases.android, old);
+    const file = new File([new Uint8Array([80, 75, 3, 4])], "SayRing-new.apk");
+    const input = { files: [file], value: "selected" };
+    return { h, old, file, input, upload: () => h.uploadAppPackage("android", { target: input }) };
+  }
+  it("retains the original name and verified success after clearing the native input, including a same-file reupload", async () => {
+    const { h, file, input, upload } = setup();
+    const metadata = { fileName: "say-ring-android-new.apk", url: "/new.apk", sizeBytes: file.size, sha256: "new-hash" };
+    h.uploadAppPackageChunks.mockResolvedValue(metadata);
+    await upload();
+    expect(input.value).toBe("");
+    expect(h.packageFiles.value.android).toEqual({ name: file.name, size: file.size, state: "uploaded" });
+    expect(h.form.value.downloadEditor.releases.android).toMatchObject(metadata);
+    expect(h.sfc).toContain('input hidden :aria-label="platform.label');
+    expect(h.sfc).toContain('文件已校验保存，点击底部“保存”后发布');
+    await upload(); expect(h.uploadAppPackageChunks).toHaveBeenCalledTimes(2);
+    expect(h.api.patch).not.toHaveBeenCalled(); // Uploading never publishes the manifest.
+  });
+  it("shows in-flight bytes and timing while keeping old metadata until verification", async () => {
+    const { h, old, upload } = setup(), pending = deferred<any>();
+    h.uploadAppPackageChunks.mockImplementation((...args: Parameters<typeof uploadPackage>) => {
+      const progress = args[3];
+      progress({ stage: "uploading", percent: 25, uploadedBytes: 1024 * 1024, totalBytes: 4 * 1024 * 1024, bytesPerSecond: 256 * 1024, remainingSeconds: 12 });
+      return pending.promise;
+    });
+    const task = upload();
+    expect(h.packageFiles.value.android.state).toBe("uploading");
+    expect(h.packageUploadStatus.value.android).toContain("1.0 MB / 4.0 MB，平均 256 KB/s，预计剩余 0分12秒");
+    expect(h.form.value.downloadEditor.releases.android).toMatchObject(old);
+    pending.reject(new PackageUploadError("校验失败")); await task;
+    expect(h.packageFiles.value.android.state).toBe("failed");
+    expect(h.packageUploadErrors.value.android).toBe("校验失败");
+    expect(h.form.value.downloadEditor.releases.android).toMatchObject(old);
+    expect(h.messages.success).not.toHaveBeenCalled();
+  });
+  it("shows cancellation and ignores a completion from a closed editor", async () => {
+    const first = setup();
+    first.h.uploadAppPackageChunks.mockImplementation((...args: Parameters<typeof uploadPackage>) => new Promise((_resolve, reject) => args[4].addEventListener("abort", () => reject(new PackageUploadError("已取消上传")))));
+    const cancelled = first.upload();
+    const signal = first.h.uploadAppPackageChunks.mock.calls[0]![4];
+    // The cancel control aborts the controller kept by the actual SFC.
+    first.h.cancelPackageUploads(); await cancelled;
+    expect(signal.aborted).toBe(true);
+    expect(first.h.packageFiles.value.android.state).toBe("cancelled");
+    expect(first.h.messages.success).not.toHaveBeenCalled();
+    first.h.dialogVisible.value = false;
+    first.h.watch.mock.calls.find(([source]: any[]) => source === first.h.dialogVisible)![1](false);
+    expect(first.h.packageFiles.value).toEqual({});
+
+    const second = setup(), pending = deferred<any>(); second.h.uploadAppPackageChunks.mockReturnValue(pending.promise);
+    const stale = second.upload(); second.h.dialogVisible.value = false;
+    pending.resolve({ fileName: "ignored.apk" }); await stale;
+    expect(second.h.form.value.downloadEditor.releases.android).toMatchObject(second.old);
+    expect(second.h.messages.success).not.toHaveBeenCalled();
+  });
+});
 
 describe("international member admin list", () => {
   it("shows fixed numeric-ID columns, including on empty lists", async () => {
