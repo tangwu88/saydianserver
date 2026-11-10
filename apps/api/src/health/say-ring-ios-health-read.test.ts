@@ -45,5 +45,5 @@ it("U19 v1 adds source-scoped metrics without changing ring flags", async () => 
 it("U19 SQL alternative is restricted to watch provenance before pagination", async () => {
   const findMany=vi.fn(async (_args: unknown)=>[]);
   await new HealthService({healthRecord:{findMany}} as any).list("owner",undefined,2,undefined,["sleep"],["blood_pressure"]);
-  expect(findMany.mock.calls[0][0]).toMatchObject({take:2,where:{userId:"owner",AND:expect.arrayContaining([{OR:[{metric:{in:[HealthMetric.SLEEP]}},{metric:{in:[HealthMetric.BLOOD_PRESSURE]},AND:[{sourceMetadata:{path:["vendor"],equals:"urion"}},{sourceMetadata:{path:["deviceCategory"],equals:"watch"}}]}]}])}});
+  expect(findMany.mock.calls[0]?.[0]).toMatchObject({take:2,where:{userId:"owner",AND:expect.arrayContaining([{OR:[{metric:{in:[HealthMetric.SLEEP]}},{metric:{in:[HealthMetric.BLOOD_PRESSURE]},AND:[{sourceMetadata:{path:["vendor"],equals:"urion"}},{sourceMetadata:{path:["deviceCategory"],equals:"watch"}}]}]}])}});
 });

@@ -15,3 +15,6 @@
 最终服务端本机检查：`pnpm typecheck` 退出 0；`TMPDIR=/private/tmp pnpm test` 退出 0，API 153 文件、1543 用例通过，93 数据库用例因无本机数据库跳过；`pnpm build` 退出 0。增加新查询参数后接口文档检查指出目录过期，执行 `pnpm api:docs` 更新三个生成文件后 `pnpm api:docs:check` 退出 0。`pnpm tools:test` 首次因 pwsh 未在 PATH 而使隔离 Git 流程用例失败，随后找到本机已有 PowerShell 7.6.6，加入 PATH 重跑完整工具及 H5 检查，未跳过用例。根级 contracts 生成与测试、构建依次执行，不并行修改共享产物。`git diff --check` 退出 0。
 
 本次无数据库迁移、无既有健康记录修改。上线仍以 CI、指定中国站部署及 readiness 的相同完整版本为准；公开 U19 配置缺失时保持关闭，不默认激活新权限。
+
+
+远端 PR #67 第一轮 CI 在新增 SQL 契约用例的严格类型检查处失败（TS2532，mock.calls[0] 可能为空）。本机上一次类型检查早于该测试追加，因此不能用旧结果覆盖新测试。已改为可选索引并保留 toMatchObject 断言，重新执行本机 typecheck/test/build 后提交补丁；未合并或触发生产发布。
