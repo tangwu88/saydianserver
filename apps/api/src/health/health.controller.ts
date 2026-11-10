@@ -66,6 +66,7 @@ export class HealthController {
     @Query("before") before?: string,
     @Query("product") product?: string,
     @Query("platform") platform?: string,
+    @Query("u19HealthVersion") u19HealthVersion?: string,
   ) {
     if (product !== "saydian-app-cn" && (product !== "say-ring" || platform !== "ios"))
       return this.health.list(user.id, metric, Number(limit ?? 50), before);
@@ -78,6 +79,11 @@ export class HealthController {
     if (metrics.blood_oxygen) allowed.push("blood_oxygen");
     if (metrics.body_temperature) allowed.push("temperature");
     // Stress has no existing cloud metric; its local display flag adds no API.
+    // 新客户端显式请求独立手表目录。旧客户端继续使用原来的参数和指标清单。
+    if (product === "say-ring" && platform === "ios" && u19HealthVersion === "1") {
+      const u19 = await this.support.sayRingU19Health();
+      return this.health.list(user.id, metric, Number(limit ?? 50), before, allowed, u19.readMetrics as HealthMetric[]);
+    }
     return this.health.list(user.id, metric, Number(limit ?? 50), before, allowed);
   }
 

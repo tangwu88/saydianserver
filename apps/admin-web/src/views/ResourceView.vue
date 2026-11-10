@@ -136,6 +136,7 @@ const settingProducts = (key: unknown): string[] => {
     say_ring_app_display: ["say-ring"],
     say_ring_ios_health_display: ["say-ring"],
     say_ring_ios_module_display: ["say-ring"],
+    say_ring_u19_health: ["say-ring"],
     say_ring_map: ["say-ring"],
   };
   return products[String(key ?? "")] ?? [];
@@ -460,6 +461,7 @@ async function withDownloadSetting(loadedRows: Row[]): Promise<Row[]> {
     { key: "say_ring_app_display", name: "Say Ring 显示设置" },
     { key: "say_ring_ios_health_display", name: "Say Ring iOS 只读健康指标" },
     { key: "say_ring_ios_module_display", name: "Say Ring 三端百科与商城显示" },
+    { key: "say_ring_u19_health", name: "Say Ring U19 手表健康功能" },
     { key: "cn_app_display", name: "赛电健康 AI 显示设置" },
     { key: "cn_health_display", name: "赛电健康只读健康指标" },
     { key: "cn_module_display", name: "赛电健康百科与商城" },

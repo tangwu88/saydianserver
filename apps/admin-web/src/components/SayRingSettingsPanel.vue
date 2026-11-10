@@ -4,6 +4,7 @@ import { ElMessage } from "element-plus";
 import { api, readableError, responseData } from "../api";
 import SayRingIosHealthSetting from "./SayRingIosHealthSetting.vue";
 import SayRingIosModuleSetting from "./SayRingIosModuleSetting.vue";
+import SayRingU19HealthSetting from "./SayRingU19HealthSetting.vue";
 
 type Setting = { key: string; value?: any; updatedAt?: string | null };
 const props = defineProps<{ settings: Setting[] }>();
@@ -14,6 +15,7 @@ const settings = ref<Record<string, Setting>>(
 const aiKey = "say_ring_app_display";
 const healthKey = "say_ring_ios_health_display";
 const moduleKey = "say_ring_ios_module_display";
+const u19Key = "say_ring_u19_health";
 const activeTab = ref("ai");
 const ai = ref({
   hideAi: settings.value[aiKey]?.value?.hideAi === true,
@@ -124,6 +126,15 @@ async function saveAi() {
             :key="settings[moduleKey]?.updatedAt ?? 'new'"
             :setting="settings[moduleKey] ?? {}"
             @saved="refresh(moduleKey)"
+          />
+        </div>
+      </el-tab-pane>
+      <el-tab-pane label="U19 手表" name="u19">
+        <div v-loading="refreshing[u19Key]">
+          <SayRingU19HealthSetting
+            :key="settings[u19Key]?.updatedAt ?? 'new'"
+            :setting="settings[u19Key] ?? {}"
+            @saved="refresh(u19Key)"
           />
         </div>
       </el-tab-pane>

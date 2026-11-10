@@ -4979,7 +4979,7 @@
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
       "summary": "保存客服、更新或独立 App 显示设置",
-      "request": "{value:非空JSON对象,public?:boolean}；更新通过DownloadManifest校验；cn_app_display仅hideAi，say_ring_app_display另允许sleepAiEnabled；say_ring_ios_health_display使用schemaVersion:1/五项metrics；独立say_ring_ios_module_display使用schemaVersion:1/modules:{health_library,mall}；后两项均须expectedUpdatedAt=当前ISO或首次null、严格布尔且必须公开",
+      "request": "{value:非空JSON对象,public?:boolean}；更新通过DownloadManifest校验；cn_app_display仅hideAi，say_ring_app_display另允许sleepAiEnabled；say_ring_ios_health_display使用schemaVersion:1/五项metrics；独立say_ring_ios_module_display使用schemaVersion:1/modules:{health_library,mall}；另有say_ring_u19_health版本1/readMetrics与manualMetrics仅血压心率血氧，手动须为读取子集；独立项均须expectedUpdatedAt=当前ISO或首次null、严格布尔且必须公开",
       "response": "设置对象；独立key锁/版本冲突409/事务操作者及前后快照审计/各自rollback；不改变AI、指标、测量、上传、购买/支付或其他App",
       "dependency": "核心服务",
       "successStatus": 200,
@@ -29283,6 +29283,12 @@
         {
           "in": "query",
           "name": "platform",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "u19HealthVersion",
           "type": "string",
           "optional": true
         }

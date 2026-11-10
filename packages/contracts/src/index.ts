@@ -4,6 +4,7 @@ export type { PartnerLevelContract, PartnerWalletContract, PartnerIdentityContra
 export { adminResourcePermissions, canAdminResource, type AdminAction } from "./admin-permissions";
 export { sayRingIosHealthSettingKey, sayRingReadOnlyMetricKeys, parseSayRingIosHealthDisplay, sayRingIosHealthDisplayOrClosed, type SayRingIosHealthDisplay, type SayRingReadOnlyMetric } from "./say-ring-ios-health";
 export { sayRingIosModuleSettingKey, sayRingModuleKeys, parseSayRingIosModuleDisplay, sayRingIosModuleDisplayOrClosed, type SayRingIosModuleDisplay, type SayRingModule } from "./say-ring-ios-modules";
+export { sayRingU19HealthSettingKey, u19HealthCeiling, parseSayRingU19Health, sayRingU19HealthOrClosed, type SayRingU19Health, type U19HealthMetric } from "./say-ring-u19-health";
 
 export const healthMetrics = [
   "sleep",

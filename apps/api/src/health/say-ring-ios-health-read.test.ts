@@ -33,3 +33,17 @@ describe("opt-in Say Ring iOS read scope", () => {
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ userId: "owner", metric: HealthMetric.HEART_RATE, AND: expect.arrayContaining([{ metric: { in: [HealthMetric.SLEEP] } }]) }), take: 2 }));
   });
 });
+
+// 独立 U19 目录需要新客户端声明，不能向旧 readOnlyHealth 塞入血压。
+it("U19 v1 adds source-scoped metrics without changing ring flags", async () => {
+  const list=vi.fn(); const closed=sayRingIosHealthDisplayOrClosed();
+  const support={sayRingIosReadOnlyHealth:async()=>closed,sayRingU19Health:async()=>({readMetrics:["blood_pressure"]})};
+  await new HealthController({list} as any,support as any).list({id:"owner"} as any,undefined,"50",undefined,"say-ring","ios","1");
+  expect(list).toHaveBeenCalledExactlyOnceWith("owner",undefined,50,undefined,["sleep","steps","distance","calories"],["blood_pressure"]);
+  expect(closed.metrics).not.toHaveProperty("blood_pressure");
+});
+it("U19 SQL alternative is restricted to watch provenance before pagination", async () => {
+  const findMany=vi.fn(async (_args: unknown)=>[]);
+  await new HealthService({healthRecord:{findMany}} as any).list("owner",undefined,2,undefined,["sleep"],["blood_pressure"]);
+  expect(findMany.mock.calls[0]?.[0]).toMatchObject({take:2,where:{userId:"owner",AND:expect.arrayContaining([{OR:[{metric:{in:[HealthMetric.SLEEP]}},{metric:{in:[HealthMetric.BLOOD_PRESSURE]},AND:[{sourceMetadata:{path:["vendor"],equals:"urion"}},{sourceMetadata:{path:["deviceCategory"],equals:"watch"}}]}]}])}});
+});

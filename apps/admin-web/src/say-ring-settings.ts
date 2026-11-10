@@ -4,6 +4,7 @@ export const sayRingDisplaySettingKeys = [
   "say_ring_app_display",
   "say_ring_ios_health_display",
   "say_ring_ios_module_display",
+  "say_ring_u19_health",
 ] as const;
 
 export function groupSayRingDisplaySettings(rows: SettingRow[]): SettingRow[] {
@@ -24,7 +25,7 @@ export function groupSayRingDisplaySettings(rows: SettingRow[]): SettingRow[] {
       children[0]),
     key: sayRingDisplaySettingKeys[0],
     name: "Say Ring 功能设置",
-    configuration: "AI 显示 / 只读健康指标 / 百科与商城",
+    configuration: "AI 显示 / 只读健康指标 / 百科与商城 / U19 手表",
     public: "分项设置",
     updatedAt: latest,
     _products: ["say-ring"],

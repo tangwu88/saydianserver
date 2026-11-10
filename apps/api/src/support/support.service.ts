@@ -1,3 +1,4 @@
+import { sayRingU19HealthOrClosed, sayRingU19HealthSettingKey } from "./u19-health";
 import { cnDisplaySections } from "./cn-display";
 import {
   BadRequestException,
@@ -146,6 +147,11 @@ export class SupportService implements OnModuleInit, OnModuleDestroy {
     return { ...sayRingIosHealthDisplayOrClosed(setting?.value), validForSeconds: 300 };
   }
 
+  async sayRingU19Health() {
+    const setting = await this.prisma.appSetting.findFirst({ where: { key: sayRingU19HealthSettingKey, public: true }, select: { value: true } });
+    return sayRingU19HealthOrClosed(setting?.value);
+  }
+
   async appDisplayConfig(productInput?: string, platformInput?: string) {
     if (productInput !== "say-ring" && productInput !== "saydian-app-cn") {
       throw new NotFoundException("应用显示设置不存在");
@@ -170,7 +176,7 @@ export class SupportService implements OnModuleInit, OnModuleDestroy {
       hideAi: value.hideAi,
       ...(productInput === "saydian-app-cn" ? { ...(await cnDisplaySections(this.prisma)), sleepAiEnabled: value.sleepAiEnabled === true } : {}),
       ...(productInput === "say-ring" && ["ios", "android", "harmonyos"].includes(platformInput ?? "")
-        ? { platform: platformInput, ...(platformInput === "ios" ? { readOnlyHealth: await this.sayRingIosReadOnlyHealth() } : {}), moduleVisibility: await sayRingIosModuleVisibility(this.prisma) }
+        ? { platform: platformInput, ...(platformInput === "ios" ? { readOnlyHealth: await this.sayRingIosReadOnlyHealth(), u19Health: await this.sayRingU19Health() } : {}), moduleVisibility: await sayRingIosModuleVisibility(this.prisma) }
         : {}),
       ...(productInput === "say-ring" &&
       typeof value.sleepAiEnabled === "boolean"

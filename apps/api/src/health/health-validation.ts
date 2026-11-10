@@ -109,9 +109,16 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
   if(sourceRaw.provenance!=null){
     const p=safeObject(sourceRaw.provenance);
     const strings:Record<string,readonly string[]>={timeBasis:["sdk","slot","unknown"],temperatureKind:["skin","estimated_body","unknown"],algorithm:["sdnn","rmssd","unknown"],captureMode:["history","manual"]};
-    const keys=[...Object.keys(strings),"contactVerified","intervalSeconds","validCount","rejectedCount","sdkQuality"];
+    const keys=[...Object.keys(strings),"contactVerified","intervalSeconds","validCount","rejectedCount","sdkQuality","timePrecision","aggregationLocalDate","observedAt"];
     if(Object.keys(p).some(k=>!keys.includes(k)))return rejected(id,"invalid_source","未支持的采样字段");
     for(const[k,v]of Object.entries(p)){
+      if (["timePrecision","aggregationLocalDate","observedAt"].includes(k)) {
+        if (sourceRaw.vendor !== "urion" || sourceRaw.deviceCategory !== "watch" || !hasAggregation ||
+            (k === "timePrecision" && v !== "day") ||
+            (k === "aggregationLocalDate" && v !== aggregationLocalDate) ||
+            (k === "observedAt" && (typeof v !== "string" || !Number.isFinite(Date.parse(v)) || Date.parse(v)>Date.now()+600000))) return rejected(id,"invalid_source","日汇总来源不正确");
+        continue;
+      }
       if(strings[k]?!strings[k].includes(String(v)):k==="contactVerified"?typeof v!=="boolean":typeof v!=="number"||!Number.isFinite(v)||v<0||v>86400)return rejected(id,"invalid_source","采样信息不正确");
     }
     metadata.provenance=p as Record<string,string|number|boolean>;
