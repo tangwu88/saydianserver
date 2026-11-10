@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **545 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **568 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -180,7 +180,7 @@
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
 
-## V2 App 接口（154）
+## V2 App 接口（175）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -325,6 +325,27 @@
 | `GET /api/saydian-app/v2/health/reports/:id/full` | 查看已解锁详细健康报告 | member | path:id；id=报告UUID | AI标识、证据索引、局限及详细内容；非诊断 | 核心服务 |
 | `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
 | `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本 | 重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还 | AI供应商 |
+| `GET /api/saydian-app/v2/sayheath/legal` | Product-specific reviewed terms and privacy version required to sign in | public | 无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/sayheath/public/privacy` | Published English product privacy page | public | 无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/sayheath/public/terms` | Published English product terms | public | 无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/sayheath/public/support` | Public support form | public | 无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/public/support` | Deliver bounded support request with reply contact | public | 无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/sayheath/public/account-deletion` | Public shared-account deletion guide | public | 无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/sign-in` | Email/password authentication with current SayHeath legal consent | public | 无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/register` | Register US account with current SayHeath legal consent | public | 无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/sayheath/policy` | Short-lived version and account-specific feature permissions | member | header:authorization；无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/permission` | Give or withdraw consent for one versioned feature | member | header:authorization；无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/captures` | Issue owner/device-bound ticket before starting a new measurement | member | header:authorization；无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/captures/:id/reading` | Save an authorized new measurement and return its canonical receipt | member | header:authorization，path:id；无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/sayheath/captures/:id` | Read back one previously received measurement under its owner and current permission | member | header:authorization，path:id；无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/sayheath/readings` | Read only SayHeath sensor records owned by this member | member | header:authorization，query:feature，query:cursor?；无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/sayheath/activity` | Read permitted activity and sleep summaries only | member | header:authorization，query:cursor?；无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/activity` | Store a validated activity or sleep day summary | member | header:authorization；无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/sayheath/family` | List only SayHeath invitations for current member | member | header:authorization；无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/family` | Offer activity and/or sleep to a named account | member | header:authorization；无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/family/:id/:action` | Accept, change, end or read a product-specific share | member | header:authorization，path:id，path:action；无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/sign-out` | Revoke the isolated session | member | header:authorization；无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/v2/sayheath/delete-account` | Request deletion of the shared user account after explicit confirmation | member | header:authorization；无请求体 | 对象 | 核心服务 |
 | `GET /api/saydian-app/v2/support/weather` | 手机当前位置天气预报 | public | query:lat?，query:lon?；公开 GET；query lat=-90..90、lon=-180..180；服务端按两位小数网格取预报，不接收会员标识 | {source,sourceUrl,licenseUrl,updatedAt,timeseries}；MET Norway 预报及来源/CC BY 4.0 标注；无有效数据返回503，不生成虚构天气 | 固定 MET Norway Locationforecast HTTPS；按 Expires 缓存并以 Last-Modified 条件刷新 |
 | `GET /api/saydian-app/v2/support/config` | 客服配置 | public | 无请求体 | 客服配置或未配置状态 | 核心服务 |
 | `GET /api/saydian-app/v2/support/app-display` | 读取产品独立显示开关 | public | query:product?，query:platform?；query product=say-ring\|saydian-app-cn；可选platform=ios；公开接口，禁止其他产品标识 | 保留{product,hideAi,sleepAiEnabled?}；saydian-app-cn所有平台返回独立cn_health_display/cn_module_display对应readOnlyHealth/moduleVisibility和sleepAiEnabled；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}及同级moduleVisibility:{schemaVersion:1,validForSeconds:300,modules:{health_library,mall}}；独立公开设置/严格布尔，缺失无效或模块读取失败关闭；不向五项metrics加入新键；Cache-Control:no-store；客户端独立租约，失败/过期隐藏，不持久缓存 | 普通产品/platform显示；所有用户同配置，不识别审核身份；不授予上传/测量/购买/支付/医疗/AI权限；其他产品/旧请求不变 |
@@ -339,7 +360,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（180）
+## 管理后台接口（182）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -523,6 +544,8 @@
 | `POST /api/saydian-app/admin/v1/partner-agreements/draft` | 保存可编辑协议草稿 | admin: SUPER_ADMIN | {id?,updatedAt?,title,version,content} | 草稿；已发布正文禁止修改 | 仅SUPER_ADMIN；草稿不会自动生效 |
 | `POST /api/saydian-app/admin/v1/partner-agreements/:id/publish` | 发布合作协议版本 | admin: SUPER_ADMIN | path:id；id为协议UUID；{contentSha256} | 当前已发布版本；其他版本停用 | 仅SUPER_ADMIN；所有伙伴后续业务须同意当前已发布版本 |
 | `GET /api/saydian-app/admin/v1/partner-agreements/:id/acceptances` | 查看协议阅读与签署记录 | admin: SUPER_ADMIN | path:id；id为协议UUID | {items}；账户、首次阅读/同意时间、会话、IP、客户端；最多1000 | 仅SUPER_ADMIN |
+| `GET /api/saydian-app/admin/v1/settings/sayheath/features` | Read the five US product version switches | admin: SUPER_ADMIN | 无请求体 | 对象 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/settings/sayheath/features/:feature` | Publish an audited change to one exact version switch | admin: SUPER_ADMIN | path:feature；无请求体 | 对象 | 核心服务 |
 
 ## 品牌伙伴平台接口（46）
 

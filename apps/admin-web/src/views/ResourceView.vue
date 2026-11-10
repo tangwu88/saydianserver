@@ -24,6 +24,7 @@ import SayRingSettingsPanel from "../components/SayRingSettingsPanel.vue";
 import { groupSayRingDisplaySettings } from "../say-ring-settings";
 import { createCnDownloadDraft, cnDownloadManifestToEditor, cnDownloadEditorToManifest, createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor, type DownloadManifestEditor } from "../global-download-setting";
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "../download-setting";
+import SayHeathSwitches from "../components/SayHeathSwitches.vue";
 import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "../legal-document-editor";
 import { healthMetricLabel, healthRawJson, healthReadings, healthTime } from "../health-display";
 
@@ -1018,7 +1019,7 @@ async function save(): Promise<void> {
     }
     if (resource.value === "legal-documents" && form.value.active === true) {
       await ElMessageBox.confirm(
-        `确认启用 ${form.value.legalProduct === "say-ring" ? "Say Ring" : "Saydian Health"} 的「${legalDocumentTypeLabel(form.value.documentType)}」${form.value.version ? `（${form.value.version}）` : ""}？只有此 App 会读取该文档。`,
+        `确认启用 ${form.value.legalProduct === "sayheath" ? "SayHeath" : form.value.legalProduct === "say-ring" ? "Say Ring" : "Saydian Health"} 的「${legalDocumentTypeLabel(form.value.documentType)}」${form.value.version ? `（${form.value.version}）` : ""}？只有此 App 会读取该文档。`,
         "确认发布法律文档",
         { type: "warning", confirmButtonText: "确认启用", cancelButtonText: "取消" },
       );
@@ -1563,6 +1564,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <SayHeathSwitches v-if="resource === 'settings'" />
   <section class="page">
     <MemberCreateDialog v-if="resource === 'members' && canManageMemberVerification" v-model="memberCreateVisible" @created="memberCreated" />
     <h1 class="page-title">{{ title }}</h1>
@@ -1616,7 +1618,7 @@ onBeforeUnmount(() => {
               <el-tag v-else-if="resource === 'articles' && column === 'product'" size="small" :type="scope.row.product === 'say-ring' ? 'warning' : scope.row.product === 'shared' ? 'info' : 'primary'">{{ contentProductLabel(scope.row.product ?? 'shared') }}</el-tag>
               <div v-else-if="resource === 'settings' && column === 'appScope'" class="app-scope-tags"><el-tag v-for="product in rowProducts(scope.row)" :key="product" size="small" :type="product === 'say-ring' ? 'warning' : 'primary'">{{ contentProductLabel(product) }}</el-tag></div>
               <el-tag v-else-if="resource === 'devices' && column === 'status'" size="small" :type="scope.row.status === 'BOUND' ? 'success' : 'info'">{{ scope.row.status === "BOUND" ? "已绑定" : scope.row.status === "UNBOUND" ? "已解绑" : render(scope.row.status) }}</el-tag>
-              <el-tag v-else-if="resource === 'legal-documents' && column === 'legalProduct'" size="small" :type="legalProductForDocumentType(scope.row.documentType) === 'say-ring' ? 'warning' : 'primary'">{{ legalProductForDocumentType(scope.row.documentType) === "say-ring" ? "Say Ring" : "Saydian Health" }}</el-tag>
+              <el-tag v-else-if="resource === 'legal-documents' && column === 'legalProduct'" size="small" :type="legalProductForDocumentType(scope.row.documentType) === 'say-ring' ? 'warning' : 'primary'">{{ legalProductForDocumentType(scope.row.documentType) === "sayheath" ? "SayHeath" : legalProductForDocumentType(scope.row.documentType) === "say-ring" ? "Say Ring" : "Saydian Health" }}</el-tag>
               <span v-else-if="resource === 'legal-documents' && column === 'documentType'">{{ legalDocumentTypeLabel(scope.row.documentType) }}</span>
               <el-tag v-else-if="resource === 'legal-documents' && ['active', 'reviewed'].includes(column)" size="small" :type="scope.row[column] ? 'success' : 'info'">{{ scope.row[column] ? "是" : "否" }}</el-tag>
               <template v-else>{{ render(scope.row[column]) }}</template>
@@ -1880,10 +1882,11 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="resource === 'legal-documents'">
           <el-alert :title="form.documentType === 'say_ring_sleep_analysis' ? '睡眠 AI 分析说明只用于 Say Ring。启用前核对供应商、上传范围与撤回方式；已发布内容不可原地修改。此核对不代表外部法律意见。' : 'Saydian Health 与 Say Ring 的协议独立保存、独立调用。新版本需完成法律审核后才能启用；已审核版本不可原地修改。'" type="info" :closable="false" show-icon />
-          <el-form-item label="所属 App"><el-select :model-value="form.legalProduct" :disabled="Boolean(form._reviewedSnapshot)" @change="changeLegalDocumentProduct"><el-option label="Saydian Health" value="saydian-global" /><el-option label="Say Ring" value="say-ring" /></el-select></el-form-item>
+          <el-form-item label="所属 App"><el-select :model-value="form.legalProduct" :disabled="Boolean(form._reviewedSnapshot)" @change="changeLegalDocumentProduct"><el-option label="Saydian Health" value="saydian-global" /><el-option label="Say Ring" value="say-ring" /><el-option label="SayHeath" value="sayheath" /></el-select></el-form-item>
           <el-form-item label="协议类型">
             <el-select :model-value="form.documentType" :disabled="Boolean(form._reviewedSnapshot)" @change="changeLegalDocumentType">
-              <template v-if="form.legalProduct === 'say-ring'"><el-option label="Say Ring 用户协议" value="say_ring_user_agreement" /><el-option label="Say Ring 隐私政策" value="say_ring_privacy_policy" /><el-option label="Say Ring 睡眠 AI 分析说明" value="say_ring_sleep_analysis" /><el-option label="Say Ring 生理周期 AI 分析说明" value="say_ring_cycle_ai_analysis" /></template>
+              <template v-if="form.legalProduct === 'sayheath'"><el-option label="SayHeath 用户协议" value="sayheath_user_agreement" /><el-option label="SayHeath 隐私政策" value="sayheath_privacy_policy" /></template>
+              <template v-else-if="form.legalProduct === 'say-ring'"><el-option label="Say Ring 用户协议" value="say_ring_user_agreement" /><el-option label="Say Ring 隐私政策" value="say_ring_privacy_policy" /><el-option label="Say Ring 睡眠 AI 分析说明" value="say_ring_sleep_analysis" /><el-option label="Say Ring 生理周期 AI 分析说明" value="say_ring_cycle_ai_analysis" /></template>
               <template v-else><el-option label="用户协议" value="user_agreement" /><el-option label="隐私政策" value="privacy_policy" /><el-option label="健康 AI 分析说明" value="health_ai_analysis" /></template>
             </el-select>
           </el-form-item>

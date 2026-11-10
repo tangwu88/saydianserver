@@ -47,7 +47,7 @@ export class UserAuthGuard implements CanActivate {
       (request.originalUrl || request.url || request.path).split("?")[0] ||
       request.path;
     const token = bearerToken(request);
-    if (!token) throw new UnauthorizedException("请先登录");
+    if (!token || token.startsWith("sh1.")) throw new UnauthorizedException("请先登录");
     try {
       const claims = verify(token, env("ACCESS_TOKEN_SECRET"), {
         algorithms: ["HS256"],

@@ -1,4 +1,4 @@
-export type LegalProduct = "saydian-global" | "say-ring";
+export type LegalProduct = "saydian-global" | "say-ring" | "sayheath";
 export type LegalDocumentEditor = Record<string, unknown> & {
   legalProduct: LegalProduct;
   documentType: string;
@@ -12,6 +12,7 @@ export type LegalDocumentEditor = Record<string, unknown> & {
 
 const documentTypes: Record<LegalProduct, string[]> = {
   "saydian-global": ["user_agreement", "privacy_policy", "health_ai_analysis"],
+  "sayheath": ["sayheath_user_agreement", "sayheath_privacy_policy"],
   "say-ring": [
     "say_ring_user_agreement",
     "say_ring_privacy_policy",
@@ -31,6 +32,7 @@ const emptyContent = {
 export function legalProductForDocumentType(
   documentType: unknown,
 ): LegalProduct {
+  if (documentTypes.sayheath.includes(String(documentType))) return "sayheath";
   return ringTypes.has(String(documentType)) ? "say-ring" : "saydian-global";
 }
 
@@ -41,6 +43,8 @@ export function legalDocumentTypeLabel(documentType: unknown): string {
         user_agreement: "用户协议",
         privacy_policy: "隐私政策",
         health_ai_analysis: "健康 AI 分析说明",
+        sayheath_user_agreement: "SayHeath 用户协议",
+        sayheath_privacy_policy: "SayHeath 隐私政策",
         say_ring_user_agreement: "Say Ring 用户协议",
         say_ring_privacy_policy: "Say Ring 隐私政策",
         say_ring_sleep_analysis: "Say Ring 睡眠 AI 分析说明",
