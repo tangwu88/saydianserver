@@ -1,3 +1,4 @@
+import { sayRingU19HealthOrClosed, sayRingU19HealthSettingKey } from "./u19-health";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SupportService } from "./support.service";
 import type { PrismaService } from "../common/prisma.service";
@@ -245,7 +246,7 @@ describe("Say Ring iOS public read-only lease", () => {
       { key: "say_ring_app_display", public: true, value: { hideAi: true, sleepAiEnabled: true, privateNote: "discard" } },
       { key: sayRingIosHealthSettingKey, public: true, value },
     ]);
-    expect(await h.service.appDisplayConfig("say-ring", "ios")).toEqual({ product: "say-ring", platform: "ios", hideAi: true, sleepAiEnabled: true, readOnlyHealth: { ...value, validForSeconds: 300 }, moduleVisibility: { schemaVersion: 1, validForSeconds: 300, modules: { health_library: false, mall: false } } });
+    expect(await h.service.appDisplayConfig("say-ring", "ios")).toEqual({ product: "say-ring", platform: "ios", hideAi: true, sleepAiEnabled: true, readOnlyHealth: { ...value, validForSeconds: 300 }, u19Health: sayRingU19HealthOrClosed(), moduleVisibility: { schemaVersion: 1, validForSeconds: 300, modules: { health_library: false, mall: false } } });
     expect(h.findUnique).not.toHaveBeenCalled(); expect(h.secrets.resolve).not.toHaveBeenCalled();
   });
   it.each([undefined, null, { schemaVersion: 2 }, { ...sayRingIosHealthDisplayOrClosed(), metrics: { heart_rate: "true" } }])("closes absent or malformed config", async value => {
@@ -332,4 +333,28 @@ describe("CN three-platform feature sections", () => {
   expect(result.readOnlyHealth?.metrics).toEqual(sayRingIosHealthDisplayOrClosed().metrics);
   expect(result.moduleVisibility?.modules).toEqual({health_library:true,mall:true});
  });
+});
+
+describe("independent U19 health publication", () => {
+  it("adds U19 without widening the old ring catalogue", async () => {
+    const config = {schemaVersion: 1, readMetrics: ["blood_pressure", "heart_rate"], manualMetrics: ["blood_pressure"]};
+    const h = harness([{key: sayRingU19HealthSettingKey, public: true, value: config}]);
+    const result = await h.service.appDisplayConfig("say-ring", "ios");
+    expect(result.u19Health).toEqual({...config,validForSeconds:300});
+    expect(Object.keys(result.readOnlyHealth!.metrics).sort()).toEqual(Object.keys(sayRingIosHealthDisplayOrClosed().metrics).sort());
+    expect(result.readOnlyHealth!.metrics).not.toHaveProperty("blood_pressure");
+  });
+  it.each([null, {schemaVersion:2}, {schemaVersion:1,readMetrics:["ecg"],manualMetrics:[]}, {schemaVersion:1,readMetrics:[],manualMetrics:["heart_rate"]}, {schemaVersion:1,readMetrics:["heart_rate","heart_rate"],manualMetrics:[]}])("closes only malformed U19 config", async value => {
+    const ring = sayRingIosHealthDisplayOrClosed();ring.metrics.heart_rate = true;
+    const h = harness([{key: sayRingU19HealthSettingKey, public:true,value},{key: sayRingIosHealthSettingKey,public:true,value:ring}]);
+    const result = await h.service.appDisplayConfig("say-ring","ios");
+    expect(result.u19Health).toEqual(sayRingU19HealthOrClosed());
+    expect(result.readOnlyHealth!.metrics.heart_rate).toBe(true);
+  });
+  it("does not read a private config or expose it to other products/platforms", async () => {
+    const h=harness([{key:sayRingU19HealthSettingKey,public:false,get value(){throw new Error("private");}}]);
+    expect((await h.service.appDisplayConfig("say-ring","ios")).u19Health).toEqual(sayRingU19HealthOrClosed());
+    expect(await h.service.appDisplayConfig("say-ring","android")).not.toHaveProperty("u19Health");
+    expect(await h.service.appDisplayConfig("saydian-app-cn","ios")).not.toHaveProperty("u19Health");
+  });
 });

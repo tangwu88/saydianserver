@@ -134,6 +134,7 @@ export class HealthService {
     limitInput = 50,
     beforeInput?: string,
     allowedMetrics?: readonly HealthMetric[],
+    u19Metrics?: readonly HealthMetric[],
   ) {
     const metric = metricInput ? metricMap[metricInput as HealthMetric] : undefined;
     if (metricInput && !metric) throw new BadRequestException("健康指标不正确");
@@ -146,7 +147,13 @@ export class HealthService {
       where: {
         userId,
         ...(metric ? { metric } : {}),
-        AND: [foldedHealthRecordWhere(), before, ...(allowedMetrics ? [{ metric: { in: allowedMetrics.map(key => metricMap[key]) } }] : [])],
+        AND: [foldedHealthRecordWhere(), before, ...(allowedMetrics ? [u19Metrics?.length ? { OR: [
+          { metric: { in: allowedMetrics.map(key => metricMap[key]) } },
+          { metric: { in: u19Metrics.map(key => metricMap[key]) }, AND: [
+            { sourceMetadata: { path: ["vendor"], equals: "urion" } },
+            { sourceMetadata: { path: ["deviceCategory"], equals: "watch" } },
+          ] },
+        ] } : { metric: { in: allowedMetrics.map(key => metricMap[key]) } }] : [])],
       },
       orderBy: [{ observedAt: "desc" }, { id: "desc" }],
       take: limit,

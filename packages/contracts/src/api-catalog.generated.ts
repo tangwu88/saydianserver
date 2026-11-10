@@ -29286,6 +29286,12 @@ export const apiCatalog = {
           "name": "platform",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "u19HealthVersion",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
