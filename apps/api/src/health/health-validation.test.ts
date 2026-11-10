@@ -103,3 +103,10 @@ describe("health record validation", () => {
     if (!noDevice.valid) expect(noDevice.rejection.code).toBe("invalid_aggregation");
   });
 });
+
+it("preserves U19 day precision and rejects day metadata without matching aggregation", () => {
+  const row={...validRecord,metric:"steps",values:{value:123},aggregation:{kind:"daily_summary",localDate:"2026-11-01"},source:{...validRecord.source,deviceId:"urion:fixture",vendor:"urion",deviceCategory:"watch",provenance:{timePrecision:"day",aggregationLocalDate:"2026-11-01",observedAt:"2026-11-01T05:00:00Z"}}};
+  expect(validateHealthRecord(row).valid).toBe(true);
+  expect(validateHealthRecord({...row,aggregation:undefined}).valid).toBe(false);
+  expect(validateHealthRecord({...row,source:{...row.source,vendor:"qring"}}).valid).toBe(false);
+});

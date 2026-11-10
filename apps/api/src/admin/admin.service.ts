@@ -36,7 +36,8 @@ import {
   UserStatus,
 } from "@prisma/client";
 import { hash } from "bcryptjs";
-import { parseDownloadManifest, sayRingIosHealthSettingKey, sayRingIosModuleSettingKey } from "@saydian/app-contracts";
+import { parseDownloadManifest, sayRingIosHealthSettingKey, sayRingIosModuleSettingKey, sayRingU19HealthSettingKey } from "@saydian/app-contracts";
+import { writeSayRingU19Health } from "./say-ring-u19-health-setting";
 import { writeSayRingIosHealthDisplay } from "./say-ring-ios-health-setting";
 import { writeSayRingIosModuleDisplay } from "./say-ring-ios-module-setting";
 import { PrismaService } from "../common/prisma.service";
@@ -1912,6 +1913,7 @@ export class AdminService {
             "say_ring_app_display",
             sayRingIosHealthSettingKey,
             sayRingIosModuleSettingKey,
+            sayRingU19HealthSettingKey,
             "cn_app_display",
             "cn_health_display",
             "cn_module_display",
@@ -1936,6 +1938,7 @@ export class AdminService {
   }
 
   updateSetting(key: string, input: unknown, actorId?: string) {
+    if (key === sayRingU19HealthSettingKey) return writeSayRingU19Health(this.prisma, actorId, input);
     if (key === "cn_health_display" || key === "cn_module_display") return writeCnDisplaySetting(this.prisma, actorId, key, input);
     if (key === sayRingIosModuleSettingKey)
       return writeSayRingIosModuleDisplay(this.prisma, actorId, input);
