@@ -7,8 +7,9 @@ import {
   sayRingDisplaySettingKeys,
 } from "./say-ring-settings";
 
-const [aiKey, healthKey, moduleKey] = sayRingDisplaySettingKeys;
+const [aiKey, healthKey, moduleKey, u19Key] = sayRingDisplaySettingKeys;
 const initial = () => [
+  { key: u19Key, value: { schemaVersion: 1, readMetrics: [], manualMetrics: [] }, updatedAt: "2026-10-18T00:00:00Z" },
   {
     key: aiKey,
     value: { hideAi: true, sleepAiEnabled: true },
@@ -87,7 +88,7 @@ function harness() {
 }
 
 describe("Say Ring unified settings entry", () => {
-  it("combines exactly the three display settings without mutating persisted rows or grouping downloads and maps", () => {
+  it("combines exactly the four independent settings without mutating persisted rows or grouping downloads and maps", () => {
     const others = [
       { key: "global_support" },
       { key: "say_ring_app_update" },
@@ -111,7 +112,7 @@ describe("Say Ring unified settings entry", () => {
       updatedAt: "2026-10-18T03:00:00Z",
     });
     expect(listed[1]!._sayRingSettings.map((row: any) => row.key)).toEqual(
-      sayRingDisplaySettingKeys,
+      [u19Key, aiKey, healthKey, moduleKey],
     );
     expect(rows).toEqual(before);
     expect(groupSayRingDisplaySettings(others)).toBe(others);
@@ -147,7 +148,7 @@ describe("Say Ring unified settings entry", () => {
     });
     expect(h.settings.value[healthKey]).toBe(health);
     expect(h.settings.value[aiKey].updatedAt).toBe("2026-10-19T00:00:00Z");
-    expect(h.sourceRows[0]!.value.hideAi).toBe(true);
+    expect(h.sourceRows[1]!.value.hideAi).toBe(true);
     h.ai.value.sleepAiEnabled = false;
     await h.refresh(moduleKey);
     expect(h.ai.value.sleepAiEnabled).toBe(false);
