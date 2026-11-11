@@ -3,6 +3,8 @@ import { APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AdminModule } from "./admin/admin.module";
 import { ApiDocumentationModule } from "./api-docs/api-documentation.module";
+import { SayHeathService } from "./sayheath/service";
+import { SayHeathController, SayHeathAdminController } from "./sayheath/sayheath.controller";
 import { AuthModule } from "./auth/auth.module";
 import { BillingModule } from "./billing/billing.module";
 import { CareModule } from "./care/care.module";
@@ -48,8 +50,8 @@ import { GiftModule } from "./gifts/gift.module";
     ApiDocumentationModule,
     LegacyModule,
   ],
-  controllers: [StatusController, UniversalLinksController],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  controllers: [SayHeathController, SayHeathAdminController, StatusController, UniversalLinksController],
+  providers: [SayHeathService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

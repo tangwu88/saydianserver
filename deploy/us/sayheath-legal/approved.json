@@ -1,0 +1,20 @@
+{
+  "product": "sayheath",
+  "version": "sayheath-1.0.0-en-r1",
+  "locale": "en",
+  "reviewed": true,
+  "documents": [
+    {
+      "file": "privacy-en.txt",
+      "documentType": "sayheath_privacy_policy",
+      "title": "SayHeath Privacy Policy",
+      "sha256": "544baea00462522f5dbfeef321959c89759ec6028936a50bca4b270983d25d7f"
+    },
+    {
+      "file": "terms-en.txt",
+      "documentType": "sayheath_user_agreement",
+      "title": "SayHeath Terms of Service",
+      "sha256": "62de5714aeba0d8a44d21dff6bff061b3d225ca4e3b2bc37470bd822ec397308"
+    }
+  ]
+}

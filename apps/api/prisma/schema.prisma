@@ -260,6 +260,11 @@ enum MigrationRunStatus {
 }
 
 model User {
+  sayHeathSessions         SayHeathSession[]
+  sayHeathGrants           SayHeathGrant[]
+  sayHeathCaptures         SayHeathCapture[]
+  sayHeathShared           SayHeathFamily[]                  @relation("SayHeathOwner")
+  sayHeathReceived         SayHeathFamily[]                  @relation("SayHeathViewer")
   giftSessions             CommerceGiftSession[]
   giftRedemptions          CommerceGiftRedemption[]
   id                       String                            @id @default(uuid()) @db.Uuid
@@ -2386,4 +2391,69 @@ model HealthScreenLogin {
   session    UserSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
+}
+
+// Product-owned data; no existing accounts or health rows are copied or retagged.
+model SayHeathSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  tokenHash    String   @unique
+  expiresAt    DateTime
+  release      String
+  legalVersion String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model SayHeathSwitch {
+  release  String
+  feature  String
+  enabled  Boolean @default(false)
+  revision String  @db.Uuid
+
+  @@id([release, feature])
+}
+
+model SayHeathGrant {
+  userId     String   @db.Uuid
+  release    String
+  feature    String
+  revision   String   @db.Uuid
+  grantId    String   @db.Uuid
+  acceptedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, release, feature])
+}
+
+model SayHeathCapture {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  release    String
+  feature    String
+  deviceKey  String
+  grantId    String    @db.Uuid
+  startedAt  DateTime  @default(now())
+  observedAt DateTime?
+  values     Json?
+  unit       String?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, feature, observedAt])
+}
+
+model SayHeathFamily {
+  id               String  @id @default(uuid()) @db.Uuid
+  ownerId          String  @db.Uuid
+  viewerId         String  @db.Uuid
+  activity         Boolean @default(false)
+  sleep            Boolean @default(false)
+  acceptedActivity Boolean @default(false)
+  acceptedSleep    Boolean @default(false)
+  owner            User    @relation("SayHeathOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  viewer           User    @relation("SayHeathViewer", fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, viewerId])
+  @@index([viewerId])
 }

@@ -39780,6 +39780,794 @@
       }
     },
     {
+      "key": "SayHeathController.legal",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/legal",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Product-specific reviewed terms and privacy version required to sign in",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.privacy",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/public/privacy",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Published English product privacy page",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.terms",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/public/terms",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Published English product terms",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.support",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/public/support",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Public support form",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.feedback",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/public/support",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Deliver bounded support request with reply contact",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.deletion",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/public/account-deletion",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Public shared-account deletion guide",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.sign",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/sign-in",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Email/password authentication with current SayHeath legal consent",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.register",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/register",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Register US account with current SayHeath legal consent",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.policy",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/policy",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Short-lived version and account-specific feature permissions",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.grant",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/permission",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Give or withdraw consent for one versioned feature",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.capture",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/captures",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Issue owner/device-bound ticket before starting a new measurement",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.receive",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/captures/:id/reading",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Save an authorized new measurement and return its canonical receipt",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.reading",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/captures/:id",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Read back one previously received measurement under its owner and current permission",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.readings",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/readings",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "feature",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Read only SayHeath sensor records owned by this member",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.activity",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/activity",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Read permitted activity and sleep summaries only",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.daily",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/activity",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Store a validated activity or sleep day summary",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.family",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/sayheath/family",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "List only SayHeath invitations for current member",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.invite",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/family",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Offer activity and/or sleep to a named account",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.familyAction",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/family/:id/:action",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "action",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Accept, change, end or read a product-specific share",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.logout",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/sign-out",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Revoke the isolated session",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathController.remove",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/sayheath/delete-account",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Request deletion of the shared user account after explicit confirmation",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathAdminController.features",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/settings/sayheath/features",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Read the five US product version switches",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SayHeathAdminController.set",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/settings/sayheath/features/:feature",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "feature",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "BodyMap",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/sayheath/sayheath.controller.ts",
+      "summary": "Publish an audited change to one exact version switch",
+      "request": "无请求体",
+      "response": "对象",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/sayheath/sayheath.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "StatusController.live",
       "method": "GET",
       "path": "/health/live",

@@ -1746,6 +1746,8 @@ export class AdminService {
           "privacy_policy",
           "say_ring_user_agreement",
           "say_ring_privacy_policy",
+          "sayheath_privacy_policy",
+          "sayheath_user_agreement",
           "health_ai_analysis",
           "say_ring_sleep_analysis",
           "say_ring_cycle_ai_analysis",

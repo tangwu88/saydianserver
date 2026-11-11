@@ -93,6 +93,8 @@ jobs:
           pnpm db:seed
       - name: Real PostgreSQL order and refund concurrency tests
         run: RUN_LOCAL_DATABASE_TESTS=1 pnpm --filter @saydian/app-api exec vitest run src/commerce/commerce-database.test.ts src/reports/sleep-consent-database.test.ts src/partners/partner-database.test.ts src/partners/partner-onboarding-database.test.ts src/admin/say-ring-map-database.test.ts src/devices/devices-database.test.ts --maxWorkers=1 --testTimeout=15000
+      - name: SayHeath product isolation on PostgreSQL
+        run: RUN_SAYHEATH_DATABASE_TESTS=1 pnpm --filter @saydian/app-api exec vitest run src/sayheath/isolation.database.test.ts --maxWorkers=1
       - name: Rehearse gift schema upgrade with existing orders
         run: pnpm test:gifts:upgrade
       - name: Isolated gift redemption transaction tests
@@ -190,7 +192,7 @@ jobs:
           if-no-files-found: error
   auto-deploy:
     needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AUTO_DEPLOY_ENABLED == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AUTO_DEPLOY_ENABLED == 'true' && !contains(github.event.head_commit.message, '[deploy us only]')
     uses: ./.github/workflows/deploy-production.yml
     with:
       revision: ${{ github.sha }}
