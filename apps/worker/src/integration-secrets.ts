@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { createDecipheriv } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 export async function resolveWorkerSecrets(
   prisma: PrismaClient,
@@ -34,7 +34,7 @@ export async function markWorkerIntegrationVerified(
   }
 }
 
-function decryptWorkerSecrets(
+export function decryptWorkerSecrets(
   integrationKey: string,
   row: {
     ciphertext: string;
@@ -61,6 +61,13 @@ function decryptWorkerSecrets(
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+export function encryptWorkerSecrets(integrationKey: string, value: Record<string, unknown>) {
+  const iv = randomBytes(12), keyVersion = 1;
+  const cipher = createCipheriv("aes-256-gcm", integrationMasterKey(), iv);
+  cipher.setAAD(Buffer.from(`saydian-integration:${integrationKey}:v${keyVersion}`));
+  return { ciphertext: Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]).toString("base64"), iv: iv.toString("base64"), authTag: cipher.getAuthTag().toString("base64"), keyVersion };
 }
 
 function integrationMasterKey() {

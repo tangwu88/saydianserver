@@ -577,3 +577,5 @@ notes["OwnHealthScreenController.logout"]=entry("退出大屏","大屏专用会�
 for(const [op,desc] of Object.entries({options:"查询大屏开放状态",session:"交换仅本人大屏的限时会话",qr:"创建三分钟微信扫码请求",result:"凭浏览器私密票据查询并一次领取会话",cancel:"取消未消费的扫码请求"}))notes["ScreenLoginController."+op]=entry(desc,"见字段契约","no-store","中国站，浏览器票据与扫码票据独立");
 notes["ScreenScanController.scan"]=entry("核对扫码登录请求","扫码票据","四位核对码、有效期","不提供会员资料");
 notes["ScreenScanController.approve"]=entry("手机端确认大屏登录","已登录会员、扫码票据","approved","限有效正式会员会话、一次确认");
+notes["JushuitanRenewalController.status"]=entry("读取聚水潭自动续期状态","无请求体","仅非敏感有效期、计划、最近结果；不返回令牌","后台ERP任务读取角色");
+notes["JushuitanRenewalController.configure"]=entry("配置聚水潭自动续期","{enabled,accessToken?,refreshToken?,issuedAt?,expiresAt?}；首次启用或重新授权须同次令牌及有效期","非敏感计划；令牌加密存储、不回显；续期中禁止覆盖","超级管理员或集成管理员；真实续期由遵守维护开关的Worker执行");

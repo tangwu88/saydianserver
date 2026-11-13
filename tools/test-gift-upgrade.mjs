@@ -25,7 +25,8 @@ const directory = await mkdtemp(join(tmpdir(), "saydian-gift-upgrade-"));
 let created = false,
   db;
 const migrations = join(root, "apps/api/prisma/migrations"),
-  cutoff = "20261027090000_gift_redemption_channel";
+  sayHeathUpgrade = process.env.UPGRADE_SCOPE === "sayheath-cn",
+  cutoff = sayHeathUpgrade ? "20261111010000_sayheath" : "20261027090000_gift_redemption_channel";
 const files = (await readdir(migrations))
   .filter((name) => /^\d/.test(name))
   .sort();
@@ -159,9 +160,17 @@ try {
     "SELECT count(*)::int AS count FROM pg_constraint WHERE NOT convalidated",
   );
   assert.equal(constraints.rows[0].count, 0);
+  if (sayHeathUpgrade) {
+    for (const table of ["SayHeathSession", "SayHeathSwitch", "SayHeathGrant", "SayHeathCapture", "SayHeathFamily"]) {
+      assert.equal((await db.query(`SELECT count(*)::int AS count FROM ${quote(table)}`)).rows[0].count, 0, `New table ${table} must be empty`);
+    }
+    const defaults = (await db.query("SELECT column_default FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('SayHeathSwitch','SayHeathFamily') AND data_type='boolean'")).rows;
+    assert.equal(defaults.length, 5);
+    assert.ok(defaults.every(row => row.column_default === 'false'), "New features and bilateral grants must default closed");
+  }
   console.log(
     JSON.stringify({
-      scope: "isolated-local-gift-upgrade",
+      scope: sayHeathUpgrade ? "isolated-local-sayheath-cn-upgrade" : "isolated-local-gift-upgrade",
       existingTablesCompared: Object.keys(columns).length,
       existingSyntheticRows: 6,
       oldOrderAndPaymentUnchanged: true,

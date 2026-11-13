@@ -97,6 +97,10 @@ jobs:
         run: RUN_SAYHEATH_DATABASE_TESTS=1 pnpm --filter @saydian/app-api exec vitest run src/sayheath/isolation.database.test.ts --maxWorkers=1
       - name: Rehearse gift schema upgrade with existing orders
         run: pnpm test:gifts:upgrade
+      - name: Rehearse China schema upgrade preserving existing rows and closed US defaults
+        env:
+          UPGRADE_SCOPE: sayheath-cn
+        run: pnpm test:gifts:upgrade
       - name: Isolated gift redemption transaction tests
         run: pnpm test:gifts:database
       - name: Isolated member health screen authorization and billing tests

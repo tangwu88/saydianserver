@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **568 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **570 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -360,7 +360,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（182）
+## 管理后台接口（184）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -488,6 +488,8 @@
 | `POST /api/saydian-app/admin/v1/notification-campaigns` | 创建营销通知草稿 | admin: SUPER_ADMIN, APP_OPERATIONS | {name,type,title,body,deepLink?,audience:{allActive:true\|userIds:[]},scheduledAt?} | 营销通知草稿；不会发送给未同意营销通知的会员 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/notification-campaigns/:id` | 编辑营销通知草稿 | admin: SUPER_ADMIN, APP_OPERATIONS | path:id；id=草稿UUID；字段同新增 | 营销通知草稿 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/notification-campaigns/:id/schedule` | 安排营销通知 | admin: SUPER_ADMIN, APP_OPERATIONS | path:id；id=草稿UUID | 计划任务；实际发送由Worker完成并逐用户记录 | 推送供应商 |
+| `GET /api/saydian-app/admin/v1/commerce-jobs/token-renewal` | 读取聚水潭自动续期状态 | admin: SUPER_ADMIN, INTEGRATION_ADMIN, COMMERCE_OPERATIONS, READ_ONLY | 无请求体 | 仅非敏感有效期、计划、最近结果；不返回令牌 | 后台ERP任务读取角色 |
+| `PUT /api/saydian-app/admin/v1/commerce-jobs/token-renewal` | 配置聚水潭自动续期 | admin: SUPER_ADMIN, INTEGRATION_ADMIN | {enabled,accessToken?,refreshToken?,issuedAt?,expiresAt?}；首次启用或重新授权须同次令牌及有效期 | 非敏感计划；令牌加密存储、不回显；续期中禁止覆盖 | 超级管理员或集成管理员；真实续期由遵守维护开关的Worker执行 |
 | `GET /api/saydian-app/admin/v1/api-docs` | 接口中心路由与说明 | admin | 无请求体 | 代码生成的方法/路径/鉴权/参数与可编辑业务说明；标记过期项 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/api-docs/:routeKey` | 编辑接口业务说明 | admin: SUPER_ADMIN, API_DOC_EDITOR | path:routeKey；routeKey=控制器方法键；{title,summary,businessExample?,errorGuidance?,tags?,deprecated?,deprecationNote?}；不能修改方法和路径 | 接口说明草稿 | 代码生成路由目录 |
 | `GET /api/saydian-app/admin/v1/api-docs/releases/list` | 接口文档版本 | admin | 无请求体 | 最近100个草稿、审核、已发布和归档版本 | 核心服务 |

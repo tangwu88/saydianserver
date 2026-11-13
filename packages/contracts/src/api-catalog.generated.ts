@@ -7764,6 +7764,71 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "JushuitanRenewalController.status",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-jobs/token-renewal",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "INTEGRATION_ADMIN",
+        "COMMERCE_OPERATIONS",
+        "READ_ONLY"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/jushuitan-renewal.controller.ts",
+      "summary": "读取聚水潭自动续期状态",
+      "request": "无请求体",
+      "response": "仅非敏感有效期、计划、最近结果；不返回令牌",
+      "dependency": "后台ERP任务读取角色",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/jushuitan-renewal.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "JushuitanRenewalController.configure",
+      "method": "PUT",
+      "path": "/api/saydian-app/admin/v1/commerce-jobs/token-renewal",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "INTEGRATION_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/jushuitan-renewal.controller.ts",
+      "summary": "配置聚水潭自动续期",
+      "request": "{enabled,accessToken?,refreshToken?,issuedAt?,expiresAt?}；首次启用或重新授权须同次令牌及有效期",
+      "response": "非敏感计划；令牌加密存储、不回显；续期中禁止覆盖",
+      "dependency": "超级管理员或集成管理员；真实续期由遵守维护开关的Worker执行",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/jushuitan-renewal.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "ApiDocumentationController.list",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/api-docs",

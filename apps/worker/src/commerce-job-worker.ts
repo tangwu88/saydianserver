@@ -7,6 +7,7 @@ import {
   PrismaClient,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { JushuitanTokenRenewal } from "./jushuitan-token-renewal";
 import { settleCommerceCommission } from "@saydian/commerce-domain";
 import { commerceLogisticsTraces, erpOrderTransition, jushuitanWorkerEnabled, shouldPauseWorkers } from "@saydian/app-contracts";
 import {
@@ -26,12 +27,17 @@ type JstSettings = {
 export class CommerceJobWorker {
   private nextSettlementScan = 0;
   private settlementCursor: string | undefined;
-  constructor(private readonly prisma: PrismaClient) {}
+  private readonly tokenRenewal: JushuitanTokenRenewal;
+  constructor(private readonly prisma: PrismaClient) { this.tokenRenewal = new JushuitanTokenRenewal(prisma); }
 
   async runOnce(): Promise<boolean> {
     const generalEnabled = !shouldPauseWorkers(process.env);
     const jushuitanEnabled = jushuitanWorkerEnabled(process.env);
     if (!generalEnabled && !jushuitanEnabled) return false;
+    if (jushuitanEnabled) {
+      try { await this.tokenRenewal.runOnce(); }
+      catch { process.stderr.write('{"event":"jushuitan_renewal_check_failed"}\n'); }
+    }
     if (generalEnabled) await this.scheduleSettlements();
     await this.recoverStaleClaims(generalEnabled ? undefined : true);
     const job = await this.prisma.commerceIntegrationJob.findFirst({
