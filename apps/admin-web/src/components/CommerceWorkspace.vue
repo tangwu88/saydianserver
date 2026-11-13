@@ -4,6 +4,7 @@ import { canAdminResource } from "@saydian/app-contracts";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, getAdminRoles, readableError, responseData } from "../api";
 import AfterSaleEvidence from "./AfterSaleEvidence.vue";
+import JushuitanTokenRenewal from "./JushuitanTokenRenewal.vue";
 import ProductSkuQuickEditor from "./ProductSkuQuickEditor.vue";
 import { orderPurchaser } from "../commerce-order-purchaser";
 import OrderErpPanel from "./OrderErpPanel.vue";
@@ -619,7 +620,9 @@ function changeStatus(value: unknown): void {
       </el-table>
     </template>
 
-    <el-table v-else-if="resource === 'commerce-jobs'" v-loading="loading" :data="visibleRows" border stripe empty-text="暂无 ERP 同步任务">
+    <template v-else-if="resource === 'commerce-jobs'">
+    <JushuitanTokenRenewal />
+    <el-table v-loading="loading" :data="visibleRows" border stripe empty-text="暂无 ERP 同步任务">
       <el-table-column label="任务" min-width="240"><template #default="scope"><strong>{{ scope.row.type }}</strong><small>{{ scope.row.id }}</small></template></el-table-column>
       <el-table-column label="业务对象" min-width="190"><template #default="scope">{{ scope.row.aggregateType || "—" }}<small>{{ scope.row.aggregateId }}</small></template></el-table-column>
       <el-table-column label="状态" width="115"><template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag></template></el-table-column>
@@ -629,6 +632,7 @@ function changeStatus(value: unknown): void {
       <el-table-column label="操作" width="155" fixed="right"><template #default="scope"><el-button size="small" @click="openDetail(scope.row)">详情</el-button><el-button v-if="canEdit && ['FAILED', 'DEAD_LETTER'].includes(scope.row.status)" size="small" type="warning" @click="emit('run-action', `/commerce-jobs/${scope.row.id}/retry`, '任务已重新排队')">重试</el-button></template></el-table-column>
     </el-table>
 
+    </template>
     <el-table v-else-if="resource === 'payments'" v-loading="loading" :data="visibleRows" border stripe empty-text="暂无支付流水">
       <el-table-column label="支付单" min-width="235"><template #default="scope"><strong>{{ scope.row.paymentNo }}</strong><small>{{ dateTime(scope.row.createdAt) }}</small></template></el-table-column>
       <el-table-column label="业务" min-width="180"><template #default="scope">{{ scope.row.businessType }}<small>{{ scope.row.businessId }}</small></template></el-table-column>

@@ -394,3 +394,4 @@ export * from "./cycle-tracking";
 export * from "./health-screen";
 
 export * from "./health-score-catalog";
+export * from "./jushuitan-renewal";
