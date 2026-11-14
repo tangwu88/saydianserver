@@ -33,3 +33,17 @@
 - 生产构建浏览器以SUPER_ADMIN、APP_OPERATIONS、READ_ONLY分别验证，前两者能读固定摘要，只读无入口，页面异常0。动画完成后截图检查表格、中文说明和编号完整可读；只使用本机合成会员。
 - 客户端UTC/Asia-Shanghai全量各2425项通过；正式APK仍在编译和验签。无Xcode环境，本轮未构建iOS；没有客户实机故障复现或生产实库并发验收。
 - 本轮代码已具备提交条件；实际Git SHA、Actions、公开health revision在发布后独立核对，旧App不会因仅更新后台自动获得诊断能力。
+
+## Git、网络恢复与生产验收
+
+- 源码`c7bd29f675c0ed98b83fa6bb2edd8413632e32c8`已推送main与专项分支。[原CI 43578887669](https://github.com/tangwu88/saydianserver/actions/runs/43578887669)的verify成功，美区自动发布成功；北京发布在GHCR原始API镜像拉取停留约20分钟。生产旧revision f3e06df及原API/Admin/Worker一直健康，未通过改维护开关绕过。
+- 用户在单独窗口认证只读SSH。只读确认磁盘约9.7GiB可用、下载进程及旧容器状态；随后用户明确允许仅终止本次卡住的下载并使用同一验收原镜像恢复。严格核对PID2275965的命令、父进程、镜像摘要后TERM该timeout，使原发布自然退出；没有直接停止业务容器或重置数据。
+- [原镜像导出43581400234](https://github.com/tangwu88/saydianserver/actions/runs/43581400234)成功，未重新构建。原始artifact14108328344，372701977字节，ZIP SHA256 `3c7505366e8a072f65d33c3055bc8d3ef811fd90780b28f8c0d6ddae697d8c64`。
+- [HTTPS恢复43581999465](https://github.com/tangwu88/saydianserver/actions/runs/43581999465)进度缓慢，只得到约45MiB；取消该任务并仅清理本轮独有挂载和命令匹配的临时下载容器。[构建器直传43582699283](https://github.com/tangwu88/saydianserver/actions/runs/43582699283)也遇到跨境传输缓慢，取消本轮任务。两个取消是传输恢复选择，不是代码验证失败；未换镜像、改自动发布配置或处理其他项目。
+- 本机使用同一下载器的临时副本，保留可信主机/TLS、范围与完整SHA校验，只提高受控并发并缩短单次传输等待；最终完整373MB原ZIP验证通过。全文件curl方案超时/未完成而未使用；一次本地模板断言因源码有两个Array.from命中而失败，改为精确下载循环。初次本机计划写入出现ENOSPC，复查空间后小文件重试成功，没有删除现有资料。
+- SCP第一次未保留活动进程及回执，核对原ZIP/程序后按用户要求重新发起；使用保持打开的命令窗口，经用户独立认证上传。SCP明确exit0，耗时2746.7秒。密码只在本人本机窗口输入，未记日志或提交；文件只到本次0700私有目录。
+- 在发布互斥锁下复用本轮root-owned CI上下文及既有receive-runtime/verify-runtime-artifact/receive-offline原始校验导入门禁，仅以本机传入且哈希匹配的ZIP替换HTTP下载输入。保留ZIP条目、manifest逐字节、归档/分块哈希、磁盘5GiB保留、三组件OCI ID及revision标签核验；没有重建验收镜像。45块完成且原API/Worker/Admin镜像全部导入后才进入正式发布。无业务容器在镜像导入阶段被重启。
+- 只读磁盘预检查第一次因ubuntu无权访问root目录返回Permission denied，改为sudo只读检查；原导入保留门禁未降低。本轮临时TTY进度采样修正了换行/命令回显解析，最终按服务器真实字节和SCP回执判断完成，不按界面估计成功。
+- [正式恢复发布43589089364](https://github.com/tangwu88/saydianserver/actions/runs/43589089364)使用`revision=c7bd29f...`、`offline_images=true`、`first_cutover=false`成功，仍使用原CI的成功verify及原始manifest，不重跑/替代镜像，不改变维护/业务写入/供应商配置。
+- 独立公开读回`/health/ready`和`/global/health/ready`均为ready、database ok、revision完整等于c7bd29f...；发布后的后台真实静态bundle含同步诊断入口；未登录访问新配置接口实际401。没有创建或修改生产会员健康数据来伪造联调成功。客户安装支持的新App后才会产生摘要。
+- 以上发布后审计只提交专项分支，main保持已验收的运行时代码c7bd29f，避免仅追加文档又触发新一轮生产镜像发布。原`E:/saydian h5`的同事修改未覆盖。
