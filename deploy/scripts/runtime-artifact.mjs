@@ -142,7 +142,9 @@ export async function downloadArtifact(
     output;
   try {
     const results = await Promise.allSettled(
-      Array.from({ length: 8 }, async () => {
+      // 跨境恢复的单个请求可能很慢；固定32路分片，不扩大1MiB单片或总时限。
+      // 完整摘要、可信下载域、原清单及镜像ID仍分别验证，不改变应用切换门禁。
+      Array.from({ length: Math.min(32, count) }, async () => {
         try {
           while (cursor < count) {
             const index = cursor++,
