@@ -36,13 +36,30 @@ describe("Say Ring bounded sync diagnostics", () => {
   });
 
   it.each([
-    { product: "another-app" }, { schemaVersion: 2 }, { appVersion: "token-secret" },
+    { product: "another-app" }, { schemaVersion: 3 }, { appVersion: "token-secret" },
     { firmware: "https://private.example/key" }, { model: "R7Pro customer-name" },
     { metrics: ["unreviewed_private_metric"] }, { stages: [{ stage: "read", state: "failed", code: "secret-message", elapsedMs: 1 }] },
     { stages: [{ stage: "read", state: "failed", code: "unknown", elapsedMs: 1, value: 72 }] },
     { stages: [{ stage: "read", state: "failed", code: "unknown", elapsedMs: -1 }] },
     { stages: Array.from({ length: 17 }, () => report().stages[0]) },
   ])("rejects invalid shape %#", patch => expect(() => parseSyncDiagnostic({ ...report(), ...patch })).toThrow());
+
+  it("accepts V2 hardware labels without widening the V1 or identity schema", async () => {
+    const input = { ...report(), schemaVersion:2, connectionKind:"automatic_recovery",
+      phone:{brand:"HUAWEI",modelId:"PPA-LX3",osVersion:"10.1.0",osBuild:"HUAWEIPPA-LX3",apiLevel:29,locale:"zh-Hans"} };
+    expect(parseSyncDiagnostic(input)).toMatchObject({connectionKind:input.connectionKind,phone:input.phone});
+    expect(() => parseSyncDiagnostic({...input,schemaVersion:1})).toThrow();
+    for (const key of ["deviceName","imei","serialNumber"]) expect(() => parseSyncDiagnostic({...input,phone:{...input.phone,[key]:"private"}})).toThrow();
+    const h = harness();
+    await submitSyncDiagnostic(h.prisma,"member-a",input);
+    expect((await memberSyncDiagnostics(h.prisma,"member-a")).reports[0]?.report.phone?.modelId).toBe("PPA-LX3");
+  });
+
+  it("distinguishes a disabled Bluetooth adapter only on V2", () => {
+    const input={...report(),stages:[{stage:"connect",state:"failed",code:"bluetooth_off",elapsedMs:450}]};
+    expect(parseSyncDiagnostic({...input,schemaVersion:2}).stages[0]?.code).toBe("bluetooth_off");
+    expect(() => parseSyncDiagnostic(input)).toThrow();
+  });
 
   it("associates reports only with the authenticated member and keeps at most five", async () => {
     const h = harness(), start = Date.parse("2026-11-14T00:00:00Z");

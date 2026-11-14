@@ -47,6 +47,7 @@ export class ContentService {
     locale?: string,
     productInput?: string,
     platform?: string,
+    search?: string,
   ) {
     const product = contentProduct(productInput);
     if (
@@ -63,12 +64,14 @@ export class ContentService {
       throw new BadRequestException("分页参数超出范围");
     }
     await assertSayRingModuleVisible(this.prisma, "health_library", productInput, platform);
+    const query = typeof search === "string" ? search.trim().slice(0,80) : "";
     const where = {
       status: "PUBLISHED",
       publishedAt: { lte: new Date() },
       ...(categoryId ? { categoryId } : {}),
       ...{ locale: globalLocale(locale) },
       product: contentProductFilter(product),
+      ...(query ? {OR: [{title:{contains:query,mode:"insensitive" as const}},{summary:{contains:query,mode:"insensitive" as const}}]} : {}),
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.article.findMany({

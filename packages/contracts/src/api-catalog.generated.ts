@@ -3317,6 +3317,518 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminOnlineSupportController.queues",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/support-chat/queues",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "filter",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "before",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "客服队列",
+      "request": "filter=waiting/mine/closed/ai，before=会话UUID",
+      "response": "{items,next}；包含未读标记",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.queueEvents",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/support-chat/queues/events",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "filter",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "客服队列实时状态",
+      "request": "filter=waiting/mine/closed/ai；后台令牌",
+      "response": "text/event-stream，定期重新校验后台令牌",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.agents",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/support-chat/agents",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "可转接客服",
+      "request": "需客服角色",
+      "response": "[{id,displayName}]；仅启用且具有客服权限",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.config",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/support-chat/config",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "读取客服配置",
+      "request": "超级管理员或运营",
+      "response": "启用状态、WhatsApp、双语 FAQ 分类和已选设备指南分类",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.saveConfig",
+      "method": "PUT",
+      "path": "/api/saydian-app/admin/v1/support-chat/config",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "更新客服配置",
+      "request": "启用状态、WhatsApp 开关与官方号码/链接、双语 FAQ 分类与设备指南分类UUID",
+      "response": "校验已启用的分类和 FAQ 语言；记录后台操作",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.detail",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/support-chat/conversations/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "after",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "before",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "后台读取客服会话",
+      "request": "id；after 或 before 序号",
+      "response": "{conversation,messages,older}",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.events",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/support-chat/conversations/:id/events",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "after",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "后台实时读取客服会话",
+      "request": "id，after=已确认序号",
+      "response": "text/event-stream；对后台角色与会话重新校验",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.diagnostics",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/support-chat/conversations/:id/diagnostics",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "查看会话手机与连接信息",
+      "request": "id=会话UUID",
+      "response": "会话关联的有界诊断摘要，记录查看审计",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.send",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/support-chat/conversations/:id/messages",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "人工回复",
+      "request": "{clientMessageId:UUID,body}；只允许当前接待人",
+      "response": "提交后返回消息；会员同时生成一条账号通知",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.sendImage",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/support-chat/conversations/:id/attachments",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "人工回复图片",
+      "request": "multipart：file、clientMessageId、body可选；只允许当前接待人",
+      "response": "私有图片消息，提交后才返回确认",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.image",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/support-chat/conversations/:id/attachments/:attachmentId",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "attachmentId",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "后台读取私有客服照片",
+      "request": "id+attachmentId；限客服角色",
+      "response": "image/jpeg；private, no-store",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.read",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/support-chat/conversations/:id/read",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "后台更新已读位置",
+      "request": "{seq}；仅当前接待人可消除未读",
+      "response": "{read:boolean}",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "AdminOnlineSupportController.transition",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/support-chat/conversations/:id/transition",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "CUSTOMER_SERVICE",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin-online-support.controller.ts",
+      "summary": "接入、转接或结束在线客服",
+      "request": "{action:accept/transfer/close,assignee?:UUID|null}；转接及结束须已接待",
+      "response": "会话状态；接入时立即停止该会话的 AI",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin-online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminLoginController.login",
       "method": "POST",
       "path": "/api/saydian-app/admin/v1/auth/login",
@@ -24770,12 +25282,18 @@ export const apiCatalog = {
           "name": "platform",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "q",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
       "source": "apps/api/src/content/content.controller.ts",
       "summary": "已发布文章",
-      "request": "categoryId可选；page默认1/pageSize默认20最大50；locale/Accept-Language；product可选，默认saydian-global；platform可选ios",
+      "request": "categoryId、q（标题或摘要）可选；page默认1/pageSize默认20最大50；locale/Accept-Language；product可选，默认saydian-global；platform可选ios",
       "response": "{items,total,page,pageSize}；只返回指定App及通用已发布对应语言文章",
       "dependency": "仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变",
       "successStatus": 200,
@@ -40719,6 +41237,564 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "OnlineSupportController.config",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/online-config",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "Say Ring 客服能力",
+      "request": "Accept-Language；无鉴权",
+      "response": "{product,enabled,whatsapp}；WhatsApp 仅英文且后台开启时可见",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.faq",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/faq",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "q",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "offset",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "language",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "已发布客服 FAQ",
+      "request": "language、q 和 offset 可选；首批按所选语言，英文无内容时回退原文；后续使用响应的 locale",
+      "response": "{items,locale,nextOffset}；只查绑定分类中当前已发布的 Say Ring 或通用文章",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.article",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/faq/:id",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "客服参考文章",
+      "request": "id=文章 UUID",
+      "response": "已发布且在客服分类或指南范围内的文章；其他 404",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.guest",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/guest",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "创建访客客服会话",
+      "request": "无需账号；Accept-Language；有频率限制",
+      "response": "{token,expiresAt,conversation}；令牌只允许访问对应的访客会话",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.start",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/conversations",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "打开客服会话",
+      "request": "会员或访客令牌；Accept-Language",
+      "response": "有未结束会话时复用，同一所有者重复打开不会新增",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.list",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/conversations",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "before",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "客服历史会话",
+      "request": "会员或访客令牌；before=会话 UUID",
+      "response": "{items,next}；仅本人已发送过消息的会话",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.detail",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/conversations/:id",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "after",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "before",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "客服会话与补读消息",
+      "request": "after=已收序号，或 before=第一条旧消息序号；省略读取最近一页",
+      "response": "{conversation,messages,older}；私有、按序号递增",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.events",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/conversations/:id/events",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "after",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "客服会话实时更新",
+      "request": "after=最后确认序号；Bearer，不接受 URL 中的令牌",
+      "response": "text/event-stream；snapshot 事件，断流使用 REST 游标补取",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.send",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/conversations/:id/messages",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "发送客服文字",
+      "request": "{clientMessageId:UUID,body,aiAllowed?:boolean}",
+      "response": "提交事务后返回消息；同一消息编号及内容重试幂等",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.sendImage",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/conversations/:id/attachments",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        },
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "发送私有客服图片",
+      "request": "multipart：file、clientMessageId、body可选；JPG、PNG、WebP，限制5 MB",
+      "response": "提交事务后返回消息及附件编号；图像重新编码，转人工处理",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.image",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/conversations/:id/attachments/:attachmentId",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "attachmentId",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "读取私有客服图片",
+      "request": "id+attachmentId；只能随会话授权读取",
+      "response": "image/jpeg；不允许缓存或公开分享",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.read",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/conversations/:id/read",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "更新会员或访客已读位置",
+      "request": "{seq}；只允许向前",
+      "response": "{read:true}",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.handoff",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/conversations/:id/handoff",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "转人工客服",
+      "request": "仅会话所有者",
+      "response": "等待接待状态；撤销待处理 AI 回答",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.claim",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/conversations/:id/claim",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "显式关联单个访客会话",
+      "request": "{guestToken}；须同时提供当前会员令牌和访客凭据",
+      "response": "只转移指定会话，访客凭据失去对该会话的访问",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "OnlineSupportController.diagnostic",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/conversations/:id/diagnostic",
+      "auth": "member-or-support-guest",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/online-support.controller.ts",
+      "summary": "访客附加连接摘要",
+      "request": "仅该会话的访客，显式选择；诊断协议 v2",
+      "response": "{accepted:true}；仅该会话内最近一份",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/online-support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "SupportController.weatherForecast",
       "method": "GET",
       "path": "/api/saydian-app/v2/support/weather",
@@ -41039,7 +42115,7 @@ export const apiCatalog = {
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "Say Ring 同步诊断能力",
       "request": "会员令牌；product=say-ring",
-      "response": "{schemaVersion:1,product,supported,automatic,automaticIntervalSeconds:900,maximumReportsPerHour:4,maximumStoredReports:5}；旧服务端404时客户端退避，不影响健康功能",
+      "response": "{schemaVersion:1,acceptedSchemaVersions:[1,2],product,supported,automatic,automaticIntervalSeconds:900,maximumReportsPerHour:4,maximumStoredReports:5}；旧服务端兼容，不影响健康功能",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -41070,8 +42146,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "提交有界同步诊断",
-      "request": "会员令牌；SyncDiagnosticReport v1，严格白名单、最大4096字节、最多16个阶段，仅固定枚举与有界数量；拒绝会员ID、设备地址、健康值、日志和任意错误文本",
-      "response": "{accepted,reportId,duplicate?}或{accepted:false,reportId,reason:'rate_limited',retryAfterSeconds}；按认证会员隔离、报告UUID去重、服务器时间每小时最多4份，最多保留最近5份；不改变健康记录或设备初始化",
+      "request": "会员令牌；SyncDiagnosticReport v1/v2，严格白名单、最大4096字节、最多16个阶段；v2可带手机型号和系统版本、locale、connectionKind；拒绝会员ID、设备地址、健康值和日志",
+      "response": "{accepted,reportId,duplicate?}或{accepted:false,reportId,reason:'rate_limited',retryAfterSeconds}；按认证会员隔离、报告UUID去重、每小时最多4份，保留最近5份",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {

@@ -24,8 +24,9 @@ export class ContentController {
     @Headers("accept-language") language?: string,
     @Query("product") product?: string,
     @Query("platform") platform?: string,
+    @Query("q") search?: string,
   ) {
-    return this.content.articles(categoryId, Number(page ?? 1), Number(pageSize ?? 20), locale ?? language, product, platform);
+    return this.content.articles(categoryId, Number(page ?? 1), Number(pageSize ?? 20), locale ?? language, product, platform, search);
   }
 
   @Get("articles/:id")

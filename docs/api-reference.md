@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **573 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **601 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -180,7 +180,7 @@
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
 
-## V2 App 接口（177）
+## V2 App 接口（192）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -256,7 +256,7 @@
 | `POST /api/saydian-app/v2/commerce/reviews` | 评价已收货商品 | member | {orderItemId,rating,content,images?} | 评价记录 | 主库商城 |
 | `GET /api/saydian-app/v2/commerce/points` | App积分余额与流水 | member | query:page?；page=页码，默认1，每页20；会员鉴权 | 本人已核验余额或不可用状态、真实流水与分页；null不转为0 | 主库商城 |
 | `GET /api/saydian-app/v2/content/categories` | 文章分类 | public | query:parentId?，query:locale?，header:accept-language?，query:product?，query:platform?；parentId 可选 UUID；缺省顶级；国际按locale/Accept-Language精确匹配，默认en；product可选shared\|saidian\|saydian-global\|say-ring；platform可选ios | ArticleCategory[]；分类跨App共用，未翻译不回退其他语言 | 仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变 |
-| `GET /api/saydian-app/v2/content/articles` | 已发布文章 | public | query:categoryId?，query:page?，query:pageSize?，query:locale?，header:accept-language?，query:product?，query:platform?；categoryId可选；page默认1/pageSize默认20最大50；locale/Accept-Language；product可选，默认saydian-global；platform可选ios | {items,total,page,pageSize}；只返回指定App及通用已发布对应语言文章 | 仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变 |
+| `GET /api/saydian-app/v2/content/articles` | 已发布文章 | public | query:categoryId?，query:page?，query:pageSize?，query:locale?，header:accept-language?，query:product?，query:platform?，query:q?；categoryId、q（标题或摘要）可选；page默认1/pageSize默认20最大50；locale/Accept-Language；product可选，默认saydian-global；platform可选ios | {items,total,page,pageSize}；只返回指定App及通用已发布对应语言文章 | 仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变 |
 | `GET /api/saydian-app/v2/content/articles/:id` | 文章详情 | public | path:id，query:locale?，header:accept-language?，query:product?，query:platform?；id=UUID或迁移旧ID；locale/Accept-Language；product可选，默认saydian-global；platform可选ios | Article；不属于指定App、未发布、未来发布或语言不匹配均404 | 仅显式product=say-ring&platform=ios受moduleVisibility控制，关闭/缺失/无效时404；调用方声明不代替账号权限；旧请求及其他App不变 |
 | `GET /api/saydian-app/v2/content/legal/:type` | 协议文档 | public | path:type，query:version?，query:locale?；type=文档类型；version可选；国际locale必选当前capabilities法律文档locale | 国内LegalDocument；国际GlobalLegalDocument（reviewed+active+published）；未发布404 | 核心服务 |
 | `GET /api/saydian-app/v2/content/legal-page/say-ring/:type` | Say Ring 当前已发布法律 HTML 页面 | public | path:type；type=privacy\|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖 | text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意 | GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口 |
@@ -346,6 +346,21 @@
 | `POST /api/saydian-app/v2/sayheath/family/:id/:action` | Accept, change, end or read a product-specific share | member | header:authorization，path:id，path:action；无请求体 | 对象 | 核心服务 |
 | `POST /api/saydian-app/v2/sayheath/sign-out` | Revoke the isolated session | member | header:authorization；无请求体 | 对象 | 核心服务 |
 | `POST /api/saydian-app/v2/sayheath/delete-account` | Request deletion of the shared user account after explicit confirmation | member | header:authorization；无请求体 | 对象 | 核心服务 |
+| `GET /api/saydian-app/v2/support/online-config` | Say Ring 客服能力 | public | header:accept-language?；Accept-Language；无鉴权 | {product,enabled,whatsapp}；WhatsApp 仅英文且后台开启时可见 | 核心服务 |
+| `GET /api/saydian-app/v2/support/faq` | 已发布客服 FAQ | public | header:accept-language?，query:q?，query:offset?，query:language?；language、q 和 offset 可选；首批按所选语言，英文无内容时回退原文；后续使用响应的 locale | {items,locale,nextOffset}；只查绑定分类中当前已发布的 Say Ring 或通用文章 | 核心服务 |
+| `GET /api/saydian-app/v2/support/faq/:id` | 客服参考文章 | public | path:id；id=文章 UUID | 已发布且在客服分类或指南范围内的文章；其他 404 | 核心服务 |
+| `POST /api/saydian-app/v2/support/guest` | 创建访客客服会话 | public | header:accept-language?；无需账号；Accept-Language；有频率限制 | {token,expiresAt,conversation}；令牌只允许访问对应的访客会话 | 核心服务 |
+| `POST /api/saydian-app/v2/support/conversations` | 打开客服会话 | member-or-support-guest | header:accept-language?；会员或访客令牌；Accept-Language | 有未结束会话时复用，同一所有者重复打开不会新增 | 核心服务 |
+| `GET /api/saydian-app/v2/support/conversations` | 客服历史会话 | member-or-support-guest | query:before?；会员或访客令牌；before=会话 UUID | {items,next}；仅本人已发送过消息的会话 | 核心服务 |
+| `GET /api/saydian-app/v2/support/conversations/:id` | 客服会话与补读消息 | member-or-support-guest | path:id，query:after?，query:before?；after=已收序号，或 before=第一条旧消息序号；省略读取最近一页 | {conversation,messages,older}；私有、按序号递增 | 核心服务 |
+| `GET /api/saydian-app/v2/support/conversations/:id/events` | 客服会话实时更新 | member-or-support-guest | path:id，query:after?；after=最后确认序号；Bearer，不接受 URL 中的令牌 | text/event-stream；snapshot 事件，断流使用 REST 游标补取 | 核心服务 |
+| `POST /api/saydian-app/v2/support/conversations/:id/messages` | 发送客服文字 | member-or-support-guest | path:id；{clientMessageId:UUID,body,aiAllowed?:boolean} | 提交事务后返回消息；同一消息编号及内容重试幂等 | 核心服务 |
+| `POST /api/saydian-app/v2/support/conversations/:id/attachments` | 发送私有客服图片 | member-or-support-guest | path:id，file:file；multipart：file、clientMessageId、body可选；JPG、PNG、WebP，限制5 MB | 提交事务后返回消息及附件编号；图像重新编码，转人工处理 | 核心服务 |
+| `GET /api/saydian-app/v2/support/conversations/:id/attachments/:attachmentId` | 读取私有客服图片 | member-or-support-guest | path:id，path:attachmentId；id+attachmentId；只能随会话授权读取 | image/jpeg；不允许缓存或公开分享 | 核心服务 |
+| `POST /api/saydian-app/v2/support/conversations/:id/read` | 更新会员或访客已读位置 | member-or-support-guest | path:id；{seq}；只允许向前 | {read:true} | 核心服务 |
+| `POST /api/saydian-app/v2/support/conversations/:id/handoff` | 转人工客服 | member-or-support-guest | path:id；仅会话所有者 | 等待接待状态；撤销待处理 AI 回答 | 核心服务 |
+| `POST /api/saydian-app/v2/support/conversations/:id/claim` | 显式关联单个访客会话 | member | path:id；{guestToken}；须同时提供当前会员令牌和访客凭据 | 只转移指定会话，访客凭据失去对该会话的访问 | 核心服务 |
+| `POST /api/saydian-app/v2/support/conversations/:id/diagnostic` | 访客附加连接摘要 | member-or-support-guest | path:id；仅该会话的访客，显式选择；诊断协议 v2 | {accepted:true}；仅该会话内最近一份 | 核心服务 |
 | `GET /api/saydian-app/v2/support/weather` | 手机当前位置天气预报 | public | query:lat?，query:lon?；公开 GET；query lat=-90..90、lon=-180..180；服务端按两位小数网格取预报，不接收会员标识 | {source,sourceUrl,licenseUrl,updatedAt,timeseries}；MET Norway 预报及来源/CC BY 4.0 标注；无有效数据返回503，不生成虚构天气 | 固定 MET Norway Locationforecast HTTPS；按 Expires 缓存并以 Last-Modified 条件刷新 |
 | `GET /api/saydian-app/v2/support/config` | 客服配置 | public | 无请求体 | 客服配置或未配置状态 | 核心服务 |
 | `GET /api/saydian-app/v2/support/app-display` | 读取产品独立显示开关 | public | query:product?，query:platform?；query product=say-ring\|saydian-app-cn；可选platform=ios；公开接口，禁止其他产品标识 | 保留{product,hideAi,sleepAiEnabled?}；saydian-app-cn所有平台返回独立cn_health_display/cn_module_display对应readOnlyHealth/moduleVisibility和sleepAiEnabled；仅say-ring+ios增加platform:'ios',readOnlyHealth:{schemaVersion:1,validForSeconds:300,metrics:{heart_rate,hrv,blood_oxygen,body_temperature,stress}}及同级moduleVisibility:{schemaVersion:1,validForSeconds:300,modules:{health_library,mall}}；独立公开设置/严格布尔，缺失无效或模块读取失败关闭；不向五项metrics加入新键；Cache-Control:no-store；客户端独立租约，失败/过期隐藏，不持久缓存 | 普通产品/platform显示；所有用户同配置，不识别审核身份；不授予上传/测量/购买/支付/医疗/AI权限；其他产品/旧请求不变 |
@@ -354,15 +369,15 @@
 | `POST /api/saydian-app/v2/support/sport-route-map` | Say Ring 高德运动轨迹图 | member | 会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点 | 高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图 | 高德 Web 服务坐标转换与静态地图 API |
 | `GET /api/saydian-app/v2/support/app-package/:fileName` | 赛电、Health 与 Say Ring 公开安装包 | public | path:fileName；fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名及对应产品安装包用途的 ACTIVE 文件 | 安装包原始文件流，含 Content-Length、ETag 和 nosniff | 已配置对象存储 |
 | `POST /api/saydian-app/v2/support/feedback` | 提交反馈 | member | {content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项} | {id,status} | 核心服务 |
-| `GET /api/saydian-app/v2/support/sync-diagnostics/config` | Say Ring 同步诊断能力 | member | query:product?；会员令牌；product=say-ring | {schemaVersion:1,product,supported,automatic,automaticIntervalSeconds:900,maximumReportsPerHour:4,maximumStoredReports:5}；旧服务端404时客户端退避，不影响健康功能 | 核心服务 |
-| `POST /api/saydian-app/v2/support/sync-diagnostics` | 提交有界同步诊断 | member | 会员令牌；SyncDiagnosticReport v1，严格白名单、最大4096字节、最多16个阶段，仅固定枚举与有界数量；拒绝会员ID、设备地址、健康值、日志和任意错误文本 | {accepted,reportId,duplicate?}或{accepted:false,reportId,reason:'rate_limited',retryAfterSeconds}；按认证会员隔离、报告UUID去重、服务器时间每小时最多4份，最多保留最近5份；不改变健康记录或设备初始化 | 核心服务 |
+| `GET /api/saydian-app/v2/support/sync-diagnostics/config` | Say Ring 同步诊断能力 | member | query:product?；会员令牌；product=say-ring | {schemaVersion:1,acceptedSchemaVersions:[1,2],product,supported,automatic,automaticIntervalSeconds:900,maximumReportsPerHour:4,maximumStoredReports:5}；旧服务端兼容，不影响健康功能 | 核心服务 |
+| `POST /api/saydian-app/v2/support/sync-diagnostics` | 提交有界同步诊断 | member | 会员令牌；SyncDiagnosticReport v1/v2，严格白名单、最大4096字节、最多16个阶段；v2可带手机型号和系统版本、locale、connectionKind；拒绝会员ID、设备地址、健康值和日志 | {accepted,reportId,duplicate?}或{accepted:false,reportId,reason:'rate_limited',retryAfterSeconds}；按认证会员隔离、报告UUID去重、每小时最多4份，保留最近5份 | 核心服务 |
 | `POST /api/saydian-app/v2/files/say-ring-avatar` | Say Ring 上传头像 | member | file:file；会员令牌；multipart file，JPEG/PNG/WebP，最大 10 MiB；仅国际环境 | {id,url,sha256,byteSize}；URL 与现有头像接口一致 | Say Ring 专用服务器持久目录；开关关闭时沿用原头像存储 |
 | `POST /api/saydian-app/v2/files` | 上传图片 | member | file:file，query:purpose?；multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP | {id,url,...} | 私有对象存储 |
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（185）
+## 管理后台接口（198）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -387,6 +402,19 @@
 | `POST /api/saydian-app/admin/v1/health-score-rules/settings` | 健康大屏开放开关 | admin: SUPER_ADMIN | {enabled:boolean} | {enabled}；与规则发布独立 | SUPER_ADMIN；变更审计 |
 | `POST /api/saydian-app/admin/v1/health-score-rules/:id/publish` | 审核发布评分版本 | admin: SUPER_ADMIN | path:id；id=规则UUID；{reviewed:true,expectedUpdatedAt:ISO时间} | 规则版本；并发更新校验；旧版本转历史 | SUPER_ADMIN；发布审计 |
 | `POST /api/saydian-app/admin/v1/health-score-rules/:id/preview` | 用会员数据预览已保存规则 | admin: SUPER_ADMIN | path:id；id=规则UUID；{memberId:UUID,days:7/30/90} | {preview:true,score}；不调用AI不扣次；no-store | SUPER_ADMIN；健康数据访问审计 |
+| `GET /api/saydian-app/admin/v1/support-chat/queues` | 客服队列 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | query:filter?，query:before?；filter=waiting/mine/closed/ai，before=会话UUID | {items,next}；包含未读标记 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/support-chat/queues/events` | 客服队列实时状态 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | query:filter?；filter=waiting/mine/closed/ai；后台令牌 | text/event-stream，定期重新校验后台令牌 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/support-chat/agents` | 可转接客服 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | 需客服角色 | [{id,displayName}]；仅启用且具有客服权限 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/support-chat/config` | 读取客服配置 | admin: SUPER_ADMIN, APP_OPERATIONS | 超级管理员或运营 | 启用状态、WhatsApp、双语 FAQ 分类和已选设备指南分类 | 核心服务 |
+| `PUT /api/saydian-app/admin/v1/support-chat/config` | 更新客服配置 | admin: SUPER_ADMIN, APP_OPERATIONS | 启用状态、WhatsApp 开关与官方号码/链接、双语 FAQ 分类与设备指南分类UUID | 校验已启用的分类和 FAQ 语言；记录后台操作 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/support-chat/conversations/:id` | 后台读取客服会话 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | path:id，query:after?，query:before?；id；after 或 before 序号 | {conversation,messages,older} | 核心服务 |
+| `GET /api/saydian-app/admin/v1/support-chat/conversations/:id/events` | 后台实时读取客服会话 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | path:id，query:after?；id，after=已确认序号 | text/event-stream；对后台角色与会话重新校验 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/support-chat/conversations/:id/diagnostics` | 查看会话手机与连接信息 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | path:id；id=会话UUID | 会话关联的有界诊断摘要，记录查看审计 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/support-chat/conversations/:id/messages` | 人工回复 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | path:id；{clientMessageId:UUID,body}；只允许当前接待人 | 提交后返回消息；会员同时生成一条账号通知 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/support-chat/conversations/:id/attachments` | 人工回复图片 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | path:id，file:file；multipart：file、clientMessageId、body可选；只允许当前接待人 | 私有图片消息，提交后才返回确认 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/support-chat/conversations/:id/attachments/:attachmentId` | 后台读取私有客服照片 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | path:id，path:attachmentId；id+attachmentId；限客服角色 | image/jpeg；private, no-store | 核心服务 |
+| `POST /api/saydian-app/admin/v1/support-chat/conversations/:id/read` | 后台更新已读位置 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | path:id；{seq}；仅当前接待人可消除未读 | {read:boolean} | 核心服务 |
+| `POST /api/saydian-app/admin/v1/support-chat/conversations/:id/transition` | 接入、转接或结束在线客服 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | path:id；{action:accept/transfer/close,assignee?:UUID\|null}；转接及结束须已接待 | 会话状态；接入时立即停止该会话的 AI | 核心服务 |
 | `POST /api/saydian-app/admin/v1/auth/login` | 后台登录 | public | JSON {username,password} | AdminSession；不能与 App Token 混用 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/us-migration/inventory` | 美国迁移脱敏候选清单 | admin: SUPER_ADMIN | query:page?；page从1开始，每页100；仅SUPER_ADMIN | 协议来源、共享/无法归属标记、关联数量；approved恒为false，无迁移副作用 | 北京源库只读快照；迁移须单独核对 |
 | `POST /api/saydian-app/admin/v1/content-images` | 上传后台文章或协议图片 | admin: SUPER_ADMIN, CONTENT_EDITOR | file:file；multipart/form-data字段file；JPG/PNG/WebP，文件签名须匹配，单张不超过10MB；仅SUPER_ADMIN/CONTENT_EDITOR | {id,url,sha256,byteSize}；url为当前部署公开文件地址，不返回对象存储密钥 | 已配置对象存储 |

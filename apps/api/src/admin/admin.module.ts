@@ -12,10 +12,11 @@ import { AdminHealthReportsService } from "./admin-health-reports.service";
 import { SupportModule } from "../support/support.module";
 import { AuthModule } from "../auth/auth.module";
 import { AdminEmailDeliveryController } from "./admin-email-delivery.controller";
+import { AdminOnlineSupportController } from "./admin-online-support.controller";
 
 @Module({
   imports: [HealthScreenModule, HealthReportsModule, SupportModule, AuthModule],
-  controllers: [JushuitanRenewalController, AdminHealthScreenController, HealthScoreRulesController, AdminLoginController, AdminController, AdminHealthReportsController, AdminEmailDeliveryController],
+  controllers: [JushuitanRenewalController, AdminHealthScreenController, HealthScoreRulesController, AdminLoginController, AdminController, AdminHealthReportsController, AdminEmailDeliveryController, AdminOnlineSupportController],
   providers: [
     AdminAuthService,
     AdminAuthGuard,

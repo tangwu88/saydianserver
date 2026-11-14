@@ -38,6 +38,13 @@ onBeforeUnmount(() => { ++generation; });
       <el-card v-for="entry in reports" :key="entry.report.reportId" style="margin-top:16px">
         <template #header>{{ new Date(entry.receivedAt).toLocaleString('zh-CN', { hour12: false }) }} · {{ labels[entry.report.mode] || '诊断' }}</template>
         <p>{{ entry.report.platform }} {{ entry.report.appVersion }}（{{ entry.report.buildNumber }}） · {{ entry.report.model }} · {{ entry.report.sdk }} · 固件 {{ entry.report.firmware || '未提供' }}</p>
+        <p v-if="entry.report.phone" style="overflow-wrap:anywhere">
+          手机：{{ [entry.report.phone.brand,entry.report.phone.modelName,entry.report.phone.modelId].filter(Boolean).join(' · ') || '未提供' }}　
+          系统：{{ entry.report.phone.osVersion || '未提供' }} {{ entry.report.phone.osBuild || '' }}
+          <span v-if="entry.report.phone.apiLevel !== undefined"> · API {{ entry.report.phone.apiLevel }}</span>
+          <span v-if="entry.report.phone.locale"> · {{ entry.report.phone.locale }}</span>
+        </p>
+        <p v-if="entry.report.connectionKind">连接方式：{{ ({first:'首次连接',explicit:'主动连接',automatic_recovery:'自动恢复'} as Record<string,string>)[entry.report.connectionKind] || '其他' }}</p>
         <p>初始化：{{ labels[entry.report.initializationState] || '待确认' }}　报告编号：{{ entry.report.reportId }}</p>
         <el-table :data="entry.report.stages" border>
           <el-table-column label="阶段" width="115"><template #default="scope">{{ labels[scope.row.stage] || '其他' }}</template></el-table-column>
