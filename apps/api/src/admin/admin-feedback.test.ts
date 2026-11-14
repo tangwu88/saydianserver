@@ -21,7 +21,7 @@ describe("administrator feedback workflow", () => {
   it("shows readable member identity without returning the joined user object", async () => {
     const h = harness();
     const rows = await h.service.feedback("open");
-    expect(h.feedback.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: "OPEN" } }));
+    expect(h.feedback.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: "OPEN", category: { not: "say_ring_sync_diagnostics_v1" } } }));
     expect(rows[0]).toMatchObject({ memberNo: "10008", memberNickname: "测试会员" });
     expect(rows[0]).not.toHaveProperty("user");
   });

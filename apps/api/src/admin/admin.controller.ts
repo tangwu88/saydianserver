@@ -245,6 +245,12 @@ export class AdminController {
     return this.admin.memberDevices(id);
   }
 
+  @Get("members/:id/sync-diagnostics")
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.APP_OPERATIONS)
+  memberSyncDiagnostics(@CurrentAdmin() current: { id: string; role: string; roles?: string[] }, @Param("id") id: string, @Req() request: RequestWithContext) {
+    return this.admin.memberSyncDiagnostics(current, id, request.requestId);
+  }
+
   @Get("members/:id/health-records")
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.HEALTH_AUDITOR)
   rawHealth(

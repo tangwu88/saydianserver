@@ -32,7 +32,7 @@ describe("member feedback and administrator replies", () => {
   it("lists only the current member's feedback with visible reply fields", async () => {
     const h = harness();
     const rows = await h.service.listFeedback("member-1");
-    expect(h.feedback.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "member-1" }, take: 100 }));
+    expect(h.feedback.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "member-1", category: { not: "say_ring_sync_diagnostics_v1" } }, take: 100 }));
     expect(rows[0]).toMatchObject({ id: "feedback-1", status: "resolved", replyContent: "已为您核对，请重新发起付款" });
     expect(rows[0]).not.toHaveProperty("repliedBy");
   });

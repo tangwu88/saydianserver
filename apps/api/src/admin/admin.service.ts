@@ -38,6 +38,7 @@ import {
 import { hash } from "bcryptjs";
 import { parseDownloadManifest, sayRingIosHealthSettingKey, sayRingIosModuleSettingKey, sayRingU19HealthSettingKey } from "@saydian/app-contracts";
 import { writeSayRingU19Health } from "./say-ring-u19-health-setting";
+import { memberSyncDiagnostics, syncDiagnosticCategory } from "../support/sync-diagnostics";
 import { writeSayRingIosHealthDisplay } from "./say-ring-ios-health-setting";
 import { writeSayRingIosModuleDisplay } from "./say-ring-ios-module-setting";
 import { PrismaService } from "../common/prisma.service";
@@ -329,7 +330,7 @@ export class AdminService {
       this.prisma.careRelationship.count({ where: { status: "ACTIVE" } }),
       this.prisma.healthWarningEvent.count(),
       this.prisma.feedback.count({
-        where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
+        where: { status: { in: ["OPEN", "IN_PROGRESS"] }, category: { not: syncDiagnosticCategory } },
       }),
       this.prisma.outboxEvent.count({
         where: { status: { in: ["PENDING", "FAILED"] } },
@@ -1304,6 +1305,15 @@ export class AdminService {
     };
   }
 
+  async memberSyncDiagnostics(current: { id: string; role: string; roles?: string[] }, id: string, requestId: string) {
+    const roles = current.roles ?? [current.role];
+    if (!roles.some(role => ["SUPER_ADMIN", "APP_OPERATIONS"].includes(role))) throw new ForbiddenException("无权查看同步诊断");
+    if (!isUuid(id)) throw new BadRequestException("会员编号无效");
+    const data = await memberSyncDiagnostics(this.prisma, id);
+    await this.prisma.auditLog.create({ data: { actorType: "ADMIN", actorId: current.id, action: "SYNC_DIAGNOSTICS_READ", entityType: "USER", entityId: id, requestId } });
+    return data;
+  }
+
   async deviceConnections(id: string) {
     if (!isUuid(id)) throw new BadRequestException("设备编号无效");
     const row = await this.prisma.deviceBinding.findUnique({
@@ -1369,10 +1379,7 @@ export class AdminService {
   async feedback(status?: string) {
     const normalized = status?.toUpperCase() as FeedbackStatus | undefined;
     const rows = await this.prisma.feedback.findMany({
-      where:
-        normalized && Object.values(FeedbackStatus).includes(normalized)
-          ? { status: normalized }
-          : {},
+      where: { category: { not: syncDiagnosticCategory }, ...(normalized && Object.values(FeedbackStatus).includes(normalized) ? { status: normalized } : {}) },
       include: { user: { select: { compatibilityId: true, nickname: true } } },
       orderBy: { createdAt: "desc" },
       take: 500,
@@ -1410,6 +1417,7 @@ export class AdminService {
       // Serialize saves so retried/concurrent identical replies notify only once.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`feedback:${id}`}, 0))`;
       const previous = await tx.feedback.findUnique({ where: { id } });
+      if (previous?.category === syncDiagnosticCategory) throw new BadRequestException("同步诊断为只读摘要");
       if (!previous) throw new NotFoundException("反馈不存在");
       const newReply = hasReply && previous.replyContent !== replyContent;
       const saved = await tx.feedback.update({

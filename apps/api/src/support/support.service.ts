@@ -1,3 +1,4 @@
+import { syncDiagnosticCategory, submitSyncDiagnostic } from "./sync-diagnostics";
 import { sayRingU19HealthOrClosed, sayRingU19HealthSettingKey } from "./u19-health";
 import { cnDisplaySections } from "./cn-display";
 import {
@@ -71,6 +72,7 @@ export class SupportService implements OnModuleInit, OnModuleDestroy {
   async createFeedback(userId: string, input: unknown) {
     const body = safeObject(input);
     const category = String(body.category ?? "other").trim();
+    if (category === syncDiagnosticCategory) throw new BadRequestException("请使用同步诊断入口");
     const content = String(body.content ?? "").trim();
     const contact = String(body.contact ?? "").trim();
     const attachments = Array.isArray(body.attachments)
@@ -105,7 +107,7 @@ export class SupportService implements OnModuleInit, OnModuleDestroy {
 
   async listFeedback(userId: string) {
     const rows = await this.prisma.feedback.findMany({
-      where: { userId },
+      where: { userId, category: { not: syncDiagnosticCategory } },
       select: {
         id: true,
         category: true,
@@ -120,6 +122,15 @@ export class SupportService implements OnModuleInit, OnModuleDestroy {
       take: 100,
     });
     return rows.map((row) => ({ ...row, status: row.status.toLowerCase() }));
+  }
+
+  syncDiagnosticsConfig(product: string) {
+    if (product !== "say-ring") throw new BadRequestException("诊断产品无效");
+    return { schemaVersion: 1, product: "say-ring", supported: true, automatic: true, automaticIntervalSeconds: 900, maximumReportsPerHour: 4, maximumStoredReports: 5 };
+  }
+
+  submitSyncDiagnostics(userId: string, input: unknown) {
+    return submitSyncDiagnostic(this.prisma, userId, input);
   }
 
   async supportConfig() {

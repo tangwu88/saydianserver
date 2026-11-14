@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **570 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **573 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -180,7 +180,7 @@
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
 
-## V2 App 接口（175）
+## V2 App 接口（177）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -354,13 +354,15 @@
 | `POST /api/saydian-app/v2/support/sport-route-map` | Say Ring 高德运动轨迹图 | member | 会员令牌；{points:[{latitude,longitude}]}，2–80 个 GPS 坐标点 | 高德静态地图图片流；仅授权会员、已公开且配置密钥时可用；不返回密钥，失败不回退为伪地图 | 高德 Web 服务坐标转换与静态地图 API |
 | `GET /api/saydian-app/v2/support/app-package/:fileName` | 赛电、Health 与 Say Ring 公开安装包 | public | path:fileName；fileName=后台上传返回的不可变 APK/HAP 文件名；仅接受安全文件名及对应产品安装包用途的 ACTIVE 文件 | 安装包原始文件流，含 Content-Length、ETag 和 nosniff | 已配置对象存储 |
 | `POST /api/saydian-app/v2/support/feedback` | 提交反馈 | member | {content:5–2000字符,category?,contact?:最多100字符,attachments?:本人文件ID数组最多6项} | {id,status} | 核心服务 |
+| `GET /api/saydian-app/v2/support/sync-diagnostics/config` | Say Ring 同步诊断能力 | member | query:product?；会员令牌；product=say-ring | {schemaVersion:1,product,supported,automatic,automaticIntervalSeconds:900,maximumReportsPerHour:4,maximumStoredReports:5}；旧服务端404时客户端退避，不影响健康功能 | 核心服务 |
+| `POST /api/saydian-app/v2/support/sync-diagnostics` | 提交有界同步诊断 | member | 会员令牌；SyncDiagnosticReport v1，严格白名单、最大4096字节、最多16个阶段，仅固定枚举与有界数量；拒绝会员ID、设备地址、健康值、日志和任意错误文本 | {accepted,reportId,duplicate?}或{accepted:false,reportId,reason:'rate_limited',retryAfterSeconds}；按认证会员隔离、报告UUID去重、服务器时间每小时最多4份，最多保留最近5份；不改变健康记录或设备初始化 | 核心服务 |
 | `POST /api/saydian-app/v2/files/say-ring-avatar` | Say Ring 上传头像 | member | file:file；会员令牌；multipart file，JPEG/PNG/WebP，最大 10 MiB；仅国际环境 | {id,url,sha256,byteSize}；URL 与现有头像接口一致 | Say Ring 专用服务器持久目录；开关关闭时沿用原头像存储 |
 | `POST /api/saydian-app/v2/files` | 上传图片 | member | file:file，query:purpose?；multipart file；purpose=avatar/feedback；最大 10 MiB；JPEG/PNG/WebP | {id,url,...} | 私有对象存储 |
 | `POST /api/saydian-app/v2/files/ecg` | 上传 ECG 压缩文件 | member | file:file；multipart file + sha256；最大 25 MiB；gzip；先上传再提交 HealthBatch 引用 | ECG 对象键和摘要；原始波形非公开 | 私有对象存储 |
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（184）
+## 管理后台接口（185）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -405,6 +407,7 @@
 | `PATCH /api/saydian-app/admin/v1/members/:id/verification` | 超级管理员人工确认联系方式 | admin: SUPER_ADMIN | path:id；id=会员UUID；{channel:mobile\|email,verified:boolean,expectedUpdatedAt}；只调整已有联系方式的验证状态，不修改号码或邮箱 | 返回脱敏联系方式与手机/邮箱独立验证状态；并发变化409；写入专门审计。人工确认后会员需重新登录，临时测试会话不会原地提权 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-summary` | 会员健康数量摘要 | admin | path:id；id=会员 UUID | 按指标数量与首末采集时间 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/devices` | 会员设备列表 | admin | path:id；id=会员 UUID | 返回指定会员最多500台设备，含稳定脱敏标识、蓝牙名称、型号、MAC、固件、最近连接和绑定状态 | 核心服务 |
+| `GET /api/saydian-app/admin/v1/members/:id/sync-diagnostics` | 会员同步诊断摘要 | admin: SUPER_ADMIN, APP_OPERATIONS | path:id；超级管理员或App运营角色；会员UUID；只读、记录审计日志 | {reports:[{receivedAt,report}],maximumReports:5}；仅指定会员、固定产品与已校验摘要；旧客户端没有报告不代表没有故障，不返回健康值或原始日志 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/members/:id/health-records` | 授权查看原始健康记录 | admin: SUPER_ADMIN, HEALTH_AUDITOR | path:id，query:limit?，query:reason?；id=会员 UUID；reason=5–300字业务原因，国际SUPER_ADMIN可不填（以服务端会话角色为准），HEALTH_AUDITOR和国内接口仍必填；limit 默认100 最大500 | HealthRecord[]；原因、操作者和请求编号进入专门读取审计；国际免填记录SUPER_ADMIN_EXEMPTION，不跳过审计 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/care` | 后台关爱关系 | admin | 无请求体 | 最多500条，双方昵称和指标权限；尚无分页 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/devices` | 后台设备快照 | admin | 无请求体 | 最多500条；含会员编号、昵称、蓝牙名称、型号、稳定脱敏设备标识和客户端确认的 MAC；尚无分页 | 核心服务 |

@@ -4041,6 +4041,41 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "AdminController.memberSyncDiagnostics",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/members/:id/sync-diagnostics",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/admin/admin.controller.ts",
+      "summary": "会员同步诊断摘要",
+      "request": "超级管理员或App运营角色；会员UUID；只读、记录审计日志",
+      "response": "{reports:[{receivedAt,report}],maximumReports:5}；仅指定会员、固定产品与已校验摘要；旧客户端没有报告不代表没有故障，不返回健康值或原始日志",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/admin/admin.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "AdminController.rawHealth",
       "method": "GET",
       "path": "/api/saydian-app/admin/v1/members/:id/health-records",
@@ -40984,6 +41019,70 @@ export const apiCatalog = {
         "contentType": "application/json",
         "source": "apps/api/src/support/support.service.ts",
         "note": "请求字段和最小响应形状已由源码复核；示例为合成测试数据，不代表生产调用成功或字段级真机验收。"
+      }
+    },
+    {
+      "key": "SupportController.syncDiagnosticsConfig",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/support/sync-diagnostics/config",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "Say Ring 同步诊断能力",
+      "request": "会员令牌；product=say-ring",
+      "response": "{schemaVersion:1,product,supported,automatic,automaticIntervalSeconds:900,maximumReportsPerHour:4,maximumStoredReports:5}；旧服务端404时客户端退避，不影响健康功能",
+      "dependency": "核心服务",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SupportController.syncDiagnostics",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/sync-diagnostics",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "提交有界同步诊断",
+      "request": "会员令牌；SyncDiagnosticReport v1，严格白名单、最大4096字节、最多16个阶段，仅固定枚举与有界数量；拒绝会员ID、设备地址、健康值、日志和任意错误文本",
+      "response": "{accepted,reportId,duplicate?}或{accepted:false,reportId,reason:'rate_limited',retryAfterSeconds}；按认证会员隔离、报告UUID去重、服务器时间每小时最多4份，最多保留最近5份；不改变健康记录或设备初始化",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
       }
     },
     {

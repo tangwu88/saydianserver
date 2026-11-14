@@ -87,6 +87,19 @@ export class SupportController {
   feedback(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
     return this.support.createFeedback(user.id, input);
   }
+
+  @Get("sync-diagnostics/config")
+  @UseGuards(UserAuthGuard)
+  @Header("Cache-Control", "no-store")
+  syncDiagnosticsConfig(@Query("product") product?: string) {
+    return this.support.syncDiagnosticsConfig(product ?? "");
+  }
+
+  @Post("sync-diagnostics")
+  @UseGuards(UserAuthGuard)
+  syncDiagnostics(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    return this.support.submitSyncDiagnostics(user.id, input);
+  }
 }
 
 @ApiTags("files")

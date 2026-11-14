@@ -13,6 +13,7 @@ import StoreDownloadEditor from "../components/StoreDownloadEditor.vue";
 import { uploadAppPackageChunks, PackageUploadError } from "../app-package-upload";
 import RichTextEditor from "../components/RichTextEditor.vue";
 import MemberHealthData from "../components/MemberHealthData.vue";
+import MemberSyncDiagnosticsDialog from "../components/MemberSyncDiagnosticsDialog.vue";
 import MemberCreateDialog from "../components/MemberCreateDialog.vue";
 import MemberHealthReportPanel from "../components/MemberHealthReportPanel.vue";
 import AdminHealthReportDialog from "../components/AdminHealthReportDialog.vue";
@@ -99,6 +100,7 @@ const memberDevicesVisible = ref(false);
 const memberDevicesLoading = ref(false);
 const memberDeviceMember = ref<Row>({});
 const memberDevices = ref<Row[]>([]);
+const syncDiagnosticMember = ref<Row | null>(null);
 const packageUploading = ref<Record<string, boolean>>({});
 const appPackageBusy = computed(() => Object.values(packageUploading.value).some(Boolean));
 const packageUploadStatus = ref<Record<string, string>>({});
@@ -1542,6 +1544,7 @@ function resetResourceView(): void {
   memberDeviceMember.value = {};
   memberDevices.value = [];
   detailRows.value = [];
+  syncDiagnosticMember.value = null;
   healthMember.value = {};
   form.value = {};
 }
@@ -1644,6 +1647,7 @@ onBeforeUnmount(() => {
           <el-table-column v-if="resource === 'members' || editable || (canWrite && resource === 'health-reports')" label="操作" :min-width="resource === 'members' ? 180 : 110" fixed="right">
             <template #default="scope">
               <el-button v-if="resource === 'members'" size="small" type="primary" plain @click="openMemberDevices(scope.row)">查看设备</el-button>
+              <el-button v-if="resource === 'members' && getAdminRoles().some(role => ['SUPER_ADMIN', 'APP_OPERATIONS'].includes(role))" size="small" @click="syncDiagnosticMember = scope.row">同步诊断</el-button>
               <el-button v-if="resource === 'members' && canAdminResource(getAdminRoles(), 'partners', 'write')" size="small" @click="partnerAssignment = scope.row">调整伙伴</el-button>
               <el-button v-if="editable" size="small" :disabled="resource === 'members' && ['DELETION_PENDING', 'DELETED'].includes(scope.row.status)" @click="openEdit(scope.row)">编辑</el-button>
               <el-button v-if="resource === 'health-reports' && canReadRawHealth" size="small" type="primary" plain @click="openHealthReport(scope.row)">查看</el-button>
@@ -1657,6 +1661,7 @@ onBeforeUnmount(() => {
     </div>
 
     <PartnerAssignmentDialog :member="partnerAssignment" @close="partnerAssignment = null" @saved="load" />
+    <MemberSyncDiagnosticsDialog :member="syncDiagnosticMember" @close="syncDiagnosticMember = null" />
     <el-dialog v-model="memberDevicesVisible" title="会员设备" width="min(980px, 94vw)" destroy-on-close @closed="++memberDevicesRequestId">
       <div v-loading="memberDevicesLoading">
         <p>{{ memberDeviceMember.memberNo || "—" }} · {{ memberDeviceMember.memberNickname || "未填写昵称" }}</p>
