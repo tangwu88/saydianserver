@@ -507,9 +507,18 @@ describe.runIf(process.env.RUN_SAY_RING_SUPPORT_DATABASE_TESTS === "1")(
           (m: { seq: number }) => m.seq,
         ),
       ).toEqual([2]);
+      const linked = await json(path + "/claim", member, {
+        guestToken: a.token,
+      });
+      expect(linked.id).toBe(id);
+      // The first receipt may be lost after commit. Retry as the same member;
+      // a second member with even the original guest credential must be denied.
       expect(
-        (await json(path + "/claim", member, { guestToken: a.token })).id,
-      ).toBe(id);
+        await json(path + "/claim", member, { guestToken: a.token }),
+      ).toEqual(linked);
+      expect(
+        (await raw(path + "/claim", foreign, { guestToken: a.token })).status,
+      ).toBe(404);
       expect((await raw(path, a.token)).status).toBe(404);
       expect((await raw(path, foreign)).status).toBe(404);
       expect((await raw(object, member)).status).toBe(200);

@@ -208,11 +208,17 @@ export class SupportConversations implements OnModuleInit, OnModuleDestroy {
     tx: Tx,
     actor: SupportActor,
     id: string,
+    claimRetryOwner?: { userId: string },
   ): Promise<Conversation> {
     if (!isUuid(id)) throw new NotFoundException("会话不存在");
     await tx.$queryRaw`SELECT id FROM "SupportConversation" WHERE id = ${id}::uuid AND product = ${supportProduct} FOR UPDATE`;
     const row = await tx.supportConversation.findFirst({
-      where: { id, ...ownerWhere(actor) },
+      where: {
+        id,
+        ...(claimRetryOwner
+          ? { OR: [ownerWhere(actor), ownerWhere(claimRetryOwner)] }
+          : ownerWhere(actor)),
+      },
       select: conversationFields,
     });
     if (!row) throw new NotFoundException("会话不存在");
@@ -394,7 +400,11 @@ export class SupportConversations implements OnModuleInit, OnModuleDestroy {
       throw new UnauthorizedException("访客会话已失效");
     const guest = await this.guest(guestToken);
     return this.prisma.$transaction(async (tx) => {
-      await this.locked(tx, guest, id);
+      const current = await this.locked(tx, guest, id, actor);
+      // 关联已入库但手机未收到确认时，仅给已经拥有此会话的会员补发回执。
+      // 首次关联仍需校验访客归属；另一个会员不能借旧访客凭据抢占会话。
+      if (current.userId === actor.userId)
+        return publicConversation(current, false);
       // Transfer a single explicitly selected thread, never all guest history.
       if (
         !(await tx.user.findFirst({
