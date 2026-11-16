@@ -381,7 +381,7 @@ describe.runIf(process.env.RUN_SAY_RING_SUPPORT_DATABASE_TESTS === "1")(
       const config = {
         enabled: true,
         whatsappEnabled: true,
-        whatsapp: "+12025550123",
+        whatsapp: "12025550123",
         faqCategories: { "zh-Hans": chinese, en: english },
         guideCategoryIds: [chinese],
       };
@@ -402,7 +402,20 @@ describe.runIf(process.env.RUN_SAY_RING_SUPPORT_DATABASE_TESTS === "1")(
           )
         ).status,
       ).toBe(400);
-      await json(adminBase + "/config", ops, config, { method: "PUT" });
+      for (const whatsapp of [
+        config.whatsapp,
+        "+12025550123",
+        "https://wa.me/12025550123/",
+      ]) {
+        expect(
+          await json(
+            adminBase + "/config",
+            ops,
+            { ...config, whatsapp },
+            { method: "PUT" },
+          ),
+        ).toMatchObject({ whatsapp: "https://wa.me/12025550123" });
+      }
       expect(await json(base + "/online-config")).toMatchObject({
         enabled: true,
         whatsapp: "https://wa.me/12025550123",

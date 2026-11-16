@@ -21,7 +21,7 @@ export function supportLocale(value: unknown): Locale {
 
 export function whatsappUrl(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const number = /^(?:\+|https:\/\/wa\.me\/)([1-9]\d{6,14})\/?$/.exec(
+  const number = /^(?:\+|https:\/\/wa\.me\/)?([1-9]\d{6,14})\/?$/.exec(
     value.trim(),
   )?.[1];
   return number ? `https://wa.me/${number}` : null;
