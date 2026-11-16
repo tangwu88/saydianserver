@@ -351,19 +351,66 @@ describe("global registration challenges", () => {
     await expect(h.service.registerWithoutVerification({ product: "say-ring", channel: "email", identifier: "new@example.net", password: "Synthetic-password!" })).rejects.toThrow("verification code");
     expect(h.users().size).toBe(0);
   });
-  for (const [channel, identifier] of [["email", "new-ring@example.net"]]) {
-    it(`Say Ring ${channel} code login cannot create a passwordless member`, async () => {
-      const h = harness();
-      const challenge = await h.service.requestLoginCode({ channel, identifier, locale: "en", product: "say-ring" });
-      const input = { channel, identifier, challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true };
-      await expect(h.service.loginWithCode(input)).rejects.toThrow("register with a password");
-      expect(h.users().size).toBe(0);
-      expect(h.records().get(challenge.challengeId).consumedAt).toBeNull();
-      h.users().set("existing", { id: "existing", status: "ACTIVE", [channel === "email" ? "email" : "mobile"]: identifier });
-      await expect(h.service.loginWithCode(input)).resolves.toBeDefined();
-      expect(h.users().size).toBe(1);
-    });
-  }
+  it("registers a verified new Say Ring email and signs in without a separate password step", async () => {
+    const h = harness();
+    const challenge = await h.service.requestLoginCode({ channel: "email", identifier: "New-Ring@example.net", locale: "en", product: "say-ring" });
+    const input = { channel: "email", identifier: "NEW-RING@example.net", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true };
+    const session = await h.service.loginWithCode(input);
+    expect(h.users().get(session.user.id)).toMatchObject({ email: "new-ring@example.net", passwordHash: null, status: "ACTIVE", emailVerifiedAt: expect.any(Date) });
+    expect(h.tx.consentRecord.upsert.mock.calls.map(([call]: any[]) => call.create.documentType)).toEqual(["say_ring_user_agreement", "say_ring_privacy_policy", "say_ring_minimum_age"]);
+    expect(h.records().get(challenge.challengeId).consumedAt).toBeInstanceOf(Date);
+    await expect(h.service.loginWithCode(input)).rejects.toThrow("expired");
+    expect(h.users().size).toBe(1);
+    expect(h.auth.issueMallSession).toHaveBeenCalledOnce();
+  });
+  it.each(["wrong-code", "expired", "undelivered", "wrong-email", "wrong-channel", "wrong-purpose", "attempts-exhausted", "missing-age", "old-consent", "writes-paused", "consent-write-failed"])("does not register/sign in a new Say Ring email for %s", async (failure) => {
+    const h = harness();
+    const challenge = await h.service.requestLoginCode({ channel: "email", identifier: "new-ring@example.net", locale: "en", product: "say-ring" });
+    const input: any = { channel: "email", identifier: "new-ring@example.net", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true };
+    const row = h.records().get(challenge.challengeId);
+    if (failure === "wrong-code") input.code = input.code === "100000" ? "100001" : "100000";
+    if (failure === "expired") row.expiresAt = new Date(0);
+    if (failure === "undelivered") row.sentAt = null;
+    if (failure === "wrong-email") input.identifier = "other@example.net";
+    if (failure === "wrong-channel") { input.channel = "sms"; input.identifier = "+12025550123"; }
+    if (failure === "wrong-purpose") row.purpose = "register";
+    if (failure === "attempts-exhausted") row.attempts = 5;
+    if (failure === "missing-age") input.ageConfirmed = false;
+    if (failure === "old-consent") input.consentVersion = "old";
+    if (failure === "writes-paused") vi.stubEnv("BUSINESS_WRITES_PAUSED", "true");
+    if (failure === "consent-write-failed") h.tx.consentRecord.upsert.mockRejectedValueOnce(new Error("synthetic consent write failure"));
+    await expect(h.service.loginWithCode(input)).rejects.toThrow();
+    expect(h.users().size).toBe(0);
+    expect(h.auth.issueMallSession).not.toHaveBeenCalled();
+    expect(h.records().get(challenge.challengeId).consumedAt).toBeNull();
+  });
+  it.each(["ACTIVE", "DISABLED", "DELETION_PENDING", "DELETED"])("preserves an existing Say Ring email account and respects its status: %s", async (status) => {
+    const h = harness();
+    h.users().set("existing", { id: "existing", status, email: "ring@example.net", emailVerifiedAt: new Date(), passwordHash: "existing-hash", nickname: "Existing member" });
+    const challenge = await h.service.requestLoginCode({ channel: "email", identifier: "RING@example.net", locale: "en", product: "say-ring" });
+    const login = h.service.loginWithCode({ channel: "email", identifier: "ring@example.net", challengeId: challenge.challengeId, code: h.delivery.send.mock.calls[0]![0].code, product: "say-ring", authFlow: "verified-password-v1", locale: "en", consentVersion: "v1", ageConfirmed: true });
+    if (status === "ACTIVE") {
+      expect((await login).user.id).toBe("existing");
+      expect(h.tx.userSession.updateMany).not.toHaveBeenCalled();
+    } else {
+      await expect(login).rejects.toThrow("cannot sign in");
+      expect(h.auth.issueMallSession).not.toHaveBeenCalled();
+    }
+    expect(h.tx.user.create).not.toHaveBeenCalled();
+    expect(h.users().size).toBe(1);
+    expect(h.users().get("existing")).toMatchObject({ passwordHash: "existing-hash", nickname: "Existing member" });
+  });
+  it("advertises email auto-registration only when Say Ring legal, delivery and writes are available", async () => {
+    const h = harness();
+    expect((await h.service.capabilities("en", "say-ring")).login.emailAutoRegistration).toBe(true);
+    expect((await h.service.capabilities("en")).login).not.toHaveProperty("emailAutoRegistration");
+    h.delivery.capabilities.mockResolvedValueOnce({ email: false, sms: true, smsCountries: ["US"] });
+    expect((await h.service.capabilities("en", "say-ring")).login.emailAutoRegistration).toBe(false);
+    h.tx.globalLegalDocument.findMany.mockResolvedValueOnce([]);
+    expect((await h.service.capabilities("en", "say-ring")).login.emailAutoRegistration).toBe(false);
+    vi.stubEnv("BUSINESS_WRITES_PAUSED", "true");
+    expect((await h.service.capabilities("en", "say-ring")).login.emailAutoRegistration).toBe(false);
+  });
   it("advertises automatic phone registration only for the available Say Ring service", async () => {
     const h = harness();
     expect((await h.service.capabilities("en", "say-ring")).login.smsAutoRegistration).toBe(true);

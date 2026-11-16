@@ -3,9 +3,9 @@
 ## 客户端行为
 
 - 默认中国手机号＋密码登录；可选邮箱＋密码，两个渠道均可切换验证码登录。
-- 独立注册要求渠道所有权验证码＋8至72字节密码（至少8字符），当前已审Say Ring协议和14岁确认；验证码用途为register。验证码login不能替代register。
-- 已存在的无密码账号仍可验证码登录或找回密码。新版Say Ring验证码登录显式发送authFlow=verified-password-v1，不会新建无密码账号；已发布的旧版验证码单入口及其它App旧兼容流程不变。
-- 注册/密码复用POST auth/verification-code、auth/register-with-code、auth/login、auth/reset-password，first-party前缀保持/global/api/saydian-app/v2；验证码登录沿用/global/api/saidian-mall/v1/auth/code/request与/code/login。产品显式say-ring，不能回退其他App协议。错误registration_required应引导注册，而非循环重发login验证码。
+- 独立注册要求渠道所有权验证码＋8至72字节密码（至少8字符），当前已审Say Ring协议和14岁确认；验证码用途为register。这是主动设置密码的独立注册入口；验证码登录的自动注册另见下一项。
+- 已存在的无密码账号仍可验证码登录或找回密码。Say Ring验证码登录发送authFlow=verified-password-v1；有效、已投递且未消费的邮箱或短信login挑战可自动创建无预设密码的新会员并登录，仍需当前Say Ring协议和新会员14岁本人确认。既有会员保留账号、密码与资料；新会员可通过已验证联系渠道设置密码。其它App旧兼容流程不变。
+- 注册/密码复用POST auth/verification-code、auth/register-with-code、auth/login、auth/reset-password，first-party前缀保持/global/api/saydian-app/v2；验证码登录沿用/global/api/saidian-mall/v1/auth/code/request与/code/login。产品显式say-ring，不能回退其他App协议。登录验证码不能拿去消费register/reset_password挑战，邮箱/手机号与挑战必须严格一致。
 
 ## 后台填写
 
@@ -22,6 +22,6 @@
 
 ## 验收与上线边界
 
-服务端能力login.explicitRegistrationCodeLogin=true表示已支持新版显式注册策略；新版App在缺少该能力时不发验证码登录，防止连接旧服务端后静默自动注册。密码登录和register-with-code仍走原有已审接口。应先部署兼容服务端，再交付新版App；旧版App验证码登录不被提前停用。
+服务端能力login.explicitRegistrationCodeLogin=true表示支持既有显式验证码登录契约，login.emailAutoRegistration与login.smsAutoRegistration分别声明可用的自动注册渠道；新版App在缺少该能力时不发验证码登录，防止连接旧服务端后静默自动注册。密码登录和register-with-code仍走原有已审接口。应先部署兼容服务端，再交付新版App；旧版App验证码登录不被提前停用。
 
 合成fetch测试不是实际投递。本轮未持有或修改生产阿里云邮件参数，未向真实邮箱/手机号发送OTP。源码候选、CI成功、生产发布、管理员真实收件及App实机验收必须分别确认；没有这些证据不能写“邮箱已接通”。无需数据库迁移或清理已有会员。

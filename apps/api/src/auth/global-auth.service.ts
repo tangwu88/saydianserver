@@ -78,7 +78,10 @@ export class GlobalAuthService {
       login: {
         explicitRegistrationCodeLogin: product === "say-ring",
         ...(product === "say-ring"
-          ? { smsAutoRegistration: registrationOpen && ready.sms }
+          ? {
+              smsAutoRegistration: registrationOpen && ready.sms,
+              emailAutoRegistration: registrationOpen && ready.email,
+            }
           : {}),
         email: ready.email && deliveryOpen,
         sms: ready.sms && deliveryOpen,
@@ -169,13 +172,9 @@ export class GlobalAuthService {
               ? { email: challenge.identifier }
               : { mobile: challenge.identifier };
           const existing = await tx.user.findUnique({ where });
-          // Say Ring phone-code sign-in also registers a verified new phone.
-          // Email retains explicit password-and-code registration. Both paths
-          // retain the same one-use challenge, legal and minimum-age checks.
-          if (!existing && legal.product === "say-ring" && body.authFlow === "verified-password-v1" && challenge.channel !== "sms") {
-            throw globalError(409, "registration_required", "Please register with a password and verification code first.");
-          }
-          if (!existing && legal.product === "say-ring" && challenge.channel === "sms" && businessWritesPaused(process.env)) {
+          // A delivered, one-use phone or email login challenge may register a
+          // new Say Ring member after current legal and minimum-age checks.
+          if (!existing && legal.product === "say-ring" && businessWritesPaused(process.env)) {
             throw globalError(503, "registration_unavailable", "Registration is temporarily unavailable. Please try again later.");
           }
           if (existing && existing.status !== UserStatus.ACTIVE)
