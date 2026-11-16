@@ -24,6 +24,7 @@ const routes = [
       { path: "api-docs", component: ApiDocsView },
       { path: "commerce-withdrawals", component: CommerceWithdrawalsView },
       { path: "integrations", component: IntegrationsView },
+      { path: "support-chat", component: () => import("./views/OnlineSupportView.vue") },
       { path: "commerce-gifts", component: () => import("./views/CommerceGiftsView.vue") },
       { path: "us-migration", component: UsMigrationView },
       ...["partner-applications", "partner-agreements"].map(path => ({ path, component: () => import("./views/PartnerOnboardingView.vue") })),

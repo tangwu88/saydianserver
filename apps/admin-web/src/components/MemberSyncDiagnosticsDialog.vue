@@ -13,7 +13,9 @@ const labels: Record<string, string> = {
   none: "—", unknown: "未分类异常", not_connected: "尚未连接", connection_lost: "连接中断", connect_failed: "连接失败", initialization_pending: "初始化待确认", decision_unknown: "首绑决定待确认", clear_requested: "清理已请求，未确认完成", clear_acknowledged: "已收到清理回执", capabilities_missing: "功能信息未齐", read_timeout: "读取超时", read_partial: "读取未完成", no_data: "本次未读到记录", save_failed: "本机保存失败", upload_failed: "上传失败", upload_rejected: "服务器拒收", unsupported_metric: "指标不在上传范围", record_conflict: "记录内容冲突", invalid_record: "记录校验失败", network_error: "网络异常", auth_expired: "登录失效", backend_unavailable: "诊断服务未就绪", busy: "正在执行其他操作", cancelled: "操作取消",
   ready: "已通过", decision_required: "等待首绑确认", reset_attempted: "指令已请求，结果待确认", history_clear_acknowledged: "已收到清理回执，待重新握手", native_pending: "设备准备待确认", unavailable: "状态读取失败",
   first_connection: "新账号首次连接", automatic: "历史自动上报", manual: "手动上报", recovery: "恢复后上报",
+  bluetooth_off: "蓝牙未开启", bluetooth_permission: "蓝牙权限未授权", connection_timeout: "连接超时", handshake_failed: "设备握手失败",
 };
+const connectionLabels: Record<string, string> = { first: "首次连接", explicit: "主动连接", automatic_recovery: "自动恢复" };
 async function load() {
   const id = props.member?.id, request = ++generation;
   reports.value = []; collection.value = null; error.value = "";
@@ -48,6 +50,13 @@ onBeforeUnmount(() => { ++generation; });
           <el-descriptions-item label="云端上传">{{ diagnosticUpload(entry.report) }}</el-descriptions-item>
         </el-descriptions>
         <p v-if="collection">首次采集开始：{{ new Date(collection.startedAt).toLocaleString('zh-CN', { hour12: false }) }}</p>
+        <p v-if="entry.report.phone" style="overflow-wrap:anywhere">
+          手机：{{ [entry.report.phone.brand, entry.report.phone.modelName, entry.report.phone.modelId].filter(Boolean).join(' · ') || '未提供' }}　
+          系统：{{ entry.report.phone.osVersion || '未提供' }} {{ entry.report.phone.osBuild || '' }}
+          <span v-if="entry.report.phone.apiLevel !== undefined"> · API {{ entry.report.phone.apiLevel }}</span>
+          <span v-if="entry.report.phone.locale"> · {{ entry.report.phone.locale }}</span>
+        </p>
+        <p v-if="entry.report.connectionKind">连接方式：{{ connectionLabels[entry.report.connectionKind] || '其他' }}</p>
         <p>初始化：{{ labels[entry.report.initializationState] || '待确认' }}　报告编号：{{ entry.report.reportId }}</p>
         <el-table :data="entry.report.stages" border>
           <el-table-column label="阶段" width="115"><template #default="scope">{{ labels[scope.row.stage] || '其他' }}</template></el-table-column>

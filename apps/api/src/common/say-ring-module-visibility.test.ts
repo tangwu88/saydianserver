@@ -60,9 +60,9 @@ describe("explicit product/platform module read visibility", () => {
   it("wires product and platform through the existing controllers without touching write paths", async () => {
     const content: any = { categories: vi.fn(), articles: vi.fn(), article: vi.fn() };
     const c = new ContentController(content);
-    c.categories(undefined, "en", undefined, "say-ring", "ios"); c.articles(undefined, "1", "20", "en", undefined, "say-ring", "ios"); c.article("id", "en", undefined, "say-ring", "ios");
+    c.categories(undefined, "en", undefined, "say-ring", "ios"); c.articles(undefined, "1", "20", "en", undefined, "say-ring", "ios", "Bluetooth"); c.article("id", "en", undefined, "say-ring", "ios");
     expect(content.categories).toHaveBeenCalledWith(undefined, "en", "say-ring", "ios");
-    expect(content.articles).toHaveBeenCalledWith(undefined, 1, 20, "en", "say-ring", "ios"); expect(content.article).toHaveBeenCalledWith("id", "en", "say-ring", "ios");
+    expect(content.articles).toHaveBeenCalledWith(undefined, 1, 20, "en", "say-ring", "ios", "Bluetooth"); expect(content.article).toHaveBeenCalledWith("id", "en", "say-ring", "ios");
     const commerce: any = { publicGet: vi.fn(), forUser: vi.fn() };
     const m = new CommerceController(commerce, {} as any);
     m.home("say-ring", "ios"); m.markets("say-ring", "ios"); m.products(scope); m.product("id", "say-ring", "ios");

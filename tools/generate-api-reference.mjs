@@ -28,7 +28,7 @@ for (const file of files) {
       const key = `${controller.name.text}.${method.name.getText()}`;
       if (!notes[key]) throw new Error(`Missing interface explanation: ${key}`);
       const guards = [...(named(controller, "UseGuards")?.arguments ?? []), ...(named(method, "UseGuards")?.arguments ?? [])].map(arg => arg.getText());
-      const auth = guards.includes("PartnerAuthGuard") ? "partner" : guards.includes("AdminAuthGuard") ? "admin" : guards.includes("EmployeeAuthGuard") ? "employee" : (guards.includes("UserAuthGuard") || guards.includes("MemberScreenGuard") || (controller.name.text === "SayHeathController" && !["legal","privacy","terms","support","feedback","deletion","sign","register"].includes(method.name.getText()))) ? "member" : "public";
+      const auth = guards.includes("PartnerAuthGuard") ? "partner" : guards.includes("AdminAuthGuard") ? "admin" : guards.includes("EmployeeAuthGuard") ? "employee" : guards.includes("SupportAccessGuard") ? "member-or-support-guest" : (guards.includes("UserAuthGuard") || guards.includes("MemberScreenGuard") || (controller.name.text === "SayHeathController" && !["legal","privacy","terms","support","feedback","deletion","sign","register"].includes(method.name.getText()))) ? "member" : "public";
       const roles = (named(method, "AdminRoles")?.arguments ?? named(controller, "AdminRoles")?.arguments ?? []).map(arg => arg.getText().replace("AdminRole.", ""));
       const parameters = method.parameters.flatMap(parameter => calls(parameter).filter(call => ["Body", "Query", "Param", "Headers", "UploadedFile"].includes(call.expression.getText())).map(call => ({
         in: { Body: "body", Query: "query", Param: "path", Headers: "header", UploadedFile: "file" }[call.expression.getText()],

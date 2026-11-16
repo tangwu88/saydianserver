@@ -305,6 +305,7 @@ model User {
   pushInstallations        PushInstallation[]
   notificationPreference   UserNotificationPreference?
   feedback                 Feedback[]
+  supportConversations     SupportConversation[]
   aiConversations          AiConversation[]
   files                    FileObject[]
   legacyOrders             LegacyOrderProjection[]
@@ -979,6 +980,66 @@ model Feedback {
   user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
+}
+
+model SupportGuest {
+  id            String                @id @default(uuid()) @db.Uuid
+  tokenHash     String                @unique
+  expiresAt     DateTime
+  conversations SupportConversation[]
+
+  @@index([expiresAt])
+}
+
+model SupportConversation {
+  id              String           @id @default(uuid()) @db.Uuid
+  product         String
+  userId          String?          @db.Uuid
+  guestId         String?          @db.Uuid
+  locale          String
+  state           String           @default("ai")
+  assignedAdminId String?          @db.Uuid
+  lastSeq         Int              @default(0)
+  lastCustomerSeq Int              @default(0)
+  lastReplySeq    Int              @default(0)
+  customerReadSeq Int              @default(0)
+  staffReadSeq    Int              @default(0)
+  guestDiagnostic Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  user            User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guest           SupportGuest?    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  messages        SupportMessage[]
+
+  @@index([product, userId, updatedAt])
+  @@index([product, guestId, updatedAt])
+  @@index([product, state, updatedAt])
+}
+
+model SupportMessage {
+  id              String              @id @default(uuid()) @db.Uuid
+  conversationId  String              @db.Uuid
+  seq             Int
+  clientMessageId String?             @db.Uuid
+  sender          String
+  body            String
+  sources         Json?
+  aiRunId         String?             @db.Uuid
+  aiAvailableAt   DateTime?
+  createdAt       DateTime            @default(now())
+  conversation    SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachment      SupportAttachment?
+
+  @@unique([conversationId, seq])
+  @@unique([conversationId, clientMessageId])
+  @@index([aiAvailableAt])
+}
+
+model SupportAttachment {
+  id        String         @id @default(uuid()) @db.Uuid
+  messageId String         @unique @db.Uuid
+  bytes     Bytes
+  message   SupportMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
 
 model LegalDocument {

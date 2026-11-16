@@ -29,7 +29,7 @@ const groups = [
     ["/notifications", "站内通知"], ["/notification-campaigns", "通知群发"],
     ["/articles", "内容"], ["/article-categories", "内容分类"],
     ["/legal-documents", "协议"], ["/feedback", "反馈"],
-    ["/settings", "客服与更新"],
+    ["/support-chat", "在线客服"], ["/settings", "客服与更新"],
     ["/us-migration", "美国迁移核对"],
   ] },
   { title: "系统", items: [
