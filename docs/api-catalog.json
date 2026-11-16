@@ -4058,9 +4058,9 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin.controller.ts",
-      "summary": "会员同步诊断摘要",
-      "request": "超级管理员或App运营角色；会员UUID；只读、记录审计日志",
-      "response": "{reports:[{receivedAt,report}],maximumReports:5}；仅指定会员、固定产品与已校验摘要；旧客户端没有报告不代表没有故障，不返回健康值或原始日志",
+      "summary": "会员首次连接与同步摘要",
+      "request": "超级管理员或App运营角色；会员UUID；只读并审计",
+      "response": "{reports:[{receivedAt,report}],maximumReports:5,firstConnectionOnly:true,collection:{connectionId,startedAt}|null}；显示系统/App版本、连接、戒指读取/本机保存和上传状态，旧历史保留；空数据或等待不伪报成功/失败",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -41036,9 +41036,9 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/support/support.controller.ts",
-      "summary": "Say Ring 同步诊断能力",
+      "summary": "Say Ring 首次连接诊断策略",
       "request": "会员令牌；product=say-ring",
-      "response": "{schemaVersion:1,product,supported,automatic,automaticIntervalSeconds:900,maximumReportsPerHour:4,maximumStoredReports:5}；旧服务端404时客户端退避，不影响健康功能",
+      "response": "{schemaVersion:1,product,supported,automatic:false,firstConnectionOnly:true,maximumFirstConnectionReports:1,...兼容限频字段}；后续连接不再采集，既有健康同步不变",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -41068,9 +41068,41 @@
       ],
       "envelope": "v2",
       "source": "apps/api/src/support/support.controller.ts",
-      "summary": "提交有界同步诊断",
-      "request": "会员令牌；SyncDiagnosticReport v1，严格白名单、最大4096字节、最多16个阶段，仅固定枚举与有界数量；拒绝会员ID、设备地址、健康值、日志和任意错误文本",
-      "response": "{accepted,reportId,duplicate?}或{accepted:false,reportId,reason:'rate_limited',retryAfterSeconds}；按认证会员隔离、报告UUID去重、服务器时间每小时最多4份，最多保留最近5份；不改变健康记录或设备初始化",
+      "summary": "提交新账号唯一首次连接摘要",
+      "request": "会员令牌；SyncDiagnosticReport v1，mode:first_connection、匹配已准许connectionId，严格白名单、4096字节/16阶段；系统数字版本、App版本、固定状态与数量，不包含健康数值/地址/日志/凭据",
+      "response": "{accepted,reportId,duplicate?,reason?}；每账号仅一份不可变摘要，相同ID同内容幂等；后续新报告和旧automatic/manual/recovery拒绝保存；仅重试首次待传摘要，不改变健康同步或初始化",
+      "dependency": "核心服务",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/support/support.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "SupportController.beginFirstConnectionDiagnostics",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/support/sync-diagnostics/first-connection",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/support/support.controller.ts",
+      "summary": "申请新账号首次连接摘要资格",
+      "request": "会员令牌；{product:say-ring,connectionId:UUIDv4,firstBindingOperationId?:既有首绑操作UUIDv4}；拒绝额外字段",
+      "response": "{accepted,connectionId,reason?}；锁定认证会员，终生绑定历史含已解绑；每账号只准一个采集ID。既有真实clear-issued回执仅用于读取资格竞态核验，不发出新的清空授权；未知或冲突不放行",
       "dependency": "核心服务",
       "successStatus": 201,
       "contract": {

@@ -225,3 +225,10 @@ curl -sS 'http://127.0.0.1:8080/api/saydian-app/admin/v1/members?page=1&pageSize
 更新控制器后修改 `tools/api-notes.mjs` 并运行 `pnpm api:docs`；CI 执行 `pnpm api:docs:check`，缺说明/多余说明/文档未生成都会失败。该目录不是伪装成完整 DTO 的 OpenAPI；参数边界以调用手册、校验器和可重复测试共同确认。
 
 单元测试证明映射逻辑；本地/CI HTTP 测试证明真实路由和中间件；生产只读探测证明端点响应；真实账号、支付沙箱、双人授权、供应商投递和旧数据迁移需各自独立证据。
+
+
+## Say Ring 新账号首次连接摘要
+
+消费者App不展示诊断入口。登录且同意隐私后，首次显式连接使用`POST /support/sync-diagnostics/first-connection`申请认证账号的一次性采集ID（完整前缀`/global/api/saydian-app/v2`）；仅终生没有设备绑定历史的新账号可申请，已解绑历史也计入。相同ID可恢复原请求；其他手机/重装的新ID不能重新采集。初次绑定恰好先完成时，可只读核验现有真实首次授权回执以恢复此资格，不能为诊断再申请初始化。
+
+首次结果经`POST /support/sync-diagnostics`提交一份`mode=first_connection`固定摘要，最多4096字节；只含系统/App版本、受限型号/固件、阶段状态及数量，不含健康值/原始包/地址/凭据。后续重连或常规同步不采集新摘要，断网仅补传原ID原内容；后台保留旧版历史。此策略不关闭原健康记录同步，也不改变设备初始化和数据所有者校验。

@@ -1,4 +1,4 @@
-import { syncDiagnosticCategory, submitSyncDiagnostic } from "./sync-diagnostics";
+import { syncDiagnosticCategory, submitSyncDiagnostic, beginFirstConnectionDiagnostic } from "./sync-diagnostics";
 import { sayRingU19HealthOrClosed, sayRingU19HealthSettingKey } from "./u19-health";
 import { cnDisplaySections } from "./cn-display";
 import {
@@ -124,9 +124,13 @@ export class SupportService implements OnModuleInit, OnModuleDestroy {
     return rows.map((row) => ({ ...row, status: row.status.toLowerCase() }));
   }
 
+  beginFirstConnectionDiagnostics(userId: string, input: unknown) {
+    return beginFirstConnectionDiagnostic(this.prisma, userId, input);
+  }
+
   syncDiagnosticsConfig(product: string) {
     if (product !== "say-ring") throw new BadRequestException("诊断产品无效");
-    return { schemaVersion: 1, product: "say-ring", supported: true, automatic: true, automaticIntervalSeconds: 900, maximumReportsPerHour: 4, maximumStoredReports: 5 };
+    return { schemaVersion: 1, product: "say-ring", supported: true, automatic: false, firstConnectionOnly: true, maximumFirstConnectionReports: 1, automaticIntervalSeconds: 900, maximumReportsPerHour: 4, maximumStoredReports: 5 };
   }
 
   submitSyncDiagnostics(userId: string, input: unknown) {

@@ -100,6 +100,12 @@ export class SupportController {
   syncDiagnostics(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
     return this.support.submitSyncDiagnostics(user.id, input);
   }
+
+  @Post("sync-diagnostics/first-connection")
+  @UseGuards(UserAuthGuard)
+  beginFirstConnectionDiagnostics(@CurrentUser() user: AuthenticatedUser, @Body() input: unknown) {
+    return this.support.beginFirstConnectionDiagnostics(user.id, input);
+  }
 }
 
 @ApiTags("files")
