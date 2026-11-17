@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **602 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **603 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -378,7 +378,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（198）
+## 管理后台接口（199）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -463,6 +463,7 @@
 | `POST /api/saydian-app/admin/v1/admin-users` | 新建后台账号 | admin: SUPER_ADMIN | {username:3–50位字母数字_.-,displayName:1–50字,password:至少12字符,roles?,role?,active?}；角色见调用手册；至少一角色，默认只读 | 无密码账号信息；400 返回字段校验 errorKey，409 admin_username_exists 表示账号重复 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/admin-users/:id` | 编辑后台账号 | admin: SUPER_ADMIN | path:id；{displayName?,role?,active?}；当前不支持修改密码 | 无密码账号信息 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/account-deletions` | 注销任务列表 | admin: SUPER_ADMIN, CUSTOMER_SERVICE | 无请求体 | 注销任务及遮蔽会员资料；非手动执行删除接口 | 核心服务 |
+| `POST /api/saydian-app/admin/v1/account-deletions/:id/cancel` | 会员确认后撤销尚未执行的注销 | admin: SUPER_ADMIN | path:id；id=注销任务UUID；{expectedUserId,expectedRequestedAt,confirm:true,reason:5至200字}；仅超级管理员 | CANCELLED任务与ACTIVE账号；原资料保留，旧会话保持撤销；已处理或状态变化返回409 | PostgreSQL行锁、原子审计 |
 | `GET /api/saydian-app/admin/v1/settings` | 客服、更新与独立 App 显示设置 | admin | 无请求体 | 按当前部署返回客服/更新设置，含独立say_ring_app_display/cn_app_display显示开关 | 核心服务 |
 | `PATCH /api/saydian-app/admin/v1/settings/:key` | 保存客服、更新或独立 App 显示设置 | admin: SUPER_ADMIN, APP_OPERATIONS | path:key；{value:非空JSON对象,public?:boolean}；更新通过DownloadManifest校验；cn_app_display仅hideAi，say_ring_app_display另允许sleepAiEnabled；say_ring_ios_health_display使用schemaVersion:1/五项metrics；独立say_ring_ios_module_display使用schemaVersion:1/modules:{health_library,mall}；另有say_ring_u19_health版本1/readMetrics与manualMetrics仅血压心率血氧，手动须为读取子集；独立项均须expectedUpdatedAt=当前ISO或首次null、严格布尔且必须公开 | 设置对象；独立key锁/版本冲突409/事务操作者及前后快照审计/各自rollback；不改变AI、指标、测量、上传、购买/支付或其他App | 核心服务 |
 | `POST /api/saydian-app/admin/v1/settings/say_ring_ios_health_display/rollback` | 恢复上次Say Ring iOS只读指标配置 | admin: SUPER_ADMIN, APP_OPERATIONS | {expectedUpdatedAt:当前设置updatedAt}；仅SUPER_ADMIN/APP_OPERATIONS；固定设置项say_ring_ios_health_display | 恢复上次保存前五项布尔并返回设置对象；版本冲突409，无历史404；事务内保留操作者和前后快照；不改变AI/上传/其他产品 | 现有AppSetting/AuditLog，无迁移；与保存共用数据库锁 |

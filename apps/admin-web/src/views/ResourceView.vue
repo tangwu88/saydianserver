@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import CnSettingsPanel from "../components/CnSettingsPanel.vue";
+import CancelAccountDeletionButton from "../components/CancelAccountDeletionButton.vue";
 import { groupCnDisplaySettings } from "../cn-settings";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute } from "vue-router";
@@ -1638,6 +1639,9 @@ onBeforeUnmount(() => {
             <template #default="scope">
               <el-button size="small" type="primary" plain @click="openFeedback(scope.row)">{{ scope.row.replyContent ? "查看 / 回复" : "处理 / 回复" }}</el-button>
             </template>
+          </el-table-column>
+          <el-table-column v-if="resource === 'account-deletions' && getAdminRoles().includes('SUPER_ADMIN')" label="操作" width="130" fixed="right">
+            <template #default="scope"><CancelAccountDeletionButton :request="scope.row" @cancelled="load" /></template>
           </el-table-column>
           <el-table-column v-if="resource === 'devices'" label="操作" width="100" fixed="right">
             <template #default="scope">

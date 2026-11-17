@@ -435,6 +435,17 @@ export class AdminController {
     return this.admin.deletionRequests();
   }
 
+  @Post("account-deletions/:id/cancel")
+  @AdminRoles(AdminRole.SUPER_ADMIN)
+  cancelAccountDeletion(
+    @CurrentAdmin() current: { id: string; role: string; roles?: string[] },
+    @Param("id") id: string,
+    @Body() input: unknown,
+    @Req() request: RequestWithContext,
+  ) {
+    return this.admin.cancelAccountDeletion(current, id, input, request.requestId);
+  }
+
   @Get("settings")
   settings() {
     return this.admin.settings();

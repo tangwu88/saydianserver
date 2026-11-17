@@ -1,6 +1,7 @@
 import { commerceOrderKindFilter } from "../commerce/commerce-order-filter";
 import { productPage, productCategoryFilter } from "../commerce/product-list-query";
 import { writeCnDisplaySetting } from "./cn-display-setting";
+import { cancelAccountDeletion } from "./account-deletion-cancellation";
 import { writeSayRingMapSetting } from "./say-ring-map-setting";
 import { orderErpSnapshot } from "../commerce/order-erp-snapshot";
 import { usCandidateInventory } from "./us-candidate-inventory";
@@ -1885,6 +1886,10 @@ export class AdminService {
         },
       });
     });
+  }
+
+  cancelAccountDeletion(current: { id: string; role: string; roles?: string[] }, id: string, input: unknown, requestId: string) {
+    return cancelAccountDeletion(this.prisma, current, id, input, requestId);
   }
 
   deletionRequests() {

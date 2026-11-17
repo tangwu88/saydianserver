@@ -439,6 +439,7 @@ export const notes = {
   "AdminController.createAdmin": entry("新建后台账号", "{username:3–50位字母数字_.-,displayName:1–50字,password:至少12字符,roles?,role?,active?}；角色见调用手册；至少一角色，默认只读", "无密码账号信息；400 返回字段校验 errorKey，409 admin_username_exists 表示账号重复"),
   "AdminController.updateAdmin": entry("编辑后台账号", "{displayName?,role?,active?}；当前不支持修改密码", "无密码账号信息"),
   "AdminController.deletionRequests": entry("注销任务列表", undefined, "注销任务及遮蔽会员资料；非手动执行删除接口"),
+  "AdminController.cancelAccountDeletion": entry("会员确认后撤销尚未执行的注销", "id=注销任务UUID；{expectedUserId,expectedRequestedAt,confirm:true,reason:5至200字}；仅超级管理员", "CANCELLED任务与ACTIVE账号；原资料保留，旧会话保持撤销；已处理或状态变化返回409", "PostgreSQL行锁、原子审计"),
   "SayHeathController.legal": entry("Product-specific reviewed terms and privacy version required to sign in"),
   "SayHeathController.privacy": entry("Published English product privacy page"),
   "SayHeathController.terms": entry("Published English product terms"),
