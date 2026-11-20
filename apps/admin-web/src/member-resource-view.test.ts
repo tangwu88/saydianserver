@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { canAdminResource } from "@saydian/app-contracts";
 import { createGlobalDownloadDraft, createSayRingDownloadDraft, globalDownloadEditorToManifest, globalDownloadManifestToEditor, sayRingDownloadEditorToManifest, sayRingDownloadManifestToEditor } from "./global-download-setting";
 import { downloadManifestToEditor as originalManifestToEditor, downloadEditorToManifest as originalEditorToManifest } from "./download-setting";
-import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, selectLegalDocumentProduct, selectLegalDocumentType } from "./legal-document-editor";
+import { createLegalDocumentDraft, legalDocumentEditorFromRow, legalDocumentPayload, legalDocumentTypeLabel, legalProductForDocumentType, legalProductLabel, selectLegalDocumentProduct, selectLegalDocumentType } from "./legal-document-editor";
 import { healthDeviceSource, healthMetricLabel, healthRawJson, healthTime } from "./health-display";
 import { groupCnDisplaySettings } from "./cn-settings";
 import { groupSayRingDisplaySettings } from "./say-ring-settings";
@@ -60,6 +60,7 @@ function harness(roles = ["SUPER_ADMIN"], readableErrorMessage = "网络不可�
   const onBeforeUnmount = vi.fn();
   const uploadAppPackageChunks = vi.fn();
   const deps = {
+    legalProductLabel,
     uploadAppPackageChunks,
     PackageUploadError,
     computed,
@@ -894,7 +895,7 @@ describe("product-scoped legal document admin", () => {
     expect(h.columns.value).toEqual(["legalProduct", "documentType", "locale", "version", "reviewed", "active", "publishedAt"]);
     await h.openCreate();
     expect(h.form.value).toMatchObject({ legalProduct: "saydian-global", documentType: "user_agreement", active: false, reviewed: false });
-    expect(h.sfc).toContain("Saydian Health 与 Say Ring 的协议独立保存、独立调用");
+    expect(h.sfc).toContain("各 App 的协议独立保存、独立调用");
     expect(h.sfc).toContain("已审核版本不可原地修改");
   });
 

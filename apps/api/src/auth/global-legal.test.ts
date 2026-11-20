@@ -3,6 +3,25 @@ import { globalLegalBundle, globalLegalProduct, sayRingMinimumAgeConsent } from 
 
 function document(type: string, locale = "en", version = "global-2026-09") { return { documentType: type, locale, version, contentHtml: "Synthetic reviewed document" }; }
 describe("published global legal consent bundle", () => {
+  it("selects only the CN product's matching simplified Chinese pair", async () => {
+    const rows = [document("user_agreement", "zh-Hans"), document("privacy_policy", "zh-Hans"), document("saydian_cn_user_agreement", "zh-Hans", "cn-v1"), document("saydian_cn_privacy_policy", "zh-Hans", "cn-v1")];
+    const findMany = vi.fn(async ({where}: any) => rows.filter(row => where.documentType.in.includes(row.documentType) && where.locale.in.includes(row.locale)));
+    const result = await globalLegalBundle({globalLegalDocument: {findMany}} as any, "en", "saydian-app-cn");
+    expect(result).toMatchObject({product: "saydian-app-cn", locale: "zh-Hans", consentVersion: "cn-v1"});
+    expect(result?.documents.privacyPolicy.path).toContain("/saydian_cn_privacy_policy?version=cn-v1&locale=zh-Hans");
+    expect(findMany.mock.calls[0]![0].where).toMatchObject({locale: {in: ["zh-Hans"]}, active: true, reviewed: true});
+  });
+  it("never serves global, ring, English, or mismatched CN revisions as CN consent", async () => {
+    for (const rows of [
+      [document("user_agreement", "zh-Hans"), document("privacy_policy", "zh-Hans")],
+      [document("say_ring_user_agreement", "zh-Hans"), document("say_ring_privacy_policy", "zh-Hans")],
+      [document("saydian_cn_user_agreement"), document("saydian_cn_privacy_policy")],
+      [document("saydian_cn_user_agreement", "zh-Hans", "v2"), document("saydian_cn_privacy_policy", "zh-Hans", "v1")],
+    ]) {
+      const findMany = async ({where}: any) => rows.filter(row => where.documentType.in.includes(row.documentType) && where.locale.in.includes(row.locale));
+      expect(await globalLegalBundle({globalLegalDocument: {findMany}} as any, "zh-Hans", "saydian-app-cn")).toBeNull();
+    }
+  });
   it("does not invent a consent version when no reviewed text is available", async () => {
     const findMany = vi.fn(async () => []); expect(await globalLegalBundle({ globalLegalDocument: { findMany } } as any, "en")).toBeNull();
     expect((findMany.mock.calls[0] as any)[0].where).toMatchObject({ active: true, reviewed: true, publishedAt: { lte: expect.any(Date) } });

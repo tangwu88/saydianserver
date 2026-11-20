@@ -68,8 +68,8 @@ export class GlobalAuthService {
     return {
       realm: "global",
       product,
-      defaultLocale: "en",
-      supportedLocales: [...globalLocales],
+      defaultLocale: product === "saydian-app-cn" ? "zh-Hans" : "en",
+      supportedLocales: product === "saydian-app-cn" ? ["zh-Hans"] : [...globalLocales],
       registration: {
         email: registrationOpen && (unverifiedRegistration || ready.email),
         sms: registrationOpen && (unverifiedRegistration || ready.sms),

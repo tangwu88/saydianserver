@@ -1,4 +1,4 @@
-export type LegalProduct = "saydian-global" | "say-ring" | "sayheath";
+export type LegalProduct = "saydian-global" | "say-ring" | "sayheath" | "saydian-app-cn";
 export type LegalDocumentEditor = Record<string, unknown> & {
   legalProduct: LegalProduct;
   documentType: string;
@@ -11,6 +11,7 @@ export type LegalDocumentEditor = Record<string, unknown> & {
 };
 
 const documentTypes: Record<LegalProduct, string[]> = {
+  "saydian-app-cn": ["saydian_cn_user_agreement", "saydian_cn_privacy_policy"],
   "saydian-global": ["user_agreement", "privacy_policy", "health_ai_analysis"],
   "sayheath": ["sayheath_user_agreement", "sayheath_privacy_policy"],
   "say-ring": [
@@ -21,6 +22,9 @@ const documentTypes: Record<LegalProduct, string[]> = {
   ],
 };
 const ringTypes = new Set(documentTypes["say-ring"]);
+export function legalProductLabel(product: LegalProduct): string {
+  return ({"saydian-global": "Saydian Health", "say-ring": "Say Ring", "sayheath": "SayHeath", "saydian-app-cn": "Saydian赛电（简体中文版）"})[product];
+}
 const emptyContent = {
   version: "",
   title: "",
@@ -32,6 +36,7 @@ const emptyContent = {
 export function legalProductForDocumentType(
   documentType: unknown,
 ): LegalProduct {
+  if (documentTypes["saydian-app-cn"].includes(String(documentType))) return "saydian-app-cn";
   if (documentTypes.sayheath.includes(String(documentType))) return "sayheath";
   return ringTypes.has(String(documentType)) ? "say-ring" : "saydian-global";
 }
@@ -42,6 +47,8 @@ export function legalDocumentTypeLabel(documentType: unknown): string {
       {
         user_agreement: "用户协议",
         privacy_policy: "隐私政策",
+        saydian_cn_user_agreement: "Saydian赛电用户协议",
+        saydian_cn_privacy_policy: "Saydian赛电隐私政策",
         health_ai_analysis: "健康 AI 分析说明",
         sayheath_user_agreement: "SayHeath 用户协议",
         sayheath_privacy_policy: "SayHeath 隐私政策",
@@ -61,7 +68,7 @@ export function createLegalDocumentDraft(
   return {
     legalProduct: product,
     documentType: documentTypes[product][0]!,
-    locale,
+    locale: product === "saydian-app-cn" ? "zh-Hans" : locale,
     ...emptyContent,
   };
 }
