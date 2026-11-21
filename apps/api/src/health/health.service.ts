@@ -77,20 +77,34 @@ export class HealthService {
     // and idempotency response must commit together; a failed commit is retryable.
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${"health-ingest:" + userId}, 0))`;
-      const existing = await tx.idempotencyRecord.findUnique({
-        where: { userId_scope_key: { userId, scope, key: idempotencyKey } },
-      });
-      if (existing) {
-        if (existing.requestHash !== requestHash) {
-          throw new ConflictException("同一幂等键不能用于不同的同步内容");
-        }
-        return existing.responseBody as unknown as HealthBatchResultContract;
+      const where = { userId_scope_key: { userId, scope, key: idempotencyKey } };
+      const existing = await tx.idempotencyRecord.findUnique({ where });
+      if (existing && existing.requestHash !== requestHash) {
+        throw new ConflictException("同一幂等键不能用于不同的同步内容");
       }
-      const acceptedIds: string[] = [];
-      const rejected: HealthBatchResultContract["rejected"] = [];
-      let lastRecord: HealthRecordInputContract | undefined;
-      for (const raw of rawRecords) {
-        const result = validateHealthRecord(raw);
+      const cached = existing?.responseBody as unknown as HealthBatchResultContract | undefined;
+      // Legacy compatibility callers hash their source request, not the exact
+      // derived records. Only reconsider cached rejections from exact V2 retries.
+      if (cached && legacyRequest) return cached;
+      const previousTimeRejections = new Set(cached?.rejected
+        .filter(({ code }) => code === "future_time" || code === "invalid_source")
+        .map(({ id }) => id));
+      if (cached && previousTimeRejections.size === 0) return cached;
+      const validated = rawRecords.map(validateHealthRecord);
+      const retriedIds = new Set<string>();
+      const acceptedIds = [...(cached?.acceptedIds ?? [])];
+      const acknowledged = new Set(acceptedIds);
+      // Old versions rejected future record times and future source times.
+      // Current validation still rejects malformed source data.
+      const recordsToWrite = cached ? validated.filter((result) => {
+        if (!result.valid || !previousTimeRejections.has(result.record.id)
+          || acknowledged.has(result.record.id) || retriedIds.has(result.record.id)) return false;
+        retriedIds.add(result.record.id);
+        return true;
+      }) : validated;
+      if (cached && recordsToWrite.length === 0) return cached;
+      const rejected = cached?.rejected.filter(({ id }) => !retriedIds.has(id)) ?? [];
+      for (const result of recordsToWrite) {
         if (!result.valid) {
           rejected.push(result.rejection);
           continue;
@@ -98,7 +112,7 @@ export class HealthService {
         try {
           await this.saveRecord(tx, userId, result.record);
           acceptedIds.push(result.record.id);
-          lastRecord = result.record;
+          acknowledged.add(result.record.id);
         } catch (error) {
           // These checks run before any write for the record. SQL/storage failures
           // must abort the transaction, never become a false accepted duplicate.
@@ -110,6 +124,10 @@ export class HealthService {
           });
         }
       }
+      let lastRecord: HealthRecordInputContract | undefined;
+      for (const result of validated) {
+        if (result.valid && acknowledged.has(result.record.id)) lastRecord = result.record;
+      }
       const response: HealthBatchResultContract = {
         acceptedIds,
         rejected,
@@ -117,13 +135,20 @@ export class HealthService {
           ? Buffer.from(`${lastRecord.observedAt}|${lastRecord.id}`).toString("base64url")
           : typeof body.cursor === "string" ? body.cursor : null,
       };
-      await tx.idempotencyRecord.create({
-        data: {
-          userId, scope, key: idempotencyKey, requestHash, responseCode: 200,
-          responseBody: response as unknown as Prisma.InputJsonValue,
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        },
-      });
+      if (existing) {
+        await tx.idempotencyRecord.update({
+          where,
+          data: { responseBody: response as unknown as Prisma.InputJsonValue },
+        });
+      } else {
+        await tx.idempotencyRecord.create({
+          data: {
+            userId, scope, key: idempotencyKey, requestHash, responseCode: 200,
+            responseBody: response as unknown as Prisma.InputJsonValue,
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
       return response;
     }, { maxWait: 10_000, timeout: 30_000 });
   }

@@ -17,6 +17,32 @@ describe("health record validation", () => {
     if (result.valid) expect(result.record.values).toEqual({ bpm: 75 });
   });
 
+  it("keeps reported measurement and sleep window times even in the future", () => {
+    const startAt = "2099-01-02T00:00:00.000Z";
+    const endAt = "2099-01-02T07:30:00.000Z";
+    const sleepWindows = [{ startAt, endAt, date: "2099-01-02", kind: "night" }];
+    const result = validateHealthRecord({
+      ...validRecord,
+      metric: "sleep",
+      observedAt: endAt,
+      values: { hours: 7.5 },
+      source: { ...validRecord.source, sleepWindows },
+    });
+    expect(result).toMatchObject({
+      valid: true,
+      record: {
+        observedAt: endAt,
+        timezoneOffsetMinutes: 480,
+        values: { hours: 7.5 },
+        source: { sleepWindows },
+      },
+    });
+    expect(validateHealthRecord({ ...validRecord, observedAt: "invalid" })).toMatchObject({
+      valid: false,
+      rejection: { code: "invalid_time" },
+    });
+  });
+
   it("rejects legacy metric spellings at the canonical boundary", () => {
     const result = validateHealthRecord({ ...validRecord, metric: "heartReat" });
     expect(result.valid).toBe(false);
@@ -109,4 +135,9 @@ it("preserves U19 day precision and rejects day metadata without matching aggreg
   expect(validateHealthRecord(row).valid).toBe(true);
   expect(validateHealthRecord({...row,aggregation:undefined}).valid).toBe(false);
   expect(validateHealthRecord({...row,source:{...row.source,vendor:"qring"}}).valid).toBe(false);
+  const observedAt = "2099-11-01T05:00:00Z";
+  expect(validateHealthRecord({
+    ...row,
+    source: { ...row.source, provenance: { ...row.source.provenance, observedAt } },
+  })).toMatchObject({ valid: true, record: { source: { provenance: { observedAt } } } });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { HealthService, healthPageCursor, healthPageFilter } from "./health.service";
 import type { PrismaService } from "../common/prisma.service";
+import { sha256 } from "../common/crypto";
 
 const userId = "11111111-1111-4111-a111-111111111111";
 const rowId = "22222222-2222-4222-a222-222222222222";
@@ -41,6 +42,12 @@ function harness() {
     idempotencyRecord: {
       findUnique: vi.fn(async ({ where }: any) => idempotency.find(r => r.key === where.userId_scope_key.key) ?? null),
       create: vi.fn(async ({ data }: any) => { if (failCommit) throw new Error("synthetic storage failure"); idempotency.push(data); return data; }),
+      update: vi.fn(async ({ where, data }: any) => {
+        if (failCommit) throw new Error("synthetic storage failure");
+        const row = idempotency.find(r => r.key === where.userId_scope_key.key);
+        Object.assign(row, data);
+        return row;
+      }),
     },
     deviceBinding: { findUnique: vi.fn(async () => null) },
     fileObject: { findUnique: vi.fn(async () => null) },
@@ -71,6 +78,56 @@ describe("health ingestion durable idempotency", () => {
     await h.service.ingestBatch(userId, "same-request-key", { records: [inputRecord()] });
     await expect(h.service.ingestBatch(userId, "same-request-key", { records: [inputRecord("other")] })).rejects.toThrow("同一幂等键");
     expect(h.rows()).toHaveLength(1);
+  });
+  it("recovers cached time rejections under the same key without duplicating accepted records", async () => {
+    const h = harness();
+    const key = "pre-upgrade-request";
+    const alreadyAccepted = inputRecord();
+    const observedAt = "2099-01-02T09:00:00.000Z";
+    const future = { ...inputRecord("future"), observedAt };
+    const sleep = {
+      ...inputRecord("sleep"),
+      metric: "sleep",
+      values: { hours: 8 },
+      source: {
+        ...future.source,
+        sleepWindows: [{
+          startAt: "2099-01-02T01:00:00.000Z",
+          endAt: observedAt,
+          kind: "night",
+          date: "2099-01-02",
+        }],
+      },
+    };
+    const invalid = { ...inputRecord("malformed"), source: { platform: "invalid" } };
+    const body = { records: [future, sleep, alreadyAccepted, invalid] };
+    const initial = await h.service.ingestBatch(userId, "existing-request", { records: [alreadyAccepted] });
+    h.idem().push({
+      key,
+      requestHash: sha256(JSON.stringify(body)),
+      responseBody: {
+        ...initial,
+        rejected: [
+          { id: future.id, code: "future_time", message: "old timestamp cutoff" },
+          { id: sleep.id, code: "invalid_source", message: "old window cutoff" },
+          { id: invalid.id, code: "invalid_source", message: "malformed source" },
+        ],
+      },
+    });
+
+    const result = await h.service.ingestBatch(userId, key, body);
+    expect(result.acceptedIds).toEqual(expect.arrayContaining([alreadyAccepted.id, future.id, sleep.id]));
+    expect(result.acceptedIds).toHaveLength(3);
+    expect(result.rejected).toMatchObject([{ id: invalid.id, code: "invalid_source" }]);
+    expect(result.nextCursor).toBe(initial.nextCursor);
+    expect(h.rows().find(row => row.clientRecordId === future.id)).toMatchObject({
+      observedAt: new Date(observedAt),
+      timezoneOffsetMinutes: future.timezoneOffsetMinutes,
+      values: future.values,
+    });
+    expect(await h.service.ingestBatch(userId, key, body)).toEqual(result);
+    expect(h.tx.idempotencyRecord.update).toHaveBeenCalledTimes(1);
+    expect(h.tx.healthRecord.create).toHaveBeenCalledTimes(3);
   });
   it("accepts an identical record on a different key regardless of value key order", async () => {
     const h = harness(), record = inputRecord();

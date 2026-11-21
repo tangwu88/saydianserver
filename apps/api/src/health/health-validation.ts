@@ -30,9 +30,6 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
   if (Number.isNaN(observedAt.valueOf())) {
     return rejected(id, "invalid_time", "测量时间不正确");
   }
-  if (observedAt.valueOf() > Date.now() + 10 * 60_000) {
-    return rejected(id, "future_time", "测量时间超出允许范围");
-  }
   const timezoneOffsetMinutes = Number(raw.timezoneOffsetMinutes);
   if (
     !Number.isInteger(timezoneOffsetMinutes) ||
@@ -116,7 +113,7 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
         if (sourceRaw.vendor !== "urion" || sourceRaw.deviceCategory !== "watch" || !hasAggregation ||
             (k === "timePrecision" && v !== "day") ||
             (k === "aggregationLocalDate" && v !== aggregationLocalDate) ||
-            (k === "observedAt" && (typeof v !== "string" || !Number.isFinite(Date.parse(v)) || Date.parse(v)>Date.now()+600000))) return rejected(id,"invalid_source","日汇总来源不正确");
+            (k === "observedAt" && (typeof v !== "string" || !Number.isFinite(Date.parse(v))))) return rejected(id,"invalid_source","日汇总来源不正确");
         continue;
       }
       if(strings[k]?!strings[k].includes(String(v)):k==="contactVerified"?typeof v!=="boolean":typeof v!=="number"||!Number.isFinite(v)||v<0||v>86400)return rejected(id,"invalid_source","采样信息不正确");
@@ -129,7 +126,7 @@ export function validateHealthRecord(value: unknown): HealthValidationResult {
     const normalized=[];
     for(const rawWindow of windows){
       const w=safeObject(rawWindow),start=new Date(String(w.startAt)),end=new Date(String(w.endAt));
-      if(!["night","nap"].includes(String(w.kind))||!/^\d{4}-\d{2}-\d{2}$/.test(String(w.date))||!Number.isFinite(+start)||!Number.isFinite(+end)||+end<=+start||+end-+start>86400000||+end>Date.now()+600000)return rejected(id,"invalid_source","睡眠时间窗不正确");
+      if(!["night","nap"].includes(String(w.kind))||!/^\d{4}-\d{2}-\d{2}$/.test(String(w.date))||!Number.isFinite(+start)||!Number.isFinite(+end)||+end<=+start||+end-+start>86400000)return rejected(id,"invalid_source","睡眠时间窗不正确");
       normalized.push({startAt:start.toISOString(),endAt:end.toISOString(),kind:String(w.kind),date:String(w.date)});
     }
     metadata.sleepWindows=normalized;
