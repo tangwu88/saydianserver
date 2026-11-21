@@ -232,3 +232,34 @@ test("wrong range integrity never retries or creates an archive", async () => {
     assert.deepEqual(await readdir(root), []);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test("slow recovery uses a bounded wider download window and still verifies every byte", async () => {
+  const root = await mkdtemp(join(tmpdir(), "saydian-parallel-test-"));
+  try {
+    const bytes = 40 * size, expected = createHash("sha256");
+    for (let index = 0; index < 40; index++) expected.update(new Uint8Array(size).fill(index));
+    const digest = `sha256:${expected.digest("hex")}`;
+    let active = 0, peak = 0, ranges = 0;
+    const request = async (url, init) => {
+      if (url.endsWith("/123")) return Response.json({ ...metadata, size_in_bytes: bytes, digest });
+      if (url.endsWith("/zip")) return new Response(null, { status: 302, headers: { location: "https://fixture.blob.core.windows.net/artifact?signature=private" } });
+      assert.equal(init.headers.authorization, undefined);
+      const [, first, last] = init.headers.range.match(/^bytes=(\d+)-(\d+)$/);
+      active++; peak = Math.max(peak, active); ranges++;
+      // 模拟各分片独立的网络等待，验证并发确实扩大但仍受固定上限约束。
+      await new Promise(resolve => setTimeout(resolve, 10));
+      active--;
+      return new Response(new Uint8Array(Number(last) - Number(first) + 1).fill(Number(first) / size), {
+        status: 206, headers: { "content-range": `bytes ${first}-${last}/${bytes}` },
+      });
+    };
+    const result = await downloadArtifact(revision, artifactId, token, join(root, "runtime.zip"), request);
+    assert(peak > 8, `Only ${peak} downloads overlapped; the slow-path window did not widen`);
+    assert(peak <= 32, `Unbounded recovery concurrency: ${peak}`);
+    assert.equal(ranges, 40);
+    assert.equal(result.sizeBytes, bytes);
+    assert.equal(result.digest, digest);
+    assert.equal(result.verified, true);
+    assert.deepEqual(await readdir(root), ["runtime.zip"]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
