@@ -382,6 +382,12 @@ describe("global administrator legal-document data source", () => {
     reviewed: true,
     publishedAt: "2026-09-10T00:00:00Z",
   };
+  it("publishes CN text only within its own type and locale", async () => {
+    const h = harness();
+    await h.service.saveLegalDocument(undefined, {...input, documentType: "saydian_cn_privacy_policy", locale: "zh-Hans"});
+    expect(h.globalLegalDocument.updateMany).toHaveBeenCalledWith({where: {documentType: "saydian_cn_privacy_policy", locale: "zh-Hans"}, data: {active: false}});
+    await expect(h.service.saveLegalDocument(undefined, {...input, documentType: "saydian_cn_user_agreement", locale: "en"})).rejects.toThrow("只支持简体中文");
+  });
 
   it("lists the global QA documents rather than the empty legacy table", async () => {
     const h = harness();

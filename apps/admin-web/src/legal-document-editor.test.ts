@@ -10,6 +10,16 @@ import {
 } from "./legal-document-editor";
 
 describe("product-scoped legal document editor", () => {
+  it("creates CN documents separately in simplified Chinese and clears copied content", () => {
+    expect(createLegalDocumentDraft("saydian-app-cn", "en")).toMatchObject({legalProduct: "saydian-app-cn", documentType: "saydian_cn_user_agreement", locale: "zh-Hans", active: false, reviewed: false});
+    const other = {...createLegalDocumentDraft("say-ring"), contentHtml: "Synthetic other product text", version: "other-v1"};
+    const cn = selectLegalDocumentProduct(other, "saydian-app-cn");
+    expect(cn.contentHtml).toBe("");
+    expect(cn.version).toBe("");
+    expect(legalProductForDocumentType("saydian_cn_privacy_policy")).toBe("saydian-app-cn");
+    expect(() => selectLegalDocumentType(cn, "privacy_policy")).toThrow();
+    expect(() => legalDocumentPayload({...cn, active: true})).toThrow();
+  });
   it("assigns sleep analysis only to Say Ring and preserves independent notice publication", () => {
     expect(legalProductForDocumentType("say_ring_sleep_analysis")).toBe(
       "say-ring",

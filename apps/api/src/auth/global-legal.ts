@@ -2,10 +2,14 @@ import type { Prisma } from "@prisma/client";
 import { globalError, globalLocale } from "./global-identity";
 
 export const defaultGlobalLegalProduct = "saydian-global" as const;
-export type GlobalLegalProduct = typeof defaultGlobalLegalProduct | "say-ring";
+export type GlobalLegalProduct = typeof defaultGlobalLegalProduct | "say-ring" | "saydian-app-cn";
 export const sayRingMinimumAge = 14;
 
 const documentTypesByProduct = {
+  "saydian-app-cn": {
+    userAgreement: "saydian_cn_user_agreement",
+    privacyPolicy: "saydian_cn_privacy_policy",
+  },
   "saydian-global": {
     userAgreement: "user_agreement",
     privacyPolicy: "privacy_policy",
@@ -19,7 +23,7 @@ const documentTypesByProduct = {
 export function globalLegalProduct(input: unknown): GlobalLegalProduct {
   const product = String(input ?? "").trim();
   if (!product || product === defaultGlobalLegalProduct) return defaultGlobalLegalProduct;
-  if (product === "say-ring") return product;
+  if (product === "say-ring" || product === "saydian-app-cn") return product;
   throw globalError(400, "invalid_product", "Choose a supported product.");
 }
 
@@ -35,8 +39,8 @@ export async function globalLegalReference(prisma: Pick<Prisma.TransactionClient
 export async function globalLegalBundle(prisma: Pick<Prisma.TransactionClient, "globalLegalDocument">, localeInput: unknown, productInput?: unknown) {
   const product = globalLegalProduct(productInput);
   const documentTypes = documentTypesByProduct[product];
-  const preferred = globalLocale(localeInput);
-  const locales = preferred === "en" ? ["en"] : [preferred, "en"];
+  const preferred = product === "saydian-app-cn" ? "zh-Hans" : globalLocale(localeInput);
+  const locales = product === "saydian-app-cn" ? ["zh-Hans"] : preferred === "en" ? ["en"] : [preferred, "en"];
   const rows = await prisma.globalLegalDocument.findMany({ where: { locale: { in: locales }, documentType: { in: [documentTypes.userAgreement, documentTypes.privacyPolicy] }, active: true, reviewed: true, publishedAt: { lte: new Date() } }, orderBy: { publishedAt: "desc" } });
   for (const locale of locales) {
     const terms = rows.find(row => row.locale === locale && row.documentType === documentTypes.userAgreement);

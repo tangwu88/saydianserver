@@ -1745,6 +1745,9 @@ export class AdminService {
     {
       const locale = globalLocale(body.locale);
       const reviewed = body.reviewed === true;
+      if (["saydian_cn_user_agreement", "saydian_cn_privacy_policy"].includes(data.documentType) && locale !== "zh-Hans") {
+        throw new BadRequestException("Saydian赛电中文版协议只支持简体中文");
+      }
       if (data.active && !reviewed)
         throw new BadRequestException(
           "Review the global document before publishing it.",
@@ -1753,6 +1756,8 @@ export class AdminService {
         ![
           "user_agreement",
           "privacy_policy",
+          "saydian_cn_user_agreement",
+          "saydian_cn_privacy_policy",
           "say_ring_user_agreement",
           "say_ring_privacy_policy",
           "sayheath_privacy_policy",
