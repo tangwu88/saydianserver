@@ -22,6 +22,7 @@ import { LegacyModule } from "./legacy/legacy.module";
 import { MembersModule } from "./members/members.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { StatusController } from "./status.controller";
+import { RingExperienceModule } from "./ring-experience/ring-experience.module";
 import { SupportModule } from "./support/support.module";
 import { UniversalLinksController } from "./universal-links.controller";
 import { PartnerModule } from "./partners/partner.module";
@@ -43,6 +44,7 @@ import { GiftModule } from "./gifts/gift.module";
     NotificationsModule,
     ContentModule,
     SupportModule,
+    RingExperienceModule,
     CommerceModule,
     CommerceEvidenceModule,
     CommerceWithdrawalModule,
