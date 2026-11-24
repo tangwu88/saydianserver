@@ -395,3 +395,4 @@ export * from "./health-screen";
 
 export * from "./health-score-catalog";
 export * from "./jushuitan-renewal";
+export * from "./gift-card-numbers";

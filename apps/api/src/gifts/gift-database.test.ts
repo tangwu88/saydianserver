@@ -385,6 +385,157 @@ describe.runIf(process.env.RUN_GIFT_DATABASE_TESTS === "1")(
         }),
       ).toBe(1);
     });
+    it("rebinds and activates pasted management numbers across batches without changing credentials", async () => {
+      const a = await issue(),
+        b = await issue(),
+        untouched = await issue();
+      const other = await prisma.commerceProduct.create({
+        data: {
+          erpItemId: randomUUID(),
+          name: "批量换绑合成礼品",
+          status: "PUBLISHED",
+          gallery: [],
+          tags: [],
+          skus: {
+            create: {
+              erpSkuId: randomUUID(),
+              erpItemId: "bulk-other",
+              stock: 3,
+              salePriceCents: 32000,
+            },
+          },
+        },
+        include: { skus: true },
+      });
+      const numbers = `${a.card.number}，${b.card.number}\n${a.card.number}`;
+      expect(
+        await gifts.change(
+          adminId,
+          {
+            action: "BIND",
+            numbers,
+            reason: "合成批量换绑",
+            productId: other.id,
+            allowedSkuIds: [other.skus[0]!.id],
+            expiresAt: null,
+          },
+          context(),
+        ),
+      ).toEqual({ changed: 2 });
+      expect(
+        await gifts.change(
+          adminId,
+          {
+            action: "ACTIVATE",
+            numbers,
+            reason: "合成批量开启",
+            downloadConfirmed: true,
+          },
+          context(),
+        ),
+      ).toEqual({ changed: 2 });
+      for (const original of [a.card, b.card]) {
+        const updated = await prisma.commerceGiftCard.findUniqueOrThrow({
+          where: { id: original.id },
+        });
+        expect(updated).toMatchObject({
+          cardNo: original.cardNo,
+          secretHash: original.secretHash,
+          productId: other.id,
+          allowedSkuIds: [other.skus[0]!.id],
+          status: "ACTIVE",
+          version: 2,
+        });
+        expect(
+          await prisma.auditLog.count({
+            where: {
+              entityId: original.id,
+              action: { in: ["GIFT_CARD_BIND", "GIFT_CARD_ACTIVATE"] },
+            },
+          }),
+        ).toBe(2);
+      }
+      expect(
+        await prisma.commerceGiftCard.findUniqueOrThrow({
+          where: { id: untouched.card.id },
+        }),
+      ).toEqual(untouched.card);
+    });
+    it("refuses missing or non-draft management numbers before changing any card", async () => {
+      const a = await issue(),
+        b = await ready();
+      for (const action of ["ACTIVATE", "BIND"]) {
+        for (const number of [2147483647, b.card.number]) {
+          await expect(
+            gifts.change(
+              adminId,
+              {
+                action,
+                numbers: [a.card.number, number],
+                reason: "合成整批拒绝",
+                downloadConfirmed: true,
+                productId: product.id,
+                allowedSkuIds: [product.skus[0].id],
+              },
+              context(),
+            ),
+          ).rejects.toThrow("整批未处理");
+          expect(
+            await prisma.commerceGiftCard.findUniqueOrThrow({
+              where: { id: a.card.id },
+            }),
+          ).toEqual(a.card);
+        }
+      }
+      expect(
+        await prisma.auditLog.count({
+          where: {
+            entityId: a.card.id,
+            action: { in: ["GIFT_CARD_BIND", "GIFT_CARD_ACTIVATE"] },
+          },
+        }),
+      ).toBe(0);
+    });
+    it("serializes overlapping number batches so each card is activated and audited once", async () => {
+      const a = await issue(),
+        b = await issue();
+      const results = await Promise.allSettled(
+        [0, 1].map((index) =>
+          gifts.change(
+            adminId,
+            {
+              action: "ACTIVATE",
+              numbers: index
+                ? [b.card.number, a.card.number]
+                : [a.card.number, b.card.number],
+              reason: `合成并发开启${index}`,
+              downloadConfirmed: true,
+            },
+            context(),
+          ),
+        ),
+      );
+      expect(
+        results.filter((result) => result.status === "fulfilled"),
+      ).toHaveLength(1);
+      expect(
+        results.filter((result) => result.status === "rejected"),
+      ).toHaveLength(1);
+      const cards = await prisma.commerceGiftCard.findMany({
+        where: { id: { in: [a.card.id, b.card.id] } },
+      });
+      expect(
+        cards.every((card) => card.status === "ACTIVE" && card.version === 1),
+      ).toBe(true);
+      expect(
+        await prisma.auditLog.count({
+          where: {
+            entityId: { in: [a.card.id, b.card.id] },
+            action: "GIFT_CARD_ACTIVATE",
+          },
+        }),
+      ).toBe(2);
+    });
     it("requires fresh gift SMS, persists failed attempts, rejects replay and reuses the verified member", async () => {
       const a = await ready(),
         mobile = String(++phone);

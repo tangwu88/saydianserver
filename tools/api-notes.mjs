@@ -64,7 +64,7 @@ export const notes = {
   "GiftAdminController.settings": entry("查看礼品兑换开放状态","无","{enabled}","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
   "GiftAdminController.qr": entry("查看礼品卡二维码","id为兑换卡UUID","{serialNo,cardNo,link,qrDataUrl}；二维码不含校验码","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
   "GiftAdminController.generate": entry("生成礼品卡并首次导出明文","{name,quantity:1至100,productId,allowedSkuIds,expiresAt?,requestKey}","{batchId,batchNo,alreadyGenerated,filename,csv}；明文仅首次响应，重试csv=null；只存bcrypt哈希；新卡未启用","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
-  "GiftAdminController.change": entry("启用、改绑或作废礼品卡","{action:ACTIVATE/BIND/VOID,ids或batchId,reason,version?,downloadConfirmed?,productId?,allowedSkuIds?,expiresAt?}","{changed}；仅未启用卡可改绑，跨商品改绑保留最初发卡商品编号","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
+  "GiftAdminController.change": entry("启用、改绑或作废礼品卡","{action:ACTIVATE/BIND/VOID,ids或batchId或numbers,reason,version?,downloadConfirmed?,productId?,allowedSkuIds?,expiresAt?}","{changed}；numbers仅开启/换绑，支持粘贴分隔文本或数组，去重后最多100个管理编号，缺失或非未启用整批拒绝；仅未启用卡可改绑，跨商品改绑保留原卡号和校验码","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
   "GiftAdminController.configure": entry("开放或暂停礼品兑换","{enabled:boolean}","{enabled}；默认关闭，审计记录；不改变原维护状态","主库礼品兑换；鉴权、分维度限频和不可变交易记录"),
 
   "FilesController.image": entry("公开商品图片轻量版本", "id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选", "WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404", "只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界"),

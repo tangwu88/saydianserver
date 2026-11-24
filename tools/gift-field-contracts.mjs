@@ -252,6 +252,24 @@ export const giftFieldContracts = {
         ids: list(id),
         batchId: id,
         reason: { type: "string", minLength: 1, maxLength: 200 },
+        numbers: {
+          description:
+            "管理编号；仅ACTIVATE/BIND，不能与ids或batchId混用；自动去重，最多100个不同编号，任一不存在或非DRAFT整批拒绝",
+          oneOf: [
+            { type: "string", maxLength: 10000 },
+            {
+              type: "array",
+              minItems: 1,
+              maxItems: 1000,
+              items: {
+                oneOf: [
+                  { type: "integer", minimum: 1, maximum: 2147483647 },
+                  { type: "string", pattern: "^[0-9]+$" },
+                ],
+              },
+            },
+          ],
+        },
         version: { type: "integer", minimum: 0 },
         downloadConfirmed: flag,
       },
