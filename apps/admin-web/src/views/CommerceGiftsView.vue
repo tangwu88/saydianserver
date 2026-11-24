@@ -332,10 +332,10 @@ onMounted(async () => {
         >全部批次</el-button
       ><template v-if="writable && tab === 'cards'">
         <el-button :disabled="busy || loading" @click="openBulk('ACTIVATE')"
-          >按编号批量开启</el-button
+          >按卡号批量开启</el-button
         >
         <el-button :disabled="busy || loading" @click="openBulk('BIND')"
-          >按编号批量换绑</el-button
+          >按卡号批量换绑</el-button
         > </template
       ><template v-if="writable && tab === 'cards' && selected.length"
         ><el-button

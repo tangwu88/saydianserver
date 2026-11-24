@@ -27,3 +27,29 @@ export function parseGiftCardNumbers(input: unknown): number[] {
   }
   return [...numbers];
 }
+
+/** Eight-digit redemption card numbers, kept as strings and never resolved as management IDs. */
+export function parseGiftCardNos(input: unknown): string[] {
+  const invalid = () =>
+    new Error(
+      "请输入8位且以8开头的礼品卡号，例如80100611，用换行、逗号或空格分隔",
+    );
+  let parts: unknown[];
+  if (typeof input === "string" && input.length <= 10_000)
+    parts = input
+      .trim()
+      .split(/[\s,，;；、]+/u)
+      .filter(Boolean);
+  else if (Array.isArray(input) && input.length <= 1000) parts = input;
+  else throw invalid();
+  if (!parts.length) throw invalid();
+  const cardNos = new Set<string>();
+  for (const part of parts) {
+    if (typeof part !== "string" || !/^8\d{7}$/.test(part.trim()))
+      throw invalid();
+    cardNos.add(part.trim());
+    if (cardNos.size > 100)
+      throw new Error("每次最多处理100个不同卡号，请分批操作");
+  }
+  return [...cardNos];
+}

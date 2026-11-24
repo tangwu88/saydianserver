@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
-import { parseGiftCardNumbers } from "@saydian/app-contracts";
+import { parseGiftCardNos } from "@saydian/app-contracts";
 import {
   adminSessionKey,
   api,
@@ -39,9 +39,9 @@ const chosen = computed(() =>
 );
 const parsed = computed(() => {
   try {
-    return { numbers: parseGiftCardNumbers(input.value), error: "" };
+    return { cardNos: parseGiftCardNos(input.value), error: "" };
   } catch (error) {
-    return { numbers: [] as number[], error: (error as Error).message };
+    return { cardNos: [] as string[], error: (error as Error).message };
   }
 });
 let revision = 0,
@@ -124,7 +124,7 @@ async function submit() {
   try {
     const response = await api.post("/commerce-gift-cards/actions", {
       action: props.action,
-      numbers: parsed.value.numbers,
+      cardNos: parsed.value.cardNos,
       reason: reason.value.trim(),
       ...(props.action === "ACTIVATE"
         ? { downloadConfirmed: true }
@@ -152,7 +152,7 @@ async function submit() {
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="action === 'ACTIVATE' ? '按编号批量开启' : '按编号批量换绑'"
+    :title="action === 'ACTIVATE' ? '按卡号批量开启' : '按卡号批量换绑'"
     width="min(620px, 94vw)"
     :close-on-click-modal="false"
     :close-on-press-escape="!busy"
@@ -163,22 +163,22 @@ async function submit() {
       type="info"
       :closable="false"
       show-icon
-      title="仅处理未启用卡片；编号不存在或状态不符时，整批不处理。"
+      title="仅处理未启用卡片；卡号不存在或状态不符时，整批不处理。"
     />
     <el-form label-position="top" :disabled="busy || loading" class="bulk-form">
-      <el-form-item label="礼品卡编号" required>
+      <el-form-item label="礼品卡号" required>
         <el-input
           v-model="input"
           type="textarea"
           :rows="5"
           :maxlength="10000"
-          placeholder="例如：1，2，3；也可以每行一个编号"
+          placeholder="例如：80100611，80100612；也可以每行一个卡号"
         />
         <div class="hint">
-          填写列表中的“编号”（不是卡号），支持换行、逗号、空格；每次最多100个，重复编号自动去重。
+          填写8位卡号，例如80100611，支持换行、逗号、空格；每次最多100个，重复卡号自动去重。
         </div>
-        <div v-if="parsed.numbers.length" class="hint">
-          共 {{ parsed.numbers.length }} 个编号：{{ parsed.numbers.join("、") }}
+        <div v-if="parsed.cardNos.length" class="hint">
+          共 {{ parsed.cardNos.length }} 个卡号：{{ parsed.cardNos.join("、") }}
         </div>
         <div v-else-if="input.trim()" class="validation">
           {{ parsed.error }}
@@ -220,7 +220,7 @@ async function submit() {
           />
         </el-form-item>
         <div class="hint">
-          将统一修改这些编号对应卡片的商品、可兑规格和有效期，原卡号及校验码保留。
+          将统一修改这些卡号对应卡片的商品、可兑规格和有效期，原卡号及校验码保留。
         </div>
       </template>
       <el-form-item label="操作原因" required
@@ -242,10 +242,10 @@ async function submit() {
       <el-button
         type="primary"
         :loading="busy"
-        :disabled="loading || !parsed.numbers.length"
+        :disabled="loading || !parsed.cardNos.length"
         @click="submit"
         >确认{{ action === "ACTIVATE" ? "开启" : "换绑" }}
-        {{ parsed.numbers.length }} 张</el-button
+        {{ parsed.cardNos.length }} 张</el-button
       >
     </template>
   </el-dialog>

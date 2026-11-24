@@ -27329,8 +27329,8 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/gifts/gift.controller.ts",
       "summary": "启用、改绑或作废礼品卡",
-      "request": "{action:ACTIVATE/BIND/VOID,ids或batchId或numbers,reason,version?,downloadConfirmed?,productId?,allowedSkuIds?,expiresAt?}",
-      "response": "{changed}；numbers仅开启/换绑，支持粘贴分隔文本或数组，去重后最多100个管理编号，缺失或非未启用整批拒绝；仅未启用卡可改绑，跨商品改绑保留原卡号和校验码",
+      "request": "{action:ACTIVATE/BIND/VOID,ids或batchId或cardNos或兼容numbers,reason,version?,downloadConfirmed?,productId?,allowedSkuIds?,expiresAt?}",
+      "response": "{changed}；cardNos为8位且8开头卡号（如80100611），仅开启/换绑，与numbers/ids/batchId互斥；支持粘贴分隔文本或字符串数组，去重后最多100个，缺失或非未启用整批拒绝；numbers保留旧管理编号兼容；仅未启用卡可改绑，跨商品改绑保留原卡号和校验码",
       "dependency": "主库礼品兑换；鉴权、分维度限频和不可变交易记录",
       "successStatus": 201,
       "contract": {
@@ -27381,6 +27381,25 @@ export const apiCatalog = {
               "type": "string",
               "minLength": 1,
               "maxLength": 200
+            },
+            "cardNos": {
+              "description": "8位且8开头的卡号，如80100611；仅ACTIVATE/BIND，与numbers/ids/batchId互斥；自动去重最多100个，缺失或非DRAFT整批拒绝",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 10000
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1000,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^8[0-9]{7}$"
+                  }
+                }
+              ]
             },
             "numbers": {
               "description": "管理编号；仅ACTIVATE/BIND，不能与ids或batchId混用；自动去重，最多100个不同编号，任一不存在或非DRAFT整批拒绝",

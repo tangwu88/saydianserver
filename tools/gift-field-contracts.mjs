@@ -252,6 +252,19 @@ export const giftFieldContracts = {
         ids: list(id),
         batchId: id,
         reason: { type: "string", minLength: 1, maxLength: 200 },
+        cardNos: {
+          description:
+            "8位且8开头的卡号，如80100611；仅ACTIVATE/BIND，与numbers/ids/batchId互斥；自动去重最多100个，缺失或非DRAFT整批拒绝",
+          oneOf: [
+            { type: "string", minLength: 1, maxLength: 10000 },
+            {
+              type: "array",
+              minItems: 1,
+              maxItems: 1000,
+              items: { type: "string", pattern: "^8[0-9]{7}$" },
+            },
+          ],
+        },
         numbers: {
           description:
             "管理编号；仅ACTIVATE/BIND，不能与ids或batchId混用；自动去重，最多100个不同编号，任一不存在或非DRAFT整批拒绝",

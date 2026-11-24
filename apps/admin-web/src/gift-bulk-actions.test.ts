@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { describe, expect, it, vi } from "vitest";
-import { parseGiftCardNumbers } from "@saydian/app-contracts";
+import { parseGiftCardNos } from "@saydian/app-contracts";
 
 function harness() {
   const sfc = readFileSync(
@@ -47,7 +47,7 @@ function harness() {
     computed,
     watch,
     api,
-    parseGiftCardNumbers,
+    parseGiftCardNos,
     defineProps: () => props,
     defineEmits: () => emit,
     onBeforeUnmount: (fn: () => void) => {
@@ -89,12 +89,12 @@ function deferred() {
 async function open(h: ReturnType<typeof harness>) {
   h.props.modelValue = true;
   await nextTick();
-  h.dialog.input.value = "1，2\n001";
+  h.dialog.input.value = "80100611，80100612\n80100611";
   h.dialog.reason.value = "批量处理";
   h.dialog.confirmed.value = true;
 }
 describe("gift bulk action dialog", () => {
-  it("submits deduplicated management numbers once, confirms actual result and refreshes", async () => {
+  it("submits deduplicated card numbers once, confirms actual result and refreshes", async () => {
     const h = harness(),
       request = deferred();
     await open(h);
@@ -106,7 +106,7 @@ describe("gift bulk action dialog", () => {
     expect(h.emit).not.toHaveBeenCalled();
     expect(h.api.post).toHaveBeenCalledWith("/commerce-gift-cards/actions", {
       action: "ACTIVATE",
-      numbers: [1, 2],
+      cardNos: ["80100611", "80100612"],
       reason: "批量处理",
       downloadConfirmed: true,
     });
@@ -121,7 +121,7 @@ describe("gift bulk action dialog", () => {
     await open(h);
     h.api.post.mockRejectedValue(new Error("synthetic"));
     await h.dialog.submit();
-    expect(h.dialog.input.value).toBe("1，2\n001");
+    expect(h.dialog.input.value).toBe("80100611，80100612\n80100611");
     expect(h.dialog.error.value).toContain("整批未处理");
     expect(h.dialog.busy.value).toBe(false);
     expect(h.emit).not.toHaveBeenCalled();
@@ -132,7 +132,7 @@ describe("gift bulk action dialog", () => {
     async (invalid) => {
       const h = harness();
       await open(h);
-      if (invalid === "numbers") h.dialog.input.value = "1-9";
+      if (invalid === "numbers") h.dialog.input.value = "80100611-80100612";
       if (invalid === "reason") h.dialog.reason.value = "";
       if (invalid === "confirmation") h.dialog.confirmed.value = false;
       if (invalid === "session") h.changeSession();
@@ -165,7 +165,7 @@ describe("gift bulk action dialog", () => {
     await h.dialog.submit();
     expect(h.api.post).toHaveBeenCalledWith("/commerce-gift-cards/actions", {
       action: "BIND",
-      numbers: [1, 2],
+      cardNos: ["80100611", "80100612"],
       reason: "批量处理",
       productId: "synthetic-product",
       allowedSkuIds: ["synthetic-sku"],

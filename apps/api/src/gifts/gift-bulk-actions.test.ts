@@ -35,6 +35,7 @@ function harness(initial = [card(1), card(2), card(3)]) {
           .filter(
             (c) =>
               sql.values.includes(c.number) ||
+              sql.values.includes(c.cardNo) ||
               sql.values.includes(c.id) ||
               sql.values.includes(c.batchId),
           )
@@ -91,6 +92,91 @@ const activate = (numbers: unknown) => ({
   numbers,
   reason: "测试开启",
   downloadConfirmed: true,
+});
+
+describe("gift actions by eight-digit card number", () => {
+  const byCardNo = (cardNos: unknown) => ({
+    action: "ACTIVATE",
+    cardNos,
+    reason: "按卡号开启",
+    downloadConfirmed: true,
+  });
+  it("resolves 80100611 as a card number even when another management number has the same digits", async () => {
+    const a = { ...card(1), cardNo: "80100611" },
+      b = { ...card(80100611), cardNo: "80100612" };
+    const h = harness([a, b]);
+    expect(
+      await h.service.change(randomUUID(), byCardNo("80100611，80100611"), {}),
+    ).toEqual({ changed: 1 });
+    expect(h.state.cards.map((c) => c.status)).toEqual(["ACTIVE", "DRAFT"]);
+    expect(h.locks[0]!.text).toContain('"cardNo" IN');
+    expect(h.locks[0]!.values).toEqual(["80100611"]);
+    expect(h.state.audits[0].entityId).toBe(a.id);
+  });
+  it("rebinds selected card numbers while preserving card numbers and verification credentials", async () => {
+    const h = harness(),
+      before = structuredClone(h.state.cards);
+    expect(
+      await h.service.change(
+        randomUUID(),
+        {
+          action: "BIND",
+          cardNos: [before[0]!.cardNo, before[2]!.cardNo],
+          productId: targetProduct,
+          allowedSkuIds: [targetSku],
+          reason: "按卡号换绑",
+        },
+        {},
+      ),
+    ).toEqual({ changed: 2 });
+    for (const i of [0, 2])
+      expect(h.state.cards[i]).toMatchObject({
+        productId: targetProduct,
+        allowedSkuIds: [targetSku],
+        cardNo: before[i]!.cardNo,
+        secretHash: before[i]!.secretHash,
+        status: "DRAFT",
+      });
+    expect(h.state.cards[1]).toEqual(before[1]);
+  });
+  it("rejects all cards on missing card numbers or ineligible status", async () => {
+    const h = harness();
+    await expect(
+      h.service.change(
+        randomUUID(),
+        byCardNo([h.state.cards[0]!.cardNo, "89999999"]),
+        {},
+      ),
+    ).rejects.toThrow("以下卡号不存在，整批未处理：89999999");
+    expect(h.tx.commerceGiftCard.update).not.toHaveBeenCalled();
+    h.state.cards[1]!.status = "ACTIVE";
+    await expect(
+      h.service.change(
+        randomUUID(),
+        byCardNo(h.state.cards.slice(0, 2).map((c) => c.cardNo)),
+        {},
+      ),
+    ).rejects.toThrow(
+      "以下卡号不是未启用卡片，整批未处理：" + h.state.cards[1]!.cardNo,
+    );
+    expect(h.tx.commerceGiftCard.update).not.toHaveBeenCalled();
+  });
+  it.each([
+    { ...byCardNo(["80100611"]), numbers: [1] },
+    { ...byCardNo(["80100611"]), ids: [randomUUID()] },
+    { ...byCardNo(["80100611"]), batchId: randomUUID() },
+    { ...byCardNo(["80100611"]), action: "VOID" },
+    byCardNo("611"),
+    byCardNo([80100611]),
+    { ...byCardNo("80100611"), downloadConfirmed: false },
+  ])(
+    "rejects ambiguous, unsupported and invalid card-number requests before any transaction %#",
+    async (body) => {
+      const h = harness();
+      await expect(h.service.change(randomUUID(), body, {})).rejects.toThrow();
+      expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("gift actions by management number", () => {

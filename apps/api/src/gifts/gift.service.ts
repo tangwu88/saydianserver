@@ -17,7 +17,7 @@ import {
 import { compare, hash } from "bcryptjs";
 import { randomInt, randomUUID } from "node:crypto";
 import QRCode from "qrcode";
-import { parseGiftCardNumbers } from "@saydian/app-contracts";
+import { parseGiftCardNumbers, parseGiftCardNos } from "@saydian/app-contracts";
 import { PrismaService } from "../common/prisma.service";
 import {
   isUuid,
@@ -493,6 +493,23 @@ export class GiftService {
       throw new BadRequestException("请先确认已保存明文下载文件");
     const ids = Array.isArray(body.ids) ? body.ids : [];
     let numbers: number[] | undefined;
+    let cardNos: string[] | undefined;
+    if (body.cardNos !== undefined) {
+      if (
+        body.numbers !== undefined ||
+        body.ids !== undefined ||
+        body.batchId !== undefined ||
+        action === "VOID"
+      )
+        throw new BadRequestException(
+          "按卡号操作仅支持开启或换绑，不能同时指定编号、卡片ID或批次",
+        );
+      try {
+        cardNos = parseGiftCardNos(body.cardNos);
+      } catch (error) {
+        throw new BadRequestException((error as Error).message);
+      }
+    }
     if (body.numbers !== undefined) {
       if (
         body.ids !== undefined ||
@@ -510,7 +527,7 @@ export class GiftService {
     }
     if (
       (body.batchId !== undefined && !isUuid(String(body.batchId))) ||
-      (!numbers && !body.batchId && !ids.length) ||
+      (!cardNos && !numbers && !body.batchId && !ids.length) ||
       ids.length > 100 ||
       new Set(ids).size !== ids.length ||
       ids.some((id) => typeof id !== "string" || !isUuid(id))
@@ -518,18 +535,23 @@ export class GiftService {
       throw new BadRequestException("请选择有效卡片或批次");
     return this.prisma.$transaction(
       async (tx) => {
-        const rows = numbers
+        const rows = cardNos
           ? await tx.$queryRaw<
               Array<{ id: string }>
-            >`SELECT id FROM "CommerceGiftCard" WHERE number IN (${Prisma.join(numbers)}) ORDER BY id FOR UPDATE`
-          : isUuid(String(body.batchId || ""))
+            >`SELECT id FROM "CommerceGiftCard" WHERE "cardNo" IN (${Prisma.join(cardNos)}) ORDER BY id FOR UPDATE`
+          : numbers
             ? await tx.$queryRaw<
                 Array<{ id: string }>
-              >`SELECT id FROM "CommerceGiftCard" WHERE "batchId" = ${body.batchId as string}::uuid ORDER BY id FOR UPDATE`
-            : await tx.$queryRaw<
-                Array<{ id: string }>
-              >`SELECT id FROM "CommerceGiftCard" WHERE id IN (${Prisma.join(ids.map((id) => Prisma.sql`${String(id)}::uuid`))}) ORDER BY id FOR UPDATE`;
+              >`SELECT id FROM "CommerceGiftCard" WHERE number IN (${Prisma.join(numbers)}) ORDER BY id FOR UPDATE`
+            : isUuid(String(body.batchId || ""))
+              ? await tx.$queryRaw<
+                  Array<{ id: string }>
+                >`SELECT id FROM "CommerceGiftCard" WHERE "batchId" = ${body.batchId as string}::uuid ORDER BY id FOR UPDATE`
+              : await tx.$queryRaw<
+                  Array<{ id: string }>
+                >`SELECT id FROM "CommerceGiftCard" WHERE id IN (${Prisma.join(ids.map((id) => Prisma.sql`${String(id)}::uuid`))}) ORDER BY id FOR UPDATE`;
         if (
+          !cardNos &&
           !numbers &&
           (!rows.length || (!body.batchId && rows.length !== ids.length))
         )
@@ -537,18 +559,25 @@ export class GiftService {
         const cards = await tx.commerceGiftCard.findMany({
           where: { id: { in: rows.map((row) => row.id) } },
         });
-        if (numbers) {
-          const found = new Set(cards.map((card) => card.number));
-          const missing = numbers.filter((number) => !found.has(number));
+        if (cardNos || numbers) {
+          const label = cardNos ? "卡号" : "编号";
+          const found = new Set<string | number>(
+            cards.map((card) => (cardNos ? card.cardNo : card.number)),
+          );
+          const missing = (cardNos || numbers!).filter(
+            (number) => !found.has(number),
+          );
           if (missing.length)
             throw new NotFoundException(
-              "以下编号不存在，整批未处理：" + missing.join("、"),
+              `以下${label}不存在，整批未处理：` + missing.join("、"),
             );
           const unavailable = cards.filter((card) => card.status !== "DRAFT");
           if (unavailable.length)
             throw new ConflictException(
-              "以下编号不是未启用卡片，整批未处理：" +
-                unavailable.map((card) => card.number).join("、"),
+              `以下${label}不是未启用卡片，整批未处理：` +
+                unavailable
+                  .map((card) => (cardNos ? card.cardNo : card.number))
+                  .join("、"),
             );
         }
         if (action === "BIND" && cards.some((card) => card.status !== "DRAFT"))
