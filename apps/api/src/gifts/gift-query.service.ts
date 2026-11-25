@@ -278,7 +278,7 @@ export class GiftQueryService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         if (!id) {
-          await tx.$queryRaw`SELECT pg_advisory_xact_lock(76251925)`;
+          await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(76251925)`;
           if ((await tx.giftQueryAccount.count()) >= 100)
             throw new BadRequestException("查询账号最多100个，请管理已有账号");
         } else

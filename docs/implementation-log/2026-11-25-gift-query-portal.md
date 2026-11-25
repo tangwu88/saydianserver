@@ -42,3 +42,15 @@ SQL SHA256=07da199efd14ae747df7939d32ad5f2ce3f8638fb066bf78979c4b87cff483bb。�
 最终本地检查全部通过：api:docs:check 611路由、tools:test、typecheck、test（API1712通过/114依赖数据库跳过）、build、git diff --check。改版后Edge 7场景重验通过，手机订单完整展示，浏览器无页面异常；图片与报告仅在忽略artifacts目录。远端重新fetch后仍为62bf80e5acdb94acd74bb795ccf461c355124c27。
 
 源码在独立分支提交并建立草稿PR进行隔离数据库CI；未将新迁移放入生产自动验收白名单，未推main、未部署。Publish-Change仅支持main，本次按同等串行检查、远端双核对、显式文件暂存及日志随源码提交，保留原工作区全部改动。
+
+草稿PR #73，bcdf4d0的CI run 45594210916：根级检查、迁移部署、原订单/退款/伙伴数据库用例与两轮既有升级演练通过；新查询7项数据库用例均在新建账号的咨询锁语句失败，P2010为Prisma无法反序列化PostgreSQL void类型。改用项目既有GiftService同样的SELECT 1 AS locked FROM pg_advisory_xact_lock投影，保留事务锁及100账号限额语义。模拟测试不能暴露驱动类型问题，继续以真实隔离库重跑验证；尚未部署。
+
+- 2026-11-25T10:30:45.3004857Z fix pnpm api:docs:check exit=0
+
+- 2026-11-25T10:33:18.2790677Z fix pnpm tools:test exit=0
+
+- 2026-11-25T10:33:46.7773131Z fix pnpm typecheck exit=0
+
+- 2026-11-25T10:35:37.3447936Z fix pnpm test exit=0
+
+- 2026-11-25T10:36:11.6916912Z fix pnpm build exit=0
