@@ -68,7 +68,16 @@ describe.runIf(process.env.RUN_GIFT_DATABASE_TESTS === "1")(
           status: "PUBLISHED",
           gallery: [],
           tags: [],
+          skus: {
+            create: {
+              erpSkuId: randomUUID(),
+              erpItemId: "synthetic-query-product",
+              salePriceCents: 1,
+              stock: 10,
+            },
+          },
         },
+        include: { skus: true },
       });
       const batch = await db.commerceGiftBatch.create({
         data: {
@@ -82,7 +91,7 @@ describe.runIf(process.env.RUN_GIFT_DATABASE_TESTS === "1")(
       const base = {
         batchId: batch.id,
         productId: product.id,
-        allowedSkuIds: [],
+        allowedSkuIds: [product.skus[0]!.id],
         secretHash: "synthetic-private-hash",
       };
       await db.commerceGiftCard.create({

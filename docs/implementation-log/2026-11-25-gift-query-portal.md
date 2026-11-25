@@ -45,6 +45,8 @@ SQL SHA256=07da199efd14ae747df7939d32ad5f2ce3f8638fb066bf78979c4b87cff483bb。�
 
 草稿PR #73，bcdf4d0的CI run 45594210916：根级检查、迁移部署、原订单/退款/伙伴数据库用例与两轮既有升级演练通过；新查询7项数据库用例均在新建账号的咨询锁语句失败，P2010为Prisma无法反序列化PostgreSQL void类型。改用项目既有GiftService同样的SELECT 1 AS locked FROM pg_advisory_xact_lock投影，保留事务锁及100账号限额语义。模拟测试不能暴露驱动类型问题，继续以真实隔离库重跑验证；尚未部署。
 
+22d6f0b的CI run 45596649281：原礼品数据库24项通过，新查询7项中6项通过（分页统计、身份/过期、禁用启用、全会话密码重设、并发禁用、跨实例限流）。剩余卡号映射用例的测试夹具allowedSkuIds为空，违反旧gift_card_skus_check；补建真实合成SKU并绑定该ID，不修改/停用数据库约束，不改变业务查询实现。升级演练夹具已绑定现有合成SKU，无相同遗漏；继续跑完整检查和隔离库。
+
 - 2026-11-25T10:30:45.3004857Z fix pnpm api:docs:check exit=0
 
 - 2026-11-25T10:33:18.2790677Z fix pnpm tools:test exit=0
@@ -54,3 +56,13 @@ SQL SHA256=07da199efd14ae747df7939d32ad5f2ce3f8638fb066bf78979c4b87cff483bb。�
 - 2026-11-25T10:35:37.3447936Z fix pnpm test exit=0
 
 - 2026-11-25T10:36:11.6916912Z fix pnpm build exit=0
+
+- 2026-11-25T10:45:17.4742755Z fixture pnpm api:docs:check exit=0
+
+- 2026-11-25T10:47:50.8097220Z fixture pnpm tools:test exit=0
+
+- 2026-11-25T10:48:20.8326899Z fixture pnpm typecheck exit=0
+
+- 2026-11-25T10:50:13.2039681Z fixture pnpm test exit=0
+
+- 2026-11-25T10:50:50.3719396Z fixture pnpm build exit=0
