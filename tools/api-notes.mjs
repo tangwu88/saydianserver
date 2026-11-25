@@ -16,11 +16,12 @@ const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempote
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
   "RingExperienceController.capabilities": entry("Say Ring 新功能开关", "无", "{sharing,care,firmware}", "中国站开关"),
-  "RingExperienceController.open": entry("匿名读取分享快照", "{token}", "{snapshot,expiresAt}", "7天有效，撤回即失效"),
-  "RingExperienceController.react": entry("访客选择预设回应", "{token,kind,visitor:UUID}", "{ok}", "分享有效期、访客去重"),
+  "RingExperienceController.open": entry("匿名读取分享快照", "{token}", "{snapshot,expiresAt,sharerName}", "7天有效；昵称来自当前分享者的资料"),
+  "RingExperienceController.react": entry("访客选择预设回应", "{token,kind,visitor:UUID}", "{ok}", "分享有效期、访客去重；每条新回应创建一条分享者通知"),
   "RingExperienceController.named": entry("会员选择署名或匿名回应", "{token,kind,named}", "{ok}", "署名校验双方关爱关系"),
   "RingExperienceController.create": entry("确认并创建固定分享", "{token,confirmed:true,snapshot:{kind,date,fields,note}}", "{id,expiresAt}", "会员归属、字段白名单"),
   "RingExperienceController.list": entry("查询自己的分享与回应", "history=true含过期记录；before可选本人的分享UUID", "{entries,nextBefore}", "已有调用默认仅返回有效分享"),
+  "RingExperienceController.replies": entry("查看本人一条分享的完整回应", "分享UUID；before可选上一页游标", "{share,reactions:[{kind,name,createdAt}],nextBefore}", "按分享归属鉴权，含过期链接的回应"),
   "RingExperienceController.revoke": entry("撤回本人的分享", "无", "{ok}", "立即移除匿名读取权限"),
   "RingExperienceController.preview": entry("查看一次性关爱邀请", "{code}", "{inviterName,expiresAt}", "邀请码与48小时有效期"),
   "RingExperienceController.invite": entry("创建关注对方的邀请", "无", "{id,code,expiresAt}", "当前会员"),

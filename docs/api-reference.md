@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **633 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **634 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -180,7 +180,7 @@
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
 
-## V2 App 接口（216）
+## V2 App 接口（217）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -326,11 +326,12 @@
 | `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
 | `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本 | 重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还 | AI供应商 |
 | `GET /api/saydian-app/v2/ring/capabilities` | Say Ring 新功能开关 | public | 无 | {sharing,care,firmware} | 中国站开关 |
-| `POST /api/saydian-app/v2/ring/shares/open` | 匿名读取分享快照 | public | {token} | {snapshot,expiresAt} | 7天有效，撤回即失效 |
-| `POST /api/saydian-app/v2/ring/shares/respond` | 访客选择预设回应 | public | {token,kind,visitor:UUID} | {ok} | 分享有效期、访客去重 |
+| `POST /api/saydian-app/v2/ring/shares/open` | 匿名读取分享快照 | public | {token} | {snapshot,expiresAt,sharerName} | 7天有效；昵称来自当前分享者的资料 |
+| `POST /api/saydian-app/v2/ring/shares/respond` | 访客选择预设回应 | public | {token,kind,visitor:UUID} | {ok} | 分享有效期、访客去重；每条新回应创建一条分享者通知 |
 | `POST /api/saydian-app/v2/ring/shares/member-response` | 会员选择署名或匿名回应 | member | {token,kind,named} | {ok} | 署名校验双方关爱关系 |
 | `POST /api/saydian-app/v2/ring/shares` | 确认并创建固定分享 | member | {token,confirmed:true,snapshot:{kind,date,fields,note}} | {id,expiresAt} | 会员归属、字段白名单 |
 | `GET /api/saydian-app/v2/ring/shares` | 查询自己的分享与回应 | member | query:history?，query:before?；history=true含过期记录；before可选本人的分享UUID | {entries,nextBefore} | 已有调用默认仅返回有效分享 |
+| `GET /api/saydian-app/v2/ring/shares/:id` | 查看本人一条分享的完整回应 | member | path:id，query:before?；分享UUID；before可选上一页游标 | {share,reactions:[{kind,name,createdAt}],nextBefore} | 按分享归属鉴权，含过期链接的回应 |
 | `DELETE /api/saydian-app/v2/ring/shares/:id` | 撤回本人的分享 | member | path:id；无 | {ok} | 立即移除匿名读取权限 |
 | `POST /api/saydian-app/v2/ring/care/invitations/preview` | 查看一次性关爱邀请 | public | {code} | {inviterName,expiresAt} | 邀请码与48小时有效期 |
 | `POST /api/saydian-app/v2/ring/care/invitations` | 创建关注对方的邀请 | member | 无 | {id,code,expiresAt} | 当前会员 |

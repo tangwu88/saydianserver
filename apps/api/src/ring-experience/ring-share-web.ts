@@ -6,14 +6,14 @@ export const shareStyles = `
   .share-page {
     max-width:36rem; padding:0; background:transparent;
     --ink:#242a34; --muted:#595656; --paper:#fffdf9; --line:#e6ded5;
-    --accent:#504882; --hero:#272747; --hero-end:#474267; --hint:#ebe2ff;
+    --hero:#272747; --hero-end:#474267; --hint:#ebe2ff;
   }
   .share-brand { display:flex; align-items:center; gap:.65rem; margin:0 .2rem 1.15rem; color:var(--ink); letter-spacing:.035em }
   .brand-ring { width:1.35rem; height:1.35rem; border:.18rem solid #465c59; border-radius:50%; box-shadow:inset 0 0 0 .12rem #fffdf9; background:#e5d9c7 }
   .share-report { display:grid; gap:.85rem }
-  .share-report[data-kind="health"] { --accent:#275c51; --hero:#173c39; --hero-end:#285752; --hint:#d8f5e8 }
-  .share-report[data-kind="workout"] { --accent:#8a4937; --hero:#582e29; --hero-end:#794839; --hint:#ffdfc6 }
-  .share-report[data-kind="week"] { --accent:#4e6147; --hero:#303d33; --hero-end:#4e5942; --hint:#e2efcb }
+  .share-report[data-kind="health"] { --hero:#173c39; --hero-end:#285752; --hint:#d8f5e8 }
+  .share-report[data-kind="workout"] { --hero:#582e29; --hero-end:#794839; --hint:#ffdfc6 }
+  .share-report[data-kind="week"] { --hero:#303d33; --hero-end:#4e5942; --hint:#e2efcb }
   .share-hero {
     position:relative; isolation:isolate; overflow:hidden; padding:clamp(20px,5vw,2.25rem);
     border-radius:1.55rem; color:#fff; background:linear-gradient(135deg,var(--hero),var(--hero-end));
@@ -43,15 +43,19 @@ export const shareStyles = `
     font-weight:750; font-variant-numeric:tabular-nums; overflow-wrap:anywhere;
   }
   #highlight-unit { font-size:1rem; font-weight:550; color:var(--hint); letter-spacing:0 }
-  .share-note, .share-stages, .share-reply, .share-state {
+  .share-stages, .share-reply, .share-state {
     margin:0; border:1px solid var(--line); background:var(--paper); border-radius:1.2rem;
     padding:clamp(16px,4vw,1.45rem);
   }
-  .share-note { border-inline-start:.26rem solid var(--accent) }
-  .share-note h2, .share-page #breakdown-title, .share-reply h2 {
+  .share-note {
+    margin-top:1rem; padding:.75rem .9rem; border-radius:.8rem;
+    border-inline-start:.2rem solid var(--hint); background:rgba(255,255,255,.12);
+  }
+  .share-hero .share-note-label { color:var(--hint); font-size:.87rem; margin-bottom:.2rem }
+  .share-page #breakdown-title, .share-reply h2 {
     margin:0 0 .6rem; font-size:1.08rem; line-height:1.35; color:var(--ink); overflow-wrap:anywhere;
   }
-  .share-note blockquote { margin:0; font-size:1.13rem; line-height:1.65; color:var(--ink); white-space:pre-wrap; overflow-wrap:anywhere }
+  .share-note blockquote { margin:0; font-size:1.08rem; line-height:1.55; color:#fff; white-space:pre-wrap; overflow-wrap:anywhere }
   .share-state p:last-of-type, .share-reply p:last-of-type { margin:0 }
   .share-page #fields, .share-page #stages {
     display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,9.5rem),1fr)); gap:.65rem;
@@ -104,10 +108,10 @@ export const shareLayout = `
       <p class="share-from" id="share-from"></p>
       <h1 id="title"></h1>
       <p id="day"></p>
+      <div class="share-note" id="share-note" hidden>
+        <p class="share-note-label" id="note-title"></p><blockquote id="note"></blockquote>
+      </div>
       <dl id="highlight" hidden><dt id="highlight-label"></dt><dd><span id="highlight-value"></span> <span id="highlight-unit"></span></dd></dl>
-    </section>
-    <section class="share-note" id="share-note" aria-labelledby="note-title" hidden>
-      <h2 id="note-title"></h2><blockquote id="note"></blockquote>
     </section>
     <section class="share-stages" id="breakdown" aria-labelledby="breakdown-title" hidden>
       <h2 id="breakdown-title"></h2><div id="stage-track" aria-hidden="true"></div><dl id="stages"></dl>
@@ -196,7 +200,7 @@ export const shareClient = String.raw`
     group.append(dt,dd);
     list.append(group);
   }
-  function renderShare(snapshot) {
+  function renderShare(snapshot, sharerName) {
     if (!snapshot || !hasOwn(titles,snapshot.kind) || !Array.isArray(snapshot.fields)) {
       throw new Error('Invalid share');
     }
@@ -208,8 +212,23 @@ export const shareClient = String.raw`
 
     const included = new Set();
     el('report').dataset.kind = snapshot.kind;
-    text('share-from',label('好友分享给你','Shared with you'));
-    text('title',label(...titles[snapshot.kind]));
+    const name = typeof sharerName === 'string' ? sharerName.trim() : '';
+    text('share-from', name
+      ? label(name + ' 分享给你','Shared by ' + name)
+      : label('好友分享给你','Shared with you'));
+    const highlightKey = fieldPriority[snapshot.kind].find((key) => fields.has(key));
+    const sport = fields.get('sportName');
+    let title = label(...titles[snapshot.kind]);
+    if (snapshot.kind === 'workout' && typeof sport === 'string' && sport) {
+      title = sport;
+      included.add('sportName');
+    } else if (snapshot.kind === 'health' && highlightKey) {
+      title = highlightKey === 'systolic' || highlightKey === 'diastolic'
+        ? label('血压记录','Blood pressure record')
+        : label(shareLabel(highlightKey) + '记录',shareLabel(highlightKey) + ' record');
+    }
+    text('title',title);
+    document.title = [name,title,'Say Ring'].filter(Boolean).join(' · ');
     const start = shareDate(snapshot.date);
     const end = fields.get('rangeEnd');
     text('day', typeof end === 'string' && end !== snapshot.date
@@ -226,10 +245,9 @@ export const shareClient = String.raw`
       included.add('systolic');
       included.add('diastolic');
     } else {
-      const key = fieldPriority[snapshot.kind].find((name) => fields.has(name));
-      if (key) {
-        highlight = [shareLabel(key), ...measureParts(key,fields.get(key))];
-        included.add(key);
+      if (highlightKey && !included.has(highlightKey)) {
+        highlight = [shareLabel(highlightKey), ...measureParts(highlightKey,fields.get(highlightKey))];
+        included.add(highlightKey);
       }
     }
     el('highlight').hidden = !highlight;
@@ -242,7 +260,7 @@ export const shareClient = String.raw`
     const note = typeof snapshot.note === 'string' ? snapshot.note.trim() : '';
     el('share-note').hidden = !note;
     if (note) {
-      text('note-title',label('好友留了一句话','A note from your friend'));
+      text('note-title',label('留言','A note for you'));
       text('note',note);
     }
 
@@ -292,6 +310,7 @@ export const shareClient = String.raw`
     el('retry-share').hidden = !retry;
   }
   function expiredShare() {
+    document.title = 'Say Ring';
     for (const id of ['report','reply','footer','open-help']) el(id).hidden = true;
     shareState(label('这条分享链接已失效。','This shared link has expired.'),false);
   }
@@ -311,7 +330,7 @@ export const shareClient = String.raw`
         try {
           await post('shares/respond', {token, visitor, kind});
           item.setAttribute('aria-pressed','true');
-          text('status', label('你的心意送达了。','Your reaction was sent.'));
+          text('status', label('已发到好友的 Say Ring 收件箱。','Sent to your friend’s Say Ring inbox.'));
         } catch (error) {
           if (error.status === 404) { expiredShare(); return; }
           sent = false;
@@ -328,7 +347,7 @@ export const shareClient = String.raw`
     shareState(label('正在打开好友的分享…','Opening your friend’s share…'),false);
     try {
       const result = await post('shares/open', {token});
-      renderShare(result.snapshot);
+      renderShare(result.snapshot,result.sharerName);
     } catch (error) {
       if (error.status === 404) expiredShare();
       else shareState(label('暂时打不开这条分享。','This share couldn’t be opened just now.'),true);
