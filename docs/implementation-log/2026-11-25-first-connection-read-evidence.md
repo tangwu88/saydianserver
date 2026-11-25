@@ -36,3 +36,27 @@
 - 存储V3后不得盲目回滚到只识别V1/V2的服务端；兼容回滚应保留V3解析和旧报告可读性。原报告及业务健康数据不删除。
 
 - 提交前首次fetch因本机schannel TLS握手中断失败，未暂存或提交；改用单次命令OpenSSL后fetch成功，远端仍为原基线。未关闭证书校验。
+
+## 生产恢复过程（2026-11-25续）
+
+- 源码62bf80e5acdb94acd74bb795ccf461c355124c27已推送main与本功能分支；CI45546796847的verify成功，原自动部署停在API原始digest下载。只读SSH核对：进程3602588对应本次API镜像9ec7ead94b15e0ff1d9758bf1ea61b1eeed735052621298db3b0b31784fe1042，约14分钟仍下载；磁盘约9GiB可用，原业务容器健康、双readiness仍为9e9efca。
+- 仅准备备用材料时调用Export runtime images45549802634，upload_to_server=false，不重建、不写服务器。导出成功，artifact14992228848，372,850,930字节，官方ZIP SHA256为503e8f2aa6d2a71fc6726c0ffe5f4bc5da4e3a7fc15545db579627875f13fefb，绑定同一个成功CI和62bf80e。
+- 本机可选全文件下载速度很慢；直连1MiB样本24.2秒成功，整包未完成，已停止这两个本机下载进程、保留部分文件。不把它们当作本机整包校验成功；后续服务器恢复通道必须核对完整artifact大小/SHA、ZIP、归档、每片摘要、OCI镜像ID及版本标签后才导入。
+- 13:33用户明确允许终止指定下载并按同版原镜像恢复发布。此前只读SSH已闲置30分钟自动结束，未借用其他SSH会话、未保存密码。原CI已接近60分钟门槛，未再次索取密码或改变服务器配置；原部署在13:36左右达到门槛被取消，verify仍成功。没有手动终止其他进程或停止业务容器。
+- 13:34再次核对main、artifact名称/大小/官方摘要未变，提交已有受限恢复工作流45554514395，existing_artifact_id=14992228848、artifact_action=import。它与原发布共用生产锁；原任务结束后进入HTTPS恢复，使用原有5GiB保留空间和完整校验门禁，不改客户数据、不运行seed、不打开原关闭能力。
+- 本机部分GitHub日志读取遇到TLS临时断开，私有日志读取失败没有改成跳过证书校验；GitHub鉴权通过已有凭据帮助程序仅在进程内使用，token不进脚本/日志/Git。公开readiness使用正常证书验证的Windows curl回查。
+- 已准备在导入工作流成功且main仍匹配62bf80e后，调用原Deploy production工作流、offline_images=true、first_cutover=false。导入失败或main变化时停止下一步；不会改版本或重建镜像绕过门禁。最终发布及回查结果另附，不将当前导入中称为已上线。
+## 实际恢复与上线回执
+
+- 云端完整原ZIP于14:28到齐，372,850,930字节及官方SHA256匹配；原verify-runtime-artifact.py再次确认ZIP、release-manifest与内层压缩归档。恢复工作流45554514395随后明确报错“Insufficient disk for offline import and 5 GiB reserve.”并失败；它不是成功导入记录，也没有切换业务。
+- 本机32路有界Range副本同样完整校验：逐段206/Content-Range/大小、整包SHA256、ZIP CRC、版本均通过。原本拟用SCP备用，但服务器实测云端已267MiB而SCP仅约26MiB，故只停止本任务自己的SCP进程19892，优先已有传输；其40,976,384字节不完整备用文件经精确路径、非符号链接、普通文件与大小校验后删除。未删除其他上传、业务目录或历史备份。
+- SSH恢复复用本次已认证会话。手动续接仍是CI原始镜像；首先核对四个执行控制脚本的Git原blob SHA256、artifact ID/大小/官方摘要以及release版本，并持有原生产FD9发布锁。原Python校验器重新校验与解出归档，原Node validateTransfer校验绑定清单。
+- 空间恢复仅移除本次已验证的重复临时分片与重复归档，改为从校验后的归档按偏移逐片生成8MiB数据。原receive-offline-images.sh的4倍归档预算、5GiB余量、每片摘要、合并摘要及OCI-ID/版本标签门禁全部原样保留，没有降低阈值。该临时操作方案在本机合成数据上用3种不同偏移生成分片，交给原Node验证器全部通过；篡改字节被原验证器拒绝，bash -n通过。此处只验证传输接续，不当作实体戒指测试。
+- 14:40确认三镜像导入成功，手动命令退出0；所有镜像ID与62bf80e标签一致，导入阶段未重启应用。操作脚本和私有原始输出保留在Git外E:/SayRing-first-read-evidence-1321-20261125；不提交构建产物或服务器私有日志。
+- 随后重新核对main仍是62bf80e，提交Deploy production 45562491212，offline_images=true、first_cutover=false。工作流最终全部成功，复用原CI45546796847的verify和原镜像，不重新构建、不运行seed。
+- 14:44独立HTTPS回查：/health/ready与/global/health/ready均ready、database ok、revision=62bf80e5acdb94acd74bb795ccf461c355124c27。14:48服务器独立核对：API/Admin均running healthy，Worker为running（没有把缺少单独healthcheck写成healthy）；三个真实容器版本均62bf80e。可用空间8,134,508,544字节，仍高于5GiB。
+- 后台实际静态入口/admin/assets/index-DmRHrJTj.js共2,340,038字节完整取得，包含readEvidence、mappingObserved、wireRows、decodedRows、filteredRecords等新显示字段。该项证明静态资源已交付，不代替真实新账号首次上报验收。
+- 没有新建诊断账号、再次采集780/764或其他旧账号、初始化/重置戒指、触发客户测量或上传健康数值；已有首次报告保持不可变。当前普通正式Android1321对应App源码895519c，后台可接收其V3；原有V1/V2继续兼容。
+- 本轮只是补记已完成发布的证据，无功能源码变化，沿用同一源码已通过的完整检查和生产CI；git diff --check再次通过。实施回执仅推送本功能分支，不为文档重复触发main自动部署；生产源码SHA保持62bf80e。
+
+发布链接：[原CI](https://github.com/tangwu88/saydianserver/actions/runs/45546796847)、[原镜像导出](https://github.com/tangwu88/saydianserver/actions/runs/45549802634)、[自动恢复失败记录](https://github.com/tangwu88/saydianserver/actions/runs/45554514395)、[正式恢复发布成功](https://github.com/tangwu88/saydianserver/actions/runs/45562491212)。
