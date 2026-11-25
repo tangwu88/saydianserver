@@ -340,8 +340,8 @@ model User {
   wechatOfficialIdentities WechatOfficialIdentity[]
   ringShares               RingShare[]
   ringShareReactions       RingShareReaction[]
-  ringCareInvites          RingCareInvite[]         @relation("RingCareInviter")
-  ringCareClaims           RingCareInvite[]         @relation("RingCareClaimant")
+  ringCareInvites          RingCareInvite[]                  @relation("RingCareInviter")
+  ringCareClaims           RingCareInvite[]                  @relation("RingCareClaimant")
   ringCareMessages         RingCareMessage[]
   ringCareSettings         RingCareSetting[]
   ringCareGoals            RingCareGoal[]
