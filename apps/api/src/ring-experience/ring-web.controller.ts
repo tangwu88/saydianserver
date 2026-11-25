@@ -2,6 +2,7 @@ import { Controller, Get, Headers, NotFoundException, Param, Res } from "@nestjs
 import { randomBytes } from "node:crypto";
 import type { Response } from "express";
 import { RawResponse } from "../common/raw-response.decorator";
+import { shareClient, shareLayout, shareStyles } from "./ring-share-web";
 
 const css = `
   :root { color-scheme: light; color:#142d2c; background:#eef4f1; font-family:system-ui,sans-serif }
@@ -21,7 +22,7 @@ const css = `
 `;
 
 const client = String.raw`
-  const browserLocale = navigator.language.toLowerCase();
+  const browserLocale = (navigator.language || 'en').toLowerCase();
   const en = !/^zh(?:-|$)/.test(browserLocale) || /(?:^|-)(hant|tw|hk|mo)(?:-|$)/.test(browserLocale);
   document.documentElement.lang = en ? 'en' : 'zh-Hans';
   const label = (zh, english) => en ? english : zh;
@@ -33,28 +34,6 @@ const client = String.raw`
   const pages = '/global/say-ring/';
   const h5Origin = 'https://app.saydian.cn';
   const launchOrigin = document.body.dataset.launchOrigin;
-  const titles = {
-    sleep: ['睡眠报告','Sleep report'], health: ['健康记录','Health record'],
-    workout: ['运动记录','Workout'], week: ['我的这一周','My week']
-  };
-  const fieldNames = {
-    sleepMinutes: ['睡眠时长','Sleep duration','min'], deepMinutes: ['深睡','Deep sleep','min'],
-    sleepAverageMinutes: ['平均睡眠','Average sleep','min'],
-    previousSleepAverageMinutes: ['上周同期平均睡眠','Previous week’s average sleep','min'],
-    previousSportMinutes: ['上周同期运动时长','Previous week’s activity','min'],
-    rangeEnd: ['记录截至','Through',''],
-    lightMinutes: ['浅睡','Light sleep','min'], remMinutes: ['快速眼动','REM sleep','min'],
-    awakeMinutes: ['清醒时长','Awake time','min'], sleepStart: ['入睡','Fell asleep',''],
-    sleepEnd: ['醒来','Woke up',''], sleepScore: ['睡眠评分','Sleep score',''],
-    sportName: ['运动','Activity',''], sportMinutes: ['运动时长','Duration','min'],
-    distanceKm: ['距离','Distance','km'], steps: ['步数','Steps',''],
-    heartRate: ['心率','Heart rate','bpm'], hrv: ['心率变异性','HRV','ms'],
-    oxygen: ['血氧','Blood oxygen','%'], temperatureC: ['温度','Temperature','°C'],
-    systolic: ['收缩压','Systolic pressure','mmHg'], diastolic: ['舒张压','Diastolic pressure','mmHg'],
-    pulse: ['脉搏','Pulse','bpm'], measuredTime: ['测量时间','Reading time',''],
-    recordDays: ['有记录天数','Days recorded',''], stress: ['压力','Stress',''],
-    bloodGlucose: ['血糖','Blood glucose','mmol/L']
-  };
   async function post(path, body) {
     const response = await fetch(base + path, {
       method:'POST', cache:'no-store', credentials:'omit',
@@ -63,12 +42,20 @@ const client = String.raw`
     if (!response.ok) { const e = new Error(); e.status = response.status; throw e; }
     return (await response.json()).data;
   }
-  function button(title, action) {
+  function button(title, action, mark) {
     const item = document.createElement('button');
     item.type = 'button';
-    item.textContent = title;
+    if (mark) {
+      const icon = document.createElement('span');
+      icon.className = 'reaction-mark';
+      icon.setAttribute('aria-hidden','true');
+      icon.textContent = mark;
+      item.append(icon);
+    }
+    item.append(document.createTextNode(title));
     item.addEventListener('click', () => action(item));
     el('actions').append(item);
+    return item;
   }
   const unavailable = () => text('status', label('链接已失效或暂不可读。', 'This link has expired or is unavailable.'));
   const temporary = () => text('status', label('暂未成功，请重试。', 'Please try again.'));
@@ -93,68 +80,6 @@ const client = String.raw`
     }
     link.hidden = false;
     link.textContent = title;
-  }
-  function viewer() {
-    const key = 'say-ring-share-visitor';
-    try {
-      const saved = localStorage.getItem(key);
-      if (saved) return saved;
-      const fresh = crypto.randomUUID();
-      localStorage.setItem(key,fresh);
-      return fresh;
-    } catch (_) {
-      return crypto.randomUUID();
-    }
-  }
-  function renderFields(snapshot) {
-    text('title', label(...titles[snapshot.kind]));
-    text('day', snapshot.date);
-    text('note', snapshot.note);
-    const format = new Intl.NumberFormat(en ? 'en' : 'zh-Hans', { maximumFractionDigits: 5 });
-    for (const field of snapshot.fields) {
-      const meta = fieldNames[field.key];
-      if (!meta) continue;
-      const group = document.createElement('div');
-      const dt = document.createElement('dt');
-      const dd = document.createElement('dd');
-      dt.textContent = label(meta[0],meta[1]);
-      dd.textContent = typeof field.value === 'number'
-        ? format.format(field.value) + (meta[2] ? ' ' + meta[2] : '')
-        : String(field.value);
-      group.append(dt,dd);
-      el('fields').append(group);
-    }
-  }
-  async function viewShare() {
-    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) { unavailable(); return; }
-    try {
-      const result = await post('shares/open', {token});
-      renderFields(result.snapshot);
-    } catch (_) { unavailable(); return; }
-    const visitor = viewer();
-    let sent = false;
-    for (const [kind, zh, english] of [
-      ['cheer','为你开心','Happy for you'],
-      ['hug','抱抱你','Sending a hug'],
-      ['walk','下次一起走','Let’s walk together'],
-    ]) {
-      button(label(zh,english), async (item) => {
-        if (sent) return;
-        sent = true;
-        for (const element of el('actions').querySelectorAll('button')) element.disabled = true;
-        try {
-          await post('shares/respond', {token, visitor, kind});
-          text('status', label('已送出你的心意。','Your reaction was sent.'));
-        } catch (error) {
-          if (error.status === 404) { unavailable(); return; }
-          sent = false;
-          temporary();
-          for (const element of el('actions').querySelectorAll('button')) element.disabled = false;
-        }
-      });
-    }
-    openApp('respond', label('在 App 里署名回应','Respond by name in the app'));
-    footer();
   }
   async function invite() {
     text('title',label('远程爱邀请','Care invitation'));
@@ -187,13 +112,21 @@ const client = String.raw`
     }
     footer();
   }
-  text('title',label('Say Ring 分享','Say Ring share'));
+`;
+
+const shareEntry = `${shareClient}
+  text('retry-share',label('再试一次','Try again'));
+  el('retry-share').addEventListener('click',() => void viewShare());
+  void viewShare();
+`;
+
+const otherEntry = `
   if (mode === 'invite') void invite();
-  else if (mode === 'respond') memberResponse();
-  else void viewShare();
+  else memberResponse();
 `;
 
 function html(mode: string, nonce: string, launchOrigin: string) {
+  const sharing = mode === "share";
   return `<!DOCTYPE html>
 <html lang="zh-Hans"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -201,15 +134,16 @@ function html(mode: string, nonce: string, launchOrigin: string) {
 <meta name="apple-itunes-app" content="app-id=6816549943">
 <meta property="og:title" content="Say Ring">
 <meta property="og:description" content="Open a share from Say Ring">
-<title>Say Ring</title><style nonce="${nonce}">${css}</style>
-</head><body data-mode="${mode}" data-launch-origin="${launchOrigin}"><main>
+<title>Say Ring</title><style nonce="${nonce}">${css}${sharing ? shareStyles : ""}</style>
+</head><body data-mode="${mode}" data-launch-origin="${launchOrigin}">${sharing ? shareLayout : `<main>
 <header>Say Ring</header><h1 id="title">Say Ring</h1>
 <p id="day"></p><p id="code"></p><p id="note"></p>
 <dl id="fields"></dl><div id="actions"></div><p id="status" role="status"></p>
 <footer id="footer" hidden><a id="open" hidden></a><a id="download" href="https://app.saydian.cn/down2">下载 Say Ring</a></footer>
 <p id="open-help" hidden></p>
 <noscript>请在浏览器中启用 JavaScript。 Enable JavaScript to view this page.</noscript>
-</main><script nonce="${nonce}">${client}</script></body></html>`;
+</main>`}
+<script nonce="${nonce}">${client}${sharing ? shareEntry : otherEntry}</script></body></html>`;
 }
 
 @Controller("global/say-ring")
