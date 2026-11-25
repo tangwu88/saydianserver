@@ -1,12 +1,14 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { CareStatus, Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { PrismaService } from "../common/prisma.service";
 import { safeObject } from "../common/crypto";
 import { careMetricMap } from "../care/care.service";
 import {
   calendarDate, careAudio, careMessageKinds, cleanText, currentCareWeek, digest,
-  inviteCode, newInviteCode, reactionKinds, ringEnabled, ringSnapshot, ringUuid, shareToken,
+  inviteCode, newInviteCode, reactionKinds, ringAvailability, ringEnabled, ringSnapshot, ringUuid, shareToken,
 } from "./ring-contract";
+import { shareProjectNames } from "./ring-share-presentation";
 
 type Tx = Prisma.TransactionClient;
 const dayMs = 86_400_000;
@@ -16,6 +18,8 @@ const publicName = (name: string | null | undefined) =>
 const messageFields = {
   id: true, authorId: true, kind: true, keepQuiet: true, attachment: true, createdAt: true,
 } as const;
+const shareFields = { id: true, snapshot: true, createdAt: true, expiresAt: true } as const;
+const reactionFields = { kind: true, name: true, createdAt: true } as const;
 
 @Injectable()
 export class RingExperienceService {
@@ -52,16 +56,45 @@ export class RingExperienceService {
       where: { ownerId, ...(!history ? { expiresAt: { gt: now } } : {}) },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: limit + 1,
       ...(cursor ? { cursor, skip: 1 } : {}),
-      select: { id: true, snapshot: true, createdAt: true, expiresAt: true,
+      select: { ...shareFields,
         reactions: {
-          orderBy: { createdAt: "desc" }, take: 15,
-          select: { kind: true, name: true, createdAt: true },
+          orderBy: [{ createdAt: "desc" }, { visitor: "desc" }], take: 15,
+          select: reactionFields,
         }, _count: { select: { reactions: true } },
       },
     });
     const more = entries.length > limit;
     if (more) entries.pop();
     return { entries, nextBefore: more ? entries.at(-1)?.id : null };
+  }
+
+  async shareReplies(ownerId: string, id: string, before?: string) {
+    const shareId = ringUuid(id);
+    if (before !== undefined && !/^[a-f0-9]{64}$/.test(before)) {
+      throw new BadRequestException("回应页码无效");
+    }
+    const limit = 30;
+    const row = await this.db.ringShare.findFirst({
+      where: { id: shareId, ownerId },
+      select: {
+        ...shareFields,
+        _count: { select: { reactions: true } },
+        reactions: {
+          orderBy: [{ createdAt: "desc" }, { visitor: "desc" }],
+          take: limit + 1,
+          ...(before ? { cursor: { shareId_visitor: { shareId, visitor: before } }, skip: 1 } : {}),
+          select: { ...reactionFields, visitor: true },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException("这条分享暂不可查看");
+    const { reactions, ...share } = row;
+    const page = reactions.slice(0, limit);
+    return {
+      share,
+      reactions: page.map(({ kind, name, createdAt }) => ({ kind, name, createdAt })),
+      nextBefore: reactions.length > limit ? page.at(-1)?.visitor ?? null : null,
+    };
   }
 
   async revokeShare(ownerId: string, id: string) {
@@ -72,13 +105,36 @@ export class RingExperienceService {
 
   async openShare(input: unknown) {
     ringEnabled("sharing");
-    const token = shareToken(safeObject(input).token);
-    const row = await this.db.ringShare.findFirst({
-      where: { digest: digest(token), expiresAt: { gt: new Date() }, owner: { status: "ACTIVE" } },
-      select: { snapshot: true, expiresAt: true },
-    });
+    const titleRef = digest(shareToken(safeObject(input).token));
+    const row = await this.activeShare(titleRef);
     if (!row) throw new NotFoundException("链接已失效");
-    return row;
+    return {
+      snapshot: row.snapshot,
+      expiresAt: row.expiresAt,
+      sharerName: publicName(row.owner.nickname),
+      projectNames: shareProjectNames(row.snapshot),
+      titleRef,
+    };
+  }
+
+  async shareTitle(reference: unknown, acceptLanguage: string | undefined) {
+    if (typeof reference !== "string" || !/^[0-9a-f]{64}$/.test(reference) ||
+        !ringAvailability().sharing) return null;
+    const row = await this.activeShare(reference);
+    if (!row) return null;
+    const language = (acceptLanguage ?? "zh-Hans").split(/[;,]/, 1)[0]!.trim().toLowerCase();
+    const chinese = /^zh(?:-|$)/.test(language) && !/(?:^|-)(hant|tw|hk|mo)(?:-|$)/.test(language);
+    const project = shareProjectNames(row.snapshot)[chinese ? 0 : 1];
+    const note = safeObject(row.snapshot).note;
+    return [publicName(row.owner.nickname), project, typeof note === "string" ? note.trim() : null, "Say Ring"]
+      .filter(Boolean).join(" · ");
+  }
+
+  private activeShare(key: string) {
+    return this.db.ringShare.findFirst({
+      where: { digest: key, expiresAt: { gt: new Date() }, owner: { status: "ACTIVE" } },
+      select: { snapshot: true, expiresAt: true, owner: { select: { nickname: true } } },
+    });
   }
 
   async react(input: unknown, actorId?: string) {
@@ -124,7 +180,7 @@ export class RingExperienceService {
         skipDuplicates: true,
       });
       if (count.count === 1) {
-        await this.notify(tx, "ring-share:" + share.id, share.ownerId, share.id, "share", false);
+        await this.notify(tx, "ring-share:" + randomUUID(), share.ownerId, share.id, "share", true);
       }
       return { ok: true };
     });
@@ -538,20 +594,20 @@ export class RingExperienceService {
 
   private async notify(tx: Tx, eventId: string, userId: string, entity: string,
     kind: "care" | "share", push: boolean) {
-    const deepLink = kind === "care" ? "/care/interactions/" + entity : "/ring/shares";
+    const deepLink = (kind === "care" ? "/care/interactions/" : "/ring/shares/") + entity;
     const notification = await tx.notification.upsert({
       where: { userId_eventId: { userId, eventId } },
       create: {
         eventId, userId, type: "SYSTEM", deepLink,
         title: kind === "share" ? "有人回应了你的分享" : "远程爱有新消息",
-        body: "打开 Say Ring 查看。",
+        body: kind === "share" ? "点击查看好友回应。" : "打开 Say Ring 查看。",
       },
       update: { readAt: null, createdAt: new Date() },
       select: { id: true },
     });
     if (push) {
       await tx.outboxEvent.createMany({ skipDuplicates: true, data: [{
-        eventId, eventType: "system", aggregateType: "ring_care", aggregateId: entity,
+        eventId, eventType: "system", aggregateType: kind === "share" ? "ring_share" : "ring_care", aggregateId: entity,
         payload: { userId, notificationId: notification.id, deepLink },
       }] });
     }

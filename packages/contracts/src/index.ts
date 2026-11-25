@@ -328,17 +328,20 @@ export interface SafePushPayloadContract {
   eventId: string;
   type: string;
   deepLink?: string;
+  entityId?: string;
 }
 
 export function buildSafePushPayload(input: {
   eventId: string;
   type: string;
   deepLink?: string | null;
+  entityId?: string;
 }): SafePushPayloadContract {
   return {
     eventId: input.eventId,
     type: input.type,
     ...(input.deepLink ? { deepLink: input.deepLink } : {}),
+    ...(input.entityId ? { entityId: input.entityId } : {}),
   };
 }
 

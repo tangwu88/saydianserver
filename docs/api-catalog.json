@@ -40593,8 +40593,8 @@
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
       "summary": "匿名读取分享快照",
       "request": "{token}",
-      "response": "{snapshot,expiresAt}",
-      "dependency": "7天有效，撤回即失效",
+      "response": "{snapshot,expiresAt,sharerName,projectNames,titleRef}",
+      "dependency": "7天有效；标题引用来自分享令牌摘要，只用于 H5 标题",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -40626,7 +40626,7 @@
       "summary": "访客选择预设回应",
       "request": "{token,kind,visitor:UUID}",
       "response": "{ok}",
-      "dependency": "分享有效期、访客去重",
+      "dependency": "分享有效期、访客去重；每条新回应创建一条分享者通知",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -40729,6 +40729,44 @@
       "request": "history=true含过期记录；before可选本人的分享UUID",
       "response": "{entries,nextBefore}",
       "dependency": "已有调用默认仅返回有效分享",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.replies",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/shares/:id",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "before",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "查看本人一条分享的完整回应",
+      "request": "分享UUID；before可选上一页游标",
+      "response": "{share,reactions:[{kind,name,createdAt}],nextBefore}",
+      "dependency": "按分享归属鉴权，含过期链接的回应",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -41506,14 +41544,26 @@
           "name": "host",
           "type": "string | undefined",
           "optional": false
+        },
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string | undefined",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "title",
+          "type": "unknown",
+          "optional": false
         }
       ],
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/ring-experience/ring-web.controller.ts",
       "summary": "第一方分享、邀请或回应 H5",
-      "request": "mode为share、invite或respond",
-      "response": "HTML；链接片段由浏览器处理",
-      "dependency": "公开页面，私有数据逐次校验",
+      "request": "mode为share、invite或respond；share可选title引用",
+      "response": "HTML；标题含分享者昵称、项目及存在的留言；报告授权片段由浏览器处理",
+      "dependency": "标题引用只读取有效链接的标题；完整快照逐次校验",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

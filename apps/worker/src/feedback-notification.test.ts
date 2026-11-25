@@ -2,22 +2,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OutboxWorker } from "./outbox-worker";
 
 afterEach(() => vi.unstubAllEnvs());
-function harness(enabled = true) {
+function harness(enabled = true, shareId?: string) {
   vi.stubEnv("BUSINESS_WRITES_PAUSED", "false");
   vi.stubEnv("MAINTENANCE_READ_ONLY", "false");
   vi.stubEnv("WORKER_OUTBOUND_PAUSED", "false");
   const event = {
     id: "outbox-1",
-    eventId: "feedback-reply:synthetic-1",
+    eventId: shareId ? "ring-share:synthetic-1" : "feedback-reply:synthetic-1",
     eventType: "system",
-    aggregateType: "feedback",
-    aggregateId: "feedback-1",
+    aggregateType: shareId ? "ring_share" : "feedback",
+    aggregateId: shareId ?? "feedback-1",
     status: "PENDING",
     attempts: 0,
     payload: {
       userId: "member-1",
       notificationId: "notification-1",
-      deepLink: "/notifications",
+      deepLink: shareId ? "/ring/shares/" + shareId : "/notifications",
     },
   };
   const prisma: any = {
@@ -29,12 +29,15 @@ function harness(enabled = true) {
     userNotificationPreference: {
       findUnique: vi.fn(async () => ({ transactionalEnabled: enabled })),
     },
+    ringShare: {
+      findFirst: vi.fn(async () => shareId ? {id: shareId} : null),
+    },
     pushInstallation: {
       findMany: vi.fn(async () => [
         {
           userId: "member-1",
           registrationId: "synthetic-device",
-          provider: "jpush",
+          provider: shareId ? "jpush_say_ring" : "jpush",
         },
       ]),
     },
@@ -77,5 +80,34 @@ describe("feedback reply push delivery", () => {
         data: expect.objectContaining({ status: "PENDING", attempts: 1 }),
       }),
     );
+  });
+});
+
+describe("Say Ring share response push delivery", () => {
+  const shareId = "4633cb02-6115-48e7-a352-2a8bfaeb8b44";
+
+  it("delivers only to Say Ring installations owned by the sharer", async () => {
+    const h = harness(true, shareId);
+    await h.worker.runOnce();
+    expect(h.prisma.ringShare.findFirst).toHaveBeenCalledWith({
+      where: { id: shareId, ownerId: "member-1", owner: { status: "ACTIVE" } },
+      select: { id: true },
+    });
+    expect(h.prisma.pushInstallation.findMany).toHaveBeenCalledWith({
+      where: { userId: "member-1", enabled: true, provider: "jpush_say_ring" },
+    });
+    expect(h.push.deliver).toHaveBeenCalledWith(expect.any(Array), {
+      eventId: "ring-share:synthetic-1", type: "system", deepLink: "/ring/shares", entityId: shareId,
+    });
+  });
+
+  it("does not send a share push after preference opt-out or removal", async () => {
+    const optedOut = harness(false, shareId);
+    await optedOut.worker.runOnce();
+    expect(optedOut.push.deliver).not.toHaveBeenCalled();
+    const removed = harness(true, shareId);
+    removed.prisma.ringShare.findFirst.mockResolvedValue(null);
+    await removed.worker.runOnce();
+    expect(removed.push.deliver).not.toHaveBeenCalled();
   });
 });

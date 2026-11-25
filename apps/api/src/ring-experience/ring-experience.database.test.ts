@@ -165,6 +165,23 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
     expect(last.data.entries.at(-1).reactions[0].kind).toBe("hug");
     expect((await request(query+"&before="+first.data.nextBefore,"GET",second.token)).status).toBe(404);
     expect((await request("shares/open","POST",undefined,{token})).status).toBe(404);
+    const path = "shares/" + create.data.id;
+    const day = new Date("2026-11-03T13:15:22Z");
+    await db.ringShareReaction.createMany({data:Array.from({length:31},()=>({
+      shareId:create.data.id, visitor:randomBytes(32).toString("hex"), kind:"walk", createdAt:day,
+    }))});
+    const replies = await request(path,"GET",actor.token);
+    const older = await request(path+"?before="+replies.data.nextBefore,"GET",actor.token);
+    expect(replies.data.share._count.reactions).toBe(32);
+    expect(replies.data.reactions).toHaveLength(30);
+    expect(replies.data.reactions[0].kind).toBe("hug");
+    expect(older.data.reactions).toEqual(Array.from({length:2},()=>({
+      kind:"walk", name:null, createdAt:day.toISOString(),
+    })));
+    expect(older.data.nextBefore).toBeNull();
+    expect((await request(path,"GET")).status).toBe(401);
+    expect((await request(path,"GET",second.token)).status).toBe(404);
+    expect((await request(path+"?before=invalid","GET",actor.token)).status).toBe(400);
   });
 
   async function member() {
@@ -181,7 +198,7 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
   }
 
   async function request(route: string, method: string, bearer?: string, body?: unknown) {
-    const result = await fetch(root + base + route,{
+    const result = await fetch(root + (route.startsWith("/") ? route : base + route),{
       method, headers: {
         ...(bearer ? {authorization:"Bearer " + bearer} : {}),
         ...(body !== undefined ? {"content-type":"application/json"} : {}),
@@ -194,7 +211,7 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
 
   it("authorizes creation/revocation, preserves exact selected values, and deduplicates visitors", async () => {
     const token = randomBytes(32).toString("base64url");
-    const snapshot = {kind:"health",date:"2026-11-23",note:"Synthetic",fields:[
+    const snapshot = {kind:"health",date:"2026-11-23",note:"Synthetic </title> & <img src=x>",fields:[
       {key:"systolic",value:122.5}, {key:"diastolic",value:81},
     ]};
     expect((await request("shares", "POST", undefined, {token,confirmed:true,snapshot})).status).toBe(401);
@@ -204,20 +221,61 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
     const {data,cache} = await request("shares/open","POST",undefined,{token});
     expect(cache).toContain("no-store");
     expect(data.snapshot).toEqual(snapshot);
+    expect(data.sharerName).toBe("Synthetic Ring Member");
+    expect(data.projectNames).toEqual(["血压记录","Blood pressure record"]);
+    const reference = createHash("sha256").update(token).digest("hex");
+    expect(data.titleRef).toBe(reference);
+    expect((await request("shares/open","POST",undefined,{token:reference})).status).toBe(404);
     const visitor = randomUUID();
     await Promise.all([1,2].map(() => request("shares/respond","POST",undefined,{token,visitor,kind:"cheer"})));
     const shares = await request("shares","GET",actor.token);
     expect(shares.data.entries[0].reactions).toHaveLength(1);
     expect(shares.data.entries[0].reactions[0].name).toBeNull();
+    const inbox = "/global/api/saydian-app/v2/notifications";
+    const deepLink = "/ring/shares/" + create.data.id;
+    async function notices(bearer: string) {
+      return (await request(inbox,"GET",bearer)).data.items
+        .filter((item: {deepLink?: string}) => item.deepLink === deepLink);
+    }
+    const firstNotices = await notices(actor.token);
+    expect(firstNotices).toHaveLength(1);
+    expect(firstNotices[0].readAt).toBeNull();
+    await request(inbox+"/"+firstNotices[0].eventId+"/read","POST",actor.token);
+    expect((await request("shares/respond","POST",undefined,{token,visitor:randomUUID(),kind:"walk"})).status).toBe(200);
+    const latest = await notices(actor.token);
+    expect(latest).toHaveLength(2);
+    expect(latest.find((item: {eventId: string}) => item.eventId !== firstNotices[0].eventId).readAt).toBeNull();
+    expect(latest.find((item: {eventId: string}) => item.eventId === firstNotices[0].eventId).readAt).not.toBeNull();
+    expect(await notices(second.token)).toHaveLength(0);
+    const queued = await db.outboxEvent.findMany({
+      where:{aggregateType:"ring_share",aggregateId:create.data.id}, orderBy:{eventId:"asc"},
+    });
+    expect(queued.map((item)=>item.eventId)).toEqual(latest.map((item: {eventId: string})=>item.eventId).sort());
+    expect(queued.map((item)=>Object.keys(item.payload as object).sort())).toEqual([
+      ["deepLink","notificationId","userId"], ["deepLink","notificationId","userId"],
+    ]);
     expect((await request("shares/member-response","POST",second.token,{token,kind:"walk",named:true})).status).toBe(403);
-    const page = await fetch(root + "/global/say-ring/share");
+    const h5 = root + "/global/say-ring/share";
+    const page = await fetch(h5);
     expect(page.status).toBe(200);
     expect(page.headers.get("referrer-policy")).toBe("no-referrer");
-    expect(await page.text()).not.toContain("122.5");
+    expect(await page.text()).toContain("<title>Say Ring</title>");
+    const titleUrl = h5 + "?title=" + reference;
+    const titled = await fetch(titleUrl, {headers:{"accept-language":"en-US,en;q=0.9"}});
+    expect(titled.status).toBe(200);
+    expect(titled.headers.get("cache-control")).toContain("no-store");
+    const markup = await titled.text();
+    expect(markup).toContain("<title>Synthetic Ring Member · Blood pressure record · Synthetic &lt;/title&gt; &amp; &lt;img src=x&gt; · Say Ring</title>");
+    expect(markup).not.toContain(token);
+    expect(markup).not.toContain("122.5");
+    const chinese = await fetch(titleUrl, {headers:{"accept-language":"zh-CN,en;q=0.7"}});
+    expect(await chinese.text()).toContain("Synthetic Ring Member · 血压记录 · Synthetic");
     await request("shares/" + create.data.id,"DELETE",third.token);
     expect((await request("shares/open","POST",undefined,{token})).status).toBe(200);
     await request("shares/" + create.data.id,"DELETE",actor.token);
     expect((await request("shares/open","POST",undefined,{token})).status).toBe(404);
+    expect((await request("shares/" + create.data.id,"GET",actor.token)).status).toBe(404);
+    expect(await (await fetch(titleUrl)).text()).toContain("<title>Say Ring</title>");
   });
 
   it("accepts only one claimant, delivers messages, and keeps voice and goals inside the relationship", async () => {
