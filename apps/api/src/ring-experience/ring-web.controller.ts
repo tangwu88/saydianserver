@@ -1,7 +1,8 @@
-import { Controller, Get, Headers, NotFoundException, Param, Res } from "@nestjs/common";
+import { Controller, Get, Headers, NotFoundException, Param, Query, Res } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import type { Response } from "express";
 import { RawResponse } from "../common/raw-response.decorator";
+import { RingExperienceService } from "./ring-experience.service";
 import { shareClient, shareLayout, shareStyles } from "./ring-share-web";
 
 const css = `
@@ -125,8 +126,9 @@ const otherEntry = `
   else memberResponse();
 `;
 
-function html(mode: string, nonce: string, launchOrigin: string) {
+function html(mode: string, nonce: string, launchOrigin: string, title: string) {
   const sharing = mode === "share";
+  const titleText = title.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   return `<!DOCTYPE html>
 <html lang="zh-Hans"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -134,7 +136,7 @@ function html(mode: string, nonce: string, launchOrigin: string) {
 <meta name="apple-itunes-app" content="app-id=6816549943">
 <meta property="og:title" content="Say Ring">
 <meta property="og:description" content="Open a share from Say Ring">
-<title>Say Ring</title><style nonce="${nonce}">${css}${sharing ? shareStyles : ""}</style>
+<title>${titleText}</title><style nonce="${nonce}">${css}${sharing ? shareStyles : ""}</style>
 </head><body data-mode="${mode}" data-launch-origin="${launchOrigin}">${sharing ? shareLayout : `<main>
 <header>Say Ring</header><h1 id="title">Say Ring</h1>
 <p id="day"></p><p id="code"></p><p id="note"></p>
@@ -149,9 +151,14 @@ function html(mode: string, nonce: string, launchOrigin: string) {
 @Controller("global/say-ring")
 @RawResponse()
 export class RingWebController {
+  constructor(private readonly ring: RingExperienceService) {}
+
   @Get(":mode")
-  page(@Param("mode") mode: string, @Headers("host") host: string | undefined, @Res() response: Response) {
+  async page(@Param("mode") mode: string, @Headers("host") host: string | undefined,
+    @Headers("accept-language") language: string | undefined, @Query("title") reference: unknown,
+    @Res() response: Response) {
     if (!["share", "invite", "respond"].includes(mode)) throw new NotFoundException();
+    const title = mode === "share" ? await this.ring.shareTitle(reference, language) : null;
     const nonce = randomBytes(18).toString("base64");
     const launchOrigin = process.env.DEPLOYMENT_SITE !== "us" &&
       process.env.SAY_RING_APP_LINK_HOST_ENABLED === "true" &&
@@ -160,6 +167,6 @@ export class RingWebController {
       "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex,nofollow,noarchive",
       "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
-    }).type("html").send(html(mode, nonce, launchOrigin));
+    }).type("html").send(html(mode, nonce, launchOrigin, title ?? "Say Ring"));
   }
 }

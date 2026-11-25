@@ -326,7 +326,7 @@
 | `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
 | `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本 | 重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还 | AI供应商 |
 | `GET /api/saydian-app/v2/ring/capabilities` | Say Ring 新功能开关 | public | 无 | {sharing,care,firmware} | 中国站开关 |
-| `POST /api/saydian-app/v2/ring/shares/open` | 匿名读取分享快照 | public | {token} | {snapshot,expiresAt,sharerName} | 7天有效；昵称来自当前分享者的资料 |
+| `POST /api/saydian-app/v2/ring/shares/open` | 匿名读取分享快照 | public | {token} | {snapshot,expiresAt,sharerName,projectNames,titleRef} | 7天有效；标题引用来自分享令牌摘要，只用于 H5 标题 |
 | `POST /api/saydian-app/v2/ring/shares/respond` | 访客选择预设回应 | public | {token,kind,visitor:UUID} | {ok} | 分享有效期、访客去重；每条新回应创建一条分享者通知 |
 | `POST /api/saydian-app/v2/ring/shares/member-response` | 会员选择署名或匿名回应 | member | {token,kind,named} | {ok} | 署名校验双方关爱关系 |
 | `POST /api/saydian-app/v2/ring/shares` | 确认并创建固定分享 | member | {token,confirmed:true,snapshot:{kind,date,fields,note}} | {id,expiresAt} | 会员归属、字段白名单 |

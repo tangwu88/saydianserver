@@ -1,3 +1,5 @@
+import { shareFieldNames, shareFieldPriority, shareTitles } from "./ring-share-presentation";
+
 export const shareStyles = `
   body[data-mode="share"] {
     background:radial-gradient(ellipse at top, #fffaf2 0, #f5f0e8 58%, #f1ebe2 100%);
@@ -130,34 +132,9 @@ export const shareLayout = `
 </main>`;
 
 export const shareClient = String.raw`
-  const titles = {
-    sleep: ['睡眠报告','Sleep report'], health: ['健康记录','Health record'],
-    workout: ['运动记录','Workout'], week: ['我的这一周','My week']
-  };
-  const fieldNames = {
-    sleepMinutes: ['睡眠时长','Sleep duration','min'], deepMinutes: ['深睡','Deep sleep','min'],
-    sleepAverageMinutes: ['平均睡眠','Average sleep','min'],
-    previousSleepAverageMinutes: ['上周同期平均睡眠','Previous week’s average sleep','min'],
-    previousSportMinutes: ['上周同期运动时长','Previous week’s activity','min'],
-    rangeEnd: ['记录截至','Through',''],
-    lightMinutes: ['浅睡','Light sleep','min'], remMinutes: ['快速眼动','REM sleep','min'],
-    awakeMinutes: ['清醒时长','Awake time','min'], sleepStart: ['入睡','Fell asleep',''],
-    sleepEnd: ['醒来','Woke up',''], sleepScore: ['睡眠评分','Sleep score',''],
-    sportName: ['运动','Activity',''], sportMinutes: ['运动时长','Duration','min'],
-    distanceKm: ['距离','Distance','km'], steps: ['步数','Steps',''],
-    heartRate: ['心率','Heart rate','bpm'], hrv: ['心率变异性','HRV','ms'],
-    oxygen: ['血氧','Blood oxygen','%'], temperatureC: ['温度','Temperature','°C'],
-    systolic: ['收缩压','Systolic pressure','mmHg'], diastolic: ['舒张压','Diastolic pressure','mmHg'],
-    pulse: ['脉搏','Pulse','bpm'], measuredTime: ['测量时间','Reading time',''],
-    recordDays: ['有记录天数','Days recorded',''], stress: ['压力','Stress',''],
-    bloodGlucose: ['血糖','Blood glucose','mmol/L']
-  };
-  const fieldPriority = {
-    sleep: ['sleepMinutes','sleepAverageMinutes','sleepScore'],
-    health: ['systolic','diastolic','heartRate','oxygen','hrv','temperatureC','steps','distanceKm','bloodGlucose','stress','pulse'],
-    workout: ['sportMinutes','distanceKm','steps','heartRate','sportName'],
-    week: ['sleepAverageMinutes','sleepMinutes','sportMinutes','steps','distanceKm']
-  };
+  const titles = ${JSON.stringify(shareTitles)};
+  const fieldNames = ${JSON.stringify(shareFieldNames)};
+  const fieldPriority = ${JSON.stringify(shareFieldPriority)};
   const stageKinds = [
     ['deepMinutes','stage-deep'], ['lightMinutes','stage-light'],
     ['remMinutes','stage-rem'], ['awakeMinutes','stage-awake']
@@ -200,7 +177,7 @@ export const shareClient = String.raw`
     group.append(dt,dd);
     list.append(group);
   }
-  function renderShare(snapshot, sharerName) {
+  function renderShare({snapshot, sharerName, projectNames}) {
     if (!snapshot || !hasOwn(titles,snapshot.kind) || !Array.isArray(snapshot.fields)) {
       throw new Error('Invalid share');
     }
@@ -217,18 +194,13 @@ export const shareClient = String.raw`
       ? label(name + ' 分享给你','Shared by ' + name)
       : label('好友分享给你','Shared with you'));
     const highlightKey = fieldPriority[snapshot.kind].find((key) => fields.has(key));
-    const sport = fields.get('sportName');
-    let title = label(...titles[snapshot.kind]);
-    if (snapshot.kind === 'workout' && typeof sport === 'string' && sport) {
-      title = sport;
+    const title = label(...(projectNames || titles[snapshot.kind]));
+    if (snapshot.kind === 'workout' && title === fields.get('sportName')) {
       included.add('sportName');
-    } else if (snapshot.kind === 'health' && highlightKey) {
-      title = highlightKey === 'systolic' || highlightKey === 'diastolic'
-        ? label('血压记录','Blood pressure record')
-        : label(shareLabel(highlightKey) + '记录',shareLabel(highlightKey) + ' record');
     }
+    const note = typeof snapshot.note === 'string' ? snapshot.note.trim() : '';
     text('title',title);
-    document.title = [name,title,'Say Ring'].filter(Boolean).join(' · ');
+    document.title = [name,title,note,'Say Ring'].filter(Boolean).join(' · ');
     const start = shareDate(snapshot.date);
     const end = fields.get('rangeEnd');
     text('day', typeof end === 'string' && end !== snapshot.date
@@ -257,7 +229,6 @@ export const shareClient = String.raw`
       text('highlight-unit',highlight[2]);
     }
 
-    const note = typeof snapshot.note === 'string' ? snapshot.note.trim() : '';
     el('share-note').hidden = !note;
     if (note) {
       text('note-title',label('留言','A note for you'));
@@ -347,7 +318,14 @@ export const shareClient = String.raw`
     shareState(label('正在打开好友的分享…','Opening your friend’s share…'),false);
     try {
       const result = await post('shares/open', {token});
-      renderShare(result.snapshot,result.sharerName);
+      renderShare(result);
+      if (/^[a-f0-9]{64}$/.test(result.titleRef || '')) {
+        const address = new URL(location.href);
+        if (address.searchParams.get('title') !== result.titleRef) {
+          address.searchParams.set('title',result.titleRef);
+          try { history.replaceState(null,'',address.href); } catch (_) {}
+        }
+      }
     } catch (error) {
       if (error.status === 404) expiredShare();
       else shareState(label('暂时打不开这条分享。','This share couldn’t be opened just now.'),true);

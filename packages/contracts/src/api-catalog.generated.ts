@@ -40594,8 +40594,8 @@ export const apiCatalog = {
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
       "summary": "匿名读取分享快照",
       "request": "{token}",
-      "response": "{snapshot,expiresAt,sharerName}",
-      "dependency": "7天有效；昵称来自当前分享者的资料",
+      "response": "{snapshot,expiresAt,sharerName,projectNames,titleRef}",
+      "dependency": "7天有效；标题引用来自分享令牌摘要，只用于 H5 标题",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -41545,14 +41545,26 @@ export const apiCatalog = {
           "name": "host",
           "type": "string | undefined",
           "optional": false
+        },
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string | undefined",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "title",
+          "type": "unknown",
+          "optional": false
         }
       ],
       "envelope": "raw-or-legacy",
       "source": "apps/api/src/ring-experience/ring-web.controller.ts",
       "summary": "第一方分享、邀请或回应 H5",
-      "request": "mode为share、invite或respond",
-      "response": "HTML；链接片段由浏览器处理",
-      "dependency": "公开页面，私有数据逐次校验",
+      "request": "mode为share、invite或respond；share可选title引用",
+      "response": "HTML；标题含分享者昵称、项目及存在的留言；报告授权片段由浏览器处理",
+      "dependency": "标题引用只读取有效链接的标题；完整快照逐次校验",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

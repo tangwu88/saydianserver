@@ -16,7 +16,7 @@ const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempote
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
   "RingExperienceController.capabilities": entry("Say Ring 新功能开关", "无", "{sharing,care,firmware}", "中国站开关"),
-  "RingExperienceController.open": entry("匿名读取分享快照", "{token}", "{snapshot,expiresAt,sharerName}", "7天有效；昵称来自当前分享者的资料"),
+  "RingExperienceController.open": entry("匿名读取分享快照", "{token}", "{snapshot,expiresAt,sharerName,projectNames,titleRef}", "7天有效；标题引用来自分享令牌摘要，只用于 H5 标题"),
   "RingExperienceController.react": entry("访客选择预设回应", "{token,kind,visitor:UUID}", "{ok}", "分享有效期、访客去重；每条新回应创建一条分享者通知"),
   "RingExperienceController.named": entry("会员选择署名或匿名回应", "{token,kind,named}", "{ok}", "署名校验双方关爱关系"),
   "RingExperienceController.create": entry("确认并创建固定分享", "{token,confirmed:true,snapshot:{kind,date,fields,note}}", "{id,expiresAt}", "会员归属、字段白名单"),
@@ -44,7 +44,7 @@ export const notes = {
   "RingFirmwareAdminController.enable": entry("暂停或启用固件", "{enabled}", "对应固件", "启用要求相应平台真机记录及精确升级路径、原厂包与文件摘要校验"),
   "RingEngagementAdminController.summary": entry("分享与关爱的聚合结果和举报", "无", "{usage,reports}", "后台权限；聚合结果"),
   "RingEngagementAdminController.remove": entry("移除已举报的问候", "无", "{ok}", "后台权限及操作审计"),
-  "RingWebController.page": entry("第一方分享、邀请或回应 H5", "mode为share、invite或respond", "HTML；链接片段由浏览器处理", "公开页面，私有数据逐次校验"),
+  "RingWebController.page": entry("第一方分享、邀请或回应 H5", "mode为share、invite或respond；share可选title引用", "HTML；标题含分享者昵称、项目及存在的留言；报告授权片段由浏览器处理", "标题引用只读取有效链接的标题；完整快照逐次校验"),
   "UniversalLinksController.androidAssociation": entry("Android App Links 关联文件", "无", "已配置的正式包公钥指纹；未配置为空", "部署域名"),
 
   "CommerceMemberProfileController.profile": entry("商城会员读取本人个人资料", "已验证会员会话；不接受会员ID参数", "与App相同的MemberProfile，联系方式脱敏；private no-store", "复用MembersService；当前会员身份由会话取得"),

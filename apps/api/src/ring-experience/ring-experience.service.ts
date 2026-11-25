@@ -6,8 +6,9 @@ import { safeObject } from "../common/crypto";
 import { careMetricMap } from "../care/care.service";
 import {
   calendarDate, careAudio, careMessageKinds, cleanText, currentCareWeek, digest,
-  inviteCode, newInviteCode, reactionKinds, ringEnabled, ringSnapshot, ringUuid, shareToken,
+  inviteCode, newInviteCode, reactionKinds, ringAvailability, ringEnabled, ringSnapshot, ringUuid, shareToken,
 } from "./ring-contract";
+import { shareProjectNames } from "./ring-share-presentation";
 
 type Tx = Prisma.TransactionClient;
 const dayMs = 86_400_000;
@@ -104,13 +105,36 @@ export class RingExperienceService {
 
   async openShare(input: unknown) {
     ringEnabled("sharing");
-    const token = shareToken(safeObject(input).token);
-    const row = await this.db.ringShare.findFirst({
-      where: { digest: digest(token), expiresAt: { gt: new Date() }, owner: { status: "ACTIVE" } },
+    const titleRef = digest(shareToken(safeObject(input).token));
+    const row = await this.activeShare(titleRef);
+    if (!row) throw new NotFoundException("链接已失效");
+    return {
+      snapshot: row.snapshot,
+      expiresAt: row.expiresAt,
+      sharerName: publicName(row.owner.nickname),
+      projectNames: shareProjectNames(row.snapshot),
+      titleRef,
+    };
+  }
+
+  async shareTitle(reference: unknown, acceptLanguage: string | undefined) {
+    if (typeof reference !== "string" || !/^[0-9a-f]{64}$/.test(reference) ||
+        !ringAvailability().sharing) return null;
+    const row = await this.activeShare(reference);
+    if (!row) return null;
+    const language = (acceptLanguage ?? "zh-Hans").split(/[;,]/, 1)[0]!.trim().toLowerCase();
+    const chinese = /^zh(?:-|$)/.test(language) && !/(?:^|-)(hant|tw|hk|mo)(?:-|$)/.test(language);
+    const project = shareProjectNames(row.snapshot)[chinese ? 0 : 1];
+    const note = safeObject(row.snapshot).note;
+    return [publicName(row.owner.nickname), project, typeof note === "string" ? note.trim() : null, "Say Ring"]
+      .filter(Boolean).join(" · ");
+  }
+
+  private activeShare(key: string) {
+    return this.db.ringShare.findFirst({
+      where: { digest: key, expiresAt: { gt: new Date() }, owner: { status: "ACTIVE" } },
       select: { snapshot: true, expiresAt: true, owner: { select: { nickname: true } } },
     });
-    if (!row) throw new NotFoundException("链接已失效");
-    return { snapshot: row.snapshot, expiresAt: row.expiresAt, sharerName: publicName(row.owner.nickname) };
   }
 
   async react(input: unknown, actorId?: string) {
