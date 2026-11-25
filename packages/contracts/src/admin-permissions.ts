@@ -44,6 +44,8 @@ export const adminResourcePermissions: Record<string, Rule> = {
   "article-categories": { read: [...content, ...view], write: ["CONTENT_EDITOR"] },
   "legal-documents": { read: [...content, ...view], write: ["CONTENT_EDITOR"] },
   feedback: { read: [...app, ...customer, ...view], write: [...app, ...customer] },
+  "ring-firmware": { read: app, write: app },
+  "ring-engagement": { read: [...app, ...customer], write: [...app, ...customer] },
   "support-chat": { read: [...app, ...customer], write: [...app, ...customer] },
   notifications: { read: [...app, ...customer, ...view], write: app },
   "notification-campaigns": { read: [...app, ...view], write: app },

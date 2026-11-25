@@ -24,6 +24,8 @@ const routes = [
       { path: "api-docs", component: ApiDocsView },
       { path: "commerce-withdrawals", component: CommerceWithdrawalsView },
       { path: "integrations", component: IntegrationsView },
+      { path: "ring-engagement", component: () => import("./views/RingEngagementView.vue") },
+      { path: "ring-firmware", component: () => import("./views/RingFirmwareView.vue") },
       { path: "support-chat", component: () => import("./views/OnlineSupportView.vue") },
       { path: "commerce-gifts", component: () => import("./views/CommerceGiftsView.vue") },
       { path: "us-migration", component: UsMigrationView },

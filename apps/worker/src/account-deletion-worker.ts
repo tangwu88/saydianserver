@@ -40,6 +40,11 @@ export class AccountDeletionWorker {
         await tx.healthRecord.deleteMany({ where: { userId } });
         await tx.healthWarningEvent.deleteMany({ where: { userId } });
         await tx.healthWarningRule.deleteMany({ where: { userId } });
+        await tx.ringShare.deleteMany({ where: { ownerId: userId } });
+        await tx.ringShareReaction.deleteMany({ where: { memberId: userId } });
+        await tx.ringCareInvite.deleteMany({
+          where: { OR: [{ inviterId: userId }, { acceptedBy: userId }] },
+        });
         await tx.careRelationship.deleteMany({
           where: { OR: [{ inviterId: userId }, { recipientId: userId }] },
         });

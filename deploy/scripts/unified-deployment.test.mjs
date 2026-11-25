@@ -90,6 +90,29 @@ test("gateway routine reconciliation restores Say Ring legal routes without dupl
   assert.equal(unifyGateway(result), result);
 });
 
+test("gateway adds Say Ring link routes and a dedicated AI timeout to existing installations", () => {
+  const template = readFileSync(new URL("../nginx/app-https.conf.template", import.meta.url), "utf8").replaceAll("__APP_DOMAIN__", "app.saydian.cn");
+  const locations = [
+    "location = /.well-known/assetlinks.json",
+    "location ^~ /global/say-ring/",
+    "location = /global/api/saydian-app/v2/ai/messages",
+  ];
+  const routes = readFileSync(new URL("../global/nginx.locations.conf", import.meta.url), "utf8").split("\n\n")
+    .filter(block => !locations.some(location => block.includes(location + " {"))).join("\n\n");
+  const before = template.replace("__SAYDIAN_GLOBAL_ROUTES__", routes);
+  const result = unifyGateway(before);
+  for (const location of locations) {
+    const matches = result.split(location + " {");
+    assert.equal(matches.length, 2);
+    assert(matches[1].split("}", 1)[0].includes("proxy_pass http://unified-api:8080;"));
+  }
+  const locationBody = location => result.split(location + " {")[1].split("}", 1)[0];
+  assert(locationBody(locations[1]).includes("access_log off;"));
+  assert(locationBody(locations[2]).includes("proxy_read_timeout 70s;"));
+  assert(locationBody("location ^~ /global/api/").includes("proxy_read_timeout 60s;"));
+  assert.equal(unifyGateway(result), result);
+});
+
 test("gateway adds exact Health download aliases safely and preserves other routes", () => {
   const template = readFileSync(new URL("../nginx/app-https.conf.template", import.meta.url), "utf8").replaceAll("__APP_DOMAIN__", "app.saydian.cn");
   const routes = readFileSync(new URL("../global/nginx.locations.conf", import.meta.url), "utf8")

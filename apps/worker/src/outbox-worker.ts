@@ -200,9 +200,21 @@ export class OutboxWorker {
     const payload = asObject(event.payload);
     const userId = String(payload.userId ?? "");
     if (!userId) throw new Error("Outbox event has no target user");
-    if (["feedback", "support_conversation"].includes(event.aggregateType) && event.eventType === "system") {
+    if (["feedback", "support_conversation", "ring_care"].includes(event.aggregateType) && event.eventType === "system") {
       const preference = await this.prisma.userNotificationPreference.findUnique({ where: { userId } });
       if (preference?.transactionalEnabled === false) return;
+    }
+    if (event.aggregateType === "ring_care" && String(payload.deepLink).startsWith("/care/interactions/")) {
+      const relationship = await this.prisma.careRelationship.findFirst({
+        where: {
+          id: event.aggregateId, status: "ACTIVE", revokedAt: null,
+          OR: [{ inviterId: userId }, { recipientId: userId }],
+          inviter: { status: "ACTIVE" }, recipient: { status: "ACTIVE" },
+          ringSettings: { none: { OR: [{ blocked: true }, { userId, muted: true }] } },
+        },
+        select: { id: true },
+      });
+      if (!relationship) return;
     }
     const installations = await this.prisma.pushInstallation.findMany({
       where: { userId, enabled: true },
