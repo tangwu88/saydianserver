@@ -346,7 +346,7 @@
 | `PUT /api/saydian-app/v2/ring/care/:id/settings` | 更改亲友静音或屏蔽 | member | path:id；{muted?,blocked?} | {muted,blocked} | 本人设置、现有关系 |
 | `GET /api/saydian-app/v2/ring/care/:id/goals` | 查看亲友本周散步进度 | member | path:id；无 | {week,today,members,activityAvailable} | 共同进度及本人已同步活动是否可用 |
 | `PUT /api/saydian-app/v2/ring/care/:id/goals` | 设置散步目标或打卡 | member | path:id；{week,target?}、{week,paused?}或{week,day,source} | 更新后的共同进度 | 本周校验及同日去重；活动打卡检查本人已同步有效数据 |
-| `POST /api/saydian-app/v2/ring/firmware/lookup` | 按精准型号核验固件目录 | member | {platform,transport,model,hardware,fromVersion,appBuild} | {available,payload?,signature?} | 实测发布清单、有效签名 |
+| `POST /api/saydian-app/v2/ring/firmware/lookup` | 按精准型号核验固件目录 | member | {platform,transport,model,hardware,fromVersion,appBuild,packageModel}；旧客户端未传包型号时无可用包 | {available,payload?,signature?}；已签名清单包含packageModel | 型号和原厂包匹配，确切硬件、版本与文件摘要均已验收 |
 | `GET /api/saydian-app/v2/ring/firmware/packages/:id` | 下载已启用的原厂固件 | member | path:id；无 | 校验后的固件文件 | 会员、签名目录与包匹配 |
 | `GET /api/saydian-app/v2/sayheath/legal` | Product-specific reviewed terms and privacy version required to sign in | public | 无请求体 | 对象 | 核心服务 |
 | `GET /api/saydian-app/v2/sayheath/public/privacy` | Published English product privacy page | public | 无请求体 | 对象 | 核心服务 |
@@ -602,9 +602,9 @@
 | `POST /api/saydian-app/admin/v1/partner-agreements/draft` | 保存可编辑协议草稿 | admin: SUPER_ADMIN | {id?,updatedAt?,title,version,content} | 草稿；已发布正文禁止修改 | 仅SUPER_ADMIN；草稿不会自动生效 |
 | `POST /api/saydian-app/admin/v1/partner-agreements/:id/publish` | 发布合作协议版本 | admin: SUPER_ADMIN | path:id；id为协议UUID；{contentSha256} | 当前已发布版本；其他版本停用 | 仅SUPER_ADMIN；所有伙伴后续业务须同意当前已发布版本 |
 | `GET /api/saydian-app/admin/v1/partner-agreements/:id/acceptances` | 查看协议阅读与签署记录 | admin: SUPER_ADMIN | path:id；id为协议UUID | {items}；账户、首次阅读/同意时间、会话、IP、客户端；最多1000 | 仅SUPER_ADMIN |
-| `GET /api/saydian-app/admin/v1/ring-firmware` | 后台固件目录 | admin: SUPER_ADMIN, APP_OPERATIONS | 无 | {entries} | 后台审计权限 |
-| `POST /api/saydian-app/admin/v1/ring-firmware` | 暂存原厂固件 | admin: SUPER_ADMIN, APP_OPERATIONS | file:file?；multipart 文件与目标设备、版本、证据、摘要 | 草稿固件 | 原厂SHA-256匹配 |
-| `PUT /api/saydian-app/admin/v1/ring-firmware/:id` | 暂停或启用固件 | admin: SUPER_ADMIN, APP_OPERATIONS | path:id；{enabled} | 对应固件 | 启用要求确切双端验证记录和服务端配置 |
+| `GET /api/saydian-app/admin/v1/ring-firmware` | 后台固件目录 | admin: SUPER_ADMIN, APP_OPERATIONS | 无 | {entries}；原厂固件包packageModel可为空 | 后台审计权限 |
+| `POST /api/saydian-app/admin/v1/ring-firmware` | 暂存原厂固件 | admin: SUPER_ADMIN, APP_OPERATIONS | file:file?；multipart 文件与目标、packageModel、版本、证据、摘要 | 草稿固件 | 指定型号与原厂包配对；文件SHA-256匹配 |
+| `PUT /api/saydian-app/admin/v1/ring-firmware/:id` | 暂停或启用固件 | admin: SUPER_ADMIN, APP_OPERATIONS | path:id；{enabled} | 对应固件 | 启用要求相应平台真机记录及精确升级路径、原厂包与文件摘要校验 |
 | `GET /api/saydian-app/admin/v1/ring-engagement` | 分享与关爱的聚合结果和举报 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | 无 | {usage,reports} | 后台权限；聚合结果 |
 | `DELETE /api/saydian-app/admin/v1/ring-engagement/reports/:id` | 移除已举报的问候 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；无 | {ok} | 后台权限及操作审计 |
 | `GET /api/saydian-app/admin/v1/settings/sayheath/features` | Read the five US product version switches | admin: SUPER_ADMIN | 无请求体 | 对象 | 核心服务 |

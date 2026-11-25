@@ -3,10 +3,61 @@ import { createHash, generateKeyPairSync, randomBytes, randomUUID, verify } from
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { PrismaClient } from "@prisma/client";
+import { sayRingFirmwareTarget } from "@saydian/app-contracts";
 import { sign } from "jsonwebtoken";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { authAudience, authIssuer } from "../common/deployment-realm";
+import type { PrismaService } from "../common/prisma.service";
 import { careAudio, currentCareWeek, ringSnapshot } from "./ring-contract";
+import { firmwareQualified, RingFirmware } from "./ring-firmware";
+
+const packageBytes = Buffer.from("Synthetic fixture; never a device image.");
+const sha256 = createHash("sha256").update(packageBytes).digest("hex");
+const firmwareIdentity = { platform: "ios", transport: "qring", model: "R8", hardware: "labA", fromVersion: "1.0" };
+const firmwareApproval = "ios:qring:R8:labA:1.0:1.1:R21:" + sha256;
+
+it("maps only approved product models and qualifies the exact file for each model and platform", () => {
+  for (const [transport, model, packageModel] of [
+    ["qring", "R8", "R21"], ["qring", "R21", "R21"],
+    ["coolwear", "R7 Pro", "HR05"], ["coolwear", "R7u", "HR05"],
+    ["coolwear", "R7", "HR01"], ["coolwear", "R7y", "HR01"],
+  ] as const) {
+    expect(sayRingFirmwareTarget(transport, model)?.packageModel).toBe(packageModel);
+  }
+  for (const [transport, model] of [
+    ["qring", "R8 Pro"], ["qring", "R22"], ["qring", "R7C"],
+    ["coolwear", "HR05"], ["coolwear", "HR01"], ["coolwear", "R8"],
+    ["qring", "R7 Pro"], ["urion", "U19"], ["qring", "R8-R21"],
+  ] as const) {
+    expect(sayRingFirmwareTarget(transport, model)).toBeUndefined();
+  }
+  const release = { ...firmwareIdentity, version: "1.1", sha256 };
+  expect(firmwareQualified(release, firmwareApproval)).toBe(true);
+  for (const difference of [
+    { sha256: "b".repeat(64) }, { model: "R21" }, { platform: "android" },
+    { hardware: "labB" }, { fromVersion: "0.9" }, { version: "1.2" },
+  ]) {
+    expect(firmwareQualified({ ...release, ...difference }, firmwareApproval)).toBe(false);
+  }
+  expect(firmwareQualified(release, "ios:qring:R8:labA:1.0:1.1")).toBe(false);
+  expect(firmwareQualified({ ...release, model: "R8PRO" },
+    "ios:qring:R8PRO:labA:1.0:1.1:R21:" + sha256)).toBe(false);
+});
+
+it("stages a matching factory package only", async () => {
+  const create = vi.fn();
+  const firmware = new RingFirmware({ ringFirmwareRelease: { create } } as unknown as PrismaService);
+  const file = { buffer: packageBytes, size: packageBytes.length } as Express.Multer.File;
+  const draft = { ...firmwareIdentity, transport: "coolwear", model: "R7u",
+    version: "1.1", sha256, minBuild: "1323", minBattery: "50", evidence: "isolated fixture" };
+  await expect(firmware.stage({ ...draft, packageModel: "HR01" }, file)).rejects.toThrow("不匹配");
+  await expect(firmware.stage({ ...draft, model: "HR05", packageModel: "HR05" }, file)).rejects.toThrow("不匹配");
+  expect(create).not.toHaveBeenCalled();
+  await firmware.stage({ ...draft, packageModel: "HR05" }, file);
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({
+    data: expect.objectContaining({ transport: "coolwear", model: "R7Ultra", sha256 }),
+  }));
+});
 
 function wave(seconds: number) {
   const size = seconds * 16000 * 2;
@@ -66,7 +117,7 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
         SAY_RING_SHARING_ENABLED: "true", SAY_RING_CARE_ENABLED: "true",
         SAY_RING_FIRMWARE_ENABLED: "true",
         SAY_RING_FIRMWARE_SIGNING_KEY_B64: signer.privateKey.export({type:"pkcs8",format:"der"}).toString("base64"),
-        SAY_RING_VERIFIED_FIRMWARE_UPGRADES: "ios:qring:R8:labA:1.0:1.1",
+        SAY_RING_VERIFIED_FIRMWARE_UPGRADES: firmwareApproval,
       },
       stdio: ["ignore","pipe","pipe"],
     });
@@ -221,23 +272,36 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
   });
 
   it("serves signed firmware only for the exact qualified target and honors pause", async () => {
-    const packageBytes = Buffer.from("Synthetic fixture; never a device image.");
-    const sha256 = createHash("sha256").update(packageBytes).digest("hex");
-    const identity = {platform:"ios",transport:"qring",model:"R8",hardware:"labA",fromVersion:"1.0"};
+    const identity = firmwareIdentity;
+    const lookup = { ...identity, packageModel: "R21", appBuild: 1318 };
     const release = await db.ringFirmwareRelease.create({data:{...identity,version:"1.1",
       minBuild:1318,minBattery:30,bytes:packageBytes.byteLength,sha256,
       package:Uint8Array.from(packageBytes),enabled:true,evidence:"isolated fixture"}});
     try {
-      const result = await request("firmware/lookup","POST",actor.token,{...identity,appBuild:1318});
+      const result = await request("firmware/lookup","POST",actor.token,lookup);
       expect(result.data.available).toBe(true);
       const payload = Buffer.from(result.data.payload,"base64url");
       expect(verify(null,payload,signer.publicKey,Buffer.from(result.data.signature,"base64url"))).toBe(true);
       expect(JSON.parse(payload.toString()).sha256).toBe(sha256);
-      expect((await request("firmware/lookup","POST",actor.token,{...identity,hardware:"labB",appBuild:1318})).data.available).toBe(false);
-      await db.ringFirmwareRelease.update({where:{id:release.id},data:{enabled:false}});
-      const download = await fetch(root + base + "firmware/packages/" + release.id,
+      expect(JSON.parse(payload.toString()).packageModel).toBe("R21");
+      expect((await request("firmware/lookup","POST",actor.token,{...identity,appBuild:1318})).data.available).toBe(false);
+      expect((await request("firmware/lookup","POST",actor.token,{...lookup,packageModel:"HR05"})).data.available).toBe(false);
+      expect((await request("firmware/lookup","POST",actor.token,{...lookup,hardware:"labB"})).data.available).toBe(false);
+      expect((await request("firmware/lookup","POST",actor.token,{...lookup,model:"R21"})).data.available).toBe(false);
+      const download = () => fetch(root + base + "firmware/packages/" + release.id,
         {headers:{authorization:"Bearer "+actor.token}});
-      expect(download.status).toBe(404);
+      expect(Buffer.from(await (await download()).arrayBuffer())).toEqual(packageBytes);
+      const otherFile = Buffer.from("A different synthetic file for the same version.");
+      await db.ringFirmwareRelease.update({where:{id:release.id},data:{
+        sha256:createHash("sha256").update(otherFile).digest("hex"), bytes:otherFile.byteLength,
+        package:Uint8Array.from(otherFile),
+      }});
+      expect((await request("firmware/lookup","POST",actor.token,lookup)).data.available).toBe(false);
+      expect((await download()).status).toBe(404);
+      await db.ringFirmwareRelease.update({where:{id:release.id},data:{
+        enabled:false,sha256,bytes:packageBytes.byteLength,package:Uint8Array.from(packageBytes),
+      }});
+      expect((await download()).status).toBe(404);
     } finally { await db.ringFirmwareRelease.delete({where:{id:release.id}}); }
   });
 });

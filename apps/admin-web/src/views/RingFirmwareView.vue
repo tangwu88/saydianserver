@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { sayRingFirmwareFamilies, sayRingFirmwareTarget } from "@saydian/app-contracts";
 import { adminSessionKey, api, getAdminRoles, responseData } from "../api";
 
 type Release = {
   id: string; platform: string; transport: string; model: string; hardware: string;
   fromVersion: string; version: string; minBuild: number; minBattery: number;
   sha256: string; bytes: number; evidence: string; enabled: boolean;
+  packageModel: string | null;
 };
 const allowed = getAdminRoles().some((role) => ["APP_OPERATIONS", "SUPER_ADMIN"].includes(role.toUpperCase()));
 const entries = ref<Release[]>([]);
@@ -17,6 +19,13 @@ const form = ref({
   platform: "ios", transport: "qring", model: "", hardware: "", fromVersion: "",
   version: "", minBuild: "", minBattery: "", sha256: "", evidence: "",
 });
+const models = computed(() => sayRingFirmwareFamilies
+  .filter(family => family.transport === form.value.transport)
+  .flatMap<string>(family => family.models));
+const packageModel = computed(() =>
+  sayRingFirmwareTarget(form.value.transport, form.value.model)?.packageModel,
+);
+const modelLabels: Record<string, string> = { R7Pro: "R7 Pro", R7Ultra: "R7 Ultra (R7u)", R7Y: "R7y" };
 
 function message(problem: unknown) {
   const payload = (problem as { response?: { data?: { message?: unknown } } }).response?.data?.message;
@@ -32,13 +41,14 @@ async function refresh() {
 }
 
 async function stage() {
-  if (!file.value || busy.value) return;
+  if (!file.value || !packageModel.value || busy.value) return;
   const session = adminSessionKey();
   busy.value = true;
   error.value = "";
   try {
     const data = new FormData();
     for (const [key, value] of Object.entries(form.value)) data.append(key, value.trim());
+    data.append("packageModel", packageModel.value);
     data.append("file", file.value);
     await api.post("/ring-firmware", data);
     if (adminSessionKey() !== session) return;
@@ -72,6 +82,7 @@ onMounted(() => { if (allowed) void refresh(); });
       <el-table-column prop="platform" label="平台" width="90" />
       <el-table-column prop="transport" label="通道" width="110" />
       <el-table-column prop="model" label="型号" min-width="100" />
+      <el-table-column prop="packageModel" label="原厂固件包" min-width="120" />
       <el-table-column prop="hardware" label="硬件修订" min-width="120" />
       <el-table-column prop="fromVersion" label="允许源版本" min-width="120" />
       <el-table-column prop="version" label="目标版本" min-width="120" />
@@ -83,7 +94,7 @@ onMounted(() => { if (allowed) void refresh(); });
             @confirm="setEnabled(row, !row.enabled)"
           >
             <template #reference>
-              <el-button :disabled="busy">{{ row.enabled ? "暂停分发" : "启用分发" }}</el-button>
+              <el-button :disabled="busy || (!row.enabled && !row.packageModel)">{{ row.enabled ? "暂停分发" : "启用分发" }}</el-button>
             </template>
           </el-popconfirm>
         </template>
@@ -94,11 +105,13 @@ onMounted(() => { if (allowed) void refresh(); });
         <el-form-item label="平台"><el-select v-model="form.platform">
           <el-option label="iOS" value="ios" /><el-option label="Android" value="android" />
         </el-select></el-form-item>
-        <el-form-item label="原厂通道"><el-select v-model="form.transport">
+        <el-form-item label="原厂通道"><el-select v-model="form.transport" @change="form.model = ''">
           <el-option label="QRing" value="qring" /><el-option label="CoolWear" value="coolwear" />
-          <el-option label="U19 / Urion" value="urion" />
         </el-select></el-form-item>
-        <el-form-item label="准确型号"><el-input v-model="form.model" /></el-form-item>
+        <el-form-item label="准确型号"><el-select v-model="form.model">
+          <el-option v-for="model in models" :key="model" :label="modelLabels[model] ?? model" :value="model" />
+        </el-select></el-form-item>
+        <el-form-item v-if="packageModel" label="原厂固件包"><span>{{ packageModel }}</span></el-form-item>
         <el-form-item label="硬件修订"><el-input v-model="form.hardware" /></el-form-item>
         <el-form-item label="允许源版本"><el-input v-model="form.fromVersion" /></el-form-item>
         <el-form-item label="目标版本"><el-input v-model="form.version" /></el-form-item>
@@ -112,7 +125,7 @@ onMounted(() => { if (allowed) void refresh(); });
           <input type="file" @change="file = ($event.target as HTMLInputElement).files?.[0]" />
         </el-form-item>
         <el-alert v-if="error" :title="error" type="error" :closable="false" />
-        <el-button native-type="submit" type="primary" :loading="busy" :disabled="!file">暂存</el-button>
+        <el-button native-type="submit" type="primary" :loading="busy" :disabled="!file || !packageModel">暂存</el-button>
       </el-form>
     </el-dialog>
   </section>

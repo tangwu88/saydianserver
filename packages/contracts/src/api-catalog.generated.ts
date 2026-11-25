@@ -41267,9 +41267,9 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
       "summary": "按精准型号核验固件目录",
-      "request": "{platform,transport,model,hardware,fromVersion,appBuild}",
-      "response": "{available,payload?,signature?}",
-      "dependency": "实测发布清单、有效签名",
+      "request": "{platform,transport,model,hardware,fromVersion,appBuild,packageModel}；旧客户端未传包型号时无可用包",
+      "response": "{available,payload?,signature?}；已签名清单包含packageModel",
+      "dependency": "型号和原厂包匹配，确切硬件、版本与文件摘要均已验收",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -41328,7 +41328,7 @@ export const apiCatalog = {
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
       "summary": "后台固件目录",
       "request": "无",
-      "response": "{entries}",
+      "response": "{entries}；原厂固件包packageModel可为空",
       "dependency": "后台审计权限",
       "successStatus": 200,
       "contract": {
@@ -41368,9 +41368,9 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
       "summary": "暂存原厂固件",
-      "request": "multipart 文件与目标设备、版本、证据、摘要",
+      "request": "multipart 文件与目标、packageModel、版本、证据、摘要",
       "response": "草稿固件",
-      "dependency": "原厂SHA-256匹配",
+      "dependency": "指定型号与原厂包配对；文件SHA-256匹配",
       "successStatus": 201,
       "contract": {
         "status": "unreviewed",
@@ -41411,7 +41411,7 @@ export const apiCatalog = {
       "summary": "暂停或启用固件",
       "request": "{enabled}",
       "response": "对应固件",
-      "dependency": "启用要求确切双端验证记录和服务端配置",
+      "dependency": "启用要求相应平台真机记录及精确升级路径、原厂包与文件摘要校验",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
