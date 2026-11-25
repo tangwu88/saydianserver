@@ -330,7 +330,7 @@
 | `POST /api/saydian-app/v2/ring/shares/respond` | 访客选择预设回应 | public | {token,kind,visitor:UUID} | {ok} | 分享有效期、访客去重 |
 | `POST /api/saydian-app/v2/ring/shares/member-response` | 会员选择署名或匿名回应 | member | {token,kind,named} | {ok} | 署名校验双方关爱关系 |
 | `POST /api/saydian-app/v2/ring/shares` | 确认并创建固定分享 | member | {token,confirmed:true,snapshot:{kind,date,fields,note}} | {id,expiresAt} | 会员归属、字段白名单 |
-| `GET /api/saydian-app/v2/ring/shares` | 查询自己的有效分享与回应 | member | 无 | {entries} | 会员归属 |
+| `GET /api/saydian-app/v2/ring/shares` | 查询自己的分享与回应 | member | query:history?，query:before?；history=true含过期记录；before可选本人的分享UUID | {entries,nextBefore} | 已有调用默认仅返回有效分享 |
 | `DELETE /api/saydian-app/v2/ring/shares/:id` | 撤回本人的分享 | member | path:id；无 | {ok} | 立即移除匿名读取权限 |
 | `POST /api/saydian-app/v2/ring/care/invitations/preview` | 查看一次性关爱邀请 | public | {code} | {inviterName,expiresAt} | 邀请码与48小时有效期 |
 | `POST /api/saydian-app/v2/ring/care/invitations` | 创建关注对方的邀请 | member | 无 | {id,code,expiresAt} | 当前会员 |
@@ -344,8 +344,8 @@
 | `DELETE /api/saydian-app/v2/ring/care/:id/messages/:message` | 删除自己的消息 | member | path:id，path:message；无 | {ok} | 作者校验 |
 | `POST /api/saydian-app/v2/ring/care/:id/messages/:message/report` | 举报亲友消息 | member | path:id，path:message；无 | {ok} | 当前有效关系 |
 | `PUT /api/saydian-app/v2/ring/care/:id/settings` | 更改亲友静音或屏蔽 | member | path:id；{muted?,blocked?} | {muted,blocked} | 本人设置、现有关系 |
-| `GET /api/saydian-app/v2/ring/care/:id/goals` | 查看亲友本周散步进度 | member | path:id；无 | {week,today,members} | 仅展示共同进度 |
-| `PUT /api/saydian-app/v2/ring/care/:id/goals` | 设置散步目标或打卡 | member | path:id；{week,target?}、{week,paused?}或{week,day,source} | 更新后的共同进度 | 本周校验及同日去重 |
+| `GET /api/saydian-app/v2/ring/care/:id/goals` | 查看亲友本周散步进度 | member | path:id；无 | {week,today,members,activityAvailable} | 共同进度及本人已同步活动是否可用 |
+| `PUT /api/saydian-app/v2/ring/care/:id/goals` | 设置散步目标或打卡 | member | path:id；{week,target?}、{week,paused?}或{week,day,source} | 更新后的共同进度 | 本周校验及同日去重；活动打卡检查本人已同步有效数据 |
 | `POST /api/saydian-app/v2/ring/firmware/lookup` | 按精准型号核验固件目录 | member | {platform,transport,model,hardware,fromVersion,appBuild} | {available,payload?,signature?} | 实测发布清单、有效签名 |
 | `GET /api/saydian-app/v2/ring/firmware/packages/:id` | 下载已启用的原厂固件 | member | path:id；无 | 校验后的固件文件 | 会员、签名目录与包匹配 |
 | `GET /api/saydian-app/v2/sayheath/legal` | Product-specific reviewed terms and privacy version required to sign in | public | 无请求体 | 对象 | 核心服务 |

@@ -39,11 +39,19 @@ export class RingExperienceService {
     return { id: row.id, expiresAt: row.expiresAt };
   }
 
-  async shares(ownerId: string) {
-    ringEnabled("sharing");
+  async shares(ownerId: string, history = false, before?: string) {
+    // Owners can review and revoke existing links while public access is paused.
+    if (!history) ringEnabled("sharing");
+    const now = new Date();
+    const cursor = before && await this.db.ringShare.findFirst({
+      where: { id: ringUuid(before), ownerId }, select: { id: true },
+    });
+    if (before && !cursor) throw new NotFoundException("请刷新分享列表");
+    const limit = history ? 30 : 60;
     const entries = await this.db.ringShare.findMany({
-      where: { ownerId, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: "desc" }, take: 60,
+      where: { ownerId, ...(!history ? { expiresAt: { gt: now } } : {}) },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: limit + 1,
+      ...(cursor ? { cursor, skip: 1 } : {}),
       select: { id: true, snapshot: true, createdAt: true, expiresAt: true,
         reactions: {
           orderBy: { createdAt: "desc" }, take: 15,
@@ -51,7 +59,9 @@ export class RingExperienceService {
         }, _count: { select: { reactions: true } },
       },
     });
-    return { entries };
+    const more = entries.length > limit;
+    if (more) entries.pop();
+    return { entries, nextBefore: more ? entries.at(-1)?.id : null };
   }
 
   async revokeShare(ownerId: string, id: string) {
@@ -394,11 +404,14 @@ export class RingExperienceService {
     ringEnabled("care");
     const relation = await this.relation(this.db, id, userId);
     const { week, today } = currentCareWeek();
-    const list = await this.db.ringCareGoal.findMany({
-      where: { relationshipId: relation.id, week },
-      select: { userId: true, target: true, days: true, paused: true },
-    });
-    return { week, today,
+    const [list, activityAvailable] = await Promise.all([
+      this.db.ringCareGoal.findMany({
+        where: { relationshipId: relation.id, week },
+        select: { userId: true, target: true, days: true, paused: true },
+      }),
+      this.hasRecordedActivity(this.db, userId, today),
+    ]);
+    return { week, today, activityAvailable,
       members: list.map((row) => ({
         mine: row.userId === userId,
         target: row.target,
@@ -408,6 +421,31 @@ export class RingExperienceService {
         paused: row.paused,
       })),
     };
+  }
+
+  private async hasRecordedActivity(tx: Tx, userId: string, today: string) {
+    const start = new Date(today + "T00:00:00+08:00");
+    const until = new Date(Math.min(+start + dayMs, Date.now()));
+    const row = await tx.healthRecord.findFirst({
+      where: {
+        userId, metric: "STEPS", quality: "VALID",
+        sourceMeasurementSource: "wearable",
+        observedAt: { gte: start, lte: until },
+        AND: [
+          { OR: [{ aggregationKind: null }, { aggregationActive: true }] },
+          {
+            OR: ["value", "steps"].map((key) => ({
+              AND: [
+                { values: { path: [key], gt: 0 } },
+                { values: { path: [key], lte: 500_000 } },
+              ],
+            })),
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   async saveGoal(userId: string, id: string, input: unknown) {
@@ -438,6 +476,9 @@ export class RingExperienceService {
         if (!row || row.paused) throw new ConflictException("请先开始本周约定");
         const days = Array.isArray(row.days) ? row.days.map(safeObject) : [];
         if (!days.some((entry) => entry.day === today)) {
+          if (source === "workout" && !await this.hasRecordedActivity(tx, userId, today)) {
+            throw new ConflictException("当天暂无已同步的活动记录");
+          }
           const retained = days.flatMap((entry) => typeof entry.day === "string" &&
             (entry.source === "manual" || entry.source === "workout")
             ? [{ day: entry.day, source: entry.source }] : []);
@@ -451,17 +492,22 @@ export class RingExperienceService {
   async operationsSummary() {
     // Aggregate only the outcomes required for the internal launch.
     const [usage] = await this.db.$queryRaw<{
-      shares: number; reacted: number; accepted: number; replied: number;
+      shares: number; reacted: number; accepted: number; observed: number; replied: number;
     }[]>`
+      WITH completed_windows AS (
+        SELECT "inviterId", "acceptedBy", "acceptedAt" FROM "RingCareInvite"
+        WHERE "acceptedAt" > NOW() - INTERVAL '30 days'
+          AND "acceptedAt" <= NOW() - INTERVAL '7 days'
+      )
       SELECT
         (SELECT count(*)::int FROM "RingShare" WHERE "expiresAt" > NOW()) AS shares,
         (SELECT count(*)::int FROM "RingShare" s WHERE s."expiresAt" > NOW()
           AND EXISTS (SELECT 1 FROM "RingShareReaction" rr WHERE rr."shareId" = s.id)) AS reacted,
         (SELECT count(*)::int FROM "RingCareInvite" i WHERE i."acceptedAt" > NOW() - INTERVAL '30 days') AS accepted,
-        (SELECT count(*)::int FROM "RingCareInvite" i
+        (SELECT count(*)::int FROM completed_windows) AS observed,
+        (SELECT count(*)::int FROM completed_windows i
           JOIN "CareRelationship" c ON c."inviterId" = i."inviterId" AND c."recipientId" = i."acceptedBy"
-          WHERE i."acceptedAt" > NOW() - INTERVAL '30 days'
-          AND EXISTS (
+          WHERE EXISTS (
             SELECT 1 FROM "RingCareMessage" greeting
             JOIN "RingCareMessage" reply
               ON reply."relationshipId" = c.id AND reply."authorId" <> greeting."authorId"

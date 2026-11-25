@@ -54,7 +54,10 @@ export class RingExperienceController {
   }
 
   @Get("shares") @UseGuards(UserAuthGuard)
-  list(@CurrentUser() user: AuthenticatedUser) { return this.ring.shares(user.id); }
+  list(@CurrentUser() user: AuthenticatedUser, @Query("history") history?: string,
+    @Query("before") before?: string) {
+    return this.ring.shares(user.id, history === "true", before);
+  }
 
   @Delete("shares/:id") @UseGuards(UserAuthGuard)
   revoke(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {

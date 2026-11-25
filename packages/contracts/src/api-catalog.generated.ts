@@ -40710,13 +40710,26 @@ export const apiCatalog = {
       "path": "/api/saydian-app/v2/ring/shares",
       "auth": "member",
       "roles": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "history",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "before",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "v2",
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
-      "summary": "查询自己的有效分享与回应",
-      "request": "无",
-      "response": "{entries}",
-      "dependency": "会员归属",
+      "summary": "查询自己的分享与回应",
+      "request": "history=true含过期记录；before可选本人的分享UUID",
+      "response": "{entries,nextBefore}",
+      "dependency": "已有调用默认仅返回有效分享",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -41185,8 +41198,8 @@ export const apiCatalog = {
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
       "summary": "查看亲友本周散步进度",
       "request": "无",
-      "response": "{week,today,members}",
-      "dependency": "仅展示共同进度",
+      "response": "{week,today,members,activityAvailable}",
+      "dependency": "共同进度及本人已同步活动是否可用",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -41224,7 +41237,7 @@ export const apiCatalog = {
       "summary": "设置散步目标或打卡",
       "request": "{week,target?}、{week,paused?}或{week,day,source}",
       "response": "更新后的共同进度",
-      "dependency": "本周校验及同日去重",
+      "dependency": "本周校验及同日去重；活动打卡检查本人已同步有效数据",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -41487,6 +41500,12 @@ export const apiCatalog = {
           "in": "path",
           "name": "mode",
           "type": "string",
+          "optional": false
+        },
+        {
+          "in": "header",
+          "name": "host",
+          "type": "string | undefined",
           "optional": false
         }
       ],

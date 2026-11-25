@@ -89,6 +89,33 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
     await db?.$disconnect();
   });
 
+  it("paginates the owner's history and retains expired reactions without reopening the public link", async () => {
+    const token = randomBytes(32).toString("base64url");
+    const snapshot = {kind:"sleep",date:"2026-11-01",fields:[
+      {key:"rangeEnd",value:"2026-11-07"},
+      {key:"sleepAverageMinutes",value:415}, {key:"recordDays",value:5},
+    ]};
+    const create = await request("shares","POST",actor.token,{token,confirmed:true,snapshot});
+    expect(create.status).toBe(201);
+    await request("shares/respond","POST",undefined,{token,visitor:randomUUID(),kind:"hug"});
+    await db.ringShare.update({where:{id:create.data.id},data:{
+      expiresAt:new Date(Date.now()-1000), createdAt:new Date(Date.now()-30000),
+    }});
+    await db.ringShare.createMany({data:Array.from({length:32},()=>({
+      ownerId:actor.id,digest:randomBytes(32).toString("hex"),snapshot,
+      expiresAt:new Date(Date.now()+24_000),
+    }))});
+    const query = "shares?history=true";
+    const first = await request(query,"GET",actor.token);
+    expect(first.data.entries).toHaveLength(30);
+    const last = await request(query+"&before="+first.data.nextBefore,"GET",actor.token);
+    expect(last.data.entries).toHaveLength(3);
+    expect(last.data.entries.at(-1).id).toBe(create.data.id);
+    expect(last.data.entries.at(-1).reactions[0].kind).toBe("hug");
+    expect((await request(query+"&before="+first.data.nextBefore,"GET",second.token)).status).toBe(404);
+    expect((await request("shares/open","POST",undefined,{token})).status).toBe(404);
+  });
+
   async function member() {
     const user = await db.user.create({data:{nickname:"Synthetic Ring Member"}});
     fixtures.push(user.id);
@@ -176,6 +203,16 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
     expect(Buffer.from(await audio.arrayBuffer())).toEqual(wave(1));
     const {week,today} = currentCareWeek();
     await request(path+"goals","PUT",actor.token,{week,target:2});
+    const usingRecord = {week,day:today,source:"workout"};
+    expect((await request(path+"goals","PUT",actor.token,usingRecord)).status).toBe(409);
+    await db.healthRecord.create({data:{
+      userId:actor.id, clientRecordId:"qa-ring-walk-steps", metric:"STEPS",
+      observedAt:new Date(), timezoneOffsetMinutes:480, values:{value:1374}, unit:"steps",
+      sourcePlatform:"ios", sourceMeasurementSource:"wearable", quality:"VALID",
+    }});
+    expect((await request(path+"goals","GET",actor.token)).data.activityAvailable).toBe(true);
+    expect((await request(path+"goals","GET",recipient.token)).data.activityAvailable).toBe(false);
+    expect((await request(path+"goals","PUT",actor.token,usingRecord)).status).toBe(200);
     await Promise.all([1,2].map(() => request(path+"goals","PUT",actor.token,{week,day:today,source:"manual"})));
     const plans = await request(path+"goals","GET",recipient.token);
     expect(plans.data.members).toEqual([{mine:false,target:2,completed:1,checkedToday:false,paused:false}]);

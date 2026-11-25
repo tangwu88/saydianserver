@@ -2,7 +2,7 @@
 import { onMounted, ref } from "vue";
 import { adminSessionKey, api, responseData } from "../api";
 
-const summary = ref<{ usage?: {shares:number;reacted:number;accepted:number;replied:number};
+const summary = ref<{ usage?: {shares:number;reacted:number;accepted:number;observed:number;replied:number};
   reports: {id:string;kind:string;reportedAt:string}[] }>();
 const busy = ref(false);
 const error = ref(false);
@@ -31,7 +31,12 @@ onMounted(load);
       <el-descriptions-item label="当前有效分享">{{ summary.usage.shares }}</el-descriptions-item>
       <el-descriptions-item label="收到回应的分享">{{ summary.usage.reacted }}</el-descriptions-item>
       <el-descriptions-item label="近 30 天接受的邀请">{{ summary.usage.accepted }}</el-descriptions-item>
-      <el-descriptions-item label="接受后 7 天内互相问候">{{ summary.usage.replied }}</el-descriptions-item>
+      <el-descriptions-item label="接受后 7 天内互相问候">
+        {{ summary.usage.observed
+          ? summary.usage.replied + " / " + summary.usage.observed + "（" +
+            Math.round(100 * summary.usage.replied / summary.usage.observed) + "%）"
+          : "暂无已满 7 天的邀请" }}
+      </el-descriptions-item>
     </el-descriptions>
     <h2>待处理举报</h2>
     <el-table :data="summary?.reports ?? []">

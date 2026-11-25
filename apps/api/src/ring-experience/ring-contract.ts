@@ -71,7 +71,8 @@ export function calendarDate(value: unknown): string {
 }
 
 const sleep = ["sleepMinutes", "deepMinutes", "lightMinutes", "remMinutes",
-  "awakeMinutes", "sleepStart", "sleepEnd", "sleepScore"];
+  "awakeMinutes", "sleepStart", "sleepEnd", "sleepScore", "sleepAverageMinutes",
+  "recordDays", "rangeEnd"];
 const workout = ["sportName", "sportMinutes", "distanceKm", "steps", "heartRate"];
 const health = ["systolic", "diastolic", "pulse", "heartRate", "hrv", "oxygen",
   "temperatureC", "steps", "distanceKm", "bloodGlucose", "stress", "measuredTime"];
@@ -79,7 +80,8 @@ const fieldsByKind = {
   sleep,
   health,
   workout,
-  week: ["sleepMinutes", "sportName", "sportMinutes", "distanceKm", "steps", "recordDays"],
+  week: ["sleepMinutes", "sportName", "sportMinutes", "distanceKm", "steps", "recordDays",
+    "rangeEnd", "sleepAverageMinutes", "previousSleepAverageMinutes", "previousSportMinutes"],
 } as const;
 
 export function ringSnapshot(input: unknown) {
@@ -110,6 +112,7 @@ export function ringSnapshot(input: unknown) {
       }
       return { key, value };
     }
+    if (key === "rangeEnd") return { key, value: calendarDate(value) };
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 10_000_000) {
       throw new BadRequestException("记录数值无效");
     }

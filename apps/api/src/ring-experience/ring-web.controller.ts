@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, Res } from "@nestjs/common";
+import { Controller, Get, Headers, NotFoundException, Param, Res } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import type { Response } from "express";
 import { RawResponse } from "../common/raw-response.decorator";
@@ -31,12 +31,18 @@ const client = String.raw`
   const token = location.hash.slice(1);
   const base = '/global/api/saydian-app/v2/ring/';
   const pages = '/global/say-ring/';
+  const h5Origin = 'https://app.saydian.cn';
+  const launchOrigin = document.body.dataset.launchOrigin;
   const titles = {
     sleep: ['睡眠报告','Sleep report'], health: ['健康记录','Health record'],
     workout: ['运动记录','Workout'], week: ['我的这一周','My week']
   };
   const fieldNames = {
     sleepMinutes: ['睡眠时长','Sleep duration','min'], deepMinutes: ['深睡','Deep sleep','min'],
+    sleepAverageMinutes: ['平均睡眠','Average sleep','min'],
+    previousSleepAverageMinutes: ['上周同期平均睡眠','Previous week’s average sleep','min'],
+    previousSportMinutes: ['上周同期运动时长','Previous week’s activity','min'],
+    rangeEnd: ['记录截至','Through',''],
     lightMinutes: ['浅睡','Light sleep','min'], remMinutes: ['快速眼动','REM sleep','min'],
     awakeMinutes: ['清醒时长','Awake time','min'], sleepStart: ['入睡','Fell asleep',''],
     sleepEnd: ['醒来','Woke up',''], sleepScore: ['睡眠评分','Sleep score',''],
@@ -69,6 +75,24 @@ const client = String.raw`
   function footer() {
     el('footer').hidden = false;
     text('download',label('下载 Say Ring','Get Say Ring'));
+  }
+  function openApp(route, title) {
+    const direct = new URL(pages + route + '#' + token, h5Origin);
+    const link = el('open');
+    if (/Android/i.test(navigator.userAgent) && /Chrome\//i.test(navigator.userAgent)) {
+      // A user-initiated, package-scoped Android intent with an HTTPS fallback.
+      link.href = 'intent://' + direct.host + direct.pathname + direct.hash +
+        '#Intent;scheme=https;package=cn.saydian.ring;S.browser_fallback_url=' +
+        encodeURIComponent(direct.href) + ';end';
+    } else if (launchOrigin) {
+      link.href = new URL(pages + route + '#' + token, launchOrigin).href;
+    } else {
+      link.href = direct.href;
+      el('open-help').hidden = false;
+      text('open-help', label('若 App 未打开，可长按链接选择在 Say Ring 打开。','If it stays in the browser, touch and hold the link to open it in Say Ring.'));
+    }
+    link.hidden = false;
+    link.textContent = title;
   }
   function viewer() {
     const key = 'say-ring-share-visitor';
@@ -129,10 +153,7 @@ const client = String.raw`
         }
       });
     }
-    const open = el('open');
-    open.href = pages + 'respond#' + token;
-    open.hidden = false;
-    open.textContent = label('在 App 里署名回应','Respond by name in the app');
+    openApp('respond', label('在 App 里署名回应','Respond by name in the app'));
     footer();
   }
   async function invite() {
@@ -150,10 +171,9 @@ const client = String.raw`
       try { await navigator.clipboard.writeText(token); text('status',label('已复制。','Copied.')); }
       catch (_) { text('status',label('请选中并复制上方邀请码。','Select and copy the code above.')); }
     });
-    const open = el('open');
-    open.href = pages + 'invite#' + token;
-    open.hidden = false;
-    open.textContent = label('打开 Say Ring','Open Say Ring');
+    if (location.hostname !== 'links.saydian.cn') {
+      openApp('invite', label('打开 Say Ring','Open Say Ring'));
+    }
     footer();
   }
   function memberResponse() {
@@ -161,7 +181,7 @@ const client = String.raw`
     text('note',label('请从原消息打开，或回到分享页直接回应。','Open from the original message, or return to the report to respond in the browser.'));
     if (/^[A-Za-z0-9_-]{43}$/.test(token)) {
       const open = el('open');
-      open.href = pages + 'share#' + token;
+      open.href = h5Origin + pages + 'share#' + token;
       open.hidden = false;
       open.textContent = label('返回分享页','Back to shared report');
     }
@@ -173,7 +193,7 @@ const client = String.raw`
   else void viewShare();
 `;
 
-function html(mode: string, nonce: string) {
+function html(mode: string, nonce: string, launchOrigin: string) {
   return `<!DOCTYPE html>
 <html lang="zh-Hans"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -182,11 +202,12 @@ function html(mode: string, nonce: string) {
 <meta property="og:title" content="Say Ring">
 <meta property="og:description" content="Open a share from Say Ring">
 <title>Say Ring</title><style nonce="${nonce}">${css}</style>
-</head><body data-mode="${mode}"><main>
+</head><body data-mode="${mode}" data-launch-origin="${launchOrigin}"><main>
 <header>Say Ring</header><h1 id="title">Say Ring</h1>
 <p id="day"></p><p id="code"></p><p id="note"></p>
 <dl id="fields"></dl><div id="actions"></div><p id="status" role="status"></p>
-<footer id="footer" hidden><a id="open" hidden></a><a id="download" href="/down2">下载 Say Ring</a></footer>
+<footer id="footer" hidden><a id="open" hidden></a><a id="download" href="https://app.saydian.cn/down2">下载 Say Ring</a></footer>
+<p id="open-help" hidden></p>
 <noscript>请在浏览器中启用 JavaScript。 Enable JavaScript to view this page.</noscript>
 </main><script nonce="${nonce}">${client}</script></body></html>`;
 }
@@ -195,13 +216,16 @@ function html(mode: string, nonce: string) {
 @RawResponse()
 export class RingWebController {
   @Get(":mode")
-  page(@Param("mode") mode: string, @Res() response: Response) {
+  page(@Param("mode") mode: string, @Headers("host") host: string | undefined, @Res() response: Response) {
     if (!["share", "invite", "respond"].includes(mode)) throw new NotFoundException();
     const nonce = randomBytes(18).toString("base64");
+    const launchOrigin = process.env.DEPLOYMENT_SITE !== "us" &&
+      process.env.SAY_RING_APP_LINK_HOST_ENABLED === "true" &&
+      host === "app.saydian.cn" ? "https://links.saydian.cn" : "";
     response.set({
       "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex,nofollow,noarchive",
       "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
-    }).type("html").send(html(mode, nonce));
+    }).type("html").send(html(mode, nonce, launchOrigin));
   }
 }
