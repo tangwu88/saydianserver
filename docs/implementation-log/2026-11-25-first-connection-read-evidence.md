@@ -49,7 +49,7 @@
 ## 实际恢复与上线回执
 
 - 云端完整原ZIP于14:28到齐，372,850,930字节及官方SHA256匹配；原verify-runtime-artifact.py再次确认ZIP、release-manifest与内层压缩归档。恢复工作流45554514395随后明确报错“Insufficient disk for offline import and 5 GiB reserve.”并失败；它不是成功导入记录，也没有切换业务。
-- 本机32路有界Range副本同样完整校验：逐段206/Content-Range/大小、整包SHA256、ZIP CRC、版本均通过。原本拟用SCP备用，但服务器实测云端已267MiB而SCP仅约26MiB，故只停止本任务自己的SCP进程19892，优先已有传输；其40,976,384字节不完整备用文件经精确路径、非符号链接、普通文件与大小校验后删除。未删除其他上传、业务目录或历史备份。
+- 本机32路有界Range副本同样完整校验：逐段206/Content-Range/大小、整包SHA256、ZIP CRC、版本均通过。原本拟用SCP备用，但服务器实测云端已约267MB而SCP仅约26MB，故只停止本任务自己的SCP进程19892，优先已有传输；其40,976,384字节不完整备用文件经精确路径、非符号链接、普通文件与大小校验后删除。未删除其他上传、业务目录或历史备份。
 - SSH恢复复用本次已认证会话。手动续接仍是CI原始镜像；首先核对四个执行控制脚本的Git原blob SHA256、artifact ID/大小/官方摘要以及release版本，并持有原生产FD9发布锁。原Python校验器重新校验与解出归档，原Node validateTransfer校验绑定清单。
 - 空间恢复仅移除本次已验证的重复临时分片与重复归档，改为从校验后的归档按偏移逐片生成8MiB数据。原receive-offline-images.sh的4倍归档预算、5GiB余量、每片摘要、合并摘要及OCI-ID/版本标签门禁全部原样保留，没有降低阈值。该临时操作方案在本机合成数据上用3种不同偏移生成分片，交给原Node验证器全部通过；篡改字节被原验证器拒绝，bash -n通过。此处只验证传输接续，不当作实体戒指测试。
 - 14:40确认三镜像导入成功，手动命令退出0；所有镜像ID与62bf80e标签一致，导入阶段未重启应用。操作脚本和私有原始输出保留在Git外E:/SayRing-first-read-evidence-1321-20261125；不提交构建产物或服务器私有日志。
@@ -60,3 +60,4 @@
 - 本轮只是补记已完成发布的证据，无功能源码变化，沿用同一源码已通过的完整检查和生产CI；git diff --check再次通过。实施回执仅推送本功能分支，不为文档重复触发main自动部署；生产源码SHA保持62bf80e。
 
 发布链接：[原CI](https://github.com/tangwu88/saydianserver/actions/runs/45546796847)、[原镜像导出](https://github.com/tangwu88/saydianserver/actions/runs/45549802634)、[自动恢复失败记录](https://github.com/tangwu88/saydianserver/actions/runs/45554514395)、[正式恢复发布成功](https://github.com/tangwu88/saydianserver/actions/runs/45562491212)。
+- 发布、容器与静态资源核验完成后，已通过exit正常关闭本轮SSH，核对没有存活的SSH子进程，并移除本地陈旧ready标记，防止后续误判会话可用。
