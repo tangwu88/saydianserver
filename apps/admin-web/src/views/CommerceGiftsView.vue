@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, getAdminRoles, readableError, responseData } from "../api";
+import GiftBulkActionsDialog from "../components/GiftBulkActionsDialog.vue";
 type Row = Record<string, any>;
 const router = useRouter(),
   writable = computed(() => getAdminRoles().includes("SUPER_ADMIN"));
@@ -25,6 +26,12 @@ const selected = ref<Row[]>([]),
   downloadSaved = ref(false),
   qr = ref<Row | null>(null),
   detail = ref<Row | null>(null);
+const bulkDialog = ref(false),
+  bulkAction = ref<"ACTIVATE" | "BIND">("ACTIVATE");
+function openBulk(action: "ACTIVATE" | "BIND") {
+  bulkAction.value = action;
+  bulkDialog.value = true;
+}
 const form = ref({
   name: "",
   quantity: 10,
@@ -323,6 +330,13 @@ onMounted(async () => {
           load();
         "
         >全部批次</el-button
+      ><template v-if="writable && tab === 'cards'">
+        <el-button :disabled="busy || loading" @click="openBulk('ACTIVATE')"
+          >按卡号批量开启</el-button
+        >
+        <el-button :disabled="busy || loading" @click="openBulk('BIND')"
+          >按卡号批量换绑</el-button
+        > </template
       ><template v-if="writable && tab === 'cards' && selected.length"
         ><el-button
           :disabled="busy || selected.some((row) => row.status !== 'DRAFT')"
@@ -513,6 +527,11 @@ onMounted(async () => {
       :total="total"
       layout="prev, pager, next, total"
       @current-change="load"
+    />
+    <GiftBulkActionsDialog
+      v-model="bulkDialog"
+      :action="bulkAction"
+      @completed="load"
     />
     <el-dialog
       v-model="dialog"

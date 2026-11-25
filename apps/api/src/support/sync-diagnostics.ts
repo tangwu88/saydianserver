@@ -1,3 +1,4 @@
+import { parseSyncReadEvidence, type SyncReadEvidence } from "./sync-read-evidence";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { RING_BINDING_DECISION_SCOPE, readRingBindingDecision } from "../devices/ring-binding-decision";
 import type { PrismaService } from "../common/prisma.service";
@@ -13,11 +14,11 @@ const diagnosticV2Codes = [...diagnosticCodes, "bluetooth_off", "bluetooth_permi
 const models = ["R7Pro", "R7Ultra", "R7", "R7p", "R8", "R8Pro", "R21", "R22", "HR01", "HR05", "K80", "U19", "U19S", "U19M", "other", "unknown"];
 type Stage = { stage: string; state: string; code: string; elapsedMs: number; received?: number; saved?: number; uploaded?: number; rejected?: number };
 export type SyncDiagnosticReport = {
-  schemaVersion: 1 | 2; product: "say-ring"; reportId: string; connectionId: string;
+  schemaVersion: 1 | 2 | 3; product: "say-ring"; reportId: string; connectionId: string;
   mode: "automatic" | "manual" | "recovery" | "first_connection"; platform: "android" | "ios" | "harmonyos";
   appVersion: string; buildNumber: number; sdk: string; model: string; firmware?: string; osMajor?: number; osVersion?: string;
   connectionState: string; initializationState: string; capabilityState: string;
-  metrics: string[]; stages: Stage[];
+  metrics: string[]; stages: Stage[]; readEvidence?: SyncReadEvidence;
   phone?: {brand?:string; modelId?:string; modelName?:string; osVersion?:string; osBuild?:string; apiLevel?:number; locale?:string};
   connectionKind?: "explicit" | "automatic_recovery" | "first";
 };
@@ -37,19 +38,21 @@ function count(input: unknown, maximum = 1_000_000): number {
 }
 export function parseSyncDiagnostic(input: unknown): SyncDiagnosticReport {
   if (Buffer.byteLength(JSON.stringify(input) ?? "", "utf8") > 4096) throw new BadRequestException("诊断摘要过大");
-  const versionTwo = (input as { schemaVersion?: unknown } | null)?.schemaVersion === 2;
-  const b = object(input, ["schemaVersion", "product", "reportId", "connectionId", "mode", "platform", "appVersion", "buildNumber", "sdk", "model", "firmware", "osMajor", "osVersion", "connectionState", "initializationState", "capabilityState", "metrics", "stages", ...(versionTwo ? ["phone", "connectionKind"] : [])]);
-  if ((b.schemaVersion !== 1 && b.schemaVersion !== 2) || b.product !== "say-ring" || typeof b.reportId !== "string" || !uuid.test(b.reportId) || typeof b.connectionId !== "string" || !uuid.test(b.connectionId)) throw new BadRequestException("诊断产品或版本无效");
+  const version = (input as { schemaVersion?: unknown } | null)?.schemaVersion;
+  const versionTwo = version === 2 || version === 3;
+  const b = object(input, ["schemaVersion", "product", "reportId", "connectionId", "mode", "platform", "appVersion", "buildNumber", "sdk", "model", "firmware", "osMajor", "osVersion", "connectionState", "initializationState", "capabilityState", "metrics", "stages", ...(versionTwo ? ["phone", "connectionKind"] : []), ...(version === 3 ? ["readEvidence"] : [])]);
+  if ((b.schemaVersion !== 1 && b.schemaVersion !== 2 && b.schemaVersion !== 3) || b.product !== "say-ring" || typeof b.reportId !== "string" || !uuid.test(b.reportId) || typeof b.connectionId !== "string" || !uuid.test(b.connectionId)) throw new BadRequestException("诊断产品或版本无效");
   if (typeof b.appVersion !== "string" || !/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(b.appVersion)) throw new BadRequestException("应用版本无效");
   if (b.firmware !== undefined && (typeof b.firmware !== "string" || !/^\d[\d.]{0,31}$/.test(b.firmware))) throw new BadRequestException("设备版本无效");
   if (b.osVersion !== undefined && (typeof b.osVersion !== "string" || !/^\d{1,2}(\.\d{1,4}){0,3}$/.test(b.osVersion))) throw new BadRequestException("系统版本无效");
   if (!Array.isArray(b.metrics) || b.metrics.length > diagnosticMetrics.length || !Array.isArray(b.stages) || b.stages.length > 16) throw new BadRequestException("诊断摘要无效");
+  if (b.readEvidence !== undefined && b.mode !== "first_connection") throw new BadRequestException("读取摘要仅限首次连接");
   const stages = b.stages.map(input => {
     const s = object(input, ["stage", "state", "code", "elapsedMs", "received", "saved", "uploaded", "rejected"]);
     return { stage: choice(s.stage, diagnosticStages), state: choice(s.state, diagnosticStates), code: choice(s.code, versionTwo ? diagnosticV2Codes : diagnosticCodes), elapsedMs: count(s.elapsedMs, 3_600_000), ...Object.fromEntries(["received", "saved", "uploaded", "rejected"].filter(k => s[k] !== undefined).map(k => [k, count(s[k])])) };
   });
   return {
-    schemaVersion: versionTwo ? 2 : 1, product: "say-ring", reportId: b.reportId, connectionId: b.connectionId,
+    schemaVersion: version as 1 | 2 | 3, product: "say-ring", reportId: b.reportId, connectionId: b.connectionId,
     mode: choice(b.mode, ["automatic", "manual", "recovery", "first_connection"]) as SyncDiagnosticReport["mode"],
     platform: choice(b.platform, ["android", "ios", "harmonyos"]) as SyncDiagnosticReport["platform"],
     appVersion: b.appVersion, buildNumber: count(b.buildNumber, 2_147_483_647),
@@ -59,6 +62,7 @@ export function parseSyncDiagnostic(input: unknown): SyncDiagnosticReport {
     initializationState: choice(b.initializationState, ["ready", "decision_required", "decision_unknown", "reset_attempted", "history_clear_acknowledged", "native_pending", "unavailable"]),
     capabilityState: choice(b.capabilityState, ["disconnected", "loading", "ready", "unavailable"]),
     metrics: [...new Set(b.metrics.map(v => choice(v, diagnosticMetrics)))].sort(), stages,
+    ...(b.readEvidence === undefined ? {} : {readEvidence: parseSyncReadEvidence(b.readEvidence)}),
     ...(b.phone === undefined ? {} : {phone: parsePhone(b.phone, b.platform)}),
     ...(b.connectionKind === undefined ? {} : {connectionKind: choice(b.connectionKind, ["explicit","automatic_recovery","first"]) as NonNullable<SyncDiagnosticReport["connectionKind"]>}),
   };

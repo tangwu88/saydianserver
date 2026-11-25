@@ -694,7 +694,7 @@ describe.runIf(process.env.RUN_SAY_RING_SUPPORT_DATABASE_TESTS === "1")(
       );
       expect(config).toMatchObject({
         schemaVersion: 1,
-        acceptedSchemaVersions: [1, 2],
+        acceptedSchemaVersions: [1, 2, 3],
         automatic: false,
         firstConnectionOnly: true,
       });
