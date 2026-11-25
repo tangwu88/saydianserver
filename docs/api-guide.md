@@ -232,3 +232,5 @@ curl -sS 'http://127.0.0.1:8080/api/saydian-app/admin/v1/members?page=1&pageSize
 消费者App不展示诊断入口。登录且同意隐私后，首次显式连接使用`POST /support/sync-diagnostics/first-connection`申请认证账号的一次性采集ID（完整前缀`/global/api/saydian-app/v2`）；仅终生没有设备绑定历史的新账号可申请，已解绑历史也计入。相同ID可恢复原请求；其他手机/重装的新ID不能重新采集。初次绑定恰好先完成时，可只读核验现有真实首次授权回执以恢复此资格，不能为诊断再申请初始化。
 
 首次结果经`POST /support/sync-diagnostics`提交一份`mode=first_connection`固定摘要，最多4096字节；只含系统/App版本、受限型号/固件、阶段状态及数量，不含健康值/原始包/地址/凭据。后续重连或常规同步不采集新摘要，断网仅补传原ID原内容；后台保留旧版历史。此策略不关闭原健康记录同步，也不改变设备初始化和数据所有者校验。
+
+V3通过acceptedSchemaVersions协商，可选readEvidence仅附于上述唯一first_connection报告。逐指标计数只覆盖本次请求窗口，可能含重复；mappingObserved=false表示未采集解码计数，不是零记录。clock只报告格式确认、延后/尝试/过期，verification固定not_observed，不把发送当作ACK。未读监测开关不补false。旧客户端/报告仍保留V1/V2，不为已有账号补采，不改变首次报告的不可变和账号隔离规则。

@@ -29,3 +29,22 @@ export function diagnosticUpload(r: Report): string {
   if (!uploaded) return "未开始";
   return ({ pending: "上传待确认", ok: "已确认上传", partial: "部分未接收", failed: "上传失败", blocked: "暂不可上传", empty: "无需上传（队列为空）" } as Record<string, string>)[uploaded.state] ?? "待确认";
 }
+
+export function diagnosticReadRows(evidence: any) {
+  if (!Array.isArray(evidence?.metrics)) return [];
+  const names: Record<string,string> = {steps:"步数",sleep:"睡眠",heart_rate:"心率",blood_oxygen:"血氧",hrv:"HRV",stress:"压力",body_temperature:"皮肤温度"};
+  const states: Record<string,string> = {not_received:"尚无完成确认",partial:"未完整读取",complete:"范围已读完",no_data:"已明确返回空历史",failed:"读取失败"};
+  return evidence.metrics.map((r: any) => ({...r, name:names[r.metric] ?? "其他指标", result:states[r.state] ?? "未提供",
+    decoded:r.mappingObserved === true ? r.decodedRows : "未观察", mapped:r.mappingObserved === true ? r.mappedRecords : "未观察", filtered:r.mappingObserved === true ? r.filteredRecords : "未观察"}));
+}
+export function diagnosticClock(evidence: any): string {
+  if (!evidence?.clock) return "未采集";
+  const c = evidence.clock;
+  const format = c.format === "confirmed" ? "已确认时间格式" : "时间格式未确认";
+  const state = ({not_requested:"未请求校时",pending:"等待空闲发送",attempted:"已尝试发送",expired:"等待已过期"} as Record<string,string>)[c.submission] ?? "状态未知";
+  return `${format}；${state}；未读回核验，发送不代表完成`;
+}
+export function diagnosticMonitoring(evidence: any): string {
+  const label = (value: unknown) => value === true ? "开启" : value === false ? "关闭" : "未读取";
+  return `心率：${label(evidence?.monitoring?.heartRate)}；血氧：${label(evidence?.monitoring?.bloodOxygen)}`;
+}

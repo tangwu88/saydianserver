@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from "vue";
 import { api, readableError, responseData } from "../api";
-import { diagnosticSystem, diagnosticConnection, diagnosticRingSync, diagnosticUpload } from "../sync-diagnostic-display";
+import { diagnosticSystem, diagnosticConnection, diagnosticRingSync, diagnosticUpload, diagnosticReadRows, diagnosticClock, diagnosticMonitoring } from "../sync-diagnostic-display";
 const props = defineProps<{ member: Record<string, any> | null }>();
 const emit = defineEmits<{ close: [] }>();
 const reports = ref<any[]>([]), loading = ref(false), error = ref("");
@@ -58,6 +58,21 @@ onBeforeUnmount(() => { ++generation; });
         </p>
         <p v-if="entry.report.connectionKind">连接方式：{{ connectionLabels[entry.report.connectionKind] || '其他' }}</p>
         <p>初始化：{{ labels[entry.report.initializationState] || '待确认' }}　报告编号：{{ entry.report.reportId }}</p>
+        <template v-if="entry.report.readEvidence">
+          <p>首次读取结束时的校时状态：{{ diagnosticClock(entry.report.readEvidence) }}</p>
+          <p>已读回的自动监测设置：{{ diagnosticMonitoring(entry.report.readEvidence) }}</p>
+          <p>以下为本次请求窗口的计数，可能包含重复条目；未观察不等于零，也不等于戒指没有记录。</p>
+          <el-table :data="diagnosticReadRows(entry.report.readEvidence)" border>
+            <el-table-column prop="name" label="指标" width="90" />
+            <el-table-column prop="result" label="范围结果" min-width="150" />
+            <el-table-column prop="requests" label="请求次数" width="90" />
+            <el-table-column prop="packets" label="数据包" width="80" />
+            <el-table-column prop="wireRows" label="协议条目" width="90" />
+            <el-table-column prop="decoded" label="解码条目" width="100" />
+            <el-table-column prop="mapped" label="有效条目" width="100" />
+            <el-table-column prop="filtered" label="过滤条目" width="100" />
+          </el-table>
+        </template>
         <el-table :data="entry.report.stages" border>
           <el-table-column label="阶段" width="115"><template #default="scope">{{ labels[scope.row.stage] || '其他' }}</template></el-table-column>
           <el-table-column label="结果" width="110"><template #default="scope">{{ labels[scope.row.state] || '待确认' }}</template></el-table-column>

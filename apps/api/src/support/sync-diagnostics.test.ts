@@ -38,7 +38,7 @@ describe("Say Ring bounded sync diagnostics", () => {
   });
 
   it.each([
-    { product: "another-app" }, { schemaVersion: 3 }, { appVersion: "token-secret" },
+    { product: "another-app" }, { schemaVersion: 4 }, { appVersion: "token-secret" },
     { firmware: "https://private.example/key" }, { osVersion: "private-system-build" }, { model: "R7Pro customer-name" },
     { metrics: ["unreviewed_private_metric"] }, { stages: [{ stage: "read", state: "failed", code: "secret-message", elapsedMs: 1 }] },
     { stages: [{ stage: "read", state: "failed", code: "unknown", elapsedMs: 1, value: 72 }] },
@@ -75,6 +75,18 @@ describe("Say Ring bounded sync diagnostics", () => {
     expect(h.feedback.create.mock.calls[0]![0].data).toMatchObject({ contact: null, attachments: [] });
     expect(await submitSyncDiagnostic(h.prisma, "member-a", report(2))).toMatchObject({ accepted: false, reason: "already_reported" });
     expect(await begin(h, "member-a", "33333333-3333-4333-8333-333333333333")).toMatchObject({ accepted: false });
+  });
+  it("V3 preserves one immutable first report and cannot reopen old account collection", async () => {
+    const h = harness(); await begin(h);
+    const readEvidence = {metrics:[{metric:"heart_rate",state:"not_received",mappingObserved:false,requests:1,packets:0,wireRows:0,decodedRows:0,mappedRecords:0,filteredRecords:0}],clock:{format:"not_confirmed",submission:"not_requested",verification:"not_observed"}};
+    const input = {...report(),schemaVersion:3,readEvidence};
+    expect(parseSyncDiagnostic(input).readEvidence).toEqual(readEvidence);
+    for (const schemaVersion of [1,2]) expect(()=>parseSyncDiagnostic({...input,schemaVersion})).toThrow();
+    expect(()=>parseSyncDiagnostic({...input,mode:"automatic"})).toThrow();
+    expect(await submitSyncDiagnostic(h.prisma,"member-a",input)).toMatchObject({accepted:true});
+    expect(await submitSyncDiagnostic(h.prisma,"member-a",input)).toMatchObject({accepted:true,duplicate:true});
+    expect(await submitSyncDiagnostic(h.prisma,"member-a",{...input,readEvidence:{...readEvidence,metrics:[]}})).toMatchObject({accepted:false,reason:"report_conflict"});
+    expect(await begin(h,"member-a","33333333-3333-4333-8333-333333333333")).toMatchObject({accepted:false});
   });
   it.each([1, 2, 10])("rejects lifetime binding history including unbound devices: %i", async count => {
     const h = harness(); h.bindingCount.mockResolvedValue(count);

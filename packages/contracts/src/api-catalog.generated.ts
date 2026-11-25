@@ -42268,7 +42268,7 @@ export const apiCatalog = {
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "Say Ring 首次连接诊断策略",
       "request": "会员令牌；product=say-ring",
-      "response": "{schemaVersion:1,acceptedSchemaVersions:[1,2],product,supported,automatic:false,firstConnectionOnly:true,maximumFirstConnectionReports:1,...兼容限频字段}；后续连接不再采集，既有健康同步不变",
+      "response": "{schemaVersion:1,acceptedSchemaVersions:[1,2,3],product,supported,automatic:false,firstConnectionOnly:true,maximumFirstConnectionReports:1,...兼容限频字段}；后续连接不再采集，既有健康同步不变",
       "dependency": "核心服务",
       "successStatus": 200,
       "contract": {
@@ -42299,7 +42299,7 @@ export const apiCatalog = {
       "envelope": "v2",
       "source": "apps/api/src/support/support.controller.ts",
       "summary": "提交新账号唯一首次连接摘要",
-      "request": "会员令牌；SyncDiagnosticReport v1/v2，mode:first_connection、匹配已准许connectionId，严格白名单、4096字节/16阶段；系统数字版本、App版本、固定状态与数量，v2 可补充受限手机环境字段，不包含健康数值/地址/日志/凭据",
+      "request": "会员令牌；SyncDiagnosticReport v1/v2/v3，mode:first_connection、匹配已准许connectionId，严格白名单、4096字节/16阶段；系统数字版本、App版本、固定状态与数量，v2 可补充受限手机环境字段；v3 仅首次报告可选readEvidence：逐指标请求/数据包/协议条目/解码/有效/过滤计数、解码是否观察、校时发送状态（不代表ACK）、已实际读取的监测开关，固定枚举和限幅计数，不包含健康数值/地址/日志/凭据",
       "response": "{accepted,reportId,duplicate?,reason?}；每账号仅一份不可变摘要，相同ID同内容幂等；后续新报告和旧automatic/manual/recovery拒绝保存；仅重试首次待传摘要，不改变健康同步或初始化",
       "dependency": "核心服务",
       "successStatus": 201,

@@ -131,7 +131,7 @@ export class SupportService implements OnModuleInit, OnModuleDestroy {
   syncDiagnosticsConfig(product: string) {
     if (product !== "say-ring") throw new BadRequestException("诊断产品无效");
     return {
-      schemaVersion: 1, acceptedSchemaVersions: [1, 2], product: "say-ring", supported: true,
+      schemaVersion: 1, acceptedSchemaVersions: [1, 2, 3], product: "say-ring", supported: true,
       automatic: false, firstConnectionOnly: true, maximumFirstConnectionReports: 1,
       automaticIntervalSeconds: 900, maximumReportsPerHour: 4, maximumStoredReports: 5,
     };
