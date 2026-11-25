@@ -64,6 +64,7 @@ try {
     "vitest",
     "run",
     "src/gifts/gift-database.test.ts",
+    "src/gifts/gift-query-database.test.ts",
     "--maxWorkers=1",
     "--testTimeout=30000",
   ]);

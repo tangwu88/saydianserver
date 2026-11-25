@@ -12,6 +12,7 @@ import PartnersView from "./views/PartnersView.vue";
 import UsMigrationView from "./views/UsMigrationView.vue";
 
 const routes = [
+  { path: "/gift-query", component: () => import("./views/GiftQueryView.vue"), meta: { public: true } },
   { path: "/login", component: LoginView },
   { path: "/health-screen", component: () => import("./views/MemberHealthScreenView.vue"), meta: { public: true } },
   { path: "/members/:id/health-screen", component: () => import("./views/MemberHealthScreenView.vue"), meta: { resource: "member-health-analysis" } },
@@ -40,6 +41,7 @@ export const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
+  if (/^\/gift-query\/?$/.test(to.path)) return true;
   if (to.path === "/health-screen" || /^\/members\/[^/]+\/health-screen\/?$/.test(to.path)) return true;
   if (to.path !== "/login" && !hasAdminToken()) return "/login";
   if (to.path === "/login" && hasAdminToken()) return "/";

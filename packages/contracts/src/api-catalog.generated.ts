@@ -26129,6 +26129,738 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "GiftQueryController.login",
+      "method": "POST",
+      "path": "/api/saydian-app/gift-query/v1/login",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift-query.controller.ts",
+      "summary": "礼品卡独立查询账号登录",
+      "request": "{username,password}；查询专用账号，不接受会员或后台登录",
+      "response": "{token,expiresAt,username,displayName}；8小时会话，no-store",
+      "dependency": "独立查询账号；按IP和账号数据库限流；维护停写时不可登录",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "username": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "username",
+            "password"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{64}$"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "username": {
+              "type": "string"
+            },
+            "displayName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "token",
+            "expiresAt",
+            "username",
+            "displayName"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift-query.controller.ts; apps/api/src/gifts/gift-query.service.ts; apps/api/src/gifts/gift-query.test.ts; apps/api/src/gifts/gift-query-database.test.ts",
+        "note": "独立查询账号，查询会话不授予后台/会员权限；结果落库后返回；no-store；后台仅总管理员；实际部署另行验收。"
+      }
+    },
+    {
+      "key": "GiftQueryController.me",
+      "method": "GET",
+      "path": "/api/saydian-app/gift-query/v1/me",
+      "auth": "gift-query",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift-query.controller.ts",
+      "summary": "查询账号当前登录",
+      "request": "Bearer查询会话",
+      "response": "{username,displayName,expiresAt}；no-store",
+      "dependency": "独立查询会话；停用或重设后失效",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "username": {
+              "type": "string"
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "username",
+            "displayName",
+            "expiresAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift-query.controller.ts; apps/api/src/gifts/gift-query.service.ts; apps/api/src/gifts/gift-query.test.ts; apps/api/src/gifts/gift-query-database.test.ts",
+        "note": "独立查询账号，查询会话不授予后台/会员权限；结果落库后返回；no-store；后台仅总管理员；实际部署另行验收。"
+      }
+    },
+    {
+      "key": "GiftQueryController.logout",
+      "method": "POST",
+      "path": "/api/saydian-app/gift-query/v1/logout",
+      "auth": "gift-query",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift-query.controller.ts",
+      "summary": "退出礼品卡查询",
+      "request": "Bearer查询会话；空请求体",
+      "response": "{loggedOut:true}",
+      "dependency": "撤销本次查询会话",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "loggedOut": {
+              "const": true
+            }
+          },
+          "required": [
+            "loggedOut"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift-query.controller.ts; apps/api/src/gifts/gift-query.service.ts; apps/api/src/gifts/gift-query.test.ts; apps/api/src/gifts/gift-query-database.test.ts",
+        "note": "独立查询账号，查询会话不授予后台/会员权限；结果落库后返回；no-store；后台仅总管理员；实际部署另行验收。"
+      }
+    },
+    {
+      "key": "GiftQueryController.query",
+      "method": "POST",
+      "path": "/api/saydian-app/gift-query/v1/query",
+      "auth": "gift-query",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift-query.controller.ts",
+      "summary": "按卡号批量查询是否兑换",
+      "request": "Bearer查询会话；{cardNos}：8开头8位卡号，字符串或字符串数组；去重最多100张",
+      "response": "{items:[{cardNo,status:REDEEMED/NOT_REDEEMED/NOT_FOUND,orderNo:string|null}],cardCount,redeemedCount,missingCount,queriedAt}",
+      "dependency": "事务写入结果快照日志后返回；仅查卡号与订单号，无会员/地址/校验码；限流；维护停写时不可查询",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "cardNos": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "maxLength": 10000
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1000,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^8[0-9]{7}$"
+                  }
+                }
+              ],
+              "description": "按卡号匹配；去重后1至100张，不接受管理编号或数值数组。"
+            }
+          },
+          "required": [
+            "cardNos"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "cardNo": {
+                    "type": "string",
+                    "pattern": "^8[0-9]{7}$"
+                  },
+                  "status": {
+                    "enum": [
+                      "REDEEMED",
+                      "NOT_REDEEMED",
+                      "NOT_FOUND"
+                    ]
+                  },
+                  "orderNo": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "cardNo",
+                  "status",
+                  "orderNo"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "cardCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "redeemedCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "missingCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "queriedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "items",
+            "cardCount",
+            "redeemedCount",
+            "missingCount",
+            "queriedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift-query.controller.ts; apps/api/src/gifts/gift-query.service.ts; apps/api/src/gifts/gift-query.test.ts; apps/api/src/gifts/gift-query-database.test.ts",
+        "note": "独立查询账号，查询会话不授予后台/会员权限；结果落库后返回；no-store；后台仅总管理员；实际部署另行验收。"
+      }
+    },
+    {
+      "key": "GiftQueryAdminController.accounts",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-query-accounts",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift-query.controller.ts",
+      "summary": "查询账号及累计统计",
+      "request": "仅总管理员",
+      "response": "账号公开字段、version、累计查询/无效请求/卡数/已兑换数、最近查询时间；不含密码Hash",
+      "dependency": "最多100账号；不分页；同卡多次查询分别计数",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "username": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "active": {
+                "type": "boolean"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "queryCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failedCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cardCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "redeemedCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "lastQueryAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "username",
+              "displayName",
+              "active",
+              "version",
+              "createdAt",
+              "updatedAt",
+              "queryCount",
+              "failedCount",
+              "cardCount",
+              "redeemedCount",
+              "lastQueryAt"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift-query.controller.ts; apps/api/src/gifts/gift-query.service.ts; apps/api/src/gifts/gift-query.test.ts; apps/api/src/gifts/gift-query-database.test.ts",
+        "note": "独立查询账号，查询会话不授予后台/会员权限；结果落库后返回；no-store；后台仅总管理员；实际部署另行验收。"
+      }
+    },
+    {
+      "key": "GiftQueryAdminController.create",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-query-accounts",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift-query.controller.ts",
+      "summary": "创建独立查询账号",
+      "request": "{username,displayName,password,active}；账号3至64位字母数字_-；密码至少10字符最多72字节",
+      "response": "账号公开字段；不返回密码",
+      "dependency": "总管理员；bcrypt12；管理员操作审计",
+      "successStatus": 201,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "username": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{3,64}$"
+            },
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "active": {
+              "type": "boolean"
+            },
+            "password": {
+              "type": "string",
+              "description": "新账号必填；至少10字符、最多72个UTF8字节。编辑留空不变；不回传。"
+            }
+          },
+          "required": [
+            "username",
+            "displayName",
+            "active",
+            "password"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "username": {
+              "type": "string"
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "active": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "username",
+            "displayName",
+            "active",
+            "version",
+            "createdAt",
+            "updatedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift-query.controller.ts; apps/api/src/gifts/gift-query.service.ts; apps/api/src/gifts/gift-query.test.ts; apps/api/src/gifts/gift-query-database.test.ts",
+        "note": "独立查询账号，查询会话不授予后台/会员权限；结果落库后返回；no-store；后台仅总管理员；实际部署另行验收。"
+      }
+    },
+    {
+      "key": "GiftQueryAdminController.update",
+      "method": "PUT",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-query-accounts/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift-query.controller.ts",
+      "summary": "编辑、停用或重设查询账号密码",
+      "request": "path:id；{displayName,active,version,password?}；密码留空保留",
+      "response": "账号公开字段及递增version",
+      "dependency": "总管理员；并发版本检查；撤销该账号所有旧会话；保留历史日志",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": {
+          "type": "object",
+          "properties": {
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "active": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "password": {
+              "type": "string",
+              "description": "新账号必填；至少10字符、最多72个UTF8字节。编辑留空不变；不回传。"
+            }
+          },
+          "required": [
+            "displayName",
+            "active",
+            "version"
+          ],
+          "additionalProperties": true
+        },
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "username": {
+              "type": "string"
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "active": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "username",
+            "displayName",
+            "active",
+            "version",
+            "createdAt",
+            "updatedAt"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift-query.controller.ts; apps/api/src/gifts/gift-query.service.ts; apps/api/src/gifts/gift-query.test.ts; apps/api/src/gifts/gift-query-database.test.ts",
+        "note": "独立查询账号，查询会话不授予后台/会员权限；结果落库后返回；no-store；后台仅总管理员；实际部署另行验收。"
+      }
+    },
+    {
+      "key": "GiftQueryAdminController.logs",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/commerce-gift-query-logs",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN"
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "*",
+          "type": "Record<string, string>",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/gifts/gift-query.controller.ts",
+      "summary": "查询账号查卡日志",
+      "request": "accountId可选UUID、page从1起",
+      "response": "{items,total,page}；每页30；含账号、时间、结果计数和卡号/状态/订单快照",
+      "dependency": "仅总管理员；最新在前；不返回会话Token、密码、IP或会员资料",
+      "successStatus": 200,
+      "contract": {
+        "status": "request-reviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "accountId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "username": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": [
+                      "SUCCESS",
+                      "INVALID_INPUT"
+                    ]
+                  },
+                  "cardCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "redeemedCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "missingCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "results": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "cardNo": {
+                          "type": "string",
+                          "pattern": "^8[0-9]{7}$"
+                        },
+                        "status": {
+                          "enum": [
+                            "REDEEMED",
+                            "NOT_REDEEMED",
+                            "NOT_FOUND"
+                          ]
+                        },
+                        "orderNo": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "cardNo",
+                        "status",
+                        "orderNo"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "id",
+                  "accountId",
+                  "username",
+                  "outcome",
+                  "cardCount",
+                  "redeemedCount",
+                  "missingCount",
+                  "results",
+                  "createdAt"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "page"
+          ],
+          "additionalProperties": true
+        },
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/gifts/gift-query.controller.ts; apps/api/src/gifts/gift-query.service.ts; apps/api/src/gifts/gift-query.test.ts; apps/api/src/gifts/gift-query-database.test.ts",
+        "note": "独立查询账号，查询会话不授予后台/会员权限；结果落库后返回；no-store；后台仅总管理员；实际部署另行验收。",
+        "query": {
+          "accountId": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "00000000-0000-4000-8000-000000000001",
+            "required": false
+          },
+          "page": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "example": 1,
+            "required": false
+          }
+        }
+      }
+    },
+    {
       "key": "GiftController.capabilities",
       "method": "GET",
       "path": "/api/saidian-mall/v1/storefront/gift-redemptions/capabilities",

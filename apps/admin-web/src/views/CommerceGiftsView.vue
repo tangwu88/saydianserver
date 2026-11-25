@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { api, getAdminRoles, readableError, responseData } from "../api";
 import GiftBulkActionsDialog from "../components/GiftBulkActionsDialog.vue";
+import GiftQueryManagement from "../components/GiftQueryManagement.vue";
 type Row = Record<string, any>;
 const router = useRouter(),
   writable = computed(() => getAdminRoles().includes("SUPER_ADMIN"));
@@ -53,6 +54,7 @@ const stamp = (value: unknown) =>
   value ? new Date(String(value)).toLocaleString() : "不限";
 let request = 0;
 async function load() {
+  if (tab.value === "query") { ++request; loading.value = false; error.value = ""; rows.value = []; selected.value = []; return; }
   const revision = ++request;
   loading.value = true;
   error.value = "";
@@ -287,9 +289,10 @@ onMounted(async () => {
     <el-tabs v-model="tab"
       ><el-tab-pane label="兑换卡" name="cards" /><el-tab-pane
         label="生成批次"
-        name="batches" /><el-tab-pane label="兑换记录" name="records"
+        name="batches" /><el-tab-pane label="兑换记录" name="records" /><el-tab-pane v-if="writable" label="查询账号与日志" name="query"
     /></el-tabs>
-    <div class="toolbar">
+    <GiftQueryManagement v-if="tab === 'query' && writable" />
+    <div v-if="tab !== 'query'" class="toolbar">
       <el-input
         v-model="q"
         :placeholder="
@@ -481,7 +484,7 @@ onMounted(async () => {
         ></el-table-column
       ></el-table
     >
-    <el-table key="records" v-else v-loading="loading" :data="rows" border
+    <el-table key="records" v-else-if="tab === 'records'" v-loading="loading" :data="rows" border
       ><el-table-column label="编号 / 卡号" min-width="240"
         ><template #default="{ row }"
           >{{ row.card.serialNo }}<small>{{ row.card.cardNo }}</small></template
@@ -522,6 +525,7 @@ onMounted(async () => {
       ></el-table
     >
     <el-pagination
+      v-if="tab !== 'query'"
       v-model:current-page="page"
       :page-size="20"
       :total="total"

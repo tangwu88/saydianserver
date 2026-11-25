@@ -11,20 +11,29 @@ import { SafeHttpExceptionFilter } from "./http-exception.filter";
 
 function filtered(path: string, exception: unknown) {
   const json = vi.fn();
+  const setHeader = vi.fn();
   const status = vi.fn((_status: number) => ({ json }));
   new SafeHttpExceptionFilter().catch(exception, {
     switchToHttp: () => ({
       getRequest: () => ({ originalUrl: path, requestId: "gift-http-fixture" }),
-      getResponse: () => ({ status }),
+      getResponse: () => ({ status, setHeader }),
     }),
   } as any);
   return {
     status: status.mock.calls[0]?.[0],
     payload: json.mock.calls[0]?.[0],
+    headers: Object.fromEntries(setHeader.mock.calls),
   };
 }
 
 describe("gift redemption actionable errors", () => {
+  it.each(["", "/global"])("preserves inquiry login/format/admin errors and prevents caching even before interceptors under %s", prefix => {
+    for (const endpoint of ["gift-query/v1/query", "gift-query/v1/login", "admin/v1/commerce-gift-query-accounts/fixture", "admin/v1/commerce-gift-query-logs"]) {
+      expect(filtered(`${prefix}/api/saydian-app/${endpoint}`, new BadRequestException("请输入8位卡号"))).toMatchObject({ status: 400, payload: { message: "请输入8位卡号" }, headers: { "Cache-Control": "no-store, private", Pragma: "no-cache" } });
+      expect(filtered(`${prefix}/api/saydian-app/${endpoint}`, new HttpException("ThrottlerException: Too Many Requests", 429))).toMatchObject({ status: 429, payload: { message: "操作过于频繁，请稍后再试" }, headers: { "Cache-Control": "no-store, private" } });
+      expect(JSON.stringify(filtered(`${prefix}/api/saydian-app/${endpoint}`, new Error("DATABASE_SECRET_SENTINEL")))).not.toContain("DATABASE_SECRET_SENTINEL");
+    }
+  });
   it.each(["", "/global"])(
     "keeps safe business reasons and HTTP statuses for the %s storefront alias",
     (prefix) => {

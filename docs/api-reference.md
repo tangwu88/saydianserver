@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **603 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **611 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -179,6 +179,15 @@
 | `GET /api/saidian-mall/v1/partner/status` | 当前会员合作申请与账户状态 | member | 已验证商城会员会话 | {partner,application}；仅该会员数据 | 主库；会员绑定独立于推广归属 |
 | `POST /api/saidian-mall/v1/partner/applications` | 会员提交合作申请 | member | {name,contactName,mobile,region,description,idempotencyKey} | 申请；同一会员仅一个待审核或通过申请，重试不重复 | 已验证会员；总管理员审核 |
 | `POST /api/saidian-mall/v1/partner/login-ticket` | 商城会员进入合作平台 | member | {codeChallenge}；浏览器S256 PKCE摘要，已验证商城会话 | {ticket,expiresAt}；哈希存储，120秒一次性凭证 | 已审核或人工明确绑定的启用账户；不按手机号或姓名猜测身份 |
+
+## 礼品卡独立查询（4）
+
+| 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
+| --- | --- | --- | --- | --- | --- |
+| `POST /api/saydian-app/gift-query/v1/login` | 礼品卡独立查询账号登录 | public | {username,password}；查询专用账号，不接受会员或后台登录 | {token,expiresAt,username,displayName}；8小时会话，no-store | 独立查询账号；按IP和账号数据库限流；维护停写时不可登录 |
+| `GET /api/saydian-app/gift-query/v1/me` | 查询账号当前登录 | gift-query | Bearer查询会话 | {username,displayName,expiresAt}；no-store | 独立查询会话；停用或重设后失效 |
+| `POST /api/saydian-app/gift-query/v1/logout` | 退出礼品卡查询 | gift-query | Bearer查询会话；空请求体 | {loggedOut:true} | 撤销本次查询会话 |
+| `POST /api/saydian-app/gift-query/v1/query` | 按卡号批量查询是否兑换 | gift-query | Bearer查询会话；{cardNos}：8开头8位卡号，字符串或字符串数组；去重最多100张 | {items:[{cardNo,status:REDEEMED/NOT_REDEEMED/NOT_FOUND,orderNo:string\|null}],cardCount,redeemedCount,missingCount,queriedAt} | 事务写入结果快照日志后返回；仅查卡号与订单号，无会员/地址/校验码；限流；维护停写时不可查询 |
 
 ## V2 App 接口（193）
 
@@ -378,7 +387,7 @@
 | `GET /api/saydian-app/v2/files/:id/image` | 公开商品图片轻量版本 | public | path:id，query:width，header:if-none-match；id为公开admin-content图片UUID；width必填，仅160/480/960/1440；If-None-Match可选 | WebP图片原比例缩小不放大；ETag/304及24小时浏览器缓存；不存在或私有图片404 | 只允许ACTIVE、无会员所有者的admin-content；原图接口不变；不代理外部URL；处理并发/输入像素/字节与缓存有界 |
 | `GET /api/saydian-app/v2/files/:id` | 获取公开头像 | public | path:id；id=文件 UUID；仅 ACTIVE 且 purpose=avatar 或 admin-content 的文件 | 原始文件流，不包裹 JSON；反馈/ECG 不可经此接口下载 | 原有对象存储或 Say Ring 专用服务器持久目录 |
 
-## 管理后台接口（199）
+## 管理后台接口（203）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -540,6 +549,10 @@
 | `POST /api/saydian-app/admin/v1/commerce/withdrawals/:id/review` | 审批提现申请 | admin: SUPER_ADMIN, FINANCE | path:id；{version,idempotencyKey,decision:APPROVE/REJECT,note}；拒绝同事务释放冻结 | 提现记录；重复同键幂等，异参或旧版本409 | 主库资金账本 |
 | `POST /api/saydian-app/admin/v1/commerce/withdrawals/:id/manual-receipt` | 登记真实人工转账回执 | admin: SUPER_ADMIN, FINANCE | path:id；{version,idempotencyKey,providerTransferId,amountCents,recipientOpenId,receiptReference,evidence,completedAt,confirmedExternalResult:true}；核验金额及收款身份 | 提现记录；仅登记已完成的真实转账，不发起任何第三方付款 | 财务人工核验凭证 |
 | `POST /api/saydian-app/admin/v1/commerce/withdrawals/:id/verify-original-transfer` | 核验迁入在途原转账结果 | admin: SUPER_ADMIN, FINANCE | path:id；回执字段同manual-receipt，另result=SUCCEEDED/FAILED；必须原转账号一致、已接管且PROCESSING/WAIT_USER_CONFIRM | 成功结账或失败释放冻结；不得创建新转账单 | 原渠道回执 |
+| `GET /api/saydian-app/admin/v1/commerce-gift-query-accounts` | 查询账号及累计统计 | admin: SUPER_ADMIN | 仅总管理员 | 账号公开字段、version、累计查询/无效请求/卡数/已兑换数、最近查询时间；不含密码Hash | 最多100账号；不分页；同卡多次查询分别计数 |
+| `POST /api/saydian-app/admin/v1/commerce-gift-query-accounts` | 创建独立查询账号 | admin: SUPER_ADMIN | {username,displayName,password,active}；账号3至64位字母数字_-；密码至少10字符最多72字节 | 账号公开字段；不返回密码 | 总管理员；bcrypt12；管理员操作审计 |
+| `PUT /api/saydian-app/admin/v1/commerce-gift-query-accounts/:id` | 编辑、停用或重设查询账号密码 | admin: SUPER_ADMIN | path:id；path:id；{displayName,active,version,password?}；密码留空保留 | 账号公开字段及递增version | 总管理员；并发版本检查；撤销该账号所有旧会话；保留历史日志 |
+| `GET /api/saydian-app/admin/v1/commerce-gift-query-logs` | 查询账号查卡日志 | admin: SUPER_ADMIN | query:*；accountId可选UUID、page从1起 | {items,total,page}；每页30；含账号、时间、结果计数和卡号/状态/订单快照 | 仅总管理员；最新在前；不返回会话Token、密码、IP或会员资料 |
 | `GET /api/saydian-app/admin/v1/commerce-gift-batches` | 查询礼品卡生成批次 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | query:*；q/page | 分页元数据；不补导明文 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
 | `GET /api/saydian-app/admin/v1/commerce-gift-cards` | 查询礼品卡 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | query:*；q/page/batchId/status | 编号、卡号、当前商品、允许规格、状态及关联订单；无哈希 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |
 | `GET /api/saydian-app/admin/v1/commerce-gift-redemptions` | 查询礼品兑换记录 | admin: SUPER_ADMIN, COMMERCE_OPERATIONS | query:*；q/page | 会员ID、验证手机号及时间、兑换时间、可信IP、订单号和商品地址快照 | 主库礼品兑换；鉴权、分维度限频和不可变交易记录 |

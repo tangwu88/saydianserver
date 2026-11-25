@@ -15,6 +15,14 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+  "GiftQueryController.login": entry("礼品卡独立查询账号登录", "{username,password}；查询专用账号，不接受会员或后台登录", "{token,expiresAt,username,displayName}；8小时会话，no-store", "独立查询账号；按IP和账号数据库限流；维护停写时不可登录"),
+  "GiftQueryController.me": entry("查询账号当前登录", "Bearer查询会话", "{username,displayName,expiresAt}；no-store", "独立查询会话；停用或重设后失效"),
+  "GiftQueryController.logout": entry("退出礼品卡查询", "Bearer查询会话；空请求体", "{loggedOut:true}", "撤销本次查询会话"),
+  "GiftQueryController.query": entry("按卡号批量查询是否兑换", "Bearer查询会话；{cardNos}：8开头8位卡号，字符串或字符串数组；去重最多100张", "{items:[{cardNo,status:REDEEMED/NOT_REDEEMED/NOT_FOUND,orderNo:string|null}],cardCount,redeemedCount,missingCount,queriedAt}", "事务写入结果快照日志后返回；仅查卡号与订单号，无会员/地址/校验码；限流；维护停写时不可查询"),
+  "GiftQueryAdminController.accounts": entry("查询账号及累计统计", "仅总管理员", "账号公开字段、version、累计查询/无效请求/卡数/已兑换数、最近查询时间；不含密码Hash", "最多100账号；不分页；同卡多次查询分别计数"),
+  "GiftQueryAdminController.create": entry("创建独立查询账号", "{username,displayName,password,active}；账号3至64位字母数字_-；密码至少10字符最多72字节", "账号公开字段；不返回密码", "总管理员；bcrypt12；管理员操作审计"),
+  "GiftQueryAdminController.update": entry("编辑、停用或重设查询账号密码", "path:id；{displayName,active,version,password?}；密码留空保留", "账号公开字段及递增version", "总管理员；并发版本检查；撤销该账号所有旧会话；保留历史日志"),
+  "GiftQueryAdminController.logs": entry("查询账号查卡日志", "accountId可选UUID、page从1起", "{items,total,page}；每页30；含账号、时间、结果计数和卡号/状态/订单快照", "仅总管理员；最新在前；不返回会话Token、密码、IP或会员资料"),
   "CommerceMemberProfileController.profile": entry("商城会员读取本人个人资料", "已验证会员会话；不接受会员ID参数", "与App相同的MemberProfile，联系方式脱敏；private no-store", "复用MembersService；当前会员身份由会话取得"),
   "CommerceMemberProfileController.save": entry("商城会员修改本人个人资料", "nickname、gender、birthday、heightCm、weightKg；仅更新提交字段；avatarFileId可选，null移除头像", "与App相同的MemberProfile；头像只允许当前会员上传且ACTIVE的avatar文件；忽略账号、角色、归属和外部头像URL", "复用App资料验证和会员表；不修改验证状态或登录凭据"),
   "CommerceMemberProfileController.avatar": entry("商城会员上传个人头像", "multipart file；JPG/PNG/WebP，10MB以内；校验实际文件字节", "{id,url,sha256,byteSize}；仅上传，保存资料时关联", "复用App头像存储；每分钟最多10次；本人会话"),
