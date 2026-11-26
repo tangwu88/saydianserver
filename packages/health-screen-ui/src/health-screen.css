@@ -222,6 +222,15 @@
   gap: 10px;
   align-items: center;
 }
+.component-scores {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  min-width: 0;
+}
+.component-scores p { margin: 6px 0; }
+.component-scores strong { font-size: 2rem; color: #58e7eb; }
+.component-scores small { color: #a6ccda; }
 .score-ring {
   position: relative;
   aspect-ratio: 1;
