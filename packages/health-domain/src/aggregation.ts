@@ -506,6 +506,43 @@ type Sample = {
   origin: string;
   reason: string | null;
 };
+/** Fixed synthetic data for the rule editor; never written as a member measurement. */
+export function previewAdultSleepSample(
+  rules: HealthScoreRules,
+  version: number,
+  days: HealthScreenDays,
+) {
+  const period = screenPeriod(days, "Asia/Shanghai");
+  const acc = new ScreenAccumulator(period);
+  for (const date of period.dates.slice(-3)) {
+    const observedAt = new Date(date + "T08:00:00+08:00");
+    const record: ScreenRecord = {
+      id: "sample-sleep-" + date,
+      metric: "SLEEP",
+      observedAt,
+      createdAt: observedAt,
+      updatedAt: observedAt,
+      values: { durationMinutes: 480 },
+      unit: "min",
+      quality: "VALID",
+      sourceOrigin: "watch_history",
+      sourceModel: "synthetic",
+      sourceMetadata: { timeBasis: "sdk", sleepScope: "night" },
+      aggregationKind: null,
+      aggregationActive: false,
+      aggregationLocalDate: null,
+    };
+    acc.add(record);
+    acc.add({
+      ...record,
+      id: "sample-pulse-" + date,
+      metric: "HEART_RATE",
+      values: { bpm: 72 },
+      unit: "bpm",
+    });
+  }
+  return acc.finish(rules, version, { age: 30, gender: "FEMALE" }).score;
+}
 export class ScreenAccumulator {
   private seen = new Set<string>();
   private samples = new Map<string, { def: Value; values: Sample[] }>();
@@ -572,6 +609,7 @@ export class ScreenAccumulator {
     subject: Subject,
   ): HealthScreenFacts {
     const byKey = new Map(rules?.items.map((r) => [r.key, r]));
+    const eligible = new Set(this.eligible);
     const series = [...this.samples.entries()]
       .map(([key, { def, values }]): HealthScreenSeries => {
         const reference = key.startsWith("reference_");
@@ -580,11 +618,12 @@ export class ScreenAccumulator {
           : undefined;
         const referenceEligible =
           !!refRule &&
+          !refRule.trendOnly &&
           refRule.referenceUnit === def.unit &&
           refRule.allowedOrigins.includes(def.referenceMethod || "");
         if (referenceEligible)
           values.forEach((v) => {
-            if (!v.reason) this.eligible.add(v.recordId);
+            if (!v.reason) eligible.add(v.recordId);
           });
         const byDay = (eligibleOnly: boolean) =>
           this.period.dates.map((date) => {
@@ -660,7 +699,7 @@ export class ScreenAccumulator {
       period: this.period,
       recordCount: this.count,
       unusableRecordCount: this.unusable,
-      eligibleRecordCount: this.eligible.size,
+      eligibleRecordCount: eligible.size,
       coverageDays: this.allDays.size,
       lastMeasuredAt: this.last,
       dataUpdatedAt: this.updated,
@@ -728,7 +767,12 @@ export class ScreenAccumulator {
         (rule.gender !== "ANY" && rule.gender !== subject.gender)
       )
         reason = "不在此规则适用范围";
-      else if (values.length < rule.minSamples || byDay.size < rule.minDays)
+      else if (rule.trendOnly && !values.length)
+        reason = "暂无符合来源的记录";
+      else if (
+        !rule.trendOnly &&
+        (values.length < rule.minSamples || byDay.size < rule.minDays)
+      )
         reason = `需要至少${rule.minDays}天、${rule.minSamples}条符合来源要求的记录`;
       const band =
         value === null
@@ -738,20 +782,32 @@ export class ScreenAccumulator {
                 (b.min === null || value >= b.min) &&
                 (b.max === null || value < b.max),
             );
-      if (!reason && !band) reason = "当前值未匹配已发布评分区间";
+      if (!rule.trendOnly && !reason && !band) reason = "当前值未匹配已发布评分区间";
+      const unit = rule.referenceUnit ?? stream?.def.unit;
       return {
         key: rule.key,
         label: rule.label,
-        score: reason ? null : band!.score,
+        ...(rule.trendOnly ? { trendOnly: true } : {}),
+        ...(unit ? { unit } : {}),
+        score: rule.trendOnly || reason ? null : band?.score ?? null,
         value,
         reason,
         basis: rule.basis,
         referenceUrl: rule.referenceUrl,
         count: values.length,
         days: byDay.size,
-        weight: rule.weight,
+        weight: rule.trendOnly || rules.calculateTotal === false ? 0 : rule.weight,
       };
     });
+    if (rules.calculateTotal === false)
+      return {
+        version,
+        title: rules.title,
+        calculateTotal: false,
+        total: null,
+        reason: null,
+        items,
+      };
     // No silent weight redistribution. Every weighted component must be evaluable.
     const missing = items.some(
         (item, i) =>
