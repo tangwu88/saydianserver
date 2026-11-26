@@ -338,6 +338,13 @@ model User {
   pointLedger              CommercePointLedger[]
   legacySessions           LegacySessionCredential[]
   wechatOfficialIdentities WechatOfficialIdentity[]
+  ringShares               RingShare[]
+  ringShareReactions       RingShareReaction[]
+  ringCareInvites          RingCareInvite[]                  @relation("RingCareInviter")
+  ringCareClaims           RingCareInvite[]                  @relation("RingCareClaimant")
+  ringCareMessages         RingCareMessage[]
+  ringCareSettings         RingCareSetting[]
+  ringCareGoals            RingCareGoal[]
 
   @@index([status, createdAt])
   @@index([referralEmployeeId])
@@ -803,6 +810,9 @@ model CareRelationship {
   recipient       User              @relation("CareRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
   permissions     CarePermission[]
   accessAudits    CareAccessAudit[]
+  ringMessages    RingCareMessage[]
+  ringSettings    RingCareSetting[]
+  ringGoals       RingCareGoal[]
 
   @@unique([inviterId, recipientId])
   @@index([recipientId, status])
@@ -834,6 +844,115 @@ model CareAccessAudit {
 
   @@index([viewerUserId, createdAt])
   @@index([subjectUserId, createdAt])
+}
+
+model RingShare {
+  id        String              @id @default(uuid()) @db.Uuid
+  ownerId   String              @db.Uuid
+  digest    String              @unique
+  snapshot  Json
+  createdAt DateTime            @default(now())
+  expiresAt DateTime
+  owner     User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  reactions RingShareReaction[]
+
+  @@index([ownerId, createdAt])
+  @@index([expiresAt])
+}
+
+model RingShareReaction {
+  shareId   String    @db.Uuid
+  visitor   String
+  memberId  String?   @db.Uuid
+  name      String?
+  kind      String
+  createdAt DateTime  @default(now())
+  share     RingShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  member    User?     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@id([shareId, visitor])
+  @@index([memberId])
+}
+
+model RingCareInvite {
+  id         String    @id @default(uuid()) @db.Uuid
+  inviterId  String    @db.Uuid
+  acceptedBy String?   @db.Uuid
+  digest     String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  inviter    User      @relation("RingCareInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  claimant   User?     @relation("RingCareClaimant", fields: [acceptedBy], references: [id], onDelete: SetNull)
+
+  @@index([inviterId, expiresAt])
+}
+
+model RingCareSetting {
+  relationshipId String           @db.Uuid
+  userId         String           @db.Uuid
+  muted          Boolean          @default(false)
+  blocked        Boolean          @default(false)
+  relationship   CareRelationship @relation(fields: [relationshipId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([relationshipId, userId])
+  @@index([userId])
+}
+
+model RingCareMessage {
+  id             String           @id @db.Uuid
+  relationshipId String           @db.Uuid
+  authorId       String           @db.Uuid
+  kind           String
+  keepQuiet      Boolean          @default(false)
+  attachment     Json?
+  audio          Bytes?
+  createdAt      DateTime         @default(now())
+  deletedAt      DateTime?
+  reportedAt     DateTime?
+  relationship   CareRelationship @relation(fields: [relationshipId], references: [id], onDelete: Cascade)
+  author         User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([relationshipId, createdAt])
+  @@index([authorId])
+  @@index([reportedAt])
+}
+
+model RingCareGoal {
+  relationshipId String           @db.Uuid
+  userId         String           @db.Uuid
+  week           String
+  target         Int
+  paused         Boolean          @default(false)
+  days           Json             @default("[]")
+  relationship   CareRelationship @relation(fields: [relationshipId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([relationshipId, userId, week])
+  @@index([userId])
+}
+
+model RingFirmwareRelease {
+  id          String   @id @default(uuid()) @db.Uuid
+  platform    String
+  transport   String
+  model       String
+  hardware    String
+  fromVersion String
+  version     String
+  minBuild    Int
+  minBattery  Int
+  bytes       Int
+  sha256      String
+  package     Bytes
+  evidence    String
+  enabled     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@unique([platform, transport, model, hardware, fromVersion, version])
+  @@index([platform, transport, model, hardware, fromVersion, enabled])
 }
 
 model Notification {

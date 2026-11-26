@@ -5,6 +5,7 @@ export { adminResourcePermissions, canAdminResource, type AdminAction } from "./
 export { sayRingIosHealthSettingKey, sayRingReadOnlyMetricKeys, parseSayRingIosHealthDisplay, sayRingIosHealthDisplayOrClosed, type SayRingIosHealthDisplay, type SayRingReadOnlyMetric } from "./say-ring-ios-health";
 export { sayRingIosModuleSettingKey, sayRingModuleKeys, parseSayRingIosModuleDisplay, sayRingIosModuleDisplayOrClosed, type SayRingIosModuleDisplay, type SayRingModule } from "./say-ring-ios-modules";
 export { sayRingU19HealthSettingKey, u19HealthCeiling, parseSayRingU19Health, sayRingU19HealthOrClosed, type SayRingU19Health, type U19HealthMetric } from "./say-ring-u19-health";
+export { sayRingFirmwareFamilies, sayRingFirmwareTarget } from "./say-ring-firmware";
 
 export const healthMetrics = [
   "sleep",
@@ -327,17 +328,20 @@ export interface SafePushPayloadContract {
   eventId: string;
   type: string;
   deepLink?: string;
+  entityId?: string;
 }
 
 export function buildSafePushPayload(input: {
   eventId: string;
   type: string;
   deepLink?: string | null;
+  entityId?: string;
 }): SafePushPayloadContract {
   return {
     eventId: input.eventId,
     type: input.type,
     ...(input.deepLink ? { deepLink: input.deepLink } : {}),
+    ...(input.entityId ? { entityId: input.entityId } : {}),
   };
 }
 

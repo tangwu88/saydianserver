@@ -4,6 +4,7 @@ import {
   screenPeriod,
   recordValues,
   displayRecord,
+  previewAdultSleepSample,
   recordDay,
   type ScreenRecord,
 } from "./aggregation";
@@ -209,6 +210,51 @@ describe("health screen data and score invariants", () => {
       finish([record("a", { sourceOrigin: "manual_entry" })], 7, rule).score
         .total,
     ).toBeNull();
+  });
+  it("publishes item scores with trend values and never promotes a single score to a total", () => {
+    const rules = draftRules();
+    rules.calculateTotal = false;
+    for (const item of rules.items) {
+      item.basis = "仅用于合成样本的范围与来源核对";
+      item.referenceUrl = "https://example.org/reference";
+      item.trendOnly = item.key !== "sleep_minutes";
+      if (!item.trendOnly) {
+        item.minAge = 20;
+        item.bands = [{ min: 420, max: 540, score: 100 }];
+      }
+    }
+    const saved = validateRules(rules, true);
+    expect(saved.items.every(item => !item.required && item.weight === 0)).toBe(true);
+    const observed = finish([record("pulse"), record("sleep", {
+      metric: "SLEEP", values: { durationMinutes: 480 }, unit: "min",
+      sourceMetadata: { timeBasis: "sdk", sleepScope: "night" },
+    })], 7, saved);
+    expect(observed.recordCount).toBe(2);
+    expect(observed.eligibleRecordCount).toBe(1);
+    expect(observed.series.find(s => s.key === "heart_rate")!.eligibleAverage).toBeGreaterThan(0);
+    for (const days of [7, 30, 90] as const) {
+      const preview = previewAdultSleepSample(saved, 2, days);
+      expect(preview).toMatchObject({ calculateTotal: false, total: null, reason: null });
+      expect(preview.items.find(i => i.key === "sleep_minutes")).toMatchObject({ score: 100, value: 480, days: 3 });
+      expect(preview.items.find(i => i.key === "heart_rate")).toMatchObject({ trendOnly: true, score: null, value: 72, unit: "次/分", reason: null });
+      expect(preview.items.find(i => i.key === "ref_glucose_fasting")).toMatchObject({ score: null, value: null });
+    }
+    expect(finish([], 7, saved).score.items.find(i => i.key === "sleep_minutes")).toMatchObject({ score: null, value: null });
+    expect(() => validateRules({ ...rules, items: rules.items.filter(i => i.trendOnly) }, true)).toThrow("至少需要一个");
+    expect(() => validateRules({ ...rules, calculateTotal: "false" }, true)).toThrow();
+    expect(() => validateRules({ ...rules, items: [{ ...rules.items[0], trendOnly: "true" }] }, true)).toThrow("用途");
+    expect(() => validateRules({ ...rules, items: [{ ...rules.items[0], trendOnly: false }] }, true)).toThrow("评分区间");
+  });
+  it("excludes trends from a weighted version even when an older item had bands", () => {
+    const rules = draftRules();
+    rules.items = rules.items.slice(0, 2).map((item, i) => ({
+      ...item, trendOnly: i === 1, minDays: 1, minSamples: 1,
+      basis: "仅用于合成样本的范围与来源核对", referenceUrl: "https://example.org/reference",
+      bands: [{ min: null, max: null, score: 60 }],
+    }));
+    const saved = validateRules(rules, true);
+    expect(saved.items[1]).toMatchObject({ weight: 0, required: false, bands: [] });
+    expect(finish([record("pulse")], 7, saved).score.total).toBe(60);
   });
   it("requires demographic fields only when the published rule needs them", () => {
     const rule = draftRules();

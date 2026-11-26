@@ -849,6 +849,12 @@ export const apiCatalog = {
                       },
                       "weight": {
                         "type": "number"
+                      },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
+                      "unit": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -865,6 +871,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -2434,6 +2443,9 @@ export const apiCatalog = {
                             "referenceUrl": {
                               "type": "string"
                             },
+                            "trendOnly": {
+                              "type": "boolean"
+                            },
                             "referenceUnit": {
                               "type": "string"
                             }
@@ -2455,6 +2467,9 @@ export const apiCatalog = {
                           ],
                           "additionalProperties": true
                         }
+                      },
+                      "calculateTotal": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -2639,6 +2654,9 @@ export const apiCatalog = {
                       "referenceUrl": {
                         "type": "string"
                       },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
                       "referenceUnit": {
                         "type": "string"
                       }
@@ -2660,6 +2678,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -2797,6 +2818,9 @@ export const apiCatalog = {
                       "referenceUrl": {
                         "type": "string"
                       },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
                       "referenceUnit": {
                         "type": "string"
                       }
@@ -2818,6 +2842,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -3085,6 +3112,9 @@ export const apiCatalog = {
                       "referenceUrl": {
                         "type": "string"
                       },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
                       "referenceUnit": {
                         "type": "string"
                       }
@@ -3106,6 +3136,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -3169,10 +3202,10 @@ export const apiCatalog = {
       ],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin-health-screen.controller.ts",
-      "summary": "用会员数据预览已保存规则",
-      "request": "id=规则UUID；{memberId:UUID,days:7/30/90}",
-      "response": "{preview:true,score}；不调用AI不扣次；no-store",
-      "dependency": "SUPER_ADMIN；健康数据访问审计",
+      "summary": "预览已保存规则",
+      "request": "id=规则UUID，days为7/30/90，选择memberId或sample=adult_sleep",
+      "response": "{preview:true,score}，合成样本不读取会员资料，no-store",
+      "dependency": "SUPER_ADMIN，预览写审计",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -3183,6 +3216,9 @@ export const apiCatalog = {
               "type": "string",
               "format": "uuid"
             },
+            "sample": {
+              "const": "adult_sleep"
+            },
             "days": {
               "enum": [
                 7,
@@ -3192,10 +3228,21 @@ export const apiCatalog = {
             }
           },
           "required": [
-            "memberId",
             "days"
           ],
-          "additionalProperties": true
+          "additionalProperties": true,
+          "oneOf": [
+            {
+              "required": [
+                "memberId"
+              ]
+            },
+            {
+              "required": [
+                "sample"
+              ]
+            }
+          ]
         },
         "requestExample": null,
         "responseSchema": {
@@ -3276,6 +3323,12 @@ export const apiCatalog = {
                       },
                       "weight": {
                         "type": "number"
+                      },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
+                      "unit": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -3292,6 +3345,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -29247,6 +29303,12 @@ export const apiCatalog = {
                       },
                       "weight": {
                         "type": "number"
+                      },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
+                      "unit": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -29263,6 +29325,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -36266,6 +36331,12 @@ export const apiCatalog = {
                       },
                       "weight": {
                         "type": "number"
+                      },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
+                      "unit": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -36282,6 +36353,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -41284,6 +41358,1032 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "RingExperienceController.capabilities",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/capabilities",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "Say Ring 新功能开关",
+      "request": "无",
+      "response": "{sharing,care,firmware}",
+      "dependency": "中国站开关",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.open",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/shares/open",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "匿名读取分享快照",
+      "request": "{token}",
+      "response": "{snapshot,expiresAt,sharerName,projectNames,titleRef}",
+      "dependency": "7天有效；标题引用来自分享令牌摘要，只用于 H5 标题",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.react",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/shares/respond",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "访客选择预设回应",
+      "request": "{token,kind,visitor:UUID}",
+      "response": "{ok}",
+      "dependency": "分享有效期、访客去重；每条新回应创建一条分享者通知",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.named",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/shares/member-response",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "会员选择署名或匿名回应",
+      "request": "{token,kind,named}",
+      "response": "{ok}",
+      "dependency": "署名校验双方关爱关系",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.create",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/shares",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "确认并创建固定分享",
+      "request": "{token,confirmed:true,snapshot:{kind,date,fields,note}}",
+      "response": "{id,expiresAt}",
+      "dependency": "会员归属、字段白名单",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.list",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/shares",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "history",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "before",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "查询自己的分享与回应",
+      "request": "history=true含过期记录；before可选本人的分享UUID",
+      "response": "{entries,nextBefore}",
+      "dependency": "已有调用默认仅返回有效分享",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.replies",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/shares/:id",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "before",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "查看本人一条分享的完整回应",
+      "request": "分享UUID；before可选上一页游标",
+      "response": "{share,reactions:[{kind,name,createdAt}],nextBefore}",
+      "dependency": "按分享归属鉴权，含过期链接的回应",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.revoke",
+      "method": "DELETE",
+      "path": "/api/saydian-app/v2/ring/shares/:id",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "撤回本人的分享",
+      "request": "无",
+      "response": "{ok}",
+      "dependency": "立即移除匿名读取权限",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.preview",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/care/invitations/preview",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "查看一次性关爱邀请",
+      "request": "{code}",
+      "response": "{inviterName,expiresAt}",
+      "dependency": "邀请码与48小时有效期",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.invite",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/care/invitations",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "创建关注对方的邀请",
+      "request": "无",
+      "response": "{id,code,expiresAt}",
+      "dependency": "当前会员",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.invites",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/care/invitations",
+      "auth": "member",
+      "roles": [],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "查看本人待接受的邀请",
+      "request": "无",
+      "response": "{entries}",
+      "dependency": "当前会员",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.cancelInvite",
+      "method": "DELETE",
+      "path": "/api/saydian-app/v2/ring/care/invitations/:id",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "撤销尚未领取的邀请",
+      "request": "无",
+      "response": "{ok}",
+      "dependency": "邀请者校验",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.accept",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/care/invitations/accept",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "接受一次性邀请",
+      "request": "{code,confirmed:true,metrics:[]}",
+      "response": "{relationshipId}",
+      "dependency": "在事务内校验领取者与授权范围",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.greetings",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/care/greetings",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "after",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "前台新问候检查",
+      "request": "after可选时间",
+      "response": "{cursor,entries}",
+      "dependency": "只读近期问候及关系设置",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.thread",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/care/:id/messages",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "before",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "查看亲友消息",
+      "request": "before可选消息UUID",
+      "response": "{messages,muted,blocked,canUnblock}",
+      "dependency": "当前有效关系、分页",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.send",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/care/:id/messages",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "发送问候、近况或语音",
+      "request": "{messageId,kind,keepQuiet,attachment?,audio?}",
+      "response": "保存后的消息",
+      "dependency": "当前有效关系、消息去重",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.voice",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/care/:id/messages/:message/audio",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "message",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "读取一条私有语音",
+      "request": "无",
+      "response": "audio/wav",
+      "dependency": "逐次检查当前有效关系",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.remove",
+      "method": "DELETE",
+      "path": "/api/saydian-app/v2/ring/care/:id/messages/:message",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "message",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "删除自己的消息",
+      "request": "无",
+      "response": "{ok}",
+      "dependency": "作者校验",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.report",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/care/:id/messages/:message/report",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "path",
+          "name": "message",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "举报亲友消息",
+      "request": "无",
+      "response": "{ok}",
+      "dependency": "当前有效关系",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.settings",
+      "method": "PUT",
+      "path": "/api/saydian-app/v2/ring/care/:id/settings",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "更改亲友静音或屏蔽",
+      "request": "{muted?,blocked?}",
+      "response": "{muted,blocked}",
+      "dependency": "本人设置、现有关系",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.goals",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/care/:id/goals",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "查看亲友本周散步进度",
+      "request": "无",
+      "response": "{week,today,members,activityAvailable}",
+      "dependency": "共同进度及本人已同步活动是否可用",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.goal",
+      "method": "PUT",
+      "path": "/api/saydian-app/v2/ring/care/:id/goals",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "设置散步目标或打卡",
+      "request": "{week,target?}、{week,paused?}或{week,day,source}",
+      "response": "更新后的共同进度",
+      "dependency": "本周校验及同日去重；活动打卡检查本人已同步有效数据",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.lookup",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/ring/firmware/lookup",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "按精准型号核验固件目录",
+      "request": "{platform,transport,model,hardware,fromVersion,appBuild,packageModel}；旧客户端未传包型号时无可用包",
+      "response": "{available,payload?,signature?}；已签名清单包含packageModel",
+      "dependency": "型号和原厂包匹配，确切硬件、版本与文件摘要均已验收",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingExperienceController.package",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/ring/firmware/packages/:id",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "下载已启用的原厂固件",
+      "request": "无",
+      "response": "校验后的固件文件",
+      "dependency": "会员、签名目录与包匹配",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingFirmwareAdminController.list",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/ring-firmware",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "后台固件目录",
+      "request": "无",
+      "response": "{entries}；原厂固件包packageModel可为空",
+      "dependency": "后台审计权限",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingFirmwareAdminController.stage",
+      "method": "POST",
+      "path": "/api/saydian-app/admin/v1/ring-firmware",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        },
+        {
+          "in": "file",
+          "name": "file",
+          "type": "Express.Multer.File",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "暂存原厂固件",
+      "request": "multipart 文件与目标、packageModel、版本、证据、摘要",
+      "response": "草稿固件",
+      "dependency": "指定型号与原厂包配对；文件SHA-256匹配",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "multipart/form-data",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingFirmwareAdminController.enable",
+      "method": "PUT",
+      "path": "/api/saydian-app/admin/v1/ring-firmware/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "暂停或启用固件",
+      "request": "{enabled}",
+      "response": "对应固件",
+      "dependency": "启用要求相应平台真机记录及精确升级路径、原厂包与文件摘要校验",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingEngagementAdminController.summary",
+      "method": "GET",
+      "path": "/api/saydian-app/admin/v1/ring-engagement",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS",
+        "CUSTOMER_SERVICE"
+      ],
+      "parameters": [],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "分享与关爱的聚合结果和举报",
+      "request": "无",
+      "response": "{usage,reports}",
+      "dependency": "后台权限；聚合结果",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingEngagementAdminController.remove",
+      "method": "DELETE",
+      "path": "/api/saydian-app/admin/v1/ring-engagement/reports/:id",
+      "auth": "admin",
+      "roles": [
+        "SUPER_ADMIN",
+        "APP_OPERATIONS",
+        "CUSTOMER_SERVICE"
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+      "summary": "移除已举报的问候",
+      "request": "无",
+      "response": "{ok}",
+      "dependency": "后台权限及操作审计",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "RingWebController.page",
+      "method": "GET",
+      "path": "/global/say-ring/:mode",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "mode",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "header",
+          "name": "host",
+          "type": "string | undefined",
+          "optional": false
+        },
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string | undefined",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "title",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/ring-experience/ring-web.controller.ts",
+      "summary": "第一方分享、邀请或回应 H5",
+      "request": "mode为share、invite或respond；share可选title引用",
+      "response": "HTML；标题含分享者昵称、项目及存在的留言；报告授权片段由浏览器处理",
+      "dependency": "标题引用只读取有效链接的标题；完整快照逐次校验",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-web.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "SayHeathController.legal",
       "method": "GET",
       "path": "/api/saydian-app/v2/sayheath/legal",
@@ -43263,6 +44363,31 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "UniversalLinksController.androidAssociation",
+      "method": "GET",
+      "path": "/.well-known/assetlinks.json",
+      "auth": "public",
+      "roles": [],
+      "parameters": [],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/universal-links.controller.ts",
+      "summary": "Android App Links 关联文件",
+      "request": "无",
+      "response": "已配置的正式包公钥指纹；未配置为空",
+      "dependency": "部署域名",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/universal-links.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "UniversalLinksController.association",
       "method": "GET",
       "path": "/.well-known/apple-app-site-association",
@@ -43273,7 +44398,7 @@ export const apiCatalog = {
       "source": "apps/api/src/universal-links.controller.ts",
       "summary": "Apple Universal Links 关联文件",
       "request": "无请求体",
-      "response": "Apple AASA 原始 JSON；赛电正式包仅关联 /wechat/*，Say Ring 正式包仅关联 /global/wechat/sayring/*",
+      "response": "Apple AASA 原始 JSON；赛电正式包仅关联 /wechat/*，Say Ring 正式包关联微信回调、远程爱邀请与具名回应",
       "dependency": "固定 App ID 与已部署 HTTPS 域名",
       "successStatus": 200,
       "contract": {

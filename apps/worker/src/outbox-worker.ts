@@ -200,12 +200,32 @@ export class OutboxWorker {
     const payload = asObject(event.payload);
     const userId = String(payload.userId ?? "");
     if (!userId) throw new Error("Outbox event has no target user");
-    if (["feedback", "support_conversation"].includes(event.aggregateType) && event.eventType === "system") {
+    const ringShare = event.aggregateType === "ring_share";
+    if (["feedback", "support_conversation", "ring_care", "ring_share"].includes(event.aggregateType) && event.eventType === "system") {
       const preference = await this.prisma.userNotificationPreference.findUnique({ where: { userId } });
       if (preference?.transactionalEnabled === false) return;
     }
+    if (event.aggregateType === "ring_care" && String(payload.deepLink).startsWith("/care/interactions/")) {
+      const relationship = await this.prisma.careRelationship.findFirst({
+        where: {
+          id: event.aggregateId, status: "ACTIVE", revokedAt: null,
+          OR: [{ inviterId: userId }, { recipientId: userId }],
+          inviter: { status: "ACTIVE" }, recipient: { status: "ACTIVE" },
+          ringSettings: { none: { OR: [{ blocked: true }, { userId, muted: true }] } },
+        },
+        select: { id: true },
+      });
+      if (!relationship) return;
+    }
+    if (ringShare) {
+      const share = await this.prisma.ringShare.findFirst({
+        where: { id: event.aggregateId, ownerId: userId, owner: { status: "ACTIVE" } },
+        select: { id: true },
+      });
+      if (!share) return;
+    }
     const installations = await this.prisma.pushInstallation.findMany({
-      where: { userId, enabled: true },
+      where: { userId, enabled: true, ...(ringShare ? { provider: "jpush_say_ring" } : {}) },
     });
     if (installations.length === 0) return;
     await this.push.deliver(
@@ -213,8 +233,11 @@ export class OutboxWorker {
       buildSafePushPayload({
         eventId: event.eventId,
         type: event.eventType,
-        deepLink:
+        // Older clients already understand the history route. The entity
+        // identifies the exact share for clients that display its replies.
+        deepLink: ringShare ? "/ring/shares" :
           typeof payload.deepLink === "string" ? payload.deepLink : null,
+        ...(ringShare ? { entityId: event.aggregateId } : {}),
       }),
     );
   }

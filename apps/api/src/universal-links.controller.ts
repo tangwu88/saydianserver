@@ -19,7 +19,11 @@ export const appleAppSiteAssociation = Object.freeze({
       }),
       Object.freeze({
         appID: "W7SXQ4A226.cn.saydian.ring",
-        paths: Object.freeze(["/global/wechat/sayring/*"]),
+        paths: Object.freeze([
+          "/global/wechat/sayring/*",
+          "/global/say-ring/invite",
+          "/global/say-ring/respond",
+        ]),
       }),
     ]),
   }),
@@ -28,6 +32,23 @@ export const appleAppSiteAssociation = Object.freeze({
 @Controller(".well-known")
 @RawResponse()
 export class UniversalLinksController {
+  @Get("assetlinks.json")
+  @Header("Content-Type", "application/json")
+  @Header("Cache-Control", "public, max-age=300")
+  androidAssociation() {
+    const fingerprints = (process.env.SAY_RING_ANDROID_LINK_CERTIFICATES ?? "")
+      .split(",").map((value) => value.trim().toUpperCase())
+      .filter((value) => /^[A-F0-9]{2}(?::[A-F0-9]{2}){31}$/.test(value));
+    if (fingerprints.length === 0 || process.env.DEPLOYMENT_SITE === "us") return [];
+    return [{
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app", package_name: "cn.saydian.ring",
+        sha256_cert_fingerprints: [...new Set(fingerprints)],
+      },
+    }];
+  }
+
   @Get("apple-app-site-association")
   @Header("Content-Type", "application/json")
   @Header("Cache-Control", "public, max-age=300")

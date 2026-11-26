@@ -584,6 +584,10 @@ describe.runIf(process.env.RUN_HEALTH_SCREEN_DATABASE_TESTS === "1")(
       }));
       const saved = await svc.saveRules({ rules: ruleset }, admin);
       rules.push(saved.id);
+      const sample = await svc.preview(saved.id, { sample: "adult_sleep", days: 7 }, admin);
+      expect(sample.score.items[0]).toMatchObject({ value: 72, count: 3, score: 80 });
+      await expect(svc.preview(saved.id, { sample: "adult_sleep", days: 7 }, auditor)).rejects.toThrow();
+      await expect(svc.preview(saved.id, { sample: "adult_sleep", memberId: userId }, admin)).rejects.toThrow("请选择");
       await svc.publish(
         saved.id,
         { reviewed: true, expectedUpdatedAt: saved.updatedAt.toISOString() },

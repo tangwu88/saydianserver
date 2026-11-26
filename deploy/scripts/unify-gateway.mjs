@@ -21,6 +21,28 @@ export function unifyGateway(source) {
       .replace(/(location = \/global\/api\s*\{)\s*return 308 \/global\/api\//, "$1\n    proxy_pass http://unified-api:8080;");
     assert(!/proxy_pass http:\/\/(?:saydianapp-api|global-api):/.test(block));
     assert(!/location[^\n]*\/global\/api[^}]*return 30[1278]/s.test(block), "API redirects are not allowed");
+    const namedRoutes = readFileSync(new URL("../global/nginx.locations.conf", import.meta.url), "utf8");
+    const globalApi = "location ^~ /global/api/ {";
+    assert(block.split(globalApi).length === 2, "Expected exactly one global API location");
+    for (const route of [
+      "location = /.well-known/assetlinks.json {",
+      "location ^~ /global/say-ring/ {",
+      "location = /global/api/saydian-app/v2/ai/messages {",
+    ]) {
+      const existing = block.split(route);
+      assert(existing.length <= 2, `Duplicate international route: ${route}`);
+      if (existing.length === 2) {
+        assert(existing[1].split("}", 1)[0].includes("proxy_pass http://unified-api:8080;"), `Invalid upstream for ${route}`);
+        continue;
+      }
+      const start = namedRoutes.indexOf(route);
+      const end = namedRoutes.indexOf("\n}", start);
+      assert(start >= 0 && end > start, `Missing international route template: ${route}`);
+      const location = namedRoutes.slice(start, end + 2)
+        .replace(/proxy_pass http:\/\/global-api:8080[^;]*;/, "proxy_pass http://unified-api:8080;");
+      const insertion = block.lastIndexOf("\n", block.indexOf(globalApi)) + 1;
+      block = block.slice(0, insertion) + location + "\n\n" + block.slice(insertion);
+    }
     if (!block.includes("location = /api/saydian-app/admin/v1/app-packages")) {
       block = block.replace("  location /admin/ {", `  location = /api/saydian-app/admin/v1/app-packages {
     client_max_body_size 130m;

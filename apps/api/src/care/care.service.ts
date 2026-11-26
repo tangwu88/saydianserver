@@ -21,7 +21,7 @@ import {
   healthAggregationContract,
 } from "../health/health-record-scope";
 
-const metricMap: Record<HealthMetric, PrismaHealthMetric> = {
+export const careMetricMap: Record<HealthMetric, PrismaHealthMetric> = {
   sleep: PrismaHealthMetric.SLEEP,
   steps: PrismaHealthMetric.STEPS,
   distance: PrismaHealthMetric.DISTANCE,
@@ -38,7 +38,7 @@ const metricMap: Record<HealthMetric, PrismaHealthMetric> = {
 };
 
 const metricReverse = Object.fromEntries(
-  Object.entries(metricMap).map(([key, value]) => [value, key]),
+  Object.entries(careMetricMap).map(([key, value]) => [value, key]),
 ) as Record<PrismaHealthMetric, HealthMetric>;
 
 @Injectable()
@@ -183,7 +183,7 @@ export class CareService {
     const body = safeObject(input);
     const rawMetrics = Array.isArray(body.metrics) ? body.metrics : [];
     const metrics = [...new Set(rawMetrics.map(String))].map(
-      (value) => metricMap[value as HealthMetric],
+      (value) => careMetricMap[value as HealthMetric],
     );
     if (metrics.some((metric) => !metric)) {
       throw new BadRequestException("共享指标不正确");
@@ -244,7 +244,7 @@ export class CareService {
   ) {
     const relationship = await this.prisma.careRelationship.findUnique({
       where: { id: relationshipId },
-      include: { permissions: true },
+      include: { permissions: true, ringSettings: { where: { blocked: true }, select: { userId: true } } },
     });
     const permission = relationship?.permissions.find(
       (item) => item.metric === metric && item.enabled,
@@ -253,6 +253,7 @@ export class CareService {
     const allowed = Boolean(
       relationship &&
       relationship.inviterId === viewerId &&
+      !relationship.ringSettings?.length &&
       relationship.status === CareStatus.ACTIVE &&
       (!relationship.expiresAt || relationship.expiresAt > now) &&
       permission &&
@@ -278,10 +279,10 @@ export class CareService {
 
   async summary(viewerId: string, relationshipId: string, requestId = "unknown") {
     const relationship = await this.prisma.careRelationship.findUnique({
-      where: { id: relationshipId }, include: { permissions: true },
+      where: { id: relationshipId }, include: { permissions: true, ringSettings: { where: { blocked: true }, select: { userId: true } } },
     });
     if (!relationship || relationship.inviterId !== viewerId ||
-        relationship.status !== CareStatus.ACTIVE ||
+        relationship.status !== CareStatus.ACTIVE || relationship.ringSettings?.length ||
         (relationship.expiresAt && relationship.expiresAt <= new Date())) {
       throw new ForbiddenException("对方尚未授权查看健康数据");
     }
@@ -305,7 +306,7 @@ export class CareService {
     requestId = "unknown",
     page?: number,
   ) {
-    const metric = metricMap[metricInput as HealthMetric];
+    const metric = careMetricMap[metricInput as HealthMetric];
     if (!metric) throw new BadRequestException("健康指标不正确");
     const subjectUserId = await this.authorizedSubject(viewerId, relationshipId, metric, requestId);
     const now = new Date();

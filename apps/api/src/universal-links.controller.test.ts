@@ -5,7 +5,7 @@ import {
 } from "./universal-links.controller";
 
 describe("UniversalLinksController", () => {
-  it("keeps each production app restricted to its own WeChat callback path", () => {
+  it("preserves each WeChat callback and associates only the two Say Ring friend routes", () => {
     expect(new UniversalLinksController().association()).toBe(
       appleAppSiteAssociation,
     );
@@ -22,7 +22,7 @@ describe("UniversalLinksController", () => {
           },
           {
             appID: "W7SXQ4A226.cn.saydian.ring",
-            paths: ["/global/wechat/sayring/*"],
+            paths: ["/global/wechat/sayring/*", "/global/say-ring/invite", "/global/say-ring/respond"],
           },
         ],
       },
