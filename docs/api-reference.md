@@ -426,7 +426,7 @@
 | `POST /api/saydian-app/admin/v1/health-score-rules` | 保存评分草稿 | admin: SUPER_ADMIN | {id?:UUID,rules?:HealthScoreRules}；缺省生成空阈值草稿 | 规则版本；已发布不可改写 | SUPER_ADMIN；保存审计 |
 | `POST /api/saydian-app/admin/v1/health-score-rules/settings` | 健康大屏开放开关 | admin: SUPER_ADMIN | {enabled:boolean} | {enabled}；与规则发布独立 | SUPER_ADMIN；变更审计 |
 | `POST /api/saydian-app/admin/v1/health-score-rules/:id/publish` | 审核发布评分版本 | admin: SUPER_ADMIN | path:id；id=规则UUID；{reviewed:true,expectedUpdatedAt:ISO时间} | 规则版本；并发更新校验；旧版本转历史 | SUPER_ADMIN；发布审计 |
-| `POST /api/saydian-app/admin/v1/health-score-rules/:id/preview` | 用会员数据预览已保存规则 | admin: SUPER_ADMIN | path:id；id=规则UUID；{memberId:UUID,days:7/30/90} | {preview:true,score}；不调用AI不扣次；no-store | SUPER_ADMIN；健康数据访问审计 |
+| `POST /api/saydian-app/admin/v1/health-score-rules/:id/preview` | 预览已保存规则 | admin: SUPER_ADMIN | path:id；id=规则UUID，days为7/30/90，选择memberId或sample=adult_sleep | {preview:true,score}，合成样本不读取会员资料，no-store | SUPER_ADMIN，预览写审计 |
 | `GET /api/saydian-app/admin/v1/support-chat/queues` | 客服队列 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | query:filter?，query:before?；filter=waiting/mine/closed/ai，before=会话UUID | {items,next}；包含未读标记 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/support-chat/queues/events` | 客服队列实时状态 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | query:filter?；filter=waiting/mine/closed/ai；后台令牌 | text/event-stream，定期重新校验后台令牌 | 核心服务 |
 | `GET /api/saydian-app/admin/v1/support-chat/agents` | 可转接客服 | admin: SUPER_ADMIN, CUSTOMER_SERVICE, APP_OPERATIONS | 需客服角色 | [{id,displayName}]；仅启用且具有客服权限 | 核心服务 |
