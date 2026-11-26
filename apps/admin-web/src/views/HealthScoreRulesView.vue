@@ -20,6 +20,7 @@ const items = ref<HealthScoreRuleVersion[]>([]),
   error = ref(""),
   editor = ref<HealthScoreRuleVersion | null>(null),
   preview = ref<HealthScoreResult | null>(null),
+  previewIsSample = ref(false),
   previewMember = ref(""),
   previewDays = ref(7),
   reviewed = ref(false),
@@ -43,6 +44,7 @@ function changeMetric(item: HealthScoreItemRule, key: string) {
   const metric = scoreMetric(key);
   if (!metric) return;
   delete item.referenceUnit;
+  delete item.trendOnly;
   Object.assign(item, newScreenScoreRule(metric));
   fresh();
 }
@@ -58,6 +60,11 @@ const fresh = () => {
   reviewed.value = false;
   preview.value = null;
 };
+function setItemScoresOnly(selected: boolean | string | number) {
+  if (!editor.value) return;
+  editor.value.rules.calculateTotal = selected !== true;
+  fresh();
+}
 async function load() {
   busy.value = true;
   error.value = "";
@@ -164,18 +171,26 @@ async function toggle() {
     error.value = readableError(e);
   }
 }
-async function runPreview() {
+function previewValue(item: HealthScoreResult["items"][number]) {
+  if (item.value === null) return "—";
+  if (item.key === "sleep_minutes") return `${Number((item.value / 60).toFixed(2))} 小时`;
+  return [item.value, item.unit].filter(x => x != null).join(" ");
+}
+async function runPreview(sample = false) {
   if (!editor.value || dirty.value) return;
   busy.value = true;
   error.value = "";
+  preview.value = null;
   try {
     preview.value = responseData<{ score: HealthScoreResult }>(
       await api.post(
         `/health-score-rules/${editor.value.id}/preview`,
-        { memberId: previewMember.value, days: previewDays.value },
+        sample ? { sample: "adult_sleep", days: previewDays.value }
+          : { memberId: previewMember.value, days: previewDays.value },
         { timeout: 50000 },
       ),
     ).score;
+    previewIsSample.value = sample;
   } catch (e) {
     error.value = readableError(e);
   } finally {
@@ -290,6 +305,13 @@ onMounted(load);
               :rows="2"
               maxlength="2000"
           /></el-form-item>
+          <el-form-item label="发布方式">
+            <el-switch
+              :model-value="editor.rules.calculateTotal === false"
+              active-text="只发布分项评分"
+              @change="setItemScoresOnly"
+            />
+          </el-form-item>
           <article
             v-for="(item, index) in editor.rules.items"
             :key="index"
@@ -308,6 +330,9 @@ onMounted(load);
                 >移除此项</el-button
               >
             </header>
+            <el-form-item label="指标用途">
+              <el-switch v-model="item.trendOnly" active-text="仅展示数值与趋势" @change="fresh" />
+            </el-form-item>
             <div class="rule-grid">
               <el-form-item label="指标"
                 ><el-select
@@ -325,23 +350,23 @@ onMounted(load);
                     :value="key" /></el-select></el-form-item
               ><el-form-item label="显示名称"
                 ><el-input v-model="item.label" /></el-form-item
-              ><el-form-item label="权重（0表示仅看分项）"
+              ><el-form-item v-if="editor.rules.calculateTotal !== false && !item.trendOnly" label="权重（0表示仅看分项）"
                 ><el-input-number
                   v-model="item.weight"
                   :min="0"
                   :max="100"
                   @change="fresh" /></el-form-item
-              ><el-form-item label="必需指标"
+              ><el-form-item v-if="editor.rules.calculateTotal !== false && !item.trendOnly" label="必需指标"
                 ><el-switch
                   v-model="item.required"
                   @change="fresh" /></el-form-item
-              ><el-form-item label="最少覆盖天数"
+              ><el-form-item v-if="!item.trendOnly" label="最少覆盖天数"
                 ><el-input-number
                   v-model="item.minDays"
                   :min="1"
                   :max="90"
                   @change="fresh" /></el-form-item
-              ><el-form-item label="最少符合条件记录"
+              ><el-form-item v-if="!item.trendOnly" label="最少符合条件记录"
                 ><el-input-number
                   v-model="item.minSamples"
                   :min="1"
@@ -407,6 +432,7 @@ onMounted(load);
                 ></el-checkbox-group
               ></el-form-item
             >
+            <template v-if="!item.trendOnly">
             <h4>评分区间：包含下限，不包含上限</h4>
             <p class="rule-help">
               边界留空表示无下限／上限。每项取符合条件的每日值平均；日累计值采用该日最新有效汇总。
@@ -448,6 +474,7 @@ onMounted(load);
               "
               >添加区间</el-button
             >
+            </template>
             <el-form-item label="评分依据、测量方式与适用限制"
               ><el-input
                 v-model="item.basis"
@@ -479,7 +506,7 @@ onMounted(load);
           ></el-form
         >
         <section class="rule-preview">
-          <h3>使用会员数据预览已保存规则</h3>
+          <h3>预览已保存规则</h3>
           <p class="rule-help">
             只在当前会话预览，不发布规则、不调用 AI，也不扣次数。请先保存草稿。
           </p>
@@ -498,17 +525,19 @@ onMounted(load);
           <el-button
             v-if="writable"
             :disabled="busy || dirty || !previewMember"
-            @click="runPreview"
+            @click="runPreview()"
             >预览评分</el-button
           >
+          <el-button v-if="writable" :disabled="busy || dirty" @click="runPreview(true)">用合成样本预览</el-button>
           <div v-if="preview">
-            <p>
+            <p v-if="previewIsSample">合成样本 · 30 岁，连续 3 晚睡眠均为 8 小时，每日心率记录为 72 次/分</p>
+            <p v-if="preview.calculateTotal !== false">
               总分：{{ preview.total ?? "暂不可评分" }} · {{ preview.reason }}
             </p>
             <p v-for="item in preview.items" :key="item.key">
-              {{ item.label }}：{{ item.score ?? "—" }}；{{
+              {{ item.label }} · {{ item.trendOnly ? "仅展示趋势" : (item.score === null ? "暂不可评分" : item.score + " 分") }} · {{
                 item.reason ||
-                `${item.days}天 / ${item.count}条 / 依据值${item.value}`
+                `${item.days}天 / ${item.count}条 / 依据值 ${previewValue(item)}`
               }}
             </p>
           </div>
