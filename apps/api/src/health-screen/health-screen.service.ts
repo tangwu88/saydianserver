@@ -36,6 +36,7 @@ import {
   object,
   hash,
   validateRules,
+  previewAdultSleepSample,
   draftRules,
   screenEnabled,
   displayRecord,
@@ -1317,30 +1318,33 @@ export class HealthScreenService {
   ) {
     return this.handle(async () => {
       uuid(id);
-      const body = object(input),
-        memberId = uuid(String(body.memberId || ""));
+      const body = object(input);
+      if (body.sample !== undefined && (body.sample !== "adult_sleep" || body.memberId !== undefined))
+        throw new HealthScreenError("invalid_sample", "请选择合成样本或一位会员", 400);
+      const memberId = body.sample === "adult_sleep" ? null : uuid(String(body.memberId || ""));
       return this.prisma.$transaction(
         async (tx) => {
-          await this.ruleAdmin(actor, false, tx);
-          const { member } = await authorizeScreen(tx, actor, memberId, true);
+          await this.ruleAdmin(actor, memberId === null, tx);
+          const member = memberId
+            ? (await authorizeScreen(tx, actor, memberId, true)).member
+            : null;
           const row = await tx.healthScoreRuleVersion.findUnique({
             where: { id },
           });
           if (!row) throw new HealthScreenError("not_found", "规则不存在", 404);
-          const rules = validateRules(row.rules, true),
-            result = await this.aggregate(tx, member, parseDays(body.days), {
-              rules,
-              version: row.version,
-            });
+          const rules = validateRules(row.rules, true), days = parseDays(body.days);
+          const score = member
+            ? (await this.aggregate(tx, member, days, { rules, version: row.version })).facts.score
+            : previewAdultSleepSample(rules, row.version, days);
           await this.audit(
             tx,
             actor,
-            memberId,
+            memberId ?? row.id,
             "HEALTH_SCORE_RULE_PREVIEW",
             requestId,
-            { version: row.version },
+            { version: row.version, ...(!member ? { sample: "adult_sleep" } : {}) },
           );
-          return { preview: true, score: result.facts.score };
+          return { preview: true, score };
         },
         { timeout: 45000 },
       );
