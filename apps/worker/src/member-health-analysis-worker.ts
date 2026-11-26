@@ -38,10 +38,12 @@ export function analysisProviderFacts(facts: HealthScreenFacts) {
     eligibleRecordCount: facts.eligibleRecordCount,
     score: {
       version: facts.score.version,
+      ...(facts.score.calculateTotal === false ? { calculateTotal: false } : {}),
       total: facts.score.total,
       reason: facts.score.reason,
       items: facts.score.items.map((i) => ({
         key: i.key,
+        ...(i.trendOnly ? { trendOnly: true } : {}),
         score: i.score,
         reason: i.reason,
         count: i.count,
