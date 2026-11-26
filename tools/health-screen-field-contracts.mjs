@@ -12,6 +12,9 @@ const obj = (properties, required = Object.keys(properties)) => ({
   additionalProperties: true,
 });
 const list = (items) => ({ type: "array", items });
+const withOptional = (schema, properties) => ({
+  ...schema, properties: { ...schema.properties, ...properties },
+});
 const period = obj({
   days: { enum: [7, 30, 90] },
   timezone: text,
@@ -19,13 +22,13 @@ const period = obj({
   to: text,
   dates: list(text),
 });
-const score = obj({
+const score = withOptional(obj({
   version: { type: ["integer", "null"] },
   title: nullableText,
   total: nullableNumber,
   reason: nullableText,
   items: list(
-    obj({
+    withOptional(obj({
       key: text,
       label: text,
       score: nullableNumber,
@@ -36,9 +39,9 @@ const score = obj({
       count,
       days: count,
       weight: { type: "number" },
-    }),
+    }), { trendOnly: flag, unit: text }),
   ),
-});
+}), { calculateTotal: flag });
 const statement = obj({ text, evidence: list(text) }),
   content = obj({
     summary: list(statement),
@@ -141,14 +144,14 @@ const records = obj({
   ),
   nextCursor: nullableText,
 });
-const rules = obj({
+const rules = withOptional(obj({
   title: { type: "string", minLength: 1, maxLength: 120 },
   description: { type: "string", maxLength: 2000 },
   items: {
     type: "array",
     minItems: 1,
     maxItems: 23,
-    items: obj({
+    items: withOptional(obj({
       key: text,
       label: text,
       weight: { type: "number", minimum: 0, maximum: 100 },
@@ -169,9 +172,9 @@ const rules = obj({
       ),
       basis: text,
       referenceUrl: text,
-    }),
+    }), { trendOnly: flag, referenceUnit: text }),
   },
-});
+}), { calculateTotal: flag });
 const version = obj({
   id,
   version: count,
@@ -307,7 +310,8 @@ healthScreenFieldContracts["HealthScoreRulesController.settings"] = record(
   obj({ enabled: flag }),
 );
 healthScreenFieldContracts["HealthScoreRulesController.preview"] = record(
-  obj({ memberId: id, days: { enum: [7, 30, 90] } }),
+  { ...obj({ memberId: id, sample: { const: "adult_sleep" }, days: { enum: [7, 30, 90] } }, ["days"]),
+    oneOf: [{ required: ["memberId"] }, { required: ["sample"] }] },
   obj({ preview: { const: true }, score }),
 );
 healthScreenFieldContracts["HealthScoreRulesController.publish"] = record(
