@@ -23,6 +23,15 @@ on:
         description: Retry the same manifest using original verified images already loaded on the server
         type: boolean
         default: false
+      disk_action:
+        description: Operational branch only - inspect disk, or remove explicitly reviewed unreferenced old images
+        type: choice
+        options: [none, audit, cleanup]
+        default: none
+      disk_plan:
+        description: Exact reviewed JSON plan; required for cleanup, never inferred
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -33,6 +42,7 @@ concurrency:
 
 jobs:
   resolve:
+    if: inputs.disk_action == '' || inputs.disk_action == 'none'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -130,3 +140,55 @@ jobs:
             test "$(curl --fail --silent --max-time 15 https://app.saydian.cn$path | jq -r .revision)" = "$REVISION"
           done
           echo "### Verified unified production revision: $REVISION" >> "$GITHUB_STEP_SUMMARY"
+  disk-maintenance:
+    if: github.event_name == 'workflow_dispatch' && (inputs.disk_action == 'audit' || inputs.disk_action == 'cleanup')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect or recover image disk headroom through the constrained receiver
+        env:
+          REVISION: ${{ inputs.revision }}
+          DISK_ACTION: ${{ inputs.disk_action }}
+          DISK_PLAN: ${{ inputs.disk_plan }}
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$REVISION" =~ ^[a-f0-9]{40}$ && "$DEPLOY_HOST" == 49.232.231.131 ]]
+          test "$(gh api repos/tangwu88/saydianserver/git/ref/heads/main --jq .object.sha)" = "$REVISION"
+          test "$REVISION" = be3b56a7445cf100841dc5e277213c714c7daa58
+          gh run view 45737095759 --json headSha,event,jobs | jq -e --arg sha "$REVISION" '.headSha == $sha and .event == "push" and any(.jobs[]; .name == "verify" and .conclusion == "success")' > /dev/null
+          scratch=$(mktemp -d)
+          trap 'rm -rf -- "$scratch"' EXIT
+          mkdir -p "$scratch/payload/deploy/scripts"
+          gh run download 45737095759 --name "release-$REVISION" --dir "$scratch/manifest"
+          cp "$scratch/manifest/release-manifest.json" "$scratch/payload/deploy/"
+          node deploy/scripts/release-manifest.mjs verify "$REVISION" "$scratch/payload/deploy/release-manifest.json"
+          cp deploy/scripts/ci-registry-login.sh deploy/scripts/release-disk-maintenance.py "$scratch/payload/deploy/scripts/"
+          if [[ "$DISK_ACTION" == audit ]]; then
+            jq -n --arg revision "$REVISION" '{action:"audit",revision:$revision,runningRevision:"f8652f92db92bd5464badef4a0ab6b1e1b26f398"}' > "$scratch/payload/deploy/disk-plan.json"
+          else
+            printf '%s\n' "$DISK_PLAN" | jq -e --arg sha "$REVISION" 'select(.action == "cleanup" and .revision == $sha and .runningRevision == "f8652f92db92bd5464badef4a0ab6b1e1b26f398")' > "$scratch/payload/deploy/disk-plan.json"
+          fi
+          cat > "$scratch/payload/deploy/scripts/deploy-ci.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          [[ "$(readlink /proc/$$/fd/9)" == /opt/saydianapp-server/deploy/.ci-release.lock ]]
+          flock -n 9
+          python3 "$RELEASE_SOURCE/deploy/scripts/release-disk-maintenance.py" "$RELEASE_SOURCE/deploy/disk-plan.json"
+          SH
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$scratch/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$scratch/known_hosts"
+          chmod 600 "$scratch/key" "$scratch/known_hosts"
+          tar -C "$scratch/payload" -czf "$scratch/bundle.tgz" deploy
+          test "$(stat -c %s "$scratch/bundle.tgz")" -le 10485760
+          { printf '%s\n' "$GH_TOKEN"; cat "$scratch/bundle.tgz"; } | ssh -i "$scratch/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$scratch/known_hosts" -o ConnectTimeout=15 -o ServerAliveInterval=20 -o ServerAliveCountMax=15 "$DEPLOY_USER@$DEPLOY_HOST" "release $REVISION"
