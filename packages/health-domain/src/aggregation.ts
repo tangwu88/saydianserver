@@ -609,7 +609,8 @@ export class ScreenAccumulator {
     subject: Subject,
   ): HealthScreenFacts {
     const byKey = new Map(rules?.items.map((r) => [r.key, r]));
-    const eligible = new Set(this.eligible);
+    const componentMode = rules?.calculateTotal === false;
+    const eligible = new Set<string>(componentMode ? undefined : this.eligible);
     const series = [...this.samples.entries()]
       .map(([key, { def, values }]): HealthScreenSeries => {
         const reference = key.startsWith("reference_");
@@ -621,10 +622,13 @@ export class ScreenAccumulator {
           !refRule.trendOnly &&
           refRule.referenceUnit === def.unit &&
           refRule.allowedOrigins.includes(def.referenceMethod || "");
-        if (referenceEligible)
-          values.forEach((v) => {
-            if (!v.reason) eligible.add(v.recordId);
-          });
+        const deviceRule = componentMode && !reference ? byKey.get(key) : undefined;
+        if (referenceEligible || (deviceRule && !deviceRule.trendOnly)) {
+          for (const value of values) {
+            if (!value.reason && (referenceEligible || deviceRule?.allowedOrigins.includes(value.origin)))
+              eligible.add(value.recordId);
+          }
+        }
         const byDay = (eligibleOnly: boolean) =>
           this.period.dates.map((date) => {
             const list = values.filter(

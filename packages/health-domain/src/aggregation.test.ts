@@ -225,6 +225,13 @@ describe("health screen data and score invariants", () => {
     }
     const saved = validateRules(rules, true);
     expect(saved.items.every(item => !item.required && item.weight === 0)).toBe(true);
+    const observed = finish([record("pulse"), record("sleep", {
+      metric: "SLEEP", values: { durationMinutes: 480 }, unit: "min",
+      sourceMetadata: { timeBasis: "sdk", sleepScope: "night" },
+    })], 7, saved);
+    expect(observed.recordCount).toBe(2);
+    expect(observed.eligibleRecordCount).toBe(1);
+    expect(observed.series.find(s => s.key === "heart_rate")!.eligibleAverage).toBeGreaterThan(0);
     for (const days of [7, 30, 90] as const) {
       const preview = previewAdultSleepSample(saved, 2, days);
       expect(preview).toMatchObject({ calculateTotal: false, total: null, reason: null });
