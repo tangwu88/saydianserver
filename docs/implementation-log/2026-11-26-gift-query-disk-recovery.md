@@ -19,3 +19,5 @@
 - 2026-11-26T02:08:34.7789547Z pnpm build exit=0
 
 定向保护6项测试通过，Node已有yaml依赖完成运维workflow解析；根级五项检查及差异检查通过。首次python命令解析到Windows Store占位程序，没有测试回执，随后使用捆绑Python实际运行6项；该Python未含PyYAML，YAML验证改用已有Node yaml包，没有安装/升级依赖。仅推操作分支，不改main或重建产品。
+
+最终处理与上线证据见同目录2026-11-26-gift-query-release.md末节；原镜像导入及生产发布均已验收成功。两轮明确旧镜像清理9+7，总计16个；未合并运维辅助代码至main。
