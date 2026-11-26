@@ -25,6 +25,9 @@ import {
 } from "./integration-secrets";
 import { PermanentTaskError } from "./health-report-worker";
 export function analysisProviderFacts(facts: HealthScreenFacts) {
+  const componentCounts = facts.score.calculateTotal === false
+    ? new Map(facts.score.items.filter(item => !item.trendOnly).map(item => [item.key, item.count]))
+    : null;
   return {
     period: {
       days: facts.period.days,
@@ -58,7 +61,8 @@ export function analysisProviderFacts(facts: HealthScreenFacts) {
       semantics: s.semantics,
       count: s.count,
       eligibleCount: s.kind === "reference" ? s.count : s.eligibleCount,
-      scoreEligibleCount: s.eligibleCount,
+      scoreEligibleCount: componentCounts && s.kind !== "reference"
+        ? (componentCounts.get(s.key) ?? 0) : s.eligibleCount,
       coverageDays: s.coverageDays,
       eligibleDays: s.kind === "reference" ? s.coverageDays : s.eligibleDays,
       average: s.kind === "reference" ? s.average : s.eligibleAverage,
