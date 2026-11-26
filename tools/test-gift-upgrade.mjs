@@ -26,7 +26,8 @@ let created = false,
   db;
 const migrations = join(root, "apps/api/prisma/migrations"),
   sayHeathUpgrade = process.env.UPGRADE_SCOPE === "sayheath-cn",
-  cutoff = sayHeathUpgrade ? "20261111010000_sayheath" : "20261027090000_gift_redemption_channel";
+  giftQueryUpgrade = process.env.UPGRADE_SCOPE === "gift-query",
+  cutoff = giftQueryUpgrade ? "20261125090000_gift_query_portal" : sayHeathUpgrade ? "20261111010000_sayheath" : "20261027090000_gift_redemption_channel";
 const files = (await readdir(migrations))
   .filter((name) => /^\d/.test(name))
   .sort();
@@ -129,6 +130,12 @@ try {
     'INSERT INTO "PaymentIntent" (id,"paymentNo","userId","businessType","businessId","commerceOrderId",channel,status,"amountCents",description,"idempotencyKey","updatedAt") VALUES ($1,$2,$3,\'COMMERCE_ORDER\',$4::text,$4::uuid,\'WECHAT_JSAPI\',\'SUCCEEDED\',12345,\'合成原支付\',$5,NOW())',
     [payment, "UPGRADE-" + payment, user, order, "upgrade-" + payment],
   );
+  if (giftQueryUpgrade) {
+    const batch = randomUUID(), card = randomUUID();
+    await db.query('INSERT INTO "CommerceGiftBatch" (id,"batchNo",name,"requestKey","requestHash","createdById") VALUES ($1,$2,\'合成原批次\',$3,\'synthetic-hash\',$4)', [batch, "UPGRADE-" + batch, "upgrade-" + batch, randomUUID()]);
+    await db.query('INSERT INTO "CommerceGiftCard" (id,"batchId","serialNo","cardNo","secretHash",status,"productId","allowedSkuIds","updatedAt") VALUES ($1,$2,$3,\'80100611\',\'synthetic-private-hash\',\'REDEEMED\',$4,ARRAY[$5::uuid],NOW())', [card, batch, "UPGRADE-" + card, product, sku]);
+    await db.query('INSERT INTO "CommerceGiftRedemption" (id,"cardId","orderId","userId","memberNoSnapshot","verifiedMobile","verifiedAt","requestKey","requestHash","productSnapshot","addressSnapshot") VALUES ($1,$2,$3,$4,1,\'13800000000\',NOW(),$5,\'synthetic-hash\',\'{}\',\'{}\')', [randomUUID(), card, order, user, randomUUID()]);
+  }
   const fields = (
       await db.query(
         "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table_name<>'_prisma_migrations' ORDER BY table_name,ordinal_position",
@@ -168,11 +175,16 @@ try {
     assert.equal(defaults.length, 5);
     assert.ok(defaults.every(row => row.column_default === 'false'), "New features and bilateral grants must default closed");
   }
+  if (giftQueryUpgrade) {
+    for (const table of ["GiftQueryAccount", "GiftQuerySession", "GiftQueryLog"]) {
+      assert.equal((await db.query(`SELECT count(*)::int AS count FROM ${quote(table)}`)).rows[0].count, 0, `New table ${table} must be empty`);
+    }
+  }
   console.log(
     JSON.stringify({
-      scope: sayHeathUpgrade ? "isolated-local-sayheath-cn-upgrade" : "isolated-local-gift-upgrade",
+      scope: giftQueryUpgrade ? "isolated-local-gift-query-upgrade" : sayHeathUpgrade ? "isolated-local-sayheath-cn-upgrade" : "isolated-local-gift-upgrade",
       existingTablesCompared: Object.keys(columns).length,
-      existingSyntheticRows: 6,
+      existingSyntheticRows: giftQueryUpgrade ? 9 : 6,
       oldOrderAndPaymentUnchanged: true,
       allConstraintsValidated: true,
       migrationCommandElapsedMs: elapsedMs,

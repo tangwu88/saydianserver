@@ -105,7 +105,14 @@ export class SafeHttpExceptionFilter implements ExceptionFilter {
     const screenMember = /^\/(?:global\/)?api\/(?:saydian-app\/v2\/member-health-screen|saidian-mall\/v1\/auth\/health-screen)(?:\/|\?|$)/.test(path);
     const adminMemberProfile =
       /^\/(?:global\/)?api\/saydian-app\/admin\/v1\/members\/[^/?]+\/(?:profile|points-adjustments)(?:\?|$)/.test(path);
-    const gift =
+    const giftQuery =
+      /^\/(?:global\/)?api\/saydian-app\/gift-query\/v1(?:\/|\?|$)/.test(path) ||
+      /^\/(?:global\/)?api\/saydian-app\/admin\/v1\/commerce-gift-query-(?:accounts|logs)(?:\/|\?|$)/.test(path);
+    if (giftQuery) {
+      response.setHeader("Cache-Control", "no-store, private");
+      response.setHeader("Pragma", "no-cache");
+    }
+    const gift = giftQuery ||
       /^\/(?:global\/)?api\/saidian-mall\/v1\/storefront\/gift-redemptions(?:\/|\?|$)/.test(
         path,
       ) ||
