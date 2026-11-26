@@ -264,6 +264,7 @@ const busyAnalysis = computed(() =>
   ["QUEUED", "GENERATING"].includes(screen.value?.analysis?.status || ""),
 );
 const score = computed(() => screen.value?.score.total ?? null);
+const componentScores = computed(() => screen.value?.score.items.filter(item => !item.trendOnly) ?? []);
 const groupCoverage = (key: string) =>
   screen.value?.series
     .filter((s) => s.group === key)
@@ -282,9 +283,10 @@ const sourceLabels: Record<string, string> = {
   imported: "导入记录",
 };
 const sourceLabel = (key: string) => sourceLabels[key] || "来源未提供";
-function scoreValue(key: string, value: number | null) {
+function scoreValue(key: string, value: number | null, unit?: string) {
+  if (value === null) return "—";
   const s = screen.value?.series.find((s) => s.key === key);
-  if (!s || s.metric !== "SLEEP") return num(value);
+  if (!s || s.metric !== "SLEEP") return [num(value), unit || s?.unit].filter(Boolean).join(" ");
   const display = sleepValueInHours(s.metric, s.unit, value);
   return `${num(display.value)} ${display.unit}`;
 }
@@ -707,13 +709,20 @@ onBeforeUnmount(() => {
         <aside class="left-stack">
           <section class="health-panel score-panel">
             <h2>
-              <Odometer />健康参考评分
+              <Odometer />{{ screen.score.calculateTotal === false ? "分项参考评分" : "健康参考评分" }}
               <span v-if="screen.score.version" class="muted"
                 >V{{ screen.score.version }}</span
               >
             </h2>
             <div class="score-layout">
-              <div class="score-ring">
+              <div v-if="screen.score.calculateTotal === false" class="component-scores">
+                <div v-for="item in componentScores" :key="item.key">
+                  <b>{{ item.label }}</b>
+                  <p v-if="item.score !== null"><strong>{{ num(item.score) }}</strong> 分</p>
+                  <small>{{ item.reason || `${scoreValue(item.key, item.value, item.unit)} · ${item.days} 天` }}</small>
+                </div>
+              </div>
+              <div v-else class="score-ring">
                 <svg viewBox="0 0 190 190" aria-hidden="true">
                   <circle
                     cx="95"
@@ -1267,7 +1276,7 @@ onBeforeUnmount(() => {
         </button>
         <h2 id="score-modal-title">评分依据与数据门槛</h2>
         <p>{{ screen.score.title || "评分规则待发布" }}</p>
-        <p class="muted">
+        <p v-if="screen.score.calculateTotal !== false" class="muted">
           总分只在全部必需项和加权项可评估时计算，不按缺失项重新分配权重。
         </p>
         <article
@@ -1277,13 +1286,14 @@ onBeforeUnmount(() => {
         >
           <h3>
             {{ item.label }} ·
-            {{ item.score === null ? "暂不可评分" : `${item.score}分` }}
+            {{ item.trendOnly ? "仅展示趋势" : item.score === null ? "暂不可评分" : `${item.score}分` }}
           </h3>
           <p>
             {{
               item.reason ||
-              `依据值 ${scoreValue(item.key, item.value)}；采用 ${item.days} 天、${item.count} 条记录；权重 ${item.weight}`
+              `依据值 ${scoreValue(item.key, item.value, item.unit)} · ${item.days} 天 / ${item.count} 条记录`
             }}
+            <span v-if="!item.reason && !item.trendOnly && screen.score.calculateTotal !== false"> · 权重 {{ item.weight }}</span>
           </p>
           <p>{{ item.basis }}</p>
           <a

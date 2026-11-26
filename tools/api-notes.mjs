@@ -71,7 +71,7 @@ export const notes = {
   "HealthScoreRulesController.list": entry("评分规则版本列表", "无", "{enabled,items}；最多100版", "SUPER_ADMIN/HEALTH_AUDITOR"),
   "HealthScoreRulesController.save": entry("保存评分草稿", "{id?:UUID,rules?:HealthScoreRules}；缺省生成空阈值草稿", "规则版本；已发布不可改写", "SUPER_ADMIN；保存审计"),
   "HealthScoreRulesController.settings": entry("健康大屏开放开关", "{enabled:boolean}", "{enabled}；与规则发布独立", "SUPER_ADMIN；变更审计"),
-  "HealthScoreRulesController.preview": entry("用会员数据预览已保存规则", "id=规则UUID；{memberId:UUID,days:7/30/90}", "{preview:true,score}；不调用AI不扣次；no-store", "SUPER_ADMIN；健康数据访问审计"),
+  "HealthScoreRulesController.preview": entry("预览已保存规则", "id=规则UUID，days为7/30/90，选择memberId或sample=adult_sleep", "{preview:true,score}，合成样本不读取会员资料，no-store", "SUPER_ADMIN，预览写审计"),
   "HealthScoreRulesController.publish": entry("审核发布评分版本", "id=规则UUID；{reviewed:true,expectedUpdatedAt:ISO时间}", "规则版本；并发更新校验；旧版本转历史", "SUPER_ADMIN；发布审计"),
  "CycleController.changes": entry("本人周期增量记录", "owner=当前账号SHA256保护；cursor非负整数", "rows,cursor,hasMore,epoch；每页200；删除标记；no-store", "本人鉴权、独立周期表；不含关爱授权"),
  "CycleController.sync": entry("周期离线队列同步", "ownerHash、offsetMinutes、epoch、rows最多40项；id/kind/data/deleted/baseRevision/mutationId", "逐条ACK或冲突原行、sequence；幂等重放", "本人锁、乐观版本、用途确认、重叠校验；无戒指写入"),

@@ -849,6 +849,12 @@ export const apiCatalog = {
                       },
                       "weight": {
                         "type": "number"
+                      },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
+                      "unit": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -865,6 +871,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -2434,6 +2443,9 @@ export const apiCatalog = {
                             "referenceUrl": {
                               "type": "string"
                             },
+                            "trendOnly": {
+                              "type": "boolean"
+                            },
                             "referenceUnit": {
                               "type": "string"
                             }
@@ -2455,6 +2467,9 @@ export const apiCatalog = {
                           ],
                           "additionalProperties": true
                         }
+                      },
+                      "calculateTotal": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -2639,6 +2654,9 @@ export const apiCatalog = {
                       "referenceUrl": {
                         "type": "string"
                       },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
                       "referenceUnit": {
                         "type": "string"
                       }
@@ -2660,6 +2678,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -2797,6 +2818,9 @@ export const apiCatalog = {
                       "referenceUrl": {
                         "type": "string"
                       },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
                       "referenceUnit": {
                         "type": "string"
                       }
@@ -2818,6 +2842,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -3085,6 +3112,9 @@ export const apiCatalog = {
                       "referenceUrl": {
                         "type": "string"
                       },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
                       "referenceUnit": {
                         "type": "string"
                       }
@@ -3106,6 +3136,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -3169,10 +3202,10 @@ export const apiCatalog = {
       ],
       "envelope": "v2",
       "source": "apps/api/src/admin/admin-health-screen.controller.ts",
-      "summary": "用会员数据预览已保存规则",
-      "request": "id=规则UUID；{memberId:UUID,days:7/30/90}",
-      "response": "{preview:true,score}；不调用AI不扣次；no-store",
-      "dependency": "SUPER_ADMIN；健康数据访问审计",
+      "summary": "预览已保存规则",
+      "request": "id=规则UUID，days为7/30/90，选择memberId或sample=adult_sleep",
+      "response": "{preview:true,score}，合成样本不读取会员资料，no-store",
+      "dependency": "SUPER_ADMIN，预览写审计",
       "successStatus": 201,
       "contract": {
         "status": "request-reviewed",
@@ -3183,6 +3216,9 @@ export const apiCatalog = {
               "type": "string",
               "format": "uuid"
             },
+            "sample": {
+              "const": "adult_sleep"
+            },
             "days": {
               "enum": [
                 7,
@@ -3192,10 +3228,21 @@ export const apiCatalog = {
             }
           },
           "required": [
-            "memberId",
             "days"
           ],
-          "additionalProperties": true
+          "additionalProperties": true,
+          "oneOf": [
+            {
+              "required": [
+                "memberId"
+              ]
+            },
+            {
+              "required": [
+                "sample"
+              ]
+            }
+          ]
         },
         "requestExample": null,
         "responseSchema": {
@@ -3276,6 +3323,12 @@ export const apiCatalog = {
                       },
                       "weight": {
                         "type": "number"
+                      },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
+                      "unit": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -3292,6 +3345,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -28515,6 +28571,12 @@ export const apiCatalog = {
                       },
                       "weight": {
                         "type": "number"
+                      },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
+                      "unit": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -28531,6 +28593,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -35534,6 +35599,12 @@ export const apiCatalog = {
                       },
                       "weight": {
                         "type": "number"
+                      },
+                      "trendOnly": {
+                        "type": "boolean"
+                      },
+                      "unit": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -35550,6 +35621,9 @@ export const apiCatalog = {
                     ],
                     "additionalProperties": true
                   }
+                },
+                "calculateTotal": {
+                  "type": "boolean"
                 }
               },
               "required": [

@@ -177,17 +177,22 @@ export function validateRules(
     data.title.length > 120 ||
     typeof data.description !== "string" ||
     data.description.length > 2000 ||
+    (data.calculateTotal !== undefined && typeof data.calculateTotal !== "boolean") ||
     !Array.isArray(data.items) ||
     !data.items.length ||
     data.items.length > scoreKeys.length
   )
     fail("请填写规则名称、说明和有效数量的评分指标");
   const keys = new Set<string>();
+  const calculateTotal = data.calculateTotal !== false;
   const items: HealthScoreRules["items"] = data.items.map((raw: unknown) => {
     const r = object(raw);
     if (!scoreKeys.includes(r.key) || keys.has(r.key))
       fail("评分指标不支持或重复");
     keys.add(r.key);
+    if (r.trendOnly !== undefined && typeof r.trendOnly !== "boolean")
+      fail("指标用途无效");
+    const trendOnly = r.trendOnly === true;
     if (
       typeof r.label !== "string" ||
       !r.label.trim() ||
@@ -259,7 +264,7 @@ export function validateRules(
     if (
       !Array.isArray(r.bands) ||
       r.bands.length > 20 ||
-      (publishing && !r.bands.length)
+      (publishing && !trendOnly && !r.bands.length)
     )
       fail("发布前请填写评分区间");
     const bands = r.bands.map((rawBand: unknown, i: number) => {
@@ -288,8 +293,9 @@ export function validateRules(
     return {
       key: r.key as string,
       label: r.label as string,
-      weight: r.weight as number,
-      required: r.required as boolean,
+      ...(trendOnly ? { trendOnly: true } : {}),
+      weight: calculateTotal && !trendOnly ? (r.weight as number) : 0,
+      required: calculateTotal && !trendOnly && r.required === true,
       minDays: r.minDays as number,
       minSamples: r.minSamples as number,
       minAge: r.minAge as number | null,
@@ -297,14 +303,21 @@ export function validateRules(
       gender: r.gender as "ANY" | "MALE" | "FEMALE",
       allowedOrigins: r.allowedOrigins as string[],
       ...(metric.reference ? { referenceUnit: String(r.referenceUnit) } : {}),
-      bands,
+      bands: trendOnly ? [] : bands,
       basis: r.basis as string,
       referenceUrl: r.referenceUrl as string,
     };
   });
-  if (publishing && !items.some((r) => r.weight > 0))
+  if (publishing && !calculateTotal && items.every((r) => r.trendOnly))
+    fail("分项版至少需要一个有评分区间的指标");
+  if (publishing && calculateTotal && !items.some((r) => r.weight > 0))
     fail("总分至少需要一个有权重的指标");
-  return { title: data.title.trim(), description: data.description, items };
+  return {
+    title: data.title.trim(),
+    description: data.description,
+    ...(!calculateTotal ? { calculateTotal: false } : {}),
+    items,
+  };
 }
 
 /** China-site Qwen endpoints. Keep the existing configured Qwen endpoint usable;

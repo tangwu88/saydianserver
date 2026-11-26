@@ -49,6 +49,7 @@ export interface HealthScoreBand {
 export interface HealthScoreItemRule {
   key: string;
   label: string;
+  trendOnly?: boolean;
   weight: number;
   required: boolean;
   minDays: number;
@@ -65,16 +66,21 @@ export interface HealthScoreItemRule {
 export interface HealthScoreRules {
   title: string;
   description: string;
+  /** Missing on versions that compute a weighted total. */
+  calculateTotal?: boolean;
   items: HealthScoreItemRule[];
 }
 export interface HealthScoreResult {
   version: number | null;
   title: string | null;
+  calculateTotal?: boolean;
   total: number | null;
   reason: string | null;
   items: {
     key: string;
     label: string;
+    trendOnly?: boolean;
+    unit?: string;
     score: number | null;
     value: number | null;
     reason: string | null;
