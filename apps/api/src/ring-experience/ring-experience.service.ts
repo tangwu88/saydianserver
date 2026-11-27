@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import { CareStatus, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../common/prisma.service";
@@ -351,8 +351,23 @@ export class RingExperienceService {
     }
     return this.db.$transaction(async (tx) => {
       const relation = await this.relation(tx, id, userId);
+      await this.lock(tx, "care-send:" + userId);
       await this.lock(tx, "pair:" + [userId, relation.other].sort().join(":"));
       const current = await this.relation(tx, id, userId);
+      const existing = await tx.ringCareMessage.findFirst({
+        where: { id: messageId, relationshipId: current.id, authorId: userId, deletedAt: null },
+        select: messageFields,
+      });
+      if (existing) {
+        if (existing.kind !== kind) throw new ConflictException("请重新发送");
+        return this.message(userId, existing);
+      }
+      const recent = await tx.ringCareMessage.count({
+        where: { authorId: userId, createdAt: { gt: new Date(Date.now() - 60_000) } },
+      });
+      if (recent >= 24) throw new HttpException({
+        code: "CARE_SEND_RATE_LIMITED", message: "发送较频繁，请稍等一分钟再试",
+      }, 429);
       const inserted = await tx.ringCareMessage.createMany({ skipDuplicates: true, data: [{
         id: messageId, relationshipId: current.id, authorId: userId, kind,
         keepQuiet: body.keepQuiet === true, audio: audio ? Uint8Array.from(audio) : null,

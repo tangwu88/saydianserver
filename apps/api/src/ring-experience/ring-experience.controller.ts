@@ -3,7 +3,7 @@ import {
   Param, Post, Put, Query, Res, UploadedFile, UseGuards, UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Throttle } from "@nestjs/throttler";
+import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import { AdminRole } from "@prisma/client";
 import type { Response } from "express";
 import { AdminAuditInterceptor } from "../admin/admin-audit.interceptor";
@@ -102,7 +102,9 @@ export class RingExperienceController {
   }
 
   @Post("care/:id/messages") @UseGuards(UserAuthGuard)
-  @Throttle({ default: { limit: 24, ttl: 60_000 } })
+  // Authenticated senders have a transactional per-member limit in send().
+  // A shared network address must not consume another member's allowance.
+  @SkipThrottle()
   send(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() input: unknown) {
     return this.ring.send(user.id, id, input);
   }
