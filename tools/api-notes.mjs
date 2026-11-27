@@ -23,7 +23,7 @@ export const notes = {
   "GiftQueryAdminController.create": entry("创建独立查询账号", "{username,displayName,password,active}；账号3至64位字母数字_-；密码至少10字符最多72字节", "账号公开字段；不返回密码", "总管理员；bcrypt12；管理员操作审计"),
   "GiftQueryAdminController.update": entry("编辑、停用或重设查询账号密码", "path:id；{displayName,active,version,password?}；密码留空保留", "账号公开字段及递增version", "总管理员；并发版本检查；撤销该账号所有旧会话；保留历史日志"),
   "GiftQueryAdminController.logs": entry("查询账号查卡日志", "accountId可选UUID、page从1起", "{items,total,page}；每页30；含账号、时间、结果计数和卡号/状态/订单快照", "仅总管理员；最新在前；不返回会话Token、密码、IP或会员资料"),
-  "RingExperienceController.capabilities": entry("Say Ring 新功能开关", "无", "{sharing,care,firmware}", "中国站开关"),
+  "RingExperienceController.capabilities": entry("按App读取戒指新功能开关", "product=say-ring/saydian-app-cn，省略保持Say Ring；CN需clientRevision=cn-ring-v1", "Say Ring保留{sharing,care,firmware}；CN另含product、clientUpgradeRequired，未升级客户端不开放", "中国站开关；CN不开放固件；分享/邀请/消息接口同样按query product隔离，身份与健康授权仍沿用原账号"),
   "RingExperienceController.open": entry("匿名读取分享快照", "{token}", "{snapshot,expiresAt,sharerName,projectNames,titleRef}", "7天有效；标题引用来自分享令牌摘要，只用于 H5 标题"),
   "RingExperienceController.react": entry("访客选择预设回应", "{token,kind,visitor:UUID}", "{ok}", "分享有效期、访客去重；每条新回应创建一条分享者通知"),
   "RingExperienceController.named": entry("会员选择署名或匿名回应", "{token,kind,named}", "{ok}", "署名校验双方关爱关系"),
@@ -53,6 +53,7 @@ export const notes = {
   "RingEngagementAdminController.summary": entry("分享与关爱的聚合结果和举报", "无", "{usage,reports}", "后台权限；聚合结果"),
   "RingEngagementAdminController.remove": entry("移除已举报的问候", "无", "{ok}", "后台权限及操作审计"),
   "RingWebController.page": entry("第一方分享、邀请或回应 H5", "mode为share、invite或respond；share可选title引用", "HTML；标题含分享者昵称、项目及存在的留言；报告授权片段由浏览器处理", "标题引用只读取有效链接的标题；完整快照逐次校验"),
+  "CnRingWebController.page": entry("赛电SayDian专属分享、邀请或回应H5", "mode为share/invite/respond；share可选title引用；token仅在fragment", "简体中文HTML；cc.saidian.app专属路径及打开按钮，不链接Say Ring下载", "只读有效CN分享标题；独立CN接口查询；未启用系统推送不创建投递任务；中国站"),
   "UniversalLinksController.androidAssociation": entry("Android App Links 关联文件", "无", "已配置的正式包公钥指纹；未配置为空", "部署域名"),
 
   "CommerceMemberProfileController.profile": entry("商城会员读取本人个人资料", "已验证会员会话；不接受会员ID参数", "与App相同的MemberProfile，联系方式脱敏；private no-store", "复用MembersService；当前会员身份由会话取得"),

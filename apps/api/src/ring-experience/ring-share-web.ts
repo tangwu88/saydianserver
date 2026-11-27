@@ -263,7 +263,7 @@ export const shareClient = String.raw`
     el('report').hidden = false;
   }
   function viewer() {
-    const key = 'say-ring-share-visitor';
+    const key = cnProduct ? 'saydian-cn-share-visitor' : 'say-ring-share-visitor';
     let saved;
     try { saved = localStorage.getItem(key); } catch (_) {}
     if (/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(saved || '')) return saved;

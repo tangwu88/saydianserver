@@ -25,13 +25,14 @@ export class NotificationsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
+    @Query("product") product?: string,
   ) {
-    return this.notifications.list(user.id, Number(page ?? 1), Number(pageSize ?? 30));
+    return this.notifications.list(user.id, Number(page ?? 1), Number(pageSize ?? 30), product);
   }
 
   @Get("unread-count")
-  unread(@CurrentUser() user: AuthenticatedUser) {
-    return this.notifications.unreadCount(user.id);
+  unread(@CurrentUser() user: AuthenticatedUser, @Query("product") product?: string) {
+    return this.notifications.unreadCount(user.id, product);
   }
 
   @Get("preferences")
@@ -48,13 +49,13 @@ export class NotificationsController {
   }
 
   @Get(":id")
-  detail(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
-    return this.notifications.detail(user.id, id);
+  detail(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query("product") product?: string) {
+    return this.notifications.detail(user.id, id, product);
   }
 
   @Post(":id/read")
-  markRead(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
-    return this.notifications.markRead(user.id, id);
+  markRead(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() input?: { product?: string }) {
+    return this.notifications.markRead(user.id, id, input?.product);
   }
 
   @Post("push-installations")

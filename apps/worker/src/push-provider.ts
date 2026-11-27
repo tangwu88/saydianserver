@@ -167,6 +167,13 @@ export async function pushProviderFromConfiguration(
     if (sayRingTarget) targets.push(sayRingTarget);
   }
 
+  const cnIntegration = await prisma.integrationConfig.findUnique({ where: { key: "saydian_cn_push" } });
+  const cnTarget = await configuredJPushTarget(
+    prisma, "saydian_cn_push", "jpush_saydian_cn", "SAYDIAN_CN_JPUSH_APP_KEY",
+    "SAYDIAN_CN_JPUSH_MASTER_SECRET", cnIntegration,
+  );
+  if (cnTarget) targets.push(cnTarget);
+
   return targets.length > 0
     ? new RoutedPushProvider(targets)
     : new DisabledPushProvider();

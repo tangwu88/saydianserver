@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **642 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **643 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -313,11 +313,11 @@
 | `PUT /api/saydian-app/v2/members/me` | 修改本人资料 | member | Profile：nickname、head_portrait/avatarUrl、sex/gender、birthday、height/heightCm、weight/weightKg；仅提交需修改字段 | Profile | 核心服务 |
 | `GET /api/saydian-app/v2/members/me/goals` | 活动目标 | member | 无请求体 | {steps,distanceMeters,caloriesKcal}；未知为 null | 核心服务 |
 | `PUT /api/saydian-app/v2/members/me/goals` | 保存活动目标 | member | {steps,distanceMeters,caloriesKcal}；缺省字段置 null，客户端应提交完整目标 | 活动目标 | 核心服务 |
-| `GET /api/saydian-app/v2/notifications` | 消息列表 | member | query:page?，query:pageSize?；page 默认 1；pageSize 默认 30 | 分页消息 | 核心服务 |
-| `GET /api/saydian-app/v2/notifications/unread-count` | 未读数 | member | 无请求体 | {count} | 核心服务 |
+| `GET /api/saydian-app/v2/notifications` | 消息列表 | member | query:page?，query:pageSize?，query:product?；page 默认 1；pageSize 默认 30 | 分页消息 | 核心服务 |
+| `GET /api/saydian-app/v2/notifications/unread-count` | 未读数 | member | query:product?；无请求体 | {count} | 核心服务 |
 | `GET /api/saydian-app/v2/notifications/preferences` | 读取通知偏好 | member | 无请求体 | {transactionalEnabled,marketingEnabled,updatedAt}；营销通知默认关闭 | 核心服务 |
 | `PATCH /api/saydian-app/v2/notifications/preferences` | 修改通知偏好 | member | {transactionalEnabled?,marketingEnabled?}；至少提交一项 | 保存后的通知偏好；业务必要通知与营销通知分开 | 核心服务 |
-| `GET /api/saydian-app/v2/notifications/:id` | 消息详情 | member | path:id；id=消息 UUID | Notification；V2 GET 不标记已读 | 核心服务 |
+| `GET /api/saydian-app/v2/notifications/:id` | 消息详情 | member | path:id，query:product?；id=消息 UUID | Notification；V2 GET 不标记已读 | 核心服务 |
 | `POST /api/saydian-app/v2/notifications/:id/read` | 标记消息已读 | member | path:id；id=消息 UUID/eventId | {read:true}；仅本人消息 | 核心服务 |
 | `POST /api/saydian-app/v2/notifications/push-installations` | 登记推送安装 | member | PushInstallation：installationId、platform、registrationId、appVersion、buildNumber；字段别名见调用手册 | 安装记录；登记不等于推送成功 | 推送供应商（登记可独立使用） |
 | `DELETE /api/saydian-app/v2/notifications/push-installations/:installationId` | 撤销本人推送安装 | member | path:installationId；installationId=安装标识 | 撤销结果 | 核心服务 |
@@ -334,30 +334,30 @@
 | `GET /api/saydian-app/v2/health/reports/:id/full` | 查看已解锁详细健康报告 | member | path:id；id=报告UUID | AI标识、证据索引、局限及详细内容；非诊断 | 核心服务 |
 | `GET /api/saydian-app/v2/health/reports/:id/export` | 按需导出详细健康报告 | member | path:id；id=已解锁且生成完成的报告UUID | application/pdf文件流；不长期重复保存PDF | 报告字体服务 |
 | `POST /api/saydian-app/v2/health/reports/:id/retry` | 重试失败的报告 | member | path:id；id=报告UUID；国际必须仍同意当前已审health_ai_analysis版本 | 重新排队后的报告；撤回授权/文档未发布/版本过期拒绝入队；生成失败时次数已返还 | AI供应商 |
-| `GET /api/saydian-app/v2/ring/capabilities` | Say Ring 新功能开关 | public | 无 | {sharing,care,firmware} | 中国站开关 |
-| `POST /api/saydian-app/v2/ring/shares/open` | 匿名读取分享快照 | public | {token} | {snapshot,expiresAt,sharerName,projectNames,titleRef} | 7天有效；标题引用来自分享令牌摘要，只用于 H5 标题 |
-| `POST /api/saydian-app/v2/ring/shares/respond` | 访客选择预设回应 | public | {token,kind,visitor:UUID} | {ok} | 分享有效期、访客去重；每条新回应创建一条分享者通知 |
-| `POST /api/saydian-app/v2/ring/shares/member-response` | 会员选择署名或匿名回应 | member | {token,kind,named} | {ok} | 署名校验双方关爱关系 |
-| `POST /api/saydian-app/v2/ring/shares` | 确认并创建固定分享 | member | {token,confirmed:true,snapshot:{kind,date,fields,note}} | {id,expiresAt} | 会员归属、字段白名单 |
-| `GET /api/saydian-app/v2/ring/shares` | 查询自己的分享与回应 | member | query:history?，query:before?；history=true含过期记录；before可选本人的分享UUID | {entries,nextBefore} | 已有调用默认仅返回有效分享 |
-| `GET /api/saydian-app/v2/ring/shares/:id` | 查看本人一条分享的完整回应 | member | path:id，query:before?；分享UUID；before可选上一页游标 | {share,reactions:[{kind,name,createdAt}],nextBefore} | 按分享归属鉴权，含过期链接的回应 |
-| `DELETE /api/saydian-app/v2/ring/shares/:id` | 撤回本人的分享 | member | path:id；无 | {ok} | 立即移除匿名读取权限 |
-| `POST /api/saydian-app/v2/ring/care/invitations/preview` | 查看一次性关爱邀请 | public | {code} | {inviterName,expiresAt} | 邀请码与48小时有效期 |
-| `POST /api/saydian-app/v2/ring/care/invitations` | 创建关注对方的邀请 | member | 无 | {id,code,expiresAt} | 当前会员 |
-| `GET /api/saydian-app/v2/ring/care/invitations` | 查看本人待接受的邀请 | member | 无 | {entries} | 当前会员 |
-| `DELETE /api/saydian-app/v2/ring/care/invitations/:id` | 撤销尚未领取的邀请 | member | path:id；无 | {ok} | 邀请者校验 |
-| `POST /api/saydian-app/v2/ring/care/invitations/accept` | 接受一次性邀请 | member | {code,confirmed:true,metrics:[]} | {relationshipId} | 在事务内校验领取者与授权范围 |
-| `GET /api/saydian-app/v2/ring/care/greetings` | 前台新问候检查 | member | query:after?；after可选时间 | {cursor,entries} | 只读近期问候及关系设置 |
-| `GET /api/saydian-app/v2/ring/care/:id/messages` | 查看亲友消息 | member | path:id，query:before?；before可选消息UUID | {messages,muted,blocked,canUnblock} | 当前有效关系、分页 |
-| `POST /api/saydian-app/v2/ring/care/:id/messages` | 发送问候、近况或语音 | member | path:id；{messageId,kind,keepQuiet,attachment?,audio?} | 保存后的消息 | 当前有效关系、消息去重 |
-| `GET /api/saydian-app/v2/ring/care/:id/messages/:message/audio` | 读取一条私有语音 | member | path:id，path:message；无 | audio/wav | 逐次检查当前有效关系 |
-| `DELETE /api/saydian-app/v2/ring/care/:id/messages/:message` | 删除自己的消息 | member | path:id，path:message；无 | {ok} | 作者校验 |
-| `POST /api/saydian-app/v2/ring/care/:id/messages/:message/report` | 举报亲友消息 | member | path:id，path:message；无 | {ok} | 当前有效关系 |
+| `GET /api/saydian-app/v2/ring/capabilities` | 按App读取戒指新功能开关 | public | query:product?，query:clientRevision?；product=say-ring/saydian-app-cn，省略保持Say Ring；CN需clientRevision=cn-ring-v1 | Say Ring保留{sharing,care,firmware}；CN另含product、clientUpgradeRequired，未升级客户端不开放 | 中国站开关；CN不开放固件；分享/邀请/消息接口同样按query product隔离，身份与健康授权仍沿用原账号 |
+| `POST /api/saydian-app/v2/ring/shares/open` | 匿名读取分享快照 | public | query:product?；{token} | {snapshot,expiresAt,sharerName,projectNames,titleRef} | 7天有效；标题引用来自分享令牌摘要，只用于 H5 标题 |
+| `POST /api/saydian-app/v2/ring/shares/respond` | 访客选择预设回应 | public | query:product?；{token,kind,visitor:UUID} | {ok} | 分享有效期、访客去重；每条新回应创建一条分享者通知 |
+| `POST /api/saydian-app/v2/ring/shares/member-response` | 会员选择署名或匿名回应 | member | query:product?；{token,kind,named} | {ok} | 署名校验双方关爱关系 |
+| `POST /api/saydian-app/v2/ring/shares` | 确认并创建固定分享 | member | query:product?；{token,confirmed:true,snapshot:{kind,date,fields,note}} | {id,expiresAt} | 会员归属、字段白名单 |
+| `GET /api/saydian-app/v2/ring/shares` | 查询自己的分享与回应 | member | query:history?，query:before?，query:product?；history=true含过期记录；before可选本人的分享UUID | {entries,nextBefore} | 已有调用默认仅返回有效分享 |
+| `GET /api/saydian-app/v2/ring/shares/:id` | 查看本人一条分享的完整回应 | member | path:id，query:before?，query:product?；分享UUID；before可选上一页游标 | {share,reactions:[{kind,name,createdAt}],nextBefore} | 按分享归属鉴权，含过期链接的回应 |
+| `DELETE /api/saydian-app/v2/ring/shares/:id` | 撤回本人的分享 | member | path:id，query:product?；无 | {ok} | 立即移除匿名读取权限 |
+| `POST /api/saydian-app/v2/ring/care/invitations/preview` | 查看一次性关爱邀请 | public | query:product?；{code} | {inviterName,expiresAt} | 邀请码与48小时有效期 |
+| `POST /api/saydian-app/v2/ring/care/invitations` | 创建关注对方的邀请 | member | query:product?；无 | {id,code,expiresAt} | 当前会员 |
+| `GET /api/saydian-app/v2/ring/care/invitations` | 查看本人待接受的邀请 | member | query:product?；无 | {entries} | 当前会员 |
+| `DELETE /api/saydian-app/v2/ring/care/invitations/:id` | 撤销尚未领取的邀请 | member | path:id，query:product?；无 | {ok} | 邀请者校验 |
+| `POST /api/saydian-app/v2/ring/care/invitations/accept` | 接受一次性邀请 | member | query:product?；{code,confirmed:true,metrics:[]} | {relationshipId} | 在事务内校验领取者与授权范围 |
+| `GET /api/saydian-app/v2/ring/care/greetings` | 前台新问候检查 | member | query:after?，query:product?；after可选时间 | {cursor,entries} | 只读近期问候及关系设置 |
+| `GET /api/saydian-app/v2/ring/care/:id/messages` | 查看亲友消息 | member | path:id，query:before?，query:product?；before可选消息UUID | {messages,muted,blocked,canUnblock} | 当前有效关系、分页 |
+| `POST /api/saydian-app/v2/ring/care/:id/messages` | 发送问候、近况或语音 | member | path:id，query:product?；{messageId,kind,keepQuiet,attachment?,audio?} | 保存后的消息 | 当前有效关系、消息去重 |
+| `GET /api/saydian-app/v2/ring/care/:id/messages/:message/audio` | 读取一条私有语音 | member | path:id，path:message，query:product?；无 | audio/wav | 逐次检查当前有效关系 |
+| `DELETE /api/saydian-app/v2/ring/care/:id/messages/:message` | 删除自己的消息 | member | path:id，path:message，query:product?；无 | {ok} | 作者校验 |
+| `POST /api/saydian-app/v2/ring/care/:id/messages/:message/report` | 举报亲友消息 | member | path:id，path:message，query:product?；无 | {ok} | 当前有效关系 |
 | `PUT /api/saydian-app/v2/ring/care/:id/settings` | 更改亲友静音或屏蔽 | member | path:id；{muted?,blocked?} | {muted,blocked} | 本人设置、现有关系 |
 | `GET /api/saydian-app/v2/ring/care/:id/goals` | 查看亲友本周散步进度 | member | path:id；无 | {week,today,members,activityAvailable} | 共同进度及本人已同步活动是否可用 |
 | `PUT /api/saydian-app/v2/ring/care/:id/goals` | 设置散步目标或打卡 | member | path:id；{week,target?}、{week,paused?}或{week,day,source} | 更新后的共同进度 | 本周校验及同日去重；活动打卡检查本人已同步有效数据 |
-| `POST /api/saydian-app/v2/ring/firmware/lookup` | 按精准型号核验固件目录 | member | {platform,transport,model,hardware,fromVersion,appBuild,packageModel}；旧客户端未传包型号时无可用包 | {available,payload?,signature?}；已签名清单包含packageModel | 型号和原厂包匹配，确切硬件、版本与文件摘要均已验收 |
-| `GET /api/saydian-app/v2/ring/firmware/packages/:id` | 下载已启用的原厂固件 | member | path:id；无 | 校验后的固件文件 | 会员、签名目录与包匹配 |
+| `POST /api/saydian-app/v2/ring/firmware/lookup` | 按精准型号核验固件目录 | member | query:product?；{platform,transport,model,hardware,fromVersion,appBuild,packageModel}；旧客户端未传包型号时无可用包 | {available,payload?,signature?}；已签名清单包含packageModel | 型号和原厂包匹配，确切硬件、版本与文件摘要均已验收 |
+| `GET /api/saydian-app/v2/ring/firmware/packages/:id` | 下载已启用的原厂固件 | member | path:id，query:product?；无 | 校验后的固件文件 | 会员、签名目录与包匹配 |
 | `GET /api/saydian-app/v2/sayheath/legal` | Product-specific reviewed terms and privacy version required to sign in | public | 无请求体 | 对象 | 核心服务 |
 | `GET /api/saydian-app/v2/sayheath/public/privacy` | Published English product privacy page | public | 无请求体 | 对象 | 核心服务 |
 | `GET /api/saydian-app/v2/sayheath/public/terms` | Published English product terms | public | 无请求体 | 对象 | 核心服务 |
@@ -619,7 +619,7 @@
 | `GET /api/saydian-app/admin/v1/ring-firmware` | 后台固件目录 | admin: SUPER_ADMIN, APP_OPERATIONS | 无 | {entries}；原厂固件包packageModel可为空 | 后台审计权限 |
 | `POST /api/saydian-app/admin/v1/ring-firmware` | 暂存原厂固件 | admin: SUPER_ADMIN, APP_OPERATIONS | file:file?；multipart 文件与目标、packageModel、版本、证据、摘要 | 草稿固件 | 指定型号与原厂包配对；文件SHA-256匹配 |
 | `PUT /api/saydian-app/admin/v1/ring-firmware/:id` | 暂停或启用固件 | admin: SUPER_ADMIN, APP_OPERATIONS | path:id；{enabled} | 对应固件 | 启用要求相应平台真机记录及精确升级路径、原厂包与文件摘要校验 |
-| `GET /api/saydian-app/admin/v1/ring-engagement` | 分享与关爱的聚合结果和举报 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | 无 | {usage,reports} | 后台权限；聚合结果 |
+| `GET /api/saydian-app/admin/v1/ring-engagement` | 分享与关爱的聚合结果和举报 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | query:product?；无 | {usage,reports} | 后台权限；聚合结果 |
 | `DELETE /api/saydian-app/admin/v1/ring-engagement/reports/:id` | 移除已举报的问候 | admin: SUPER_ADMIN, APP_OPERATIONS, CUSTOMER_SERVICE | path:id；无 | {ok} | 后台权限及操作审计 |
 | `GET /api/saydian-app/admin/v1/settings/sayheath/features` | Read the five US product version switches | admin: SUPER_ADMIN | 无请求体 | 对象 | 核心服务 |
 | `POST /api/saydian-app/admin/v1/settings/sayheath/features/:feature` | Publish an audited change to one exact version switch | admin: SUPER_ADMIN | path:feature；无请求体 | 对象 | 核心服务 |

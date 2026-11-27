@@ -109,6 +109,22 @@ jobs:
         run: pnpm test:gifts:upgrade
       - name: Isolated member health screen authorization and billing tests
         run: pnpm test:health-screen:database
+      # A dedicated database is required by the ring HTTP fixture guard.
+      - name: Isolated CN ring schema upgrade and product routing
+        run: |
+          ring_container="cn-ring-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm -f "$ring_container" >/dev/null 2>&1 || true' EXIT
+          docker run -d --name "$ring_container" -e POSTGRES_USER=ringqa \
+            -e POSTGRES_PASSWORD=local-ring-fixture-password -e POSTGRES_DB=ringlab \
+            -p 127.0.0.1::5432 postgres:16-alpine
+          ring_port="$(docker port "$ring_container" 5432/tcp | sed 's/.*://')"
+          for attempt in {1..30}; do
+            if docker exec "$ring_container" pg_isready -h 127.0.0.1 -U ringqa -d ringlab; then break; fi
+            sleep 1
+          done
+          export DATABASE_URL="postgresql://ringqa:local-ring-fixture-password@127.0.0.1:${ring_port}/ringlab?schema=public"
+          pnpm db:deploy
+          RUN_RING_EXPERIENCE_DATABASE_TESTS=1 pnpm --filter @saydian/app-api exec vitest run src/ring-experience/ring-experience.database.test.ts --maxWorkers=1 --testTimeout=20000
       - name: API smoke test
         run: |
           node apps/api/dist/main.js > api-smoke.log 2>&1 &

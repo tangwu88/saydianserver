@@ -95,6 +95,7 @@ test("gateway adds Say Ring link routes and a dedicated AI timeout to existing i
   const locations = [
     "location = /.well-known/assetlinks.json",
     "location ^~ /global/say-ring/",
+    "location ^~ /global/saydian-cn/ring/",
     "location = /global/api/saydian-app/v2/ai/messages",
   ];
   const routes = readFileSync(new URL("../global/nginx.locations.conf", import.meta.url), "utf8").split("\n\n")
@@ -107,8 +108,9 @@ test("gateway adds Say Ring link routes and a dedicated AI timeout to existing i
     assert(matches[1].split("}", 1)[0].includes("proxy_pass http://unified-api:8080;"));
   }
   const locationBody = location => result.split(location + " {")[1].split("}", 1)[0];
-  assert(locationBody(locations[1]).includes("access_log off;"));
-  assert(locationBody(locations[2]).includes("proxy_read_timeout 70s;"));
+  assert(locationBody("location ^~ /global/say-ring/").includes("access_log off;"));
+  assert(locationBody("location ^~ /global/saydian-cn/ring/").includes("access_log off;"));
+  assert(locationBody("location = /global/api/saydian-app/v2/ai/messages").includes("proxy_read_timeout 70s;"));
   assert(locationBody("location ^~ /global/api/").includes("proxy_read_timeout 60s;"));
   assert.equal(unifyGateway(result), result);
 });

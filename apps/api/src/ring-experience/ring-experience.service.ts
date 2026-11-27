@@ -1,11 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
-import { CareStatus, Prisma } from "@prisma/client";
+import { CareStatus, IntegrationState, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../common/prisma.service";
 import { safeObject } from "../common/crypto";
 import { careMetricMap } from "../care/care.service";
 import {
-  calendarDate, careAudio, careMessageKinds, cleanText, currentCareWeek, digest,
+  cnRingProduct, ringProduct, type RingProduct, calendarDate, careAudio, careMessageKinds, cleanText, currentCareWeek, digest,
   inviteCode, newInviteCode, reactionKinds, ringAvailability, ringEnabled, ringSnapshot, ringUuid, shareToken,
 } from "./ring-contract";
 import { shareProjectNames } from "./ring-share-presentation";
@@ -25,7 +25,7 @@ const reactionFields = { kind: true, name: true, createdAt: true } as const;
 export class RingExperienceService {
   constructor(private readonly db: PrismaService) {}
 
-  async createShare(ownerId: string, input: unknown) {
+  async createShare(ownerId: string, input: unknown, product: RingProduct = ringProduct) {
     ringEnabled("sharing");
     const body = safeObject(input);
     if (body.confirmed !== true) throw new BadRequestException("请先确认分享内容");
@@ -34,26 +34,26 @@ export class RingExperienceService {
     const expiresAt = new Date(Date.now() + 7 * dayMs);
     const row = await this.db.ringShare.upsert({
       where: { digest: key }, update: {},
-      create: { ownerId, digest: key, snapshot, expiresAt },
-      select: { id: true, expiresAt: true, ownerId: true },
+      create: { product, ownerId, digest: key, snapshot, expiresAt },
+      select: { id: true, expiresAt: true, ownerId: true, product: true },
     });
-    if (row.ownerId !== ownerId || +row.expiresAt <= Date.now()) {
+    if (row.product !== product || row.ownerId !== ownerId || +row.expiresAt <= Date.now()) {
       throw new ConflictException("请重新生成分享链接");
     }
     return { id: row.id, expiresAt: row.expiresAt };
   }
 
-  async shares(ownerId: string, history = false, before?: string) {
+  async shares(ownerId: string, history = false, before?: string, product: RingProduct = ringProduct) {
     // Owners can review and revoke existing links while public access is paused.
     if (!history) ringEnabled("sharing");
     const now = new Date();
     const cursor = before && await this.db.ringShare.findFirst({
-      where: { id: ringUuid(before), ownerId }, select: { id: true },
+      where: { id: ringUuid(before), ownerId, product }, select: { id: true },
     });
     if (before && !cursor) throw new NotFoundException("请刷新分享列表");
     const limit = history ? 30 : 60;
     const entries = await this.db.ringShare.findMany({
-      where: { ownerId, ...(!history ? { expiresAt: { gt: now } } : {}) },
+      where: { ownerId, product, ...(!history ? { expiresAt: { gt: now } } : {}) },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: limit + 1,
       ...(cursor ? { cursor, skip: 1 } : {}),
       select: { ...shareFields,
@@ -68,14 +68,14 @@ export class RingExperienceService {
     return { entries, nextBefore: more ? entries.at(-1)?.id : null };
   }
 
-  async shareReplies(ownerId: string, id: string, before?: string) {
+  async shareReplies(ownerId: string, id: string, before?: string, product: RingProduct = ringProduct) {
     const shareId = ringUuid(id);
     if (before !== undefined && !/^[a-f0-9]{64}$/.test(before)) {
       throw new BadRequestException("回应页码无效");
     }
     const limit = 30;
     const row = await this.db.ringShare.findFirst({
-      where: { id: shareId, ownerId },
+      where: { id: shareId, ownerId, product },
       select: {
         ...shareFields,
         _count: { select: { reactions: true } },
@@ -97,16 +97,16 @@ export class RingExperienceService {
     };
   }
 
-  async revokeShare(ownerId: string, id: string) {
+  async revokeShare(ownerId: string, id: string, product: RingProduct = ringProduct) {
     // Revocation remains available while creation and public access are paused.
-    await this.db.ringShare.deleteMany({ where: { id: ringUuid(id), ownerId } });
+    await this.db.ringShare.deleteMany({ where: { id: ringUuid(id), ownerId, product } });
     return { ok: true };
   }
 
-  async openShare(input: unknown) {
+  async openShare(input: unknown, product: RingProduct = ringProduct) {
     ringEnabled("sharing");
     const titleRef = digest(shareToken(safeObject(input).token));
-    const row = await this.activeShare(titleRef);
+    const row = await this.activeShare(titleRef, product);
     if (!row) throw new NotFoundException("链接已失效");
     return {
       snapshot: row.snapshot,
@@ -117,27 +117,27 @@ export class RingExperienceService {
     };
   }
 
-  async shareTitle(reference: unknown, acceptLanguage: string | undefined) {
+  async shareTitle(reference: unknown, acceptLanguage: string | undefined, product: RingProduct = ringProduct) {
     if (typeof reference !== "string" || !/^[0-9a-f]{64}$/.test(reference) ||
         !ringAvailability().sharing) return null;
-    const row = await this.activeShare(reference);
+    const row = await this.activeShare(reference, product);
     if (!row) return null;
     const language = (acceptLanguage ?? "zh-Hans").split(/[;,]/, 1)[0]!.trim().toLowerCase();
     const chinese = /^zh(?:-|$)/.test(language) && !/(?:^|-)(hant|tw|hk|mo)(?:-|$)/.test(language);
     const project = shareProjectNames(row.snapshot)[chinese ? 0 : 1];
     const note = safeObject(row.snapshot).note;
-    return [publicName(row.owner.nickname), project, typeof note === "string" ? note.trim() : null, "Say Ring"]
+    return [publicName(row.owner.nickname), project, typeof note === "string" ? note.trim() : null, product === cnRingProduct ? "赛电SayDian" : "Say Ring"]
       .filter(Boolean).join(" · ");
   }
 
-  private activeShare(key: string) {
+  private activeShare(key: string, product: RingProduct = ringProduct) {
     return this.db.ringShare.findFirst({
-      where: { digest: key, expiresAt: { gt: new Date() }, owner: { status: "ACTIVE" } },
+      where: { digest: key, product, expiresAt: { gt: new Date() }, owner: { status: "ACTIVE" } },
       select: { snapshot: true, expiresAt: true, owner: { select: { nickname: true } } },
     });
   }
 
-  async react(input: unknown, actorId?: string) {
+  async react(input: unknown, actorId?: string, product: RingProduct = ringProduct) {
     ringEnabled("sharing");
     const body = safeObject(input);
     const token = shareToken(body.token);
@@ -148,11 +148,11 @@ export class RingExperienceService {
     return this.db.$transaction(async (tx) => {
       const [locked] = await tx.$queryRaw<{ id: string }[]>`
         SELECT "id" FROM "RingShare" WHERE "digest" = ${digest(token)}
-          AND "expiresAt" > NOW() FOR UPDATE
+          AND "expiresAt" > NOW() AND "product" = ${product} FOR UPDATE
       `;
       if (!locked) throw new NotFoundException("链接已失效");
       const share = await tx.ringShare.findFirst({
-        where: { id: locked.id, owner: { status: "ACTIVE" } },
+        where: { id: locked.id, product, owner: { status: "ACTIVE" } },
         select: { id: true, ownerId: true },
       });
       if (!share) throw new NotFoundException("链接已失效");
@@ -180,45 +180,45 @@ export class RingExperienceService {
         skipDuplicates: true,
       });
       if (count.count === 1) {
-        await this.notify(tx, "ring-share:" + randomUUID(), share.ownerId, share.id, "share", true);
+        await this.notify(tx, "ring-share:" + randomUUID(), share.ownerId, share.id, "share", true, product);
       }
       return { ok: true };
     });
   }
 
-  async createInvite(inviterId: string) {
+  async createInvite(inviterId: string, product: RingProduct = ringProduct) {
     ringEnabled("care");
     const code = newInviteCode();
     const expiresAt = new Date(Date.now() + 2 * dayMs);
     const row = await this.db.ringCareInvite.create({ data: {
-      inviterId, digest: digest(code), expiresAt,
+      inviterId, product, digest: digest(code), expiresAt,
     }, select: { id: true, expiresAt: true } });
     return { ...row, code };
   }
 
-  async invites(inviterId: string) {
+  async invites(inviterId: string, product: RingProduct = ringProduct) {
     ringEnabled("care");
     const entries = await this.db.ringCareInvite.findMany({
-      where: { inviterId, revokedAt: null, acceptedAt: null, expiresAt: { gt: new Date() } },
+      where: { inviterId, product, revokedAt: null, acceptedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" }, take: 30,
       select: { id: true, expiresAt: true, createdAt: true },
     });
     return { entries };
   }
 
-  async revokeInvite(inviterId: string, id: string) {
+  async revokeInvite(inviterId: string, id: string, product: RingProduct = ringProduct) {
     await this.db.ringCareInvite.updateMany({
-      where: { id: ringUuid(id), inviterId, acceptedAt: null, revokedAt: null },
+      where: { id: ringUuid(id), inviterId, product, acceptedAt: null, revokedAt: null },
       data: { revokedAt: new Date() },
     });
     return { ok: true };
   }
 
-  async previewInvite(input: unknown) {
+  async previewInvite(input: unknown, product: RingProduct = ringProduct) {
     ringEnabled("care");
     const code = inviteCode(safeObject(input).code);
     const invite = await this.db.ringCareInvite.findFirst({
-      where: { digest: digest(code), expiresAt: { gt: new Date() }, revokedAt: null,
+      where: { digest: digest(code), product, expiresAt: { gt: new Date() }, revokedAt: null,
         acceptedAt: null, inviter: { status: "ACTIVE" } },
       select: { inviter: { select: { nickname: true } }, expiresAt: true },
     });
@@ -226,7 +226,7 @@ export class RingExperienceService {
     return { inviterName: publicName(invite.inviter.nickname), expiresAt: invite.expiresAt };
   }
 
-  async acceptInvite(userId: string, input: unknown) {
+  async acceptInvite(userId: string, input: unknown, product: RingProduct = ringProduct) {
     ringEnabled("care");
     const body = safeObject(input);
     const code = inviteCode(body.code);
@@ -242,10 +242,10 @@ export class RingExperienceService {
     return this.db.$transaction(async (tx) => {
       const now = new Date();
       const [locked] = await tx.$queryRaw<{ id: string }[]>`
-        SELECT "id" FROM "RingCareInvite" WHERE "digest" = ${digest(code)} FOR UPDATE
+        SELECT "id" FROM "RingCareInvite" WHERE "digest" = ${digest(code)} AND "product" = ${product} FOR UPDATE
       `;
       const invite = locked && await tx.ringCareInvite.findFirst({
-        where: { id: locked.id, expiresAt: { gt: now }, revokedAt: null,
+        where: { id: locked.id, product, expiresAt: { gt: now }, revokedAt: null,
           inviter: { status: "ACTIVE" } },
         select: { id: true, inviterId: true, acceptedAt: true, acceptedBy: true },
       });
@@ -291,7 +291,7 @@ export class RingExperienceService {
         where: { id: invite.id }, data: { acceptedBy: userId, acceptedAt: now },
       });
       if (created.count || activated.count) {
-        await this.notify(tx, "ring-joined:" + invite.id, invite.inviterId, relation.id, "care", true);
+        await this.notify(tx, "ring-joined:" + invite.id, invite.inviterId, relation.id, "care", true, product);
       }
       return { relationshipId: relation.id };
     });
@@ -316,18 +316,18 @@ export class RingExperienceService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${identity}, 0))`;
   }
 
-  async thread(userId: string, id: string, before?: string) {
+  async thread(userId: string, id: string, before?: string, product: RingProduct = ringProduct) {
     ringEnabled("care");
     const relation = await this.relation(this.db, id, userId, true);
     const mine = relation.ringSettings.find((s) => s.userId === userId);
     const blocked = relation.ringSettings.some((s) => s.blocked);
     if (blocked && !mine?.blocked) throw new NotFoundException("这段关爱关系暂不可用");
     const cursor = before && await this.db.ringCareMessage.findFirst({
-      where: { id: ringUuid(before), relationshipId: relation.id }, select: { id: true },
+      where: { id: ringUuid(before), product, relationshipId: relation.id }, select: { id: true },
     });
     if (before && !cursor) throw new NotFoundException("消息不存在");
     const messages = blocked ? [] : await this.db.ringCareMessage.findMany({
-      where: { relationshipId: relation.id, deletedAt: null },
+      where: { product, relationshipId: relation.id, deletedAt: null },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 40,
       ...(cursor ? { cursor, skip: 1 } : {}),
       select: messageFields,
@@ -336,7 +336,7 @@ export class RingExperienceService {
       muted: mine?.muted ?? false, blocked, canUnblock: mine?.blocked === true };
   }
 
-  async send(userId: string, id: string, input: unknown) {
+  async send(userId: string, id: string, input: unknown, product: RingProduct = ringProduct) {
     ringEnabled("care");
     const body = safeObject(input);
     const messageId = ringUuid(body.messageId);
@@ -355,7 +355,7 @@ export class RingExperienceService {
       await this.lock(tx, "pair:" + [userId, relation.other].sort().join(":"));
       const current = await this.relation(tx, id, userId);
       const existing = await tx.ringCareMessage.findFirst({
-        where: { id: messageId, relationshipId: current.id, authorId: userId, deletedAt: null },
+        where: { id: messageId, product, relationshipId: current.id, authorId: userId, deletedAt: null },
         select: messageFields,
       });
       if (existing) {
@@ -369,18 +369,18 @@ export class RingExperienceService {
         code: "CARE_SEND_RATE_LIMITED", message: "发送较频繁，请稍等一分钟再试",
       }, 429);
       const inserted = await tx.ringCareMessage.createMany({ skipDuplicates: true, data: [{
-        id: messageId, relationshipId: current.id, authorId: userId, kind,
+        id: messageId, product, relationshipId: current.id, authorId: userId, kind,
         keepQuiet: body.keepQuiet === true, audio: audio ? Uint8Array.from(audio) : null,
         ...(attachment ? { attachment } : {}),
       }] });
       const row = await tx.ringCareMessage.findFirst({
-        where: { id: messageId, relationshipId: current.id, authorId: userId, deletedAt: null },
+        where: { id: messageId, product, relationshipId: current.id, authorId: userId, deletedAt: null },
         select: messageFields,
       });
       if (!row || row.kind !== kind) throw new ConflictException("请重新发送");
       if (inserted.count) {
         const muted = current.ringSettings.some((s) => s.userId === current.other && s.muted);
-        await this.notify(tx, "ring-care:" + row.id, current.other, current.id, "care", !muted);
+        await this.notify(tx, "ring-care:" + row.id, current.other, current.id, "care", !muted, product);
       }
       return this.message(userId, row);
     });
@@ -393,14 +393,14 @@ export class RingExperienceService {
     };
   }
 
-  async liveGreetings(userId: string, after: string | undefined) {
+  async liveGreetings(userId: string, after: string | undefined, product: RingProduct = ringProduct) {
     ringEnabled("care");
     const now = new Date();
     const since = after ? new Date(after) : now;
     if (!Number.isFinite(+since) || +since > +now + 10_000) throw new BadRequestException();
     const start = new Date(Math.max(+since, +now - 20_000));
     const rows = await this.db.ringCareMessage.findMany({
-      where: { kind: "thinking", authorId: { not: userId }, deletedAt: null,
+      where: { product, kind: "thinking", authorId: { not: userId }, deletedAt: null,
         createdAt: { gt: start, lte: now },
         relationship: { status: "ACTIVE", revokedAt: null,
           OR: [{ inviterId: userId }, { recipientId: userId }],
@@ -441,30 +441,30 @@ export class RingExperienceService {
     });
   }
 
-  async voice(userId: string, id: string, messageId: string) {
+  async voice(userId: string, id: string, messageId: string, product: RingProduct = ringProduct) {
     ringEnabled("care");
     const relation = await this.relation(this.db, id, userId);
     const row = await this.db.ringCareMessage.findFirst({
-      where: { id: ringUuid(messageId), relationshipId: relation.id, kind: "voice", deletedAt: null },
+      where: { id: ringUuid(messageId), product, relationshipId: relation.id, kind: "voice", deletedAt: null },
       select: { audio: true },
     });
     if (!row?.audio) throw new NotFoundException("语音已删除");
     return row.audio;
   }
 
-  async deleteMessage(userId: string, id: string, messageId: string) {
+  async deleteMessage(userId: string, id: string, messageId: string, product: RingProduct = ringProduct) {
     const relation = await this.relation(this.db, id, userId, true);
     await this.db.ringCareMessage.updateMany({
-      where: { id: ringUuid(messageId), relationshipId: relation.id, authorId: userId, deletedAt: null },
+      where: { id: ringUuid(messageId), product, relationshipId: relation.id, authorId: userId, deletedAt: null },
       data: { deletedAt: new Date(), audio: null, attachment: Prisma.DbNull },
     });
     return { ok: true };
   }
 
-  async report(userId: string, id: string, messageId: string) {
+  async report(userId: string, id: string, messageId: string, product: RingProduct = ringProduct) {
     const relation = await this.relation(this.db, id, userId, true);
     await this.db.ringCareMessage.updateMany({
-      where: { id: ringUuid(messageId), relationshipId: relation.id,
+      where: { id: ringUuid(messageId), product, relationshipId: relation.id,
         authorId: relation.other, reportedAt: null },
       data: { reportedAt: new Date() },
     });
@@ -560,21 +560,21 @@ export class RingExperienceService {
     return this.goals(userId, id);
   }
 
-  async operationsSummary() {
+  async operationsSummary(product: RingProduct = ringProduct) {
     // Aggregate only the outcomes required for the internal launch.
     const [usage] = await this.db.$queryRaw<{
       shares: number; reacted: number; accepted: number; observed: number; replied: number;
     }[]>`
       WITH completed_windows AS (
         SELECT "inviterId", "acceptedBy", "acceptedAt" FROM "RingCareInvite"
-        WHERE "acceptedAt" > NOW() - INTERVAL '30 days'
+        WHERE "product" = ${product} AND "acceptedAt" > NOW() - INTERVAL '30 days'
           AND "acceptedAt" <= NOW() - INTERVAL '7 days'
       )
       SELECT
-        (SELECT count(*)::int FROM "RingShare" WHERE "expiresAt" > NOW()) AS shares,
-        (SELECT count(*)::int FROM "RingShare" s WHERE s."expiresAt" > NOW()
+        (SELECT count(*)::int FROM "RingShare" WHERE "product" = ${product} AND "expiresAt" > NOW()) AS shares,
+        (SELECT count(*)::int FROM "RingShare" s WHERE s."product" = ${product} AND s."expiresAt" > NOW()
           AND EXISTS (SELECT 1 FROM "RingShareReaction" rr WHERE rr."shareId" = s.id)) AS reacted,
-        (SELECT count(*)::int FROM "RingCareInvite" i WHERE i."acceptedAt" > NOW() - INTERVAL '30 days') AS accepted,
+        (SELECT count(*)::int FROM "RingCareInvite" i WHERE i."product" = ${product} AND i."acceptedAt" > NOW() - INTERVAL '30 days') AS accepted,
         (SELECT count(*)::int FROM completed_windows) AS observed,
         (SELECT count(*)::int FROM completed_windows i
           JOIN "CareRelationship" c ON c."inviterId" = i."inviterId" AND c."recipientId" = i."acceptedBy"
@@ -584,7 +584,7 @@ export class RingExperienceService {
               ON reply."relationshipId" = c.id AND reply."authorId" <> greeting."authorId"
               AND reply."createdAt" > greeting."createdAt" AND reply.kind = 'thinkingBack'
               AND reply."deletedAt" IS NULL
-            WHERE greeting."relationshipId" = c.id AND greeting.kind = 'thinking'
+            WHERE greeting."product" = ${product} AND reply."product" = ${product} AND greeting."relationshipId" = c.id AND greeting.kind = 'thinking'
               AND greeting."deletedAt" IS NULL
               AND greeting."createdAt" >= i."acceptedAt"
               AND reply."createdAt" < i."acceptedAt" + INTERVAL '7 days'
@@ -592,7 +592,7 @@ export class RingExperienceService {
         ) AS replied
     `;
     const reports = await this.db.ringCareMessage.findMany({
-      where: { reportedAt: { not: null }, deletedAt: null },
+      where: { product, reportedAt: { not: null }, deletedAt: null },
       select: { id: true, kind: true, reportedAt: true },
       orderBy: { reportedAt: "desc" }, take: 50,
     });
@@ -608,22 +608,27 @@ export class RingExperienceService {
   }
 
   private async notify(tx: Tx, eventId: string, userId: string, entity: string,
-    kind: "care" | "share", push: boolean) {
+    kind: "care" | "share", push: boolean, product: RingProduct = ringProduct) {
+    if (product === cnRingProduct) eventId = "cn-" + eventId;
     const deepLink = (kind === "care" ? "/care/interactions/" : "/ring/shares/") + entity;
     const notification = await tx.notification.upsert({
       where: { userId_eventId: { userId, eventId } },
       create: {
         eventId, userId, type: "SYSTEM", deepLink,
         title: kind === "share" ? "有人回应了你的分享" : "远程爱有新消息",
-        body: kind === "share" ? "点击查看好友回应。" : "打开 Say Ring 查看。",
+        body: kind === "share" ? "点击查看好友回应。" : (product === cnRingProduct ? "打开赛电SayDian查看。" : "打开 Say Ring 查看。"),
       },
       update: { readAt: null, createdAt: new Date() },
       select: { id: true },
     });
-    if (push) {
+    // CN push is opt-in configuration; an absent/disabled channel creates no delivery job.
+    const pushReady = product !== cnRingProduct || (await tx.integrationConfig.findUnique({
+      where: { key: "saydian_cn_push" }, select: { state: true },
+    }))?.state === IntegrationState.CONFIGURED;
+    if (push && pushReady) {
       await tx.outboxEvent.createMany({ skipDuplicates: true, data: [{
         eventId, eventType: "system", aggregateType: kind === "share" ? "ring_share" : "ring_care", aggregateId: entity,
-        payload: { userId, notificationId: notification.id, deepLink },
+        payload: { product, userId, notificationId: notification.id, deepLink },
       }] });
     }
   }

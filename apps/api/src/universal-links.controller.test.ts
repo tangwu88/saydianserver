@@ -15,9 +15,11 @@ describe("UniversalLinksController", () => {
         details: [
           {
             appID: "W7SXQ4A226.cc.saidian.app",
-            paths: ["/wechat/*"],
+            paths: ["/wechat/*", "/global/saydian-cn/ring/invite", "/global/saydian-cn/ring/respond"],
             components: [
               { "/": "/wechat/*", comment: "Saydian WeChat callback" },
+              { "/": "/global/saydian-cn/ring/invite" },
+              { "/": "/global/saydian-cn/ring/respond" },
             ],
           },
           {

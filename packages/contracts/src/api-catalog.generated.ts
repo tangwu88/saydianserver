@@ -34057,6 +34057,12 @@ export const apiCatalog = {
           "name": "pageSize",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -34083,7 +34089,14 @@ export const apiCatalog = {
       "path": "/api/saydian-app/v2/notifications/unread-count",
       "auth": "member",
       "roles": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "v2",
       "source": "apps/api/src/notifications/notifications.controller.ts",
       "summary": "未读数",
@@ -34171,6 +34184,12 @@ export const apiCatalog = {
           "name": "id",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -34203,6 +34222,12 @@ export const apiCatalog = {
           "name": "id",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "body",
+          "name": "*",
+          "type": "{ product?: string }",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41363,13 +41388,26 @@ export const apiCatalog = {
       "path": "/api/saydian-app/v2/ring/capabilities",
       "auth": "public",
       "roles": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "clientRevision",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "v2",
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
-      "summary": "Say Ring 新功能开关",
-      "request": "无",
-      "response": "{sharing,care,firmware}",
-      "dependency": "中国站开关",
+      "summary": "按App读取戒指新功能开关",
+      "request": "product=say-ring/saydian-app-cn，省略保持Say Ring；CN需clientRevision=cn-ring-v1",
+      "response": "Say Ring保留{sharing,care,firmware}；CN另含product、clientUpgradeRequired，未升级客户端不开放",
+      "dependency": "中国站开关；CN不开放固件；分享/邀请/消息接口同样按query product隔离，身份与健康授权仍沿用原账号",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",
@@ -41394,6 +41432,12 @@ export const apiCatalog = {
           "name": "*",
           "type": "unknown",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41426,6 +41470,12 @@ export const apiCatalog = {
           "name": "*",
           "type": "unknown",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41458,6 +41508,12 @@ export const apiCatalog = {
           "name": "*",
           "type": "unknown",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41490,6 +41546,12 @@ export const apiCatalog = {
           "name": "*",
           "type": "unknown",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41526,6 +41588,12 @@ export const apiCatalog = {
         {
           "in": "query",
           "name": "before",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
           "type": "string",
           "optional": true
         }
@@ -41566,6 +41634,12 @@ export const apiCatalog = {
           "name": "before",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41598,6 +41672,12 @@ export const apiCatalog = {
           "name": "id",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41630,6 +41710,12 @@ export const apiCatalog = {
           "name": "*",
           "type": "unknown",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41656,7 +41742,14 @@ export const apiCatalog = {
       "path": "/api/saydian-app/v2/ring/care/invitations",
       "auth": "member",
       "roles": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "v2",
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
       "summary": "创建关注对方的邀请",
@@ -41681,7 +41774,14 @@ export const apiCatalog = {
       "path": "/api/saydian-app/v2/ring/care/invitations",
       "auth": "member",
       "roles": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "v2",
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
       "summary": "查看本人待接受的邀请",
@@ -41712,6 +41812,12 @@ export const apiCatalog = {
           "name": "id",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41744,6 +41850,12 @@ export const apiCatalog = {
           "name": "*",
           "type": "unknown",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41774,6 +41886,12 @@ export const apiCatalog = {
         {
           "in": "query",
           "name": "after",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
           "type": "string",
           "optional": true
         }
@@ -41814,6 +41932,12 @@ export const apiCatalog = {
           "name": "before",
           "type": "string",
           "optional": true
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41852,6 +41976,12 @@ export const apiCatalog = {
           "name": "*",
           "type": "unknown",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41890,6 +42020,12 @@ export const apiCatalog = {
           "name": "message",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "raw-or-legacy",
@@ -41928,6 +42064,12 @@ export const apiCatalog = {
           "name": "message",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -41966,6 +42108,12 @@ export const apiCatalog = {
           "name": "message",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -42106,6 +42254,12 @@ export const apiCatalog = {
           "name": "*",
           "type": "unknown",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "v2",
@@ -42138,6 +42292,12 @@ export const apiCatalog = {
           "name": "id",
           "type": "string",
           "optional": false
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
         }
       ],
       "envelope": "raw-or-legacy",
@@ -42278,7 +42438,14 @@ export const apiCatalog = {
         "APP_OPERATIONS",
         "CUSTOMER_SERVICE"
       ],
-      "parameters": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "product",
+          "type": "string",
+          "optional": true
+        }
+      ],
       "envelope": "v2",
       "source": "apps/api/src/ring-experience/ring-experience.controller.ts",
       "summary": "分享与关爱的聚合结果和举报",
@@ -42371,6 +42538,56 @@ export const apiCatalog = {
       "request": "mode为share、invite或respond；share可选title引用",
       "response": "HTML；标题含分享者昵称、项目及存在的留言；报告授权片段由浏览器处理",
       "dependency": "标题引用只读取有效链接的标题；完整快照逐次校验",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/ring-experience/ring-web.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CnRingWebController.page",
+      "method": "GET",
+      "path": "/global/saydian-cn/ring/:mode",
+      "auth": "public",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "mode",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "header",
+          "name": "host",
+          "type": "string | undefined",
+          "optional": false
+        },
+        {
+          "in": "header",
+          "name": "accept-language",
+          "type": "string | undefined",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "title",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "raw-or-legacy",
+      "source": "apps/api/src/ring-experience/ring-web.controller.ts",
+      "summary": "赛电SayDian专属分享、邀请或回应H5",
+      "request": "mode为share/invite/respond；share可选title引用；token仅在fragment",
+      "response": "简体中文HTML；cc.saidian.app专属路径及打开按钮，不链接Say Ring下载",
+      "dependency": "只读有效CN分享标题；独立CN接口查询；未启用系统推送不创建投递任务；中国站",
       "successStatus": 200,
       "contract": {
         "status": "unreviewed",

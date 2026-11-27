@@ -9,12 +9,14 @@ export const appleAppSiteAssociation = Object.freeze({
     details: Object.freeze([
       Object.freeze({
         appID: APP_ID,
-        paths: Object.freeze(["/wechat/*"]),
+        paths: Object.freeze(["/wechat/*", "/global/saydian-cn/ring/invite", "/global/saydian-cn/ring/respond"]),
         components: Object.freeze([
           Object.freeze({
             "/": "/wechat/*",
             comment: "Saydian WeChat callback",
           }),
+          Object.freeze({ "/": "/global/saydian-cn/ring/invite" }),
+          Object.freeze({ "/": "/global/saydian-cn/ring/respond" }),
         ]),
       }),
       Object.freeze({
@@ -39,6 +41,9 @@ export class UniversalLinksController {
     const fingerprints = (process.env.SAY_RING_ANDROID_LINK_CERTIFICATES ?? "")
       .split(",").map((value) => value.trim().toUpperCase())
       .filter((value) => /^[A-F0-9]{2}(?::[A-F0-9]{2}){31}$/.test(value));
+    // Older CN builds claimed the Say Ring paths. Do not add a domain-wide CN
+    // association here: it would verify those old filters too. CN web buttons
+    // use a package-scoped intent for the new path instead.
     if (fingerprints.length === 0 || process.env.DEPLOYMENT_SITE === "us") return [];
     return [{
       relation: ["delegate_permission/common.handle_all_urls"],

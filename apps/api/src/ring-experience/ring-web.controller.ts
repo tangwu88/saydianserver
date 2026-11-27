@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { Response } from "express";
 import { RawResponse } from "../common/raw-response.decorator";
 import { RingExperienceService } from "./ring-experience.service";
+import { cnRingProduct, ringProduct, type RingProduct } from "./ring-contract";
 import { shareClient, shareLayout, shareStyles } from "./ring-share-web";
 
 const css = `
@@ -24,7 +25,7 @@ const css = `
 
 const client = String.raw`
   const browserLocale = (navigator.language || 'en').toLowerCase();
-  const en = !/^zh(?:-|$)/.test(browserLocale) || /(?:^|-)(hant|tw|hk|mo)(?:-|$)/.test(browserLocale);
+  const en = document.body.dataset.product !== 'saydian-app-cn' && (!/^zh(?:-|$)/.test(browserLocale) || /(?:^|-)(hant|tw|hk|mo)(?:-|$)/.test(browserLocale));
   document.documentElement.lang = en ? 'en' : 'zh-Hans';
   const label = (zh, english) => en ? english : zh;
   const el = (id) => document.getElementById(id);
@@ -32,11 +33,12 @@ const client = String.raw`
   const mode = document.body.dataset.mode;
   const token = location.hash.slice(1);
   const base = '/global/api/saydian-app/v2/ring/';
-  const pages = '/global/say-ring/';
+  const cnProduct = document.body.dataset.product === 'saydian-app-cn';
+  const pages = cnProduct ? '/global/saydian-cn/ring/' : '/global/say-ring/';
   const h5Origin = 'https://app.saydian.cn';
   const launchOrigin = document.body.dataset.launchOrigin;
   async function post(path, body) {
-    const response = await fetch(base + path, {
+    const response = await fetch(base + path + (cnProduct ? '?product=saydian-app-cn' : ''), {
       method:'POST', cache:'no-store', credentials:'omit',
       headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body)
     });
@@ -67,11 +69,15 @@ const client = String.raw`
   function openApp(route, title) {
     const direct = new URL(pages + route + '#' + token, h5Origin);
     const link = el('open');
-    if (/Android/i.test(navigator.userAgent) && /Chrome\//i.test(navigator.userAgent)) {
+    if (/Android/i.test(navigator.userAgent) && (cnProduct || /Chrome\//i.test(navigator.userAgent))) {
       // A user-initiated, package-scoped Android intent with an HTTPS fallback.
       link.href = 'intent://' + direct.host + direct.pathname + direct.hash +
-        '#Intent;scheme=https;package=cn.saydian.ring;S.browser_fallback_url=' +
+        '#Intent;scheme=https;package=' + (cnProduct ? 'cc.saidian.app' : 'cn.saydian.ring') + ';S.browser_fallback_url=' +
         encodeURIComponent(direct.href) + ';end';
+      if (cnProduct) {
+        el('open-help').hidden = false;
+        text('open-help', '如未打开，请在浏览器中打开本链接后重试，并确认已安装最新版本赛电SayDian。');
+      }
     } else if (launchOrigin) {
       link.href = new URL(pages + route + '#' + token, launchOrigin).href;
     } else {
@@ -126,47 +132,69 @@ const otherEntry = `
   else memberResponse();
 `;
 
-function html(mode: string, nonce: string, launchOrigin: string, title: string) {
+function html(mode: string, nonce: string, launchOrigin: string, title: string, product: RingProduct) {
+  const cn = product === cnRingProduct;
+  const brand = cn ? "赛电SayDian" : "Say Ring";
+  // Only transform static first-party templates, never user titles, notes or records.
+  const branded = (source: string) => cn ? source.replaceAll("Say Ring", brand)
+    .replaceAll('<a id="download" href="https://app.saydian.cn/down2">下载 ' + brand + '</a>', '<span id="download" hidden></span>') : source;
   const sharing = mode === "share";
   const titleText = title.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   return `<!DOCTYPE html>
 <html lang="zh-Hans"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<meta name="apple-itunes-app" content="app-id=6816549943">
-<meta property="og:title" content="Say Ring">
-<meta property="og:description" content="Open a share from Say Ring">
+<meta name="apple-itunes-app" content="app-id=${cn ? "6815530368" : "6816549943"}">
+<meta property="og:title" content="${brand}">
+<meta property="og:description" content="Open a share from ${brand}">
 <title>${titleText}</title><style nonce="${nonce}">${css}${sharing ? shareStyles : ""}</style>
-</head><body data-mode="${mode}" data-launch-origin="${launchOrigin}">${sharing ? shareLayout : `<main>
+</head><body data-mode="${mode}" data-launch-origin="${launchOrigin}" data-product="${product}">${sharing ? branded(shareLayout) : branded(`<main>
 <header>Say Ring</header><h1 id="title">Say Ring</h1>
 <p id="day"></p><p id="code"></p><p id="note"></p>
 <dl id="fields"></dl><div id="actions"></div><p id="status" role="status"></p>
 <footer id="footer" hidden><a id="open" hidden></a><a id="download" href="https://app.saydian.cn/down2">下载 Say Ring</a></footer>
 <p id="open-help" hidden></p>
 <noscript>请在浏览器中启用 JavaScript。 Enable JavaScript to view this page.</noscript>
-</main>`}
-<script nonce="${nonce}">${client}${sharing ? shareEntry : otherEntry}</script></body></html>`;
+</main>`)}
+<script nonce="${nonce}">${branded(client)}${branded(sharing ? shareEntry : otherEntry)}</script></body></html>`;
 }
 
-@Controller("global/say-ring")
-@RawResponse()
-export class RingWebController {
-  constructor(private readonly ring: RingExperienceService) {}
-
-  @Get(":mode")
-  async page(@Param("mode") mode: string, @Headers("host") host: string | undefined,
-    @Headers("accept-language") language: string | undefined, @Query("title") reference: unknown,
-    @Res() response: Response) {
+async function renderPage(ring: RingExperienceService, mode: string, host: string | undefined,
+  language: string | undefined, reference: unknown, response: Response, product: RingProduct) {
+    if (product === cnRingProduct && process.env.DEPLOYMENT_SITE === "us") throw new NotFoundException();
     if (!["share", "invite", "respond"].includes(mode)) throw new NotFoundException();
-    const title = mode === "share" ? await this.ring.shareTitle(reference, language) : null;
+    const title = mode === "share" ? await ring.shareTitle(reference, product === cnRingProduct ? "zh-Hans" : language, product) : null;
     const nonce = randomBytes(18).toString("base64");
-    const launchOrigin = process.env.DEPLOYMENT_SITE !== "us" &&
+    const launchOrigin = product === ringProduct && process.env.DEPLOYMENT_SITE !== "us" &&
       process.env.SAY_RING_APP_LINK_HOST_ENABLED === "true" &&
       host === "app.saydian.cn" ? "https://links.saydian.cn" : "";
     response.set({
       "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex,nofollow,noarchive",
       "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
-    }).type("html").send(html(mode, nonce, launchOrigin, title ?? "Say Ring"));
+    }).type("html").send(html(mode, nonce, launchOrigin, title ?? (product === cnRingProduct ? "赛电SayDian" : "Say Ring"), product));
+}
+
+@Controller("global/say-ring")
+@RawResponse()
+export class RingWebController {
+  constructor(private readonly ring: RingExperienceService) {}
+  @Get(":mode")
+  page(@Param("mode") mode: string, @Headers("host") host: string | undefined,
+    @Headers("accept-language") language: string | undefined, @Query("title") reference: unknown,
+    @Res() response: Response) {
+    return renderPage(this.ring, mode, host, language, reference, response, ringProduct);
+  }
+}
+
+@Controller("global/saydian-cn/ring")
+@RawResponse()
+export class CnRingWebController {
+  constructor(private readonly ring: RingExperienceService) {}
+  @Get(":mode")
+  page(@Param("mode") mode: string, @Headers("host") host: string | undefined,
+    @Headers("accept-language") language: string | undefined, @Query("title") reference: unknown,
+    @Res() response: Response) {
+    return renderPage(this.ring, mode, host, language, reference, response, cnRingProduct);
   }
 }

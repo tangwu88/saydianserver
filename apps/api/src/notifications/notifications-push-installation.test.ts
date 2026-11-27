@@ -5,6 +5,18 @@ import { NotificationsService } from "./notifications.service";
 afterEach(() => vi.unstubAllEnvs());
 
 describe("push installation product routing", () => {
+  it("keeps CN registrations and inbox queries separate from Say Ring", async () => {
+    const upsert = vi.fn(async ({create}:any)=>create);
+    const findMany = vi.fn(async(_input:any)=>[]);
+    const count=vi.fn(async()=>0);
+    const service=new NotificationsService({pushInstallation:{upsert}, notification:{findMany,count},$transaction:async(v:any)=>Promise.all(v)} as any);
+    await service.registerInstallation("member",{installationId:"cn",registrationId:"fixture",platform:"android",product:"saydian-app-cn"});
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({create:expect.objectContaining({provider:"jpush_saydian_cn"})}));
+    await service.list("member",1,30,"saydian-app-cn");
+    expect(findMany).toHaveBeenNthCalledWith(1,expect.objectContaining({where:expect.objectContaining({NOT:{OR:expect.arrayContaining([{eventId:{startsWith:"ring-share:"}}])}})}));
+    await service.list("member");
+    expect(findMany).toHaveBeenNthCalledWith(2,expect.objectContaining({where:expect.objectContaining({NOT:{eventId:{startsWith:"cn-ring-"}}})}));
+  });
   it("stores Say Ring registrations under the isolated internal provider", async () => {
     vi.stubEnv("APP_REALM", "global");
     const upsert = vi.fn(async ({ create }: any) => create);

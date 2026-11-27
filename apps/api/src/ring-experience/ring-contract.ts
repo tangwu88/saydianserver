@@ -4,6 +4,24 @@ import { safeObject } from "../common/crypto";
 
 export const ringPublicPath = "/global/say-ring";
 export const ringProduct = "say-ring";
+export const cnRingProduct = "saydian-app-cn";
+export type RingProduct = typeof ringProduct | typeof cnRingProduct;
+export const cnRingRevision = "cn-ring-v1";
+
+export function ringClientProduct(input: unknown): RingProduct {
+  if (input === undefined || input === "" || input === ringProduct) return ringProduct;
+  if (input === cnRingProduct) return cnRingProduct;
+  throw new BadRequestException("产品标识不正确");
+}
+
+export function ringClientAvailability(input: unknown, revision: unknown) {
+  const product = ringClientProduct(input);
+  const available = ringAvailability();
+  if (product === ringProduct) return available;
+  const ready = revision === cnRingRevision;
+  return { product, sharing: ready && available.sharing, care: ready && available.care,
+    firmware: false, clientUpgradeRequired: !ready };
+}
 
 export function ringAvailability() {
   const china = process.env.DEPLOYMENT_SITE !== "us";

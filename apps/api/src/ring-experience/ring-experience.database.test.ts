@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { PrismaClient } from "@prisma/client";
 import { sayRingFirmwareTarget } from "@saydian/app-contracts";
 import { sign } from "jsonwebtoken";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { authAudience, authIssuer } from "../common/deployment-realm";
 import type { PrismaService } from "../common/prisma.service";
@@ -140,6 +141,64 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
     await db?.$disconnect();
   });
 
+  it("upgrades legacy rows without rewriting their content and rolls forward product metadata", async () => {
+    const schema = "cn_ring_upgrade_" + randomUUID().replaceAll("-", "");
+    if (!/^cn_ring_upgrade_[a-f0-9]{32}$/.test(schema)) throw new Error("Unsafe fixture schema");
+    await db.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
+    try {
+      const migration=readFileSync("prisma/migrations/20261127110000_cn_ring_product/migration.sql","utf8");
+      await db.$transaction(async (tx)=>{
+        await tx.$executeRawUnsafe(`SET LOCAL search_path TO "${schema}"`);
+        await tx.$executeRawUnsafe('CREATE TABLE "RingShare" (id text, "ownerId" text, "createdAt" timestamptz, snapshot jsonb)');
+        await tx.$executeRawUnsafe('CREATE TABLE "RingCareInvite" (id text, "inviterId" text, "expiresAt" timestamptz, sentinel text)');
+        await tx.$executeRawUnsafe('CREATE TABLE "RingCareMessage" (id text, "relationshipId" text, "createdAt" timestamptz, sentinel text)');
+        await tx.$executeRawUnsafe(`INSERT INTO "RingShare" VALUES ('share','owner',now(),'{"note":"synthetic原始记录"}')`);
+        await tx.$executeRawUnsafe(`INSERT INTO "RingCareInvite" VALUES ('invite','owner',now(),'synthetic invitation')`);
+        await tx.$executeRawUnsafe(`INSERT INTO "RingCareMessage" VALUES ('message','relation',now(),'synthetic message')`);
+        const before=await tx.$queryRawUnsafe('SELECT to_jsonb(s) AS value FROM "RingShare" s');
+        for (const statement of migration.replace(/--[^\n]*/g,"").split(";").map(s=>s.trim())) {
+          if (statement && !/^(BEGIN|COMMIT)$/i.test(statement)) await tx.$executeRawUnsafe(statement);
+        }
+        expect(await tx.$queryRawUnsafe('SELECT to_jsonb(s) - \'product\' AS value FROM "RingShare" s')).toEqual(before);
+        for (const table of ["RingShare","RingCareInvite","RingCareMessage"]) {
+          expect(await tx.$queryRawUnsafe(`SELECT product FROM "${table}"`)).toEqual([{product:"say-ring"}]);
+        }
+        await tx.$executeRawUnsafe(`INSERT INTO "RingShare" (id,product) VALUES ('cn','saydian-app-cn')`);
+        expect(await tx.$queryRawUnsafe(`SELECT id FROM "RingShare" WHERE product='saydian-app-cn'`)).toEqual([{id:"cn"}]);
+      });
+    } finally { await db.$executeRawUnsafe(`DROP SCHEMA "${schema}" CASCADE`); }
+  });
+
+  it("isolates CN shares, invitations, messages and inboxes on the same accounts without enabling push", async () => {
+    const cn=(path:string,method="GET",auth?:string,body?:unknown)=>request(path+(path.includes("?")?"&":"?")+"product=saydian-app-cn",method,auth,body);
+    const token=randomBytes(32).toString("base64url");
+    const snapshot={kind:"sleep",date:"2026-11-27",fields:[{key:"sleepMinutes",value:420}]};
+    expect((await cn("capabilities")).data.sharing).toBe(false);
+    expect((await cn("capabilities?clientRevision=cn-ring-v1")).data).toMatchObject({product:"saydian-app-cn",sharing:true,care:true,firmware:false});
+    const created=await cn("shares","POST",actor.token,{token,confirmed:true,snapshot});
+    expect(created.status).toBe(201);
+    expect((await request("shares/open","POST",undefined,{token})).status).toBe(404);
+    expect((await cn("shares/open","POST",undefined,{token})).data.snapshot).toEqual({...snapshot,note:""});
+    expect((await request("shares?history=true","GET",actor.token)).data.entries.some((s:any)=>s.id===created.data.id)).toBe(false);
+    expect((await cn("shares?history=true","GET",actor.token)).data.entries.some((s:any)=>s.id===created.data.id)).toBe(true);
+    await cn("shares/respond","POST",undefined,{token,visitor:randomUUID(),kind:"hug"});
+    expect(await db.outboxEvent.count({where:{aggregateId:created.data.id}})).toBe(0);
+    const notices=await db.notification.findMany({where:{userId:actor.id,eventId:{startsWith:"cn-ring-share:"}}});
+    expect(notices.some(n=>n.deepLink==="/ring/shares/"+created.data.id)).toBe(true);
+    const invite=await cn("care/invitations","POST",actor.token);
+    expect((await request("care/invitations/preview","POST",undefined,{code:invite.data.code})).status).toBe(404);
+    const accepted=await cn("care/invitations/accept","POST",third.token,{code:invite.data.code,confirmed:true,metrics:[]});
+    expect(accepted.status).toBe(201);
+    const relation=accepted.data.relationshipId, messageId=randomUUID();
+    await cn(`care/${relation}/messages`,"POST",actor.token,{messageId,kind:"thinking"});
+    expect((await cn(`care/${relation}/messages`,"GET",third.token)).data.messages.some((m:any)=>m.id===messageId)).toBe(true);
+    expect((await request(`care/${relation}/messages`,"GET",third.token)).data.messages.some((m:any)=>m.id===messageId)).toBe(false);
+    expect(await db.outboxEvent.count({where:{aggregateId:relation,payload:{path:["product"],equals:"saydian-app-cn"}}})).toBe(0);
+    const page=await fetch(root+"/global/saydian-cn/ring/share?title="+createHash("sha256").update(token).digest("hex"));
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("赛电SayDian");
+  });
+
   it("paginates the owner's history and retains expired reactions without reopening the public link", async () => {
     const token = randomBytes(32).toString("base64url");
     const snapshot = {kind:"sleep",date:"2026-11-01",fields:[
@@ -252,7 +311,7 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
     });
     expect(queued.map((item)=>item.eventId)).toEqual(latest.map((item: {eventId: string})=>item.eventId).sort());
     expect(queued.map((item)=>Object.keys(item.payload as object).sort())).toEqual([
-      ["deepLink","notificationId","userId"], ["deepLink","notificationId","userId"],
+      ["deepLink","notificationId","product","userId"], ["deepLink","notificationId","product","userId"],
     ]);
     expect((await request("shares/member-response","POST",second.token,{token,kind:"walk",named:true})).status).toBe(403);
     const h5 = root + "/global/say-ring/share";

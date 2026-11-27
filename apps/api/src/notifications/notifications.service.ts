@@ -9,6 +9,12 @@ import { isUuid, safeObject } from "../common/crypto";
 
 import { globalLocale } from "../auth/global-identity";
 
+function productNotifications(product?: string): Prisma.NotificationWhereInput {
+  return product === "saydian-app-cn"
+    ? { NOT: { OR: ["ring-share:", "ring-care:", "ring-joined:"].map((prefix) => ({ eventId: { startsWith: prefix } })) } }
+    : { NOT: { eventId: { startsWith: "cn-ring-" } } };
+}
+
 @Injectable()
 export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -90,11 +96,13 @@ export class NotificationsService {
     if (!new Set(["jpush", "apns", "disabled"]).has(requestedProvider)) {
       throw new BadRequestException("通知服务类型不正确");
     }
-    if (product && product !== "say-ring") {
+    if (product && !["say-ring", "saydian-app-cn"].includes(product)) {
       throw new BadRequestException("通知产品标识不正确");
     }
     const provider =
-      product === "say-ring" && requestedProvider === "jpush"
+      product === "saydian-app-cn" && requestedProvider === "jpush"
+        ? "jpush_saydian_cn"
+        : product === "say-ring" && requestedProvider === "jpush"
         ? "jpush_say_ring"
         : requestedProvider;
     const installation = await this.prisma.pushInstallation.upsert({
@@ -139,7 +147,7 @@ export class NotificationsService {
     return { unregistered: result.count > 0 };
   }
 
-  async list(userId: string, pageInput = 1, pageSizeInput = 30) {
+  async list(userId: string, pageInput = 1, pageSizeInput = 30, product?: string) {
     if (
       !Number.isSafeInteger(Number(pageInput)) ||
       Number(pageInput) < 1 ||
@@ -155,12 +163,12 @@ export class NotificationsService {
     }
     const [items, total] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
-        where: { userId },
+        where: { userId, ...productNotifications(product) },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.notification.count({ where: { userId } }),
+      this.prisma.notification.count({ where: { userId, ...productNotifications(product) } }),
     ]);
     return {
       items: items.map((item) => this.contract(item)),
@@ -170,26 +178,27 @@ export class NotificationsService {
     };
   }
 
-  async detail(userId: string, id: string) {
+  async detail(userId: string, id: string, product?: string) {
     const item = await this.prisma.notification.findFirst({
-      where: { id, userId },
+      where: { id, userId, ...productNotifications(product) },
     });
     if (!item) throw new NotFoundException("消息不存在");
     return this.contract(item);
   }
 
-  async unreadCount(userId: string) {
+  async unreadCount(userId: string, product?: string) {
     return {
       count: await this.prisma.notification.count({
-        where: { userId, readAt: null },
+        where: { userId, readAt: null, ...productNotifications(product) },
       }),
     };
   }
 
-  async markRead(userId: string, identifier: string) {
+  async markRead(userId: string, identifier: string, product?: string) {
     const result = await this.prisma.notification.updateMany({
       where: {
         userId,
+        ...productNotifications(product),
         OR: [
           ...(isUuid(identifier) ? [{ id: identifier }] : []),
           { eventId: identifier },

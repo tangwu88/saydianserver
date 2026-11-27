@@ -848,6 +848,7 @@ model CareAccessAudit {
 
 model RingShare {
   id        String              @id @default(uuid()) @db.Uuid
+  product   String              @default("say-ring")
   ownerId   String              @db.Uuid
   digest    String              @unique
   snapshot  Json
@@ -856,6 +857,7 @@ model RingShare {
   owner     User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   reactions RingShareReaction[]
 
+  @@index([product, ownerId, createdAt])
   @@index([ownerId, createdAt])
   @@index([expiresAt])
 }
@@ -876,6 +878,7 @@ model RingShareReaction {
 
 model RingCareInvite {
   id         String    @id @default(uuid()) @db.Uuid
+  product    String    @default("say-ring")
   inviterId  String    @db.Uuid
   acceptedBy String?   @db.Uuid
   digest     String    @unique
@@ -886,6 +889,7 @@ model RingCareInvite {
   inviter    User      @relation("RingCareInviter", fields: [inviterId], references: [id], onDelete: Cascade)
   claimant   User?     @relation("RingCareClaimant", fields: [acceptedBy], references: [id], onDelete: SetNull)
 
+  @@index([product, inviterId, expiresAt])
   @@index([inviterId, expiresAt])
 }
 
@@ -903,6 +907,7 @@ model RingCareSetting {
 
 model RingCareMessage {
   id             String           @id @db.Uuid
+  product        String           @default("say-ring")
   relationshipId String           @db.Uuid
   authorId       String           @db.Uuid
   kind           String
@@ -915,6 +920,7 @@ model RingCareMessage {
   relationship   CareRelationship @relation(fields: [relationshipId], references: [id], onDelete: Cascade)
   author         User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
+  @@index([product, relationshipId, createdAt])
   @@index([relationshipId, createdAt])
   @@index([authorId])
   @@index([reportedAt])

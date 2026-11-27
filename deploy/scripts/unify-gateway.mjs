@@ -27,6 +27,7 @@ export function unifyGateway(source) {
     for (const route of [
       "location = /.well-known/assetlinks.json {",
       "location ^~ /global/say-ring/ {",
+      "location ^~ /global/saydian-cn/ring/ {",
       "location = /global/api/saydian-app/v2/ai/messages {",
     ]) {
       const existing = block.split(route);

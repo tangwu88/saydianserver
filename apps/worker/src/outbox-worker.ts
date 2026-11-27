@@ -201,6 +201,12 @@ export class OutboxWorker {
     const userId = String(payload.userId ?? "");
     if (!userId) throw new Error("Outbox event has no target user");
     const ringShare = event.aggregateType === "ring_share";
+    const ringEvent = ringShare || event.aggregateType === "ring_care";
+    const ringProduct = payload.product ?? "say-ring";
+    if (ringEvent && ringProduct !== "say-ring" && ringProduct !== "saydian-app-cn") {
+      throw new Error("Unknown ring notification product");
+    }
+    const ringProvider = ringProduct === "saydian-app-cn" ? "jpush_saydian_cn" : "jpush_say_ring";
     if (["feedback", "support_conversation", "ring_care", "ring_share"].includes(event.aggregateType) && event.eventType === "system") {
       const preference = await this.prisma.userNotificationPreference.findUnique({ where: { userId } });
       if (preference?.transactionalEnabled === false) return;
@@ -219,13 +225,13 @@ export class OutboxWorker {
     }
     if (ringShare) {
       const share = await this.prisma.ringShare.findFirst({
-        where: { id: event.aggregateId, ownerId: userId, owner: { status: "ACTIVE" } },
+        where: { id: event.aggregateId, ownerId: userId, product: ringProduct as "say-ring" | "saydian-app-cn", owner: { status: "ACTIVE" } },
         select: { id: true },
       });
       if (!share) return;
     }
     const installations = await this.prisma.pushInstallation.findMany({
-      where: { userId, enabled: true, ...(ringShare ? { provider: "jpush_say_ring" } : {}) },
+      where: { userId, enabled: true, ...(ringEvent ? { provider: ringProvider } : {}) },
     });
     if (installations.length === 0) return;
     await this.push.deliver(

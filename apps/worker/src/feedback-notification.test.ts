@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OutboxWorker } from "./outbox-worker";
 
 afterEach(() => vi.unstubAllEnvs());
-function harness(enabled = true, shareId?: string) {
+function harness(enabled = true, shareId?: string, product?: string) {
   vi.stubEnv("BUSINESS_WRITES_PAUSED", "false");
   vi.stubEnv("MAINTENANCE_READ_ONLY", "false");
   vi.stubEnv("WORKER_OUTBOUND_PAUSED", "false");
@@ -15,6 +15,7 @@ function harness(enabled = true, shareId?: string) {
     status: "PENDING",
     attempts: 0,
     payload: {
+      ...(product ? {product} : {}),
       userId: "member-1",
       notificationId: "notification-1",
       deepLink: shareId ? "/ring/shares/" + shareId : "/notifications",
@@ -37,14 +38,14 @@ function harness(enabled = true, shareId?: string) {
         {
           userId: "member-1",
           registrationId: "synthetic-device",
-          provider: shareId ? "jpush_say_ring" : "jpush",
+          provider: product === "saydian-app-cn" ? "jpush_saydian_cn" : shareId ? "jpush_say_ring" : "jpush",
         },
       ]),
     },
   };
   const redis: any = { set: vi.fn(async () => "OK"), del: vi.fn() };
   const push = { deliver: vi.fn(async () => {}) };
-  return { prisma, push, worker: new OutboxWorker(prisma, redis, push) };
+  return { prisma, push, event, worker: new OutboxWorker(prisma, redis, push) };
 }
 describe("feedback reply push delivery", () => {
   it("uses the existing system notification route, targeting only the replying member with no content on the lock screen", async () => {
@@ -86,11 +87,31 @@ describe("feedback reply push delivery", () => {
 describe("Say Ring share response push delivery", () => {
   const shareId = "4633cb02-6115-48e7-a352-2a8bfaeb8b44";
 
+  it("selects only CN registrations for CN shares and care messages", async () => {
+    const h=harness(true,shareId,"saydian-app-cn");
+    await h.worker.runOnce();
+    expect(h.prisma.pushInstallation.findMany).toHaveBeenCalledWith({where:{userId:"member-1",enabled:true,provider:"jpush_saydian_cn"}});
+    expect(h.prisma.ringShare.findFirst).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({product:"saydian-app-cn"})}));
+    const care=harness(true,shareId,"saydian-app-cn");
+    care.event.aggregateType="ring_care";
+    care.event.payload.deepLink="/care/interactions/"+shareId;
+    care.prisma.careRelationship={findFirst:vi.fn(async()=>({id:shareId}))};
+    await care.worker.runOnce();
+    expect(care.prisma.pushInstallation.findMany).toHaveBeenCalledWith({where:{userId:"member-1",enabled:true,provider:"jpush_saydian_cn"}});
+  });
+
+  it("rejects an unknown product rather than using another application's channel", async () => {
+    const h=harness(true,shareId,"unknown");
+    await h.worker.runOnce();
+    expect(h.push.deliver).not.toHaveBeenCalled();
+    expect(h.prisma.outboxEvent.update).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({status:"PENDING",attempts:1})}));
+  });
+
   it("delivers only to Say Ring installations owned by the sharer", async () => {
     const h = harness(true, shareId);
     await h.worker.runOnce();
     expect(h.prisma.ringShare.findFirst).toHaveBeenCalledWith({
-      where: { id: shareId, ownerId: "member-1", owner: { status: "ACTIVE" } },
+      where: { id: shareId, ownerId: "member-1", product: "say-ring", owner: { status: "ACTIVE" } },
       select: { id: true },
     });
     expect(h.prisma.pushInstallation.findMany).toHaveBeenCalledWith({
