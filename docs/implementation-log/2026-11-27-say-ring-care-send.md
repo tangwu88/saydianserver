@@ -13,4 +13,11 @@
 - pnpm typecheck通过；pnpm test全工作区通过，API部分1719项通过/118项按环境跳过，其他包见专用日志；pnpm build通过；api:docs:check校验642条。
 - 首次部署测试错误使用tools/deploy*.test.mjs通配，Node报告0项，不计为通过；改为显式deploy/scripts的六个测试文件后发现本机缺jq。经官方1.8.2发行清单SHA256校验下载Windows jq，再次执行发现Git Bash的/c路径不能直接交给原生jq；使用项目现有SAYDIAN_JQ适配器后，pnpm tools:test完整通过（工具/部署60项、H5流程62项、H5契约38项，均无失败）。未修改部署源码来迎合环境。完整日志位于Git外E:/SayRing-1.0.16-issues-20261127。
 - 提交前再次fetch，origin/main仍为be3b56a7445cf100841dc5e277213c714c7daa58；git diff --check通过。独立工作区沿用Publish-Change的显式文件、实施日志、顺序门禁、二次fetch和非强推规则；该工具硬编码main，故保留独立工作区分支而使用等价命令。拟将四个明确文件提交并快进线上main，CI/部署实际状态另记，不能把push当作部署。
-- 本地服务替身测试没有执行真实PostgreSQL并发或公网同IP账号联调，不将模拟锁调用当作物理并发验收；生产未发布，后续需核对CI和线上revision。
+- 本地服务替身测试没有执行本次发送路径的真实PostgreSQL并发或公网同IP账号联调，不将模拟锁调用当作物理并发验收。
+
+## 发布核验
+
+- 源码四文件提交0b01cd23c551d5e2d888aa23eef51624babb33fd，二次fetch确认main未变化后以普通非强推快进main成功，原工作区未修改。CI：https://github.com/tangwu88/saydianserver/actions/runs/45954585100。
+- GitHub核实verify和auto-deploy / deploy均success。国内https://app.saydian.cn/global/health/ready实际返回ready、database=ok、revision=0b01cd23c551d5e2d888aa23eef51624babb33fd。Python本地证书库一次验证失败，改用Windows系统信任的curl正常核实，没有关闭TLS校验；一次GitHub读取握手超时，重试正常。未连接生产数据库、修改客户数据或更改维护状态。
+- auto-deploy-us / deploy失败：发布前空间检查要求7137755959字节，空闲5301051392字节，不足1836704567字节，permitted=false；本轮未删除服务器镜像/数据或调整美国部署门禁，美国节点未确认更新。不能将整个Actions运行或美国节点写成成功。
+- 国内服务已生效，但尚未使用真实客户账号批量发送/举报进行联调，避免制造消息和举报。本补充日志在独立功能分支提交，不用日志变动触发再次发布。
