@@ -268,6 +268,33 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
     return {status:result.status, data:value.data, cache:result.headers.get("cache-control")};
   }
 
+  it("applies explicit naming to a member's prior anonymous response after connecting", async () => {
+    const owner = await member(), responder = await member();
+    await db.user.update({ where: { id: responder.id }, data: { nickname: "Saydian user" } });
+    const token = randomBytes(32).toString("base64url");
+    const created = await request("shares", "POST", owner.token, {
+      token, confirmed: true,
+      snapshot: { kind: "sleep", date: "2026-11-23", fields: [{ key: "sleepMinutes", value: 420 }] },
+    });
+    expect(created.status).toBe(201);
+    expect((await request("shares/member-response", "POST", responder.token, { token, kind: "cheer", named: false })).status).toBe(200);
+    const visitor = createHash("sha256").update(created.data.id + ":member:" + responder.id).digest("hex");
+    const where = { shareId_visitor: { shareId: created.data.id, visitor } };
+    const original = await db.ringShareReaction.findUniqueOrThrow({ where });
+    expect(original.name).toBeNull();
+    expect((await request("shares/member-response", "POST", responder.token, { token, kind: "cheer", named: true })).status).toBe(403);
+    const invitation = await request("care/invitations", "POST", owner.token);
+    expect((await request("care/invitations/accept", "POST", responder.token, {
+      code: invitation.data.code, confirmed: true, metrics: [],
+    })).status).toBe(201);
+    const replies = await Promise.all([1, 2].map(() => request("shares/member-response", "POST", responder.token, { token, kind: "cheer", named: true })));
+    expect(replies.map(result => result.status)).toEqual([200, 200]);
+    expect(await db.ringShareReaction.findUniqueOrThrow({ where })).toEqual({ ...original, name: "Saydian user" });
+    expect(await db.ringShareReaction.count({ where: { shareId: created.data.id } })).toBe(1);
+    expect(await db.notification.count({ where: { userId: owner.id, deepLink: "/ring/shares/" + created.data.id } })).toBe(1);
+    expect((await request("shares/" + created.data.id, "GET", owner.token)).data.reactions[0].name).toBe("Saydian user");
+  });
+
   it("authorizes creation/revocation, preserves exact selected values, and deduplicates visitors", async () => {
     const token = randomBytes(32).toString("base64url");
     const snapshot = {kind:"health",date:"2026-11-23",note:"Synthetic </title> & <img src=x>",fields:[

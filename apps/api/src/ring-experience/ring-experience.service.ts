@@ -181,6 +181,14 @@ export class RingExperienceService {
       });
       if (count.count === 1) {
         await this.notify(tx, "ring-share:" + randomUUID(), share.ownerId, share.id, "share", true, product);
+      } else if (actorId && body.named === true && name !== null) {
+        // A member may explicitly name their own earlier anonymous response.
+        // Keep its content, timestamp and notification; never infer consent
+        // merely from a new relationship or rewrite another visitor's row.
+        await tx.ringShareReaction.updateMany({
+          where: { shareId: share.id, visitor, memberId: actorId, name: null },
+          data: { name },
+        });
       }
       return { ok: true };
     });
