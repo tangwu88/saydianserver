@@ -1765,6 +1765,7 @@ export class AdminService {
           "health_ai_analysis",
           "say_ring_sleep_analysis",
           "say_ring_cycle_ai_analysis",
+          "saydian_cn_cycle_ai_analysis",
         ].includes(data.documentType)
       )
         throw new BadRequestException(

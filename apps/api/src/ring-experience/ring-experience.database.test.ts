@@ -141,6 +141,21 @@ describe.runIf(process.env.RUN_RING_EXPERIENCE_DATABASE_TESTS === "1")("Say Ring
     await db?.$disconnect();
   });
 
+  it("authenticates CN cycle HTTP, isolates the same account and rejects foreign owner hashes", async () => {
+    const prefix="/global/api/saydian-app/v2/health/", owner=createHash("sha256").update("saydian-health-owner:member:"+actor.id).digest("hex");
+    const path=prefix+"cycle-cn/changes?owner="+owner+"&schemaVersion=2";
+    expect((await request(path,"GET")).status).toBe(401);
+    expect((await request(path,"GET",second.token)).status).toBe(409);
+    const mutationId=randomUUID(), settings={enabled:true,adultConfirmed:true,purposeAccepted:true,recordOnly:false,historyComplete:false,hideSummary:true,remind:false,recordRemind:false,leadDays:2,hour:9,minute:0};
+    const body={ownerHash:owner,schemaVersion:2,rows:[{id:"settings",kind:"settings",data:settings,baseRevision:0,mutationId,deleted:false}]};
+    expect((await request(prefix+"cycle-cn/sync","POST",actor.token,body)).status).toBe(201);
+    const read=await request(path,"GET",actor.token);expect(read.status).toBe(200);expect(read.cache).toContain("no-store");expect(read.data.rows).toHaveLength(1);
+    expect((await request(prefix+"cycle/changes?owner="+owner,"GET",actor.token)).data.rows).toHaveLength(0);
+    expect((await request(prefix+"cycle-cn/erase","POST",actor.token,{ownerHash:"foreign",confirmed:true})).status).toBe(409);
+    expect((await request(path,"GET",actor.token)).data.rows).toHaveLength(1);
+    expect((await request(prefix+"cycle-cn/erase","POST",actor.token,{ownerHash:owner,confirmed:true})).status).toBe(201);
+  });
+
   it("upgrades legacy rows without rewriting their content and rolls forward product metadata", async () => {
     const schema = "cn_ring_upgrade_" + randomUUID().replaceAll("-", "");
     if (!/^cn_ring_upgrade_[a-f0-9]{32}$/.test(schema)) throw new Error("Unsafe fixture schema");

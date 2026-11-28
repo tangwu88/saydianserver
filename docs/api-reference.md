@@ -1,6 +1,6 @@
 # API 逐路由目录
 
-本文件由控制器和人工复核说明生成，共 **643 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
+本文件由控制器和人工复核说明生成，共 **651 条 HTTP 路由**。这代表源码覆盖，不代表生产业务全部可用。
 
 调用前先读 [接口调用手册](api-guide.md)；上线缺口见 [旧后台对接与缺陷清单](api-coverage.md)。
 
@@ -189,7 +189,7 @@
 | `POST /api/saydian-app/gift-query/v1/logout` | 退出礼品卡查询 | gift-query | Bearer查询会话；空请求体 | {loggedOut:true} | 撤销本次查询会话 |
 | `POST /api/saydian-app/gift-query/v1/query` | 按卡号批量查询是否兑换 | gift-query | Bearer查询会话；{cardNos}：8开头8位卡号，字符串或字符串数组；去重最多100张 | {items:[{cardNo,status:REDEEMED/NOT_REDEEMED/NOT_FOUND,orderNo:string\|null}],cardCount,redeemedCount,missingCount,queriedAt} | 事务写入结果快照日志后返回；仅查卡号与订单号，无会员/地址/校验码；限流；维护停写时不可查询 |
 
-## V2 App 接口（217）
+## V2 App 接口（225）
 
 | 方法与路径 | 用途 | 鉴权/角色 | 参数与请求 | data / 返回 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -271,6 +271,14 @@
 | `GET /api/saydian-app/v2/content/legal-page/say-ring/:type` | Say Ring 当前已发布法律 HTML 页面 | public | path:type；type=privacy\|terms；固定产品say-ring，首选zh-Hans，按法律同意契约回退已审英文；不接受版本或产品覆盖 | text/html，无JSON包裹；同版本已审激活协议对；隐私页另展示当前专属睡眠AI说明；无可用协议503、未知类型404；只读、不记录同意 | GlobalLegalDocument；公开/say-ring/privacy与/say-ring/terms代理到此，不改变App JSON接口 |
 | `GET /api/saydian-app/v2/ai/messages` | 本人 AI 历史 | member | query:sessionId?；sessionId 可选客户端会话标识 | 最近 20 个会话及消息 | 核心服务 |
 | `POST /api/saydian-app/v2/ai/messages` | AI 提问 | member | {content/message,sessionId?,locale?}；正文 1–4000 字符；国际8语默认使用会话/账号语言或en | {id,conversationId,role,content,createdAt} | AI 供应商；未配置返回 503；语言指令不改变健康安全边界 |
+| `GET /api/saydian-app/v2/health/cycle-cn/changes` | 读取本APP周期增量 | member | query:owner，query:cursor?，query:schemaVersion?；owner哈希、cursor非负整数、schemaVersion=2；Bearer会员 | {rows,cursor,epoch,schemaVersion}；无缓存 | 仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验 |
+| `POST /api/saydian-app/v2/health/cycle-cn/sync` | 同步本APP周期记录 | member | ownerHash、epoch、offsetMinutes、schemaVersion=2、rows每批至多40项；逐条mutationId和baseRevision | {results,sequence}；重复请求回执、冲突及删除代次检查 | 仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验 |
+| `GET /api/saydian-app/v2/health/cycle-cn/prediction` | 计算本APP周期参考 | member | query:owner，query:offsetMinutes?；owner、offsetMinutes；仅参考，不确认排卵或用于避孕 | 基于本APP周期记录的预测快照 | 仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验 |
+| `GET /api/saydian-app/v2/health/cycle-cn/ai-availability` | 本APP周期AI可用性 | member | query:owner；owner；只读取配置和说明，不调用模型 | {available,granted,version,document}；独立说明、配置、同意及CN隐藏AI门禁 | 仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验 |
+| `POST /api/saydian-app/v2/health/cycle-cn/analysis-consent` | 单独选择本APP周期AI授权 | member | ownerHash、granted布尔、version；撤回不受隐藏AI阻碍 | 当前本APP周期AI可用性 | 仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验 |
+| `POST /api/saydian-app/v2/health/cycle-cn/explanation` | 生成本APP周期参考解读 | member | ownerHash、offsetMinutes；仅配置就绪且单独授权才调用模型 | 安全模板或经约束的建议动作；不传身份、日期或原始读数 | 仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验 |
+| `GET /api/saydian-app/v2/health/cycle-cn/night-features` | 读取本APP允许的真实夜间特征 | member | query:owner；owner；遵守CN指标公开显示设置 | {value,inputHash,asOf}；采样来源和时间窗不足不补值 | 仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验 |
+| `POST /api/saydian-app/v2/health/cycle-cn/erase` | 删除本APP全部周期资料 | member | ownerHash、confirmed=true；需会员本人确认 | {deleted,sequence}；清空本APP周期资料、撤回本APP周期AI同意、增加删除代次，不影响Say Ring | 仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验 |
 | `GET /api/saydian-app/v2/health/cycle/changes` | 本人周期增量记录 | member | query:owner，query:cursor?，query:schemaVersion?；owner=当前账号SHA256保护；cursor非负整数 | rows,cursor,hasMore,epoch；每页200；删除标记；no-store | 本人鉴权、独立周期表；不含关爱授权 |
 | `POST /api/saydian-app/v2/health/cycle/sync` | 周期离线队列同步 | member | ownerHash、offsetMinutes、epoch、rows最多40项；id/kind/data/deleted/baseRevision/mutationId | 逐条ACK或冲突原行、sequence；幂等重放 | 本人锁、乐观版本、用途确认、重叠校验；无戒指写入 |
 | `GET /api/saydian-app/v2/health/cycle/prediction` | 不可改写的周期参考快照 | member | query:owner，query:offsetMinutes?；owner、offsetMinutes | id,prediction,sourceSequence,createdAt；calendar-v1 | 至少3完整周期且无漏记；增强清单为空 |

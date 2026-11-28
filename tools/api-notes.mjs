@@ -15,6 +15,14 @@ const legal = "{documentType,version,title,contentHtml,active,publishedAt?}；�
 const healthBatch = "HealthBatch：JSON {records:[...]}，1–200 条；Idempotency-Key 8–160 字符必填；source可选origin/measurementSource/rawVersion原样独立存储；版本化日汇总另带aggregation:{kind:daily_summary,localDate:YYYY-MM-DD}和source.deviceId；详细记录结构见调用手册";
 const batchResult = "{acceptedIds,rejected:[{id,code,message}],nextCursor}；HTTP 成功不代表全部记录接收";
 export const notes = {
+  "CnCycleController.changes": entry("读取本APP周期增量", "owner哈希、cursor非负整数、schemaVersion=2；Bearer会员", "{rows,cursor,epoch,schemaVersion}；无缓存", "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验"),
+  "CnCycleController.sync": entry("同步本APP周期记录", "ownerHash、epoch、offsetMinutes、schemaVersion=2、rows每批至多40项；逐条mutationId和baseRevision", "{results,sequence}；重复请求回执、冲突及删除代次检查", "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验"),
+  "CnCycleController.prediction": entry("计算本APP周期参考", "owner、offsetMinutes；仅参考，不确认排卵或用于避孕", "基于本APP周期记录的预测快照", "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验"),
+  "CnCycleController.availability": entry("本APP周期AI可用性", "owner；只读取配置和说明，不调用模型", "{available,granted,version,document}；独立说明、配置、同意及CN隐藏AI门禁", "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验"),
+  "CnCycleController.consent": entry("单独选择本APP周期AI授权", "ownerHash、granted布尔、version；撤回不受隐藏AI阻碍", "当前本APP周期AI可用性", "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验"),
+  "CnCycleController.explain": entry("生成本APP周期参考解读", "ownerHash、offsetMinutes；仅配置就绪且单独授权才调用模型", "安全模板或经约束的建议动作；不传身份、日期或原始读数", "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验"),
+  "CnCycleController.nightFeatures": entry("读取本APP允许的真实夜间特征", "owner；遵守CN指标公开显示设置", "{value,inputHash,asOf}；采样来源和时间窗不足不补值", "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验"),
+  "CnCycleController.erase": entry("删除本APP全部周期资料", "ownerHash、confirmed=true；需会员本人确认", "{deleted,sequence}；清空本APP周期资料、撤回本APP周期AI同意、增加删除代次，不影响Say Ring", "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验"),
   "GiftQueryController.login": entry("礼品卡独立查询账号登录", "{username,password}；查询专用账号，不接受会员或后台登录", "{token,expiresAt,username,displayName}；8小时会话，no-store", "独立查询账号；按IP和账号数据库限流；维护停写时不可登录"),
   "GiftQueryController.me": entry("查询账号当前登录", "Bearer查询会话", "{username,displayName,expiresAt}；no-store", "独立查询会话；停用或重设后失效"),
   "GiftQueryController.logout": entry("退出礼品卡查询", "Bearer查询会话；空请求体", "{loggedOut:true}", "撤销本次查询会话"),

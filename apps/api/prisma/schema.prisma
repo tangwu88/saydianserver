@@ -292,6 +292,10 @@ model User {
   consents                 ConsentRecord[]
   activityGoal             ActivityGoal?
   devices                  DeviceBinding[]
+  cnCycleState             CnCycleState?
+  cnCycleRecords           CnCycleRecord[]
+  cnCycleMutations         CnCycleMutation[]
+  cnCycleArtifacts         CnCycleArtifact[]
   cycleState               CycleState?
   cycleRecords             CycleRecord[]
   cycleMutations           CycleMutation[]
@@ -2687,4 +2691,52 @@ model SayHeathFamily {
 
   @@unique([ownerId, viewerId])
   @@index([viewerId])
+}
+
+// CN edition cycle data is independent even for the same account.
+model CnCycleState {
+  userId    String   @id @db.Uuid
+  sequence  Int      @default(0)
+  epoch     Int      @default(0)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CnCycleRecord {
+  userId    String   @db.Uuid
+  clientId  String   @db.VarChar(80)
+  kind      String   @db.VarChar(16)
+  data      Json
+  revision  Int      @default(1)
+  deleted   Boolean  @default(false)
+  changeSeq Int
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, clientId])
+  @@index([userId, changeSeq])
+}
+
+model CnCycleMutation {
+  userId     String   @db.Uuid
+  mutationId String   @db.VarChar(80)
+  inputHash  String   @db.VarChar(64)
+  result     Json
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, mutationId])
+}
+
+model CnCycleArtifact {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  kind           String   @db.VarChar(24)
+  inputHash      String   @db.VarChar(64)
+  payload        Json
+  sourceSequence Int
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, inputHash])
 }

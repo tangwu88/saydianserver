@@ -33,6 +33,10 @@ export class AccountDeletionWorker {
         await tx.sayHeathGrant.deleteMany({ where: { userId } });
         await tx.sayHeathSession.deleteMany({ where: { userId } });
         await tx.sayHeathFamily.deleteMany({ where: { OR: [{ ownerId: userId }, { viewerId: userId }] } });
+        await tx.cnCycleArtifact.deleteMany({where:{userId}});
+        await tx.cnCycleMutation.deleteMany({where:{userId}});
+        await tx.cnCycleRecord.deleteMany({where:{userId}});
+        await tx.cnCycleState.deleteMany({where:{userId}});
         await tx.cycleArtifact.deleteMany({where:{userId}});
         await tx.cycleMutation.deleteMany({where:{userId}});
         await tx.cycleRecord.deleteMany({where:{userId}});

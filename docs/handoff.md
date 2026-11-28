@@ -213,3 +213,7 @@ git rev-list --left-right --count HEAD...origin/main
 ## 9. 修改与提交规则
 
 修改前运行 `tools/Start-Change.ps1`；修改后使用 `tools/Publish-Change.ps1` 显式列文件。禁止 `git add .`、强推、覆盖他人改动或提交构建产物/密钥。源码提交通过 CI 后才可能发布；必须核对 Deploy job 和线上 revision，push 本身不代表部署。
+
+## 2026-11-28 中文版生理周期
+
+新增独立周期表、cycle-cn路由与AI配置/同意命名空间；原Say Ring不变。原数据保留、门禁与上线证据见[周期实施记录](implementation-log/2026-11-28-cn-cycle.md)。CI和readiness以实际核验为准。

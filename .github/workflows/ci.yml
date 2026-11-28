@@ -125,6 +125,7 @@ jobs:
           export DATABASE_URL="postgresql://ringqa:local-ring-fixture-password@127.0.0.1:${ring_port}/ringlab?schema=public"
           pnpm db:deploy
           RUN_RING_EXPERIENCE_DATABASE_TESTS=1 pnpm --filter @saydian/app-api exec vitest run src/ring-experience/ring-experience.database.test.ts --maxWorkers=1 --testTimeout=20000
+          RUN_LOCAL_DATABASE_TESTS=1 pnpm --filter @saydian/app-api exec vitest run src/cycle/cycle-diary.database.test.ts src/cycle/cn-cycle.database.test.ts --maxWorkers=1 --testTimeout=20000
       - name: API smoke test
         run: |
           node apps/api/dist/main.js > api-smoke.log 2>&1 &

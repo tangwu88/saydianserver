@@ -25670,6 +25670,280 @@ export const apiCatalog = {
       }
     },
     {
+      "key": "CnCycleController.changes",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/cycle-cn/changes",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "owner",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "in": "query",
+          "name": "schemaVersion",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+      "summary": "读取本APP周期增量",
+      "request": "owner哈希、cursor非负整数、schemaVersion=2；Bearer会员",
+      "response": "{rows,cursor,epoch,schemaVersion}；无缓存",
+      "dependency": "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CnCycleController.sync",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/cycle-cn/sync",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+      "summary": "同步本APP周期记录",
+      "request": "ownerHash、epoch、offsetMinutes、schemaVersion=2、rows每批至多40项；逐条mutationId和baseRevision",
+      "response": "{results,sequence}；重复请求回执、冲突及删除代次检查",
+      "dependency": "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CnCycleController.prediction",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/cycle-cn/prediction",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "owner",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "in": "query",
+          "name": "offsetMinutes",
+          "type": "string",
+          "optional": true
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+      "summary": "计算本APP周期参考",
+      "request": "owner、offsetMinutes；仅参考，不确认排卵或用于避孕",
+      "response": "基于本APP周期记录的预测快照",
+      "dependency": "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CnCycleController.availability",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/cycle-cn/ai-availability",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "owner",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+      "summary": "本APP周期AI可用性",
+      "request": "owner；只读取配置和说明，不调用模型",
+      "response": "{available,granted,version,document}；独立说明、配置、同意及CN隐藏AI门禁",
+      "dependency": "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CnCycleController.consent",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/cycle-cn/analysis-consent",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "unknown",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+      "summary": "单独选择本APP周期AI授权",
+      "request": "ownerHash、granted布尔、version；撤回不受隐藏AI阻碍",
+      "response": "当前本APP周期AI可用性",
+      "dependency": "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CnCycleController.explain",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/cycle-cn/explanation",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "{ offsetMinutes?: number; ownerHash?: string }",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+      "summary": "生成本APP周期参考解读",
+      "request": "ownerHash、offsetMinutes；仅配置就绪且单独授权才调用模型",
+      "response": "安全模板或经约束的建议动作；不传身份、日期或原始读数",
+      "dependency": "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CnCycleController.nightFeatures",
+      "method": "GET",
+      "path": "/api/saydian-app/v2/health/cycle-cn/night-features",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "owner",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+      "summary": "读取本APP允许的真实夜间特征",
+      "request": "owner；遵守CN指标公开显示设置",
+      "response": "{value,inputHash,asOf}；采样来源和时间窗不足不补值",
+      "dependency": "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验",
+      "successStatus": 200,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
+      "key": "CnCycleController.erase",
+      "method": "POST",
+      "path": "/api/saydian-app/v2/health/cycle-cn/erase",
+      "auth": "member",
+      "roles": [],
+      "parameters": [
+        {
+          "in": "body",
+          "name": "*",
+          "type": "{ confirmed?: boolean; ownerHash?: string }",
+          "optional": false
+        }
+      ],
+      "envelope": "v2",
+      "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+      "summary": "删除本APP全部周期资料",
+      "request": "ownerHash、confirmed=true；需会员本人确认",
+      "response": "{deleted,sequence}；清空本APP周期资料、撤回本APP周期AI同意、增加删除代次，不影响Say Ring",
+      "dependency": "仅CN独立CnCycle表；同账号其他APP周期记录、设置与授权不变；用户鉴权和owner双校验",
+      "successStatus": 201,
+      "contract": {
+        "status": "unreviewed",
+        "requestSchema": null,
+        "requestExample": null,
+        "responseSchema": null,
+        "responseExample": null,
+        "contentType": "application/json",
+        "source": "apps/api/src/cycle/cn-cycle.controller.ts",
+        "note": "字段级 Schema 尚待复核；路由存在不代表客户端解析或业务已验收。"
+      }
+    },
+    {
       "key": "CycleController.changes",
       "method": "GET",
       "path": "/api/saydian-app/v2/health/cycle/changes",
