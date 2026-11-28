@@ -11,7 +11,7 @@ export type LegalDocumentEditor = Record<string, unknown> & {
 };
 
 const documentTypes: Record<LegalProduct, string[]> = {
-  "saydian-app-cn": ["saydian_cn_user_agreement", "saydian_cn_privacy_policy"],
+  "saydian-app-cn": ["saydian_cn_user_agreement", "saydian_cn_privacy_policy", "saydian_cn_cycle_ai_analysis"],
   "saydian-global": ["user_agreement", "privacy_policy", "health_ai_analysis"],
   "sayheath": ["sayheath_user_agreement", "sayheath_privacy_policy"],
   "say-ring": [
@@ -49,6 +49,7 @@ export function legalDocumentTypeLabel(documentType: unknown): string {
         privacy_policy: "隐私政策",
         saydian_cn_user_agreement: "Saydian赛电用户协议",
         saydian_cn_privacy_policy: "Saydian赛电隐私政策",
+        saydian_cn_cycle_ai_analysis: "赛电SayDian 生理周期 AI 分析说明",
         health_ai_analysis: "健康 AI 分析说明",
         sayheath_user_agreement: "SayHeath 用户协议",
         sayheath_privacy_policy: "SayHeath 隐私政策",
@@ -124,7 +125,7 @@ export function legalDocumentPayload(
   }
   if (editor.active && !editor.reviewed)
     throw new Error(
-      ["say_ring_sleep_analysis","say_ring_cycle_ai_analysis"].includes(editor.documentType)
+      ["say_ring_sleep_analysis","say_ring_cycle_ai_analysis","saydian_cn_cycle_ai_analysis"].includes(editor.documentType)
         ? "说明内容核对完成后才能启用"
         : "法律审核完成后才能启用协议",
     );

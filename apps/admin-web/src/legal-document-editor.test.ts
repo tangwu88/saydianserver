@@ -10,6 +10,16 @@ import {
 } from "./legal-document-editor";
 
 describe("product-scoped legal document editor", () => {
+  it("assigns CN cycle AI notices exclusively to the CN product and requires review",()=>{
+    const type="saydian_cn_cycle_ai_analysis";
+    expect(legalProductForDocumentType(type)).toBe("saydian-app-cn");
+    expect(legalDocumentTypeLabel(type)).toBe("赛电SayDian 生理周期 AI 分析说明");
+    const draft=selectLegalDocumentType(createLegalDocumentDraft("saydian-app-cn"),type);
+    expect(draft.locale).toBe("zh-Hans");expect(()=>legalDocumentPayload({...draft,active:true})).toThrow("说明内容核对完成后才能启用");
+    for(const product of ["saydian-global","say-ring","sayheath"] as const){expect(()=>selectLegalDocumentType(createLegalDocumentDraft(product),type)).toThrow();}
+    expect(legalDocumentEditorFromRow({documentType:type,locale:"zh-Hans"}).legalProduct).toBe("saydian-app-cn");
+  });
+
   it("creates CN documents separately in simplified Chinese and clears copied content", () => {
     expect(createLegalDocumentDraft("saydian-app-cn", "en")).toMatchObject({legalProduct: "saydian-app-cn", documentType: "saydian_cn_user_agreement", locale: "zh-Hans", active: false, reviewed: false});
     const other = {...createLegalDocumentDraft("say-ring"), contentHtml: "Synthetic other product text", version: "other-v1"};
