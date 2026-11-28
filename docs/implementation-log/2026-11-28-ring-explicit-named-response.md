@@ -26,3 +26,11 @@
 - 串行`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm api:docs:check`、`pnpm tools:test`全部通过，`git diff --check`通过。API1730项成功、121项按数据库环境跳过，Worker174成功/5跳过；其他工作区均成功。接口目录643条描述完整。工具/部署60、H5流程62、H5契约38通过；Git Bash和既有SAYDIAN_JQ适配器仅用于Windows工具测试，不改生产脚本。最终日志均在Git外专用目录。
 - 本轮不改App源码和安装包，1337原正式证书/覆盖安装证据沿用App仓库记录；不把本机服务替身通过当作独立数据库或线上客户回归成功。
 - 再次fetch成功，origin/main仍39e8f6a280d86e8b87b5bfe46ff4954022e3a3e9。仅提交服务、两个测试和本日志四文件，非强推快进中国main触发既有CI/发布；不触发美国部署，不改生产密钥/配置/数据库或维护状态。后续需核实CI独立PostgreSQL用例及线上revision，不能把推送当成已生效。
+
+## 云端及线上核实
+
+- 源码提交cb93b69502cba71100bf12d01e881ba5144e4ff4已推送独立分支并非强推快进main。CI：https://github.com/tangwu88/saydianserver/actions/runs/46114356264。GitHub实际核实verify、auto-deploy / resolve、auto-deploy / deploy均success；美国按本次中国范围明确skipped，不写成失败或已更新美国。
+- CI的Typecheck, test and build以及Isolated CN ring schema upgrade and product routing步骤均success。后者通过独立ringlab PostgreSQL及真实HTTP运行新增用例，确认先匿名、未关联署名拒绝、关联后并发署名写回默认昵称、单条回应/通知及原时间/内容不变；不拿本地被环境跳过替代实库验收。
+- 中国https://app.saydian.cn/global/health/ready独立返回ready、database=ok、revision=cb93b69502cba71100bf12d01e881ba5144e4ff4，确认实际服务已更新。没有人工修改客户回应、账号或关爱关系，没有代用户发送测试回应。
+- 用户当前已安装的1337使用原接口即可；已保存的匿名记录不会随发布/关联自动改名，需本人在同一分享再次明确勾选署名并提交，然后刷新回应列表。真实用户这次昵称显示仍由本人验收，不将合成实库回归写成已替本人完成。
+- 本补充仅证据文档，沿用同轮完整检查；fetch确认main仍为上述源码版本，日志只推独立分支，不为日志再次部署服务。工作树上游切到本功能分支，原main工作树及其他同事工作不改。
